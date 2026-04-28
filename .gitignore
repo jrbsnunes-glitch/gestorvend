@@ -1,0 +1,70 @@
+# --- Dependências ---
+node_modules/
+
+# --- Build / empacotamento (regerados no CI e em produção) ---
+dist/
+build/
+out/
+.next/
+*.tsbuildinfo
+apps/api/dist/
+apps/web/dist/
+
+# --- Variáveis de ambiente e segredos (nunca enviar para produção assim) ---
+.env
+.env.local
+.env.*.local
+apps/api/.env
+apps/web/.env.local
+apps/web/.env.production.local
+# Mantém .env.example e, se existir, .env.development sem segredos para padronizar o time
+
+# --- Prisma — client gerado (gerar com npm run prisma:generate na API) ---
+apps/api/src/generated/
+
+# --- Logs e temporários ---
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.tmp
+*.temp
+.cache/
+
+# --- Testes e cobertura ---
+coverage/
+.nyc_output/
+*.lcov
+junit.xml
+
+# --- SO ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- IDEs / editores ---
+.idea/
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# --- Ferramentas locais (opcional) ---
+.turbo/
+.vercel/
+.netlify/
+
+# --- Docker / volumes locais (se criar depois) ---
+*.pid
+
+# --- Dumps e backups locais ---
+*.dump
+*.sql.backup

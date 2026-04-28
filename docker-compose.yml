@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gestorvend-postgres
+    restart: unless-stopped
+    ports:
+      - '5433:5432'
+    environment:
+      POSTGRES_USER: gestorvend
+      POSTGRES_PASSWORD: gestorvend
+      POSTGRES_DB: gestorvend_central
+    volumes:
+      - gestorvend_pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/02-tenant-db.sql
+
+  redis:
+    image: redis:7-alpine
+    container_name: gestorvend-redis
+    restart: unless-stopped
+    ports:
+      - '6380:6379'
+
+volumes:
+  gestorvend_pgdata:

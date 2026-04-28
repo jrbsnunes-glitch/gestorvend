@@ -1,0 +1,31 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../src/generated/central-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("CENTRAL_DATABASE_URL")
+}
+
+enum LicenseStatus {
+  trial
+  active
+  suspended
+  expired
+}
+
+/// Catálogo global: um registro por cliente (CNPJ) licenciado.
+model Tenant {
+  id               String        @id @default(uuid())
+  slug             String        @unique
+  cnpj             String        @unique
+  companyName      String
+  licenseStatus    LicenseStatus @default(trial)
+  licenseExpiresAt DateTime?
+  /// Nome do database PostgreSQL dedicado (ex.: gv_tenant_acme)
+  databaseName     String        @unique
+  schemaVersion    String        @default("0")
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}

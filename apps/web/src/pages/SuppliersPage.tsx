@@ -1,0 +1,398 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
+import { ModuleReportsModal } from '../components/ModuleReportsModal';
+import { api } from '../lib/api';
+
+type Supplier = {
+  id: string;
+  legalName: string;
+  tradeName: string | null;
+  document: string | null;
+  email: string | null;
+  phone: string | null;
+  city: string | null;
+};
+
+export function SuppliersPage() {
+  const qc = useQueryClient();
+  const [viewId, setViewId] = useState<string | null>(null);
+  const [editSupplier, setEditSupplier] = useState<Supplier | null>(null);
+  const [deleteSupplier, setDeleteSupplier] = useState<Supplier | null>(null);
+  const [reportsOpen, setReportsOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [legalName, setLegalName] = useState('');
+  const [tradeName, setTradeName] = useState('');
+  const [document, setDocument] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [city, setCity] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+
+  const list = useQuery({
+    queryKey: ['suppliers'],
+    queryFn: () => api<Supplier[]>('/suppliers'),
+  });
+
+  const selected = list.data?.find((s) => s.id === viewId) ?? null;
+
+  const detail = useQuery({
+    queryKey: ['suppliers', viewId, 'view'],
+    queryFn: () => api<Supplier>(`/suppliers/${viewId}`),
+    enabled: viewOpen && !!viewId,
+  });
+
+  function resetForm() {
+    setLegalName('');
+    setTradeName('');
+    setDocument('');
+    setEmail('');
+    setPhone('');
+    setCity('');
+    setErr(null);
+  }
+
+  function loadForm(s: Supplier) {
+    setLegalName(s.legalName);
+    setTradeName(s.tradeName ?? '');
+    setDocument(s.document ?? '');
+    setEmail(s.email ?? '');
+    setPhone(s.phone ?? '');
+    setCity(s.city ?? '');
+    setErr(null);
+  }
+
+  const create = useMutation({
+    mutationFn: () =>
+      api<Supplier>('/suppliers', {
+        method: 'POST',
+        json: {
+          legalName,
+          tradeName: tradeName || null,
+          document: document || null,
+          email: email || null,
+          phone: phone || null,
+          city: city || null,
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['suppliers'] });
+      setCreateOpen(false);
+      resetForm();
+    },
+    onError: (e: Error) => setErr(e.message),
+  });
+
+  const update = useMutation({
+    mutationFn: (id: string) =>
+      api<Supplier>(`/suppliers/${id}`, {
+        method: 'PATCH',
+        json: {
+          legalName,
+          tradeName: tradeName || null,
+          document: document || null,
+          email: email || null,
+          phone: phone || null,
+          city: city || null,
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['suppliers'] });
+      setEditOpen(false);
+      setEditSupplier(null);
+      resetForm();
+    },
+    onError: (e: Error) => setErr(e.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api(`/suppliers/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['suppliers'] });
+      setDeleteOpen(false);
+      setDeleteSupplier(null);
+      setErr(null);
+    },
+    onError: (e: Error) => setErr(e.message),
+  });
+
+  const viewData = detail.data ?? selected;
+
+  function openView(s: Supplier) {
+    setViewId(s.id);
+    setViewOpen(true);
+  }
+
+  function openEdit(s: Supplier) {
+    loadForm(s);
+    setEditSupplier(s);
+    setEditOpen(true);
+  }
+
+  return (
+    <div className="page print-area">
+      <h1 className="page-title">Fornecedores</h1>
+      <p className="page-desc">Cadastro fiscal e comercial de fornecedores.</p>
+
+      <CrudToolbar
+        onInclude={() => {
+          resetForm();
+          setCreateOpen(true);
+        }}
+        onPrint={() => window.print()}
+        onReports={() => setReportsOpen(true)}
+      />
+
+      <ModuleReportsModal open={reportsOpen} title="Fornecedores" onClose={() => setReportsOpen(false)}>
+        <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
+          <li>Compras por fornecedor</li>
+          <li>Títulos a pagar em aberto</li>
+        </ul>
+      </ModuleReportsModal>
+
+      <div className="toolbar no-print">
+        <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+          {list.data?.length ?? 0} registro(s)
+        </span>
+      </div>
+
+      {list.isError && <div className="alert alert-error">{(list.error as Error).message}</div>}
+
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Razão social</th>
+              <th>Nome fantasia</th>
+              <th>CNPJ/CPF</th>
+              <th>Contato</th>
+              <th>Cidade</th>
+              <th className="col-actions">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.isLoading && (
+              <tr>
+                <td colSpan={6} className="empty">
+                  Carregando…
+                </td>
+              </tr>
+            )}
+            {!list.isLoading && !list.data?.length && (
+              <tr>
+                <td colSpan={6} className="empty">
+                  Nenhum fornecedor.
+                </td>
+              </tr>
+            )}
+            {list.data?.map((s) => (
+              <tr key={s.id}>
+                <td>
+                  <strong>{s.legalName}</strong>
+                </td>
+                <td>{s.tradeName ?? '—'}</td>
+                <td>{s.document ?? '—'}</td>
+                <td>
+                  {s.email || s.phone ? (
+                    <>
+                      {s.email && <div>{s.email}</div>}
+                      {s.phone && <div style={{ color: 'var(--color-text-muted)' }}>{s.phone}</div>}
+                    </>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td>{s.city ?? '—'}</td>
+                <td className="col-actions">
+                  <RowRecordActions
+                    onEdit={() => openEdit(s)}
+                    onView={() => openView(s)}
+                    onDelete={() => {
+                      setDeleteSupplier(s);
+                      setDeleteOpen(true);
+                    }}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {createOpen && (
+        <div
+          className="modal-backdrop no-print"
+          role="presentation"
+          onClick={() => {
+            setCreateOpen(false);
+            setErr(null);
+          }}
+        >
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+            <h2>Novo fornecedor</h2>
+            {err && <div className="alert alert-error">{err}</div>}
+            <div className="field">
+              <label htmlFor="s-legal">Razão social *</label>
+              <input
+                id="s-legal"
+                value={legalName}
+                onChange={(e) => setLegalName(e.target.value)}
+                required
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="s-trade">Nome fantasia</label>
+              <input id="s-trade" value={tradeName} onChange={(e) => setTradeName(e.target.value)} />
+            </div>
+            <div className="form-row">
+              <div className="field">
+                <label htmlFor="s-doc">CNPJ/CPF</label>
+                <input id="s-doc" value={document} onChange={(e) => setDocument(e.target.value)} />
+              </div>
+              <div className="field">
+                <label htmlFor="s-phone">Telefone</label>
+                <input id="s-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+              </div>
+            </div>
+            <div className="field">
+              <label htmlFor="s-email">E-mail</label>
+              <input id="s-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="s-city">Cidade</label>
+              <input id="s-city" value={city} onChange={(e) => setCity(e.target.value)} />
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setCreateOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!legalName.trim() || create.isPending}
+                onClick={() => create.mutate()}
+              >
+                Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editSupplier && editOpen && (
+        <div className="modal-backdrop no-print" role="presentation" onClick={() => setEditOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+            <h2>Alterar fornecedor</h2>
+            {err && <div className="alert alert-error">{err}</div>}
+            <div className="field">
+              <label htmlFor="se-legal">Razão social *</label>
+              <input id="se-legal" value={legalName} onChange={(e) => setLegalName(e.target.value)} required />
+            </div>
+            <div className="field">
+              <label htmlFor="se-trade">Nome fantasia</label>
+              <input id="se-trade" value={tradeName} onChange={(e) => setTradeName(e.target.value)} />
+            </div>
+            <div className="form-row">
+              <div className="field">
+                <label htmlFor="se-doc">CNPJ/CPF</label>
+                <input id="se-doc" value={document} onChange={(e) => setDocument(e.target.value)} />
+              </div>
+              <div className="field">
+                <label htmlFor="se-phone">Telefone</label>
+                <input id="se-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+              </div>
+            </div>
+            <div className="field">
+              <label htmlFor="se-email">E-mail</label>
+              <input id="se-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="se-city">Cidade</label>
+              <input id="se-city" value={city} onChange={(e) => setCity(e.target.value)} />
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setEditOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!legalName.trim() || update.isPending}
+                onClick={() => update.mutate(editSupplier.id)}
+              >
+                Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewId && viewOpen && viewData && (
+        <div className="modal-backdrop no-print" role="presentation" onClick={() => setViewOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+            <h2>Fornecedor — visualização</h2>
+            {detail.isLoading && <p>Carregando…</p>}
+            {detail.isError && (
+              <div className="alert alert-error">{(detail.error as Error).message}</div>
+            )}
+            {!detail.isLoading && !detail.isError && (
+              <>
+                <p>
+                  <strong>Razão social:</strong> {viewData.legalName}
+                </p>
+                <p>
+                  <strong>Nome fantasia:</strong> {viewData.tradeName ?? '—'}
+                </p>
+                <p>
+                  <strong>Documento:</strong> {viewData.document ?? '—'}
+                </p>
+                <p>
+                  <strong>E-mail:</strong> {viewData.email ?? '—'}
+                </p>
+                <p>
+                  <strong>Telefone:</strong> {viewData.phone ?? '—'}
+                </p>
+                <p>
+                  <strong>Cidade:</strong> {viewData.city ?? '—'}
+                </p>
+              </>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="btn btn-primary" onClick={() => setViewOpen(false)}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteSupplier && deleteOpen && (
+        <div className="modal-backdrop no-print" role="presentation" onClick={() => setDeleteOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+            <h2>Excluir fornecedor</h2>
+            <p>
+              Confirma a exclusão de <strong>{deleteSupplier.legalName}</strong>?
+            </p>
+            {err && <div className="alert alert-error">{err}</div>}
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setDeleteOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={remove.isPending}
+                onClick={() => remove.mutate(deleteSupplier.id)}
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

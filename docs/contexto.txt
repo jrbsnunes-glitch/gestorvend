@@ -1,0 +1,320 @@
+CONTEXTO DO PROJETO
+Desenvolva um sistema completo de gestão para lojas e comércio em geral, dividido em duas etapas de desenvolvimento, com arquitetura modular, escalável e preparada para crescimento futuro.
+
+ETAPA 1 - SISTEMA BASE
+1. CADASTROS E CONTROLES GERAIS
+1.1 Gestão de Clientes
+
+Cadastro completo (CPF/CNPJ, endereço, contatos, limites de crédito)
+Histórico de compras e relacionamento
+Sistema de categorização e segmentação
+Controle de inadimplência
+Exportação de dados (Excel, PDF, CSV)
+
+1.2 Gestão de Fornecedores
+
+Cadastro detalhado (dados fiscais, bancários, comerciais)
+Histórico de compras e negociações
+Avaliação de fornecedores
+Controle de prazos e condições de pagamento
+Gestão de contatos e representantes
+
+1.3 Gestão de Produtos
+
+Cadastro com múltiplas variações (tamanho, cor, modelo)
+Código de barras (EAN-13, Code128) e SKU interno
+Categorização hierárquica (departamento → categoria → subcategoria)
+Preços diferenciados (varejo, atacado, promoção)
+Margem de lucro e markup
+Fotos e descrições detalhadas
+Produtos compostos/kits
+Controle de validade e lotes
+
+1.4 Controle de Estoque
+
+Movimentações: entradas, saídas, transferências, ajustes
+Estoque mínimo, máximo e ponto de pedido com alertas
+Inventário e contagem física
+Custo médio, PEPS e UEPS
+Histórico completo de movimentações
+Controle por localização física (prateleiras, depósitos)
+Gestão de múltiplos estoques/filiais
+Rastreabilidade de lotes e séries
+
+1.5 Contas a Pagar
+
+Cadastro de despesas e compromissos
+Categorização por tipo (fornecedores, aluguel, impostos, etc.)
+Controle de vencimentos e parcelas
+Baixa manual e automática
+Juros e multas por atraso
+Conciliação bancária
+Relatórios: vencidas, a vencer, pagas, fluxo de caixa
+
+1.6 Contas a Receber
+
+Cadastro de receitas e vendas a prazo
+Parcelamento e formas de recebimento
+Controle de inadimplência
+Envio de lembretes e cobranças
+Baixa automática por vendas
+Negociação de dívidas
+Relatórios de recebimentos
+
+
+2. MÓDULO DE VENDAS COMPLETO
+2.1 Frente de Caixa (PDV)
+
+Interface intuitiva e rápida para vendas
+Leitura de código de barras
+Busca de produtos (nome, código, categoria)
+Aplicação de descontos (valor ou percentual)
+Múltiplas formas de pagamento (dinheiro, cartão, PIX, crediário)
+Parcelamento flexível
+Identificação de cliente (CPF/CNPJ)
+Cálculo automático de troco
+Cancelamento de itens e vendas (com permissão)
+
+2.2 Processamento de Vendas
+
+Baixa automática de estoque em tempo real
+Atualização de contas a receber
+Geração de número de venda sequencial
+Registro de vendedor/atendente
+Observações e notas da venda
+
+2.3 Impressão de Comprovantes
+
+Comprovante não-fiscal (cupom)
+Formatação padronizada (cabeçalho, itens, totais, rodapé)
+Informações: empresa, data/hora, itens, valores, formas de pagamento
+Mensagens personalizadas
+QR Code para validação
+Opção de envio por email/WhatsApp
+
+2.4 Gestão de Vendas
+
+Consulta de vendas realizadas
+Cancelamento e devolução
+Troca de produtos
+Reimpressão de comprovantes
+Histórico completo por cliente/vendedor/período
+
+
+3. CONTROLE DE CAIXA
+3.1 Operação de Caixa
+
+Abertura de caixa (saldo inicial, conferência)
+Registro de entradas (vendas, recebimentos diversos)
+Registro de saídas (sangrias, pagamentos, despesas)
+Controle de múltiplas formas de pagamento
+Reforço de caixa
+Fechamento de caixa (contagem, conferência, divergências)
+
+3.2 Conciliação e Conferência
+
+Comparativo: esperado vs. real
+Identificação de diferenças
+Justificativas de divergências
+Controle de sangrias e suprimentos
+
+3.3 Relatórios de Caixa
+
+Movimento do dia (abertura, entradas, saídas, fechamento)
+Histórico de caixas (por período, operador)
+Comparativo entre caixas/filiais
+Análise de formas de pagamento
+Identificação de quebras e divergências
+
+
+4. RELATÓRIOS GERENCIAIS
+4.1 Relatórios de Vendas
+
+Vendas por período (dia, semana, mês, ano)
+Vendas por produto, categoria, marca
+Vendas por vendedor
+Vendas por forma de pagamento
+Produtos mais/menos vendidos
+Ticket médio
+Análise de descontos concedidos
+Comparativo entre períodos
+
+4.2 Relatórios Financeiros
+
+Fluxo de caixa projetado
+DRE (Demonstração de Resultados)
+Análise de lucratividade
+Contas pagas vs. a pagar
+Contas recebidas vs. a receber
+Inadimplência
+Despesas por categoria
+
+4.3 Relatórios de Estoque
+
+Posição atual de estoque
+Produtos com estoque mínimo
+Produtos parados/sem movimentação
+Curva ABC de produtos
+Giro de estoque
+Inventário valorizado
+Necessidade de reposição
+
+4.4 Relatórios de Performance
+
+Indicadores (KPIs): faturamento, lucro, margem
+Ranking de vendedores
+Sazonalidade de vendas
+Análise de clientes (RFV - Recência, Frequência, Valor)
+Dashboard executivo
+
+
+ETAPA 2 - MÓDULO FISCAL
+5. EMISSÃO DE DOCUMENTOS FISCAIS
+5.1 NF-e (Nota Fiscal Eletrônica)
+
+Integração com SEFAZ estadual
+Cadastro de certificado digital A1
+Emissão de NF-e de venda/saída
+NF-e de devolução/entrada
+Carta de Correção Eletrônica (CC-e)
+Cancelamento de NF-e
+Inutilização de numeração
+Consulta de status na SEFAZ
+DANFE (impressão e envio por email)
+Gestão de séries e numeração
+Contingência offline (FS-DA)
+
+5.2 NFC-e (Nota Fiscal do Consumidor Eletrônica)
+
+Integração com SEFAZ para NFC-e
+Emissão vinculada ao PDV
+DANFE NFC-e simplificado
+QR Code para validação
+Envio por email/SMS
+Contingência offline
+Cancelamento dentro do prazo legal
+
+5.3 Configurações Fiscais
+
+Parametrização tributária (ICMS, PIS, COFINS, IPI)
+NCM e CEST
+CFOP adequado por operação
+CST e CSOSN (Simples Nacional)
+Alíquotas por UF
+Benefícios fiscais e substituição tributária
+Regimes tributários (Simples, Presumido, Real)
+
+
+6. SPED FISCAL
+6.1 Geração de Arquivos SPED
+
+EFD ICMS/IPI (Escrituração Fiscal Digital)
+Registros obrigatórios (0000, C100, C170, E110, etc.)
+Validação conforme Manual da EFD
+Exportação em formato .txt
+
+6.2 Gestão de Obrigações Acessórias
+
+Controle de prazos de entrega
+Validador PVA integrado
+Histórico de transmissões
+Recibos e protocolos
+
+6.3 Apuração de Impostos
+
+Cálculo automático de ICMS, PIS, COFINS
+Apuração mensal
+Créditos e débitos
+Relatórios de apuração para contabilidade
+
+
+REQUISITOS TÉCNICOS
+
+Sistema em container Docker
+
+Tecnologias Sugeridas
+Backend:
+
+Node.js com Express ou Python com FastAPI/Django
+Banco de dados: PostgreSQL ou MySQL
+API RESTful
+
+Frontend:
+
+React.js, Vue.js ou Angular
+Design responsivo (desktop e mobile)
+Interface moderna e intuitiva
+
+Integrações:
+
+API da SEFAZ (webservices SOAP/REST)
+Certificado digital A1
+Impressoras térmicas e fiscais
+Leitores de código de barras
+TEF (Transferência Eletrônica de Fundos)
+
+Arquitetura
+
+Modular e desacoplada
+Microserviços (opcional)
+Cache (Redis)
+Filas para processamento assíncrono
+Logs e auditoria completa
+Backup automático
+
+Segurança
+
+Autenticação e autorização (JWT, OAuth2)
+Níveis de permissão por usuário
+Criptografia de dados sensíveis
+Proteção contra SQL Injection e XSS
+Logs de auditoria (quem fez o quê e quando)
+
+Performance
+
+Otimização de consultas
+Indexação adequada no banco
+Paginação de resultados
+Carregamento lazy
+Cache de dados frequentes
+
+
+ENTREGÁVEIS
+Etapa 1
+
+Documentação técnica e de usuário
+Diagramas (ER, fluxo, arquitetura)
+Código-fonte comentado
+Scripts de banco de dados
+Manual de instalação
+Casos de teste
+
+Etapa 2
+
+Módulo fiscal integrado
+Documentação de integração SEFAZ
+Manual de configuração fiscal
+Scripts de homologação
+Testes em ambiente SEFAZ de homologação
+
+
+DIFERENCIAIS DESEJADOS
+
+Interface amigável e moderna
+Modo offline com sincronização
+App mobile para gestão remota
+Dashboard em tempo real
+Notificações push e email
+Multi-empresa/multi-filial
+Personalização de layouts de impressão
+Integração com e-commerce
+API aberta para integrações futuras
+Sistema de backup automático na nuvem
+
+
+Controle de Cadastro de Empresas (para controle de licencça de uso)
+O sistema será comercializado para n clientes
+o controle de licencça deverá ser controlado por CNPJ
+
+
+Desenvolvedor: implemente este sistema priorizando qualidade de código, usabilidade, performance e conformidade fiscal. Estruture o projeto de forma que a Etapa 2 seja uma evolução natural da Etapa 1.

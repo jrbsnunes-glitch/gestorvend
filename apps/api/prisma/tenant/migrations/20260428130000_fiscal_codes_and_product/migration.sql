@@ -1,0 +1,58 @@
+-- CreateTable
+CREATE TABLE "NcmCode" (
+    "id" TEXT NOT NULL,
+    "code" VARCHAR(10) NOT NULL,
+    "description" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "NcmCode_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CestCode" (
+    "id" TEXT NOT NULL,
+    "code" VARCHAR(10) NOT NULL,
+    "description" TEXT NOT NULL,
+    "ncmHint" VARCHAR(10),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CestCode_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TaxUnitCode" (
+    "id" TEXT NOT NULL,
+    "code" VARCHAR(10) NOT NULL,
+    "description" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "TaxUnitCode_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "NcmCode_code_key" ON "NcmCode"("code");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CestCode_code_key" ON "CestCode"("code");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "TaxUnitCode_code_key" ON "TaxUnitCode"("code");
+
+-- AlterTable
+ALTER TABLE "Product" ADD COLUMN     "exTipi" VARCHAR(10),
+ADD COLUMN     "fiscalOrigin" VARCHAR(2),
+ADD COLUMN     "taxUnit" VARCHAR(10);
+
+INSERT INTO "TaxUnitCode" ("id", "code", "description", "createdAt") VALUES
+  ('00000000-0000-4000-8000-000000000001', 'UN', 'Unidade', CURRENT_TIMESTAMP),
+  ('00000000-0000-4000-8000-000000000002', 'KG', 'Quilograma', CURRENT_TIMESTAMP),
+  ('00000000-0000-4000-8000-000000000003', 'G', 'Grama', CURRENT_TIMESTAMP),
+  ('00000000-0000-4000-8000-000000000004', 'L', 'Litro', CURRENT_TIMESTAMP),
+  ('00000000-0000-4000-8000-000000000005', 'M', 'Metro', CURRENT_TIMESTAMP),
+  ('00000000-0000-4000-8000-000000000006', 'M2', 'Metro quadrado', CURRENT_TIMESTAMP),
+  ('00000000-0000-4000-8000-000000000007', 'M3', 'Metro cúbico', CURRENT_TIMESTAMP),
+  ('00000000-0000-4000-8000-000000000008', 'PC', 'Peça', CURRENT_TIMESTAMP),
+  ('00000000-0000-4000-8000-000000000009', 'CX', 'Caixa', CURRENT_TIMESTAMP),
+  ('00000000-0000-4000-8000-00000000000a', 'PCT', 'Pacote', CURRENT_TIMESTAMP),
+  ('00000000-0000-4000-8000-00000000000b', 'TON', 'Tonelada', CURRENT_TIMESTAMP),
+  ('00000000-0000-4000-8000-00000000000c', 'PAR', 'Par', CURRENT_TIMESTAMP);

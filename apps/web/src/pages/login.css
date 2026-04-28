@@ -1,0 +1,72 @@
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: linear-gradient(145deg, #e0e7ff 0%, #eef1f6 45%, #dbeafe 100%);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-border);
+  padding: 2rem 1.85rem;
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.login-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1rem;
+}
+
+.login-brand h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--color-text);
+}
+
+.login-brand p {
+  margin: 0.15rem 0 0;
+  font-size: 0.88rem;
+  color: var(--color-text-muted);
+}
+
+.login-hint {
+  margin: 0 0 1.25rem;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.login-submit {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.65rem 1rem;
+}
+
+.login-card .field {
+  margin-bottom: 0.85rem;
+}
+
+.login-card .field:last-of-type {
+  margin-bottom: 0.25rem;
+}

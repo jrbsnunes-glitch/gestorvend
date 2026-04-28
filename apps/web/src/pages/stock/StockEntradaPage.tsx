@@ -1,0 +1,502 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { CrudToolbar } from '../../components/CrudToolbar';
+import { ModuleReportsModal } from '../../components/ModuleReportsModal';
+import { SupplierSearchCombo } from '../../components/ProductCatalogCombos';
+import { api } from '../../lib/api';
+
+type Line = {
+  variantId: string;
+  quantity: string;
+  unitCost: string;
+  ncm: string;
+  cfop: string;
+  description: string;
+};
+
+type GoodsReceiptRow = {
+  id: string;
+  mode: string;
+  createdAt: string;
+  documentNumber: string | null;
+  supplier: { legalName: string } | null;
+  items: Array<{
+    quantity: string;
+    variant: { sku: string; product: { name: string } };
+  }>;
+};
+
+function modeLabel(mode: string): string {
+  return mode === 'WITH_NFE_KEY' ? 'Com chave NF-e' : 'Sem chave';
+}
+
+export function StockEntradaPage() {
+  const qc = useQueryClient();
+  const [includeOpen, setIncludeOpen] = useState(false);
+  const [reportsOpen, setReportsOpen] = useState(false);
+  const [mode, setMode] = useState<'WITH_NFE_KEY' | 'WITHOUT_NFE'>('WITHOUT_NFE');
+  const [nfeKey, setNfeKey] = useState('');
+  const [supplierId, setSupplierId] = useState('');
+  const [supplierNameHint, setSupplierNameHint] = useState('');
+  const [locationId, setLocationId] = useState('');
+  const [documentNumber, setDocumentNumber] = useState('');
+  const [series, setSeries] = useState('');
+  const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [natureOperation, setNatureOperation] = useState('Compra para comercialização');
+  const [totalValue, setTotalValue] = useState('');
+  const [notes, setNotes] = useState('');
+  const [lines, setLines] = useState<Line[]>([
+    { variantId: '', quantity: '1', unitCost: '0', ncm: '', cfop: '1102', description: '' },
+  ]);
+  const [err, setErr] = useState<string | null>(null);
+
+  const receipts = useQuery({
+    queryKey: ['goods-receipts'],
+    queryFn: () => api<GoodsReceiptRow[]>('/goods-receipts'),
+  });
+
+  const locations = useQuery({
+    queryKey: ['stock-locations'],
+    queryFn: () => api<Array<{ id: string; code: string; name: string }>>('/stock-locations'),
+  });
+
+  const products = useQuery({
+    queryKey: ['products'],
+    queryFn: () =>
+      api<
+        Array<{
+          name: string;
+          ncm: string | null;
+          variants: Array<{ id: string; sku: string }>;
+        }>
+      >('/products'),
+  });
+
+  const variantOptions = useMemo(
+    () =>
+      products.data?.flatMap((p) =>
+        p.variants.map((v) => ({
+          id: v.id,
+          label: `${v.sku} — ${p.name}`,
+          ncm: p.ncm ?? '',
+        })),
+      ) ?? [],
+    [products.data],
+  );
+
+  const recentReceipts = useMemo(() => (receipts.data ?? []).slice(0, 50), [receipts.data]);
+
+  function resetEntradaForm() {
+    setMode('WITHOUT_NFE');
+    setNfeKey('');
+    setSupplierId('');
+    setSupplierNameHint('');
+    setLocationId('');
+    setDocumentNumber('');
+    setSeries('');
+    setIssueDate(new Date().toISOString().slice(0, 10));
+    setNatureOperation('Compra para comercialização');
+    setTotalValue('');
+    setNotes('');
+    setLines([{ variantId: '', quantity: '1', unitCost: '0', ncm: '', cfop: '1102', description: '' }]);
+    setErr(null);
+  }
+
+  const submit = useMutation({
+    mutationFn: () =>
+      api('/goods-receipts', {
+        method: 'POST',
+        json: {
+          mode,
+          nfeAccessKey: mode === 'WITH_NFE_KEY' ? nfeKey.replace(/\D/g, '') : null,
+          supplierId: supplierId || null,
+          locationId,
+          documentNumber: documentNumber || null,
+          series: series || null,
+          issueDate: issueDate ? new Date(issueDate).toISOString() : null,
+          natureOperation: natureOperation || null,
+          totalValue: totalValue ? parseFloat(totalValue.replace(',', '.')) : null,
+          notes: notes || null,
+          items: lines
+            .filter((l) => l.variantId)
+            .map((l) => ({
+              variantId: l.variantId,
+              quantity: parseFloat(l.quantity.replace(',', '.')) || 0,
+              unitCost: parseFloat(l.unitCost.replace(',', '.')) || 0,
+              ncm: l.ncm || null,
+              cfop: l.cfop || null,
+              description: l.description || null,
+            })),
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['stock-movements'] });
+      qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: ['reports', 'stock-position'] });
+      qc.invalidateQueries({ queryKey: ['goods-receipts'] });
+      qc.invalidateQueries({ queryKey: ['suppliers'] });
+      setErr(null);
+      setIncludeOpen(false);
+      resetEntradaForm();
+      alert('Entrada registrada com sucesso.');
+    },
+    onError: (e: Error) => setErr(e.message),
+  });
+
+  function setLine(i: number, p: Partial<Line>) {
+    setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...p } : l)));
+  }
+
+  function onPickVariant(i: number, id: string) {
+    const v = variantOptions.find((x) => x.id === id);
+    setLine(i, { variantId: id, ncm: v?.ncm ?? lines[i]?.ncm });
+  }
+
+  return (
+    <div>
+      <CrudToolbar
+        onInclude={() => {
+          resetEntradaForm();
+          setIncludeOpen(true);
+        }}
+        onPrint={() => window.print()}
+        onReports={() => setReportsOpen(true)}
+      />
+
+      <ModuleReportsModal
+        open={reportsOpen}
+        title="Entrada de produtos"
+        onClose={() => setReportsOpen(false)}
+      >
+        <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
+          <li>Lista de entradas por período (a implementar)</li>
+          <li>Conferência NF-e × estoque recebido</li>
+          <li>Exportação para contabilidade</li>
+        </ul>
+      </ModuleReportsModal>
+
+      <div className="card">
+        <h2 className="page-title" style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>
+          Últimas entradas de mercadorias
+        </h2>
+        <p className="page-desc" style={{ marginBottom: '1rem' }}>
+          Lançamentos via esta tela (recebimentos registrados). Use <strong>Incluir</strong> para nova entrada.
+        </p>
+        {receipts.isError && (
+          <div className="alert alert-error">{(receipts.error as Error).message}</div>
+        )}
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Modo</th>
+                <th>Documento</th>
+                <th>Fornecedor</th>
+                <th>Itens</th>
+                <th>Resumo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {receipts.isLoading && (
+                <tr>
+                  <td colSpan={6} className="empty">
+                    Carregando…
+                  </td>
+                </tr>
+              )}
+              {!receipts.isLoading && !recentReceipts.length && (
+                <tr>
+                  <td colSpan={6} className="empty">
+                    Nenhuma entrada registrada. Clique em Incluir para lançar.
+                  </td>
+                </tr>
+              )}
+              {recentReceipts.map((r) => (
+                <tr key={r.id}>
+                  <td style={{ whiteSpace: 'nowrap', fontSize: '0.85rem' }}>
+                    {new Date(r.createdAt).toLocaleString('pt-BR')}
+                  </td>
+                  <td>{modeLabel(r.mode)}</td>
+                  <td>{r.documentNumber ?? '—'}</td>
+                  <td>{r.supplier?.legalName ?? '—'}</td>
+                  <td>{r.items.length}</td>
+                  <td style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
+                    {r.items
+                      .slice(0, 2)
+                      .map((it) => `${it.variant.sku} (${it.quantity})`)
+                      .join(' · ')}
+                    {r.items.length > 2 ? '…' : ''}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {includeOpen && (
+        <div
+          className="modal-backdrop modal-backdrop--wide no-print"
+          role="presentation"
+          onClick={() => {
+            setIncludeOpen(false);
+            setErr(null);
+          }}
+        >
+          <div
+            className="modal modal--wide entrada-receipt-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="entrada-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="entrada-modal-title">Nova entrada de produtos</h2>
+            {err && <div className="alert alert-error">{err}</div>}
+
+            <div className="entrada-receipt-modal__scroll">
+              <p className="entrada-receipt-lead">
+                Lançamento espelhando NF-e (com ou sem chave). Informe o documento, o fornecedor quando houver, o local
+                de estoque e os itens recebidos — o mesmo padrão visual do cadastro de produtos. O{' '}
+                <strong>custo unitário</strong> de cada item atualiza o <strong>custo médio</strong> da variação no
+                cadastro (média ponderada pelo estoque); quando o custo médio mudar, o valor anterior fica no{' '}
+                <strong>histórico de preços</strong> do produto (origem “Entrada NF”).
+              </p>
+
+              <div className="modal-wide-split entrada-receipt-split">
+                <div className="entrada-receipt-col">
+                  <details className="submenu-details" open>
+                    <summary className="submenu-summary">Dados da entrada / NF-e (espelho)</summary>
+                    <div className="submenu-body">
+                      <div className="field">
+                        <label htmlFor="ent-mod">Tipo de entrada</label>
+                        <select
+                          id="ent-mod"
+                          value={mode}
+                          onChange={(e) => setMode(e.target.value as typeof mode)}
+                        >
+                          <option value="WITH_NFE_KEY">Entrada com chave de acesso da NF-e (44 dígitos)</option>
+                          <option value="WITHOUT_NFE">Entrada sem chave (documento não eletrônico / conferência)</option>
+                        </select>
+                      </div>
+                      {mode === 'WITH_NFE_KEY' && (
+                        <div className="field">
+                          <label htmlFor="ent-key">Chave de acesso</label>
+                          <input
+                            id="ent-key"
+                            value={nfeKey}
+                            onChange={(e) => setNfeKey(e.target.value.replace(/\D/g, '').slice(0, 44))}
+                            placeholder="44 dígitos"
+                            maxLength={44}
+                          />
+                        </div>
+                      )}
+                      <div className="form-row">
+                        <div className="field">
+                          <label htmlFor="ent-num">Número do documento</label>
+                          <input
+                            id="ent-num"
+                            value={documentNumber}
+                            onChange={(e) => setDocumentNumber(e.target.value)}
+                          />
+                        </div>
+                        <div className="field">
+                          <label htmlFor="ent-ser">Série</label>
+                          <input id="ent-ser" value={series} onChange={(e) => setSeries(e.target.value)} />
+                        </div>
+                        <div className="field">
+                          <label htmlFor="ent-dt">Data emissão</label>
+                          <input id="ent-dt" type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+                        </div>
+                      </div>
+                      <div className="field">
+                        <label htmlFor="ent-nat">Natureza da operação</label>
+                        <input id="ent-nat" value={natureOperation} onChange={(e) => setNatureOperation(e.target.value)} />
+                      </div>
+                    </div>
+                  </details>
+
+                  <details className="submenu-details" open>
+                    <summary className="submenu-summary">Destinatário (seu estabelecimento)</summary>
+                    <div className="submenu-body">
+                      <p className="muted" style={{ marginBottom: '0.75rem' }}>
+                        Dados do tenant/carimbo serão preenchidos automaticamente na emissão de NF-e (Etapa 2). Neste
+                        lançamento apenas o <strong>local de estoque</strong> recebe a mercadoria.
+                      </p>
+                      <div className="field">
+                        <label htmlFor="ent-loc">Local de recebimento *</label>
+                        <select id="ent-loc" value={locationId} onChange={(e) => setLocationId(e.target.value)} required>
+                          <option value="">— Selecione —</option>
+                          {locations.data?.map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {l.code} — {l.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+
+                <div className="entrada-receipt-col">
+                  <details className="submenu-details" open>
+                    <summary className="submenu-summary">Emitente (fornecedor)</summary>
+                    <div className="submenu-body">
+                      <div className="field">
+                        <span className="field-label-text">Pesquisar ou incluir fornecedor (opcional)</span>
+                        <SupplierSearchCombo
+                          id="ent-forn"
+                          value={supplierId}
+                          onChange={(id, picked) => {
+                            setSupplierId(id);
+                            if (picked) setSupplierNameHint(picked);
+                            if (!id) setSupplierNameHint('');
+                          }}
+                          hintName={supplierNameHint}
+                        />
+                      </div>
+                    </div>
+                  </details>
+                </div>
+              </div>
+
+              <details className="submenu-details entrada-receipt-section-full" open>
+                <summary className="submenu-summary">Produtos / serviços (itens)</summary>
+                <div className="submenu-body">
+                  <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                    Campos NCM e CFOP seguem a estrutura do leiaute NF-e (produto). CFOP padrão sugerido: 1102. O custo
+                    unitário informado aqui entra no cadastro do produto mediante recálculo do custo médio (e gera
+                    histórico se houver alteração).
+                  </p>
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Produto (SKU)</th>
+                          <th>Descrição</th>
+                          <th>NCM</th>
+                          <th>CFOP</th>
+                          <th>Qtd</th>
+                          <th>Custo unit.</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lines.map((l, i) => (
+                          <tr key={i}>
+                            <td>
+                              <select value={l.variantId} onChange={(e) => onPickVariant(i, e.target.value)}>
+                                <option value="">—</option>
+                                {variantOptions.map((v) => (
+                                  <option key={v.id} value={v.id}>
+                                    {v.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td>
+                              <input
+                                value={l.description}
+                                onChange={(e) => setLine(i, { description: e.target.value })}
+                                placeholder="Descrição no documento"
+                              />
+                            </td>
+                            <td>
+                              <input value={l.ncm} onChange={(e) => setLine(i, { ncm: e.target.value })} />
+                            </td>
+                            <td>
+                              <input value={l.cfop} onChange={(e) => setLine(i, { cfop: e.target.value })} />
+                            </td>
+                            <td>
+                              <input value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} />
+                            </td>
+                            <td>
+                              <input value={l.unitCost} onChange={(e) => setLine(i, { unitCost: e.target.value })} />
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                disabled={lines.length <= 1}
+                                onClick={() => setLines((p) => p.filter((_, j) => j !== i))}
+                              >
+                                ✕
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ marginTop: '0.5rem' }}
+                    onClick={() =>
+                      setLines((p) => [
+                        ...p,
+                        {
+                          variantId: '',
+                          quantity: '1',
+                          unitCost: '0',
+                          ncm: '',
+                          cfop: '1102',
+                          description: '',
+                        },
+                      ])
+                    }
+                  >
+                    + Item
+                  </button>
+                </div>
+              </details>
+
+              <details className="submenu-details entrada-receipt-section-full" open>
+                <summary className="submenu-summary">Totais / observações</summary>
+                <div className="submenu-body">
+                  <div className="form-row">
+                    <div className="field">
+                      <label htmlFor="ent-tot">Valor total informado no documento (opcional)</label>
+                      <input
+                        id="ent-tot"
+                        value={totalValue}
+                        onChange={(e) => setTotalValue(e.target.value)}
+                        type="number"
+                        step="0.01"
+                      />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="ent-notes">Informações complementares</label>
+                    <textarea id="ent-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setIncludeOpen(false);
+                  setErr(null);
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!locationId || !lines.some((x) => x.variantId) || submit.isPending}
+                onClick={() => submit.mutate()}
+              >
+                Confirmar recebimento / lançar estoque
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

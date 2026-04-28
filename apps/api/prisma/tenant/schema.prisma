@@ -1,0 +1,436 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../src/generated/tenant-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("TENANT_DATABASE_URL")
+}
+
+// --- Auth / RBAC ---
+
+model Role {
+  id    String @id @default(uuid())
+  name  String @unique
+  users User[] @relation("UserRoles")
+}
+
+model User {
+  id             String           @id @default(uuid())
+  email          String           @unique
+  passwordHash   String
+  name           String
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  roles          Role[]           @relation("UserRoles")
+  sales          Sale[]
+  stockMoves     StockMovement[]
+  cashSessions   CashRegisterSession[]
+  goodsReceipts  GoodsReceipt[]
+}
+
+// --- Cadastros ---
+
+model Customer {
+  id           String   @id @default(uuid())
+  document     String?
+  name         String
+  email        String?
+  phone        String?
+  creditLimit  Decimal  @default(0) @db.Decimal(14, 2)
+  street       String?
+  number       String?
+  complement   String?
+  district     String?
+  city         String?
+  state        String?
+  zip          String?
+  segment      String?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  sales        Sale[]
+  receivables  AccountReceivable[]
+}
+
+model Supplier {
+  id             String          @id @default(uuid())
+  document       String?
+  legalName      String
+  tradeName      String?
+  email          String?
+  phone          String?
+  street         String?
+  number         String?
+  complement     String?
+  district       String?
+  city           String?
+  state          String?
+  zip            String?
+  notes          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  payables       AccountPayable[]
+  goodsReceipts  GoodsReceipt[]
+}
+
+model Category {
+  id        String     @id @default(uuid())
+  name      String
+  parentId  String?
+  parent    Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryHierarchy")
+  products  Product[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+/// NCM (Nomenclatura Comum do Mercosul) — catálogo pesquisável no cadastro de produtos.
+model NcmCode {
+  id          String   @id @default(uuid())
+  code        String   @unique @db.VarChar(10)
+  description String?
+  createdAt   DateTime @default(now())
+}
+
+/// CEST (Código Especificador da Substituição Tributária) — catálogo pesquisável.
+model CestCode {
+  id          String   @id @default(uuid())
+  code        String   @unique @db.VarChar(10)
+  description String
+  /// Prefixo NCM opcional para filtro (ex.: os 4 primeiros dígitos)
+  ncmHint     String?  @db.VarChar(10)
+  createdAt   DateTime @default(now())
+}
+
+/// Unidade tributável / comercial (UN, KG, etc.) — expansível pelo usuário.
+model TaxUnitCode {
+  id          String   @id @default(uuid())
+  code        String   @unique @db.VarChar(10)
+  description String
+  createdAt   DateTime @default(now())
+}
+
+model Product {
+  id          String           @id @default(uuid())
+  name        String
+  description String?
+  categoryId  String?
+  category    Category?        @relation(fields: [categoryId], references: [id])
+  /// Gancho Etapa 2 — NF-e
+  ncm         String?
+  cest        String?
+  /// EX_TIPI (opcional) quando aplicável ao NCM
+  exTipi      String?          @db.VarChar(10)
+  /// Origem da mercadoria (ICMS) 0–8 conforme tabela de origem
+  fiscalOrigin String?         @db.VarChar(2)
+  /// Unidade tributável (ex.: UN, KG)
+  taxUnit     String?          @db.VarChar(10)
+  isActive    Boolean          @default(true)
+  variants    ProductVariant[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model ProductVariant {
+  id                 String             @id @default(uuid())
+  productId          String
+  product            Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku                String             @unique
+  barcode            String?
+  retailPrice        Decimal            @db.Decimal(14, 4)
+  wholesalePrice     Decimal?           @db.Decimal(14, 4)
+  promoPrice         Decimal?           @db.Decimal(14, 4)
+  costAverage        Decimal            @default(0) @db.Decimal(14, 4)
+  saleItems          SaleItem[]
+  stockBalances      StockBalance[]
+  movements          StockMovement[]
+  goodsReceiptItems  GoodsReceiptItem[]
+  priceHistory       ProductVariantPriceHistory[]
+}
+
+/// Histórico de alterações de preço de venda (varejo) e custo médio por variação.
+model ProductVariantPriceHistory {
+  id             String           @id @default(uuid())
+  variantId      String
+  variant        ProductVariant   @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  /// RETAIL = preço varejo, COST = custo médio
+  field          String           @db.VarChar(16)
+  previousValue  Decimal          @db.Decimal(14, 4)
+  newValue       Decimal          @db.Decimal(14, 4)
+  /// MANUAL = cadastro, GOODS_RECEIPT = recálculo na entrada de notas
+  source         String           @db.VarChar(24)
+  goodsReceiptId String?
+  goodsReceipt   GoodsReceipt?    @relation(fields: [goodsReceiptId], references: [id], onDelete: SetNull)
+  createdAt      DateTime         @default(now())
+
+  @@index([variantId, createdAt])
+}
+
+// --- Estoque ---
+
+model StockLocation {
+  id        String           @id @default(uuid())
+  code      String           @unique
+  name      String
+  isDefault Boolean          @default(false)
+  parentId  String?
+  parent    StockLocation?   @relation("LocationHierarchy", fields: [parentId], references: [id])
+  children  StockLocation[]  @relation("LocationHierarchy")
+  balances  StockBalance[]
+  movements StockMovement[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+model StockBalance {
+  variantId  String
+  locationId String
+  quantity   Decimal         @default(0) @db.Decimal(18, 4)
+  variant    ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  location   StockLocation   @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([variantId, locationId])
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  TRANSFER
+  ADJUST
+}
+
+/// Origem da movimentação — permite conciliar Entradas × Vendas × Saídas manuais no fechamento diário.
+enum StockMovementSource {
+  SALE
+  GOODS_RECEIPT
+  MANUAL_OUT
+  ADJUSTMENT
+  TRANSFER
+  OTHER
+}
+
+enum GoodsReceiptMode {
+  /// Entrada com chave de acesso da NF-e (44 dígitos) — espelho para futura integração SEFAZ
+  WITH_NFE_KEY
+  /// Recebimento avulso / documento não eletrônico / conferência física
+  WITHOUT_NFE
+}
+
+enum GoodsReceiptStatus {
+  DRAFT
+  POSTED
+}
+
+/// Cabeçalho de entrada de mercadorias (espelho simplificado do layout NF-e / SPED).
+model GoodsReceipt {
+  id               String             @id @default(uuid())
+  mode             GoodsReceiptMode
+  /// Chave de acesso NF-e (44 caracteres), obrigatória se mode = WITH_NFE_KEY
+  nfeAccessKey     String?            @db.VarChar(44)
+  supplierId       String?
+  supplier         Supplier?          @relation(fields: [supplierId], references: [id])
+  /// Número / série / data emissão conforme documento fiscal
+  documentNumber   String?
+  series           String?
+  issueDate        DateTime?
+  natureOperation  String?
+  totalValue       Decimal?           @db.Decimal(14, 2)
+  notes            String?
+  status           GoodsReceiptStatus @default(DRAFT)
+  postedAt         DateTime?
+  userId           String?
+  user             User?              @relation(fields: [userId], references: [id])
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  items            GoodsReceiptItem[]
+  movements        StockMovement[]
+  priceHistories   ProductVariantPriceHistory[]
+}
+
+model GoodsReceiptItem {
+  id          String         @id @default(uuid())
+  receiptId   String
+  receipt     GoodsReceipt   @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  variantId   String
+  variant     ProductVariant @relation(fields: [variantId], references: [id])
+  quantity    Decimal        @db.Decimal(18, 4)
+  unitCost    Decimal        @db.Decimal(14, 4)
+  /// Campos espelho NF-e (produto/serviço)
+  ncm         String?
+  cfop        String?
+  description String?
+}
+
+model StockMovement {
+  id               String               @id @default(uuid())
+  type             StockMovementType
+  source           StockMovementSource    @default(OTHER)
+  variantId        String
+  variant          ProductVariant       @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  locationId       String
+  location         StockLocation        @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  quantity         Decimal              @db.Decimal(18, 4)
+  unitCost         Decimal?             @db.Decimal(14, 4)
+  reference        String?
+  /// Motivo em saídas manuais (avaria, perda, consumo interno, etc.)
+  outboundReason   String?
+  userId           String?
+  user             User?                @relation(fields: [userId], references: [id])
+  goodsReceiptId   String?
+  goodsReceipt     GoodsReceipt?        @relation(fields: [goodsReceiptId], references: [id])
+  createdAt        DateTime             @default(now())
+}
+
+// --- Vendas / PDV ---
+
+enum SaleStatus {
+  DRAFT
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  PIX
+  CREDIT
+  OTHER
+}
+
+model Sale {
+  id           String         @id @default(uuid())
+  number       Int            @unique @default(autoincrement())
+  status       SaleStatus     @default(COMPLETED)
+  customerId   String?
+  customer     Customer?      @relation(fields: [customerId], references: [id])
+  userId       String?
+  user         User?          @relation(fields: [userId], references: [id])
+  subtotal     Decimal        @db.Decimal(14, 2)
+  discount     Decimal        @default(0) @db.Decimal(14, 2)
+  total        Decimal        @db.Decimal(14, 2)
+  notes        String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  items        SaleItem[]
+  payments     SalePayment[]
+  receivables  AccountReceivable[]
+}
+
+model SaleItem {
+  id          String         @id @default(uuid())
+  saleId      String
+  sale        Sale           @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  variantId   String
+  variant     ProductVariant @relation(fields: [variantId], references: [id])
+  quantity    Decimal        @db.Decimal(18, 4)
+  unitPrice   Decimal        @db.Decimal(14, 4)
+  discount    Decimal        @default(0) @db.Decimal(14, 2)
+  totalLine   Decimal        @db.Decimal(14, 2)
+}
+
+model SalePayment {
+  id        String        @id @default(uuid())
+  saleId    String
+  sale      Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  method    PaymentMethod
+  amount    Decimal       @db.Decimal(14, 2)
+  installments Int        @default(1)
+}
+
+// --- Caixa ---
+
+enum CashSessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum CashMovementType {
+  IN
+  OUT
+}
+
+model CashRegisterSession {
+  id             String          @id @default(uuid())
+  userId         String
+  user           User            @relation(fields: [userId], references: [id])
+  status         CashSessionStatus @default(OPEN)
+  openingBalance Decimal         @default(0) @db.Decimal(14, 2)
+  closingBalance Decimal?        @db.Decimal(14, 2)
+  openedAt       DateTime        @default(now())
+  closedAt       DateTime?
+  movements      CashMovement[]
+}
+
+model CashMovement {
+  id        String              @id @default(uuid())
+  sessionId String
+  session   CashRegisterSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type      CashMovementType
+  amount    Decimal               @db.Decimal(14, 2)
+  method    PaymentMethod?
+  reason    String?
+  createdAt DateTime              @default(now())
+}
+
+// --- Financeiro ---
+
+enum BillStatus {
+  OPEN
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model AccountPayable {
+  id          String     @id @default(uuid())
+  supplierId  String?
+  supplier    Supplier?  @relation(fields: [supplierId], references: [id])
+  description String
+  category    String?
+  amount      Decimal    @db.Decimal(14, 2)
+  dueDate     DateTime
+  paidAt      DateTime?
+  status      BillStatus @default(OPEN)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model AccountReceivable {
+  id          String     @id @default(uuid())
+  customerId  String?
+  customer    Customer?  @relation(fields: [customerId], references: [id])
+  saleId      String?
+  sale        Sale?      @relation(fields: [saleId], references: [id])
+  description String
+  amount      Decimal    @db.Decimal(14, 2)
+  dueDate     DateTime
+  receivedAt  DateTime?
+  status      BillStatus @default(OPEN)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+// --- Auditoria ---
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String
+  entity     String
+  entityId   String?
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+}
+
+// --- Etapa 2 (gancho) — desabilitado por padrão na aplicação ---
+
+model FiscalConfig {
+  id        String   @id @default(uuid())
+  regime    String?
+  notes     String?
+  updatedAt DateTime @updatedAt
+}
