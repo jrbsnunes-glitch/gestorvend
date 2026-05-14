@@ -2,9 +2,9 @@
  * Popula banco central (tenant demo) e banco do tenant (papéis, admin, local de estoque).
  * Uso: npm run seed -w @gestorvend/api  (ou npx ts-node -r tsconfig-paths/register scripts/seed.ts)
  */
-import * as bcrypt from 'bcrypt';
-import { LicenseStatus, PrismaClient as CentralClient } from '../src/generated/central-client';
+import { LicenseStatus, PrismaClient as CentralClient, TenantProvisioningStatus } from '../src/generated/central-client';
 import { PrismaClient as TenantClient } from '../src/generated/tenant-client';
+import { seedTenantMinimal } from '../src/provisioning/tenant-minimal-seed';
 
 async function main() {
   const centralUrl = process.env.CENTRAL_DATABASE_URL;
@@ -24,51 +24,26 @@ async function main() {
       companyName: 'Loja Demo GestorVend',
       licenseStatus: LicenseStatus.active,
       databaseName: 'gestorvend_tenant_dev',
+      provisioningStatus: TenantProvisioningStatus.READY,
+      provisionAdminEmail: 'admin@demo.local',
     },
     update: {
       licenseStatus: LicenseStatus.active,
       companyName: 'Loja Demo GestorVend',
+      provisioningStatus: TenantProvisioningStatus.READY,
+      provisionAdminEmail: 'admin@demo.local',
     },
   });
 
-  const roles = ['admin', 'manager', 'seller', 'finance'] as const;
-  for (const name of roles) {
-    await tenant.role.upsert({
-      where: { name },
-      create: { name },
-      update: {},
-    });
-  }
-
-  const adminRole = await tenant.role.findUniqueOrThrow({ where: { name: 'admin' } });
-  const hash = await bcrypt.hash('Admin123!', 10);
-  const user = await tenant.user.upsert({
+  await seedTenantMinimal(tenantUrl, {
+    adminEmail: 'admin@demo.local',
+    adminPassword: 'Admin123!',
+    adminDisplayName: 'Administrador',
+  });
+  const user = await tenant.user.findUniqueOrThrow({
     where: { email: 'admin@demo.local' },
-    create: {
-      email: 'admin@demo.local',
-      passwordHash: hash,
-      name: 'Administrador',
-      roles: { connect: { id: adminRole.id } },
-    },
-    update: {
-      passwordHash: hash,
-      roles: { set: [{ id: adminRole.id }] },
-    },
     include: { roles: true },
   });
-
-  await tenant.stockLocation.upsert({
-    where: { code: 'MATRIZ' },
-    create: { code: 'MATRIZ', name: 'Matriz', isDefault: true },
-    update: { isDefault: true },
-  });
-
-  const fc = await tenant.fiscalConfig.findFirst();
-  if (!fc) {
-    await tenant.fiscalConfig.create({
-      data: { regime: 'SIMPLES', notes: 'Placeholder Etapa 2' },
-    });
-  }
 
   // eslint-disable-next-line no-console
   console.log('Seed OK. Tenant slug: demo | login: admin@demo.local | senha: Admin123!');

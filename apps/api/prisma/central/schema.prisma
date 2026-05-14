@@ -15,17 +15,57 @@ enum LicenseStatus {
   expired
 }
 
+/// Plano contratado pelo cliente — define quais módulos/funcionalidades estão liberados.
+enum PlanCode {
+  /// GestorVend completo, sem o módulo de vendas via WhatsApp
+  STANDARD
+  /// GestorVend + integração GestorVendChat (vendas via WhatsApp)
+  WHATSAPP
+}
+
+/// Estado do provisionamento físico (PostgreSQL + migrações + seed mínimo).
+enum TenantProvisioningStatus {
+  PENDING
+  PROVISIONING
+  READY
+  FAILED
+}
+
 /// Catálogo global: um registro por cliente (CNPJ) licenciado.
 model Tenant {
-  id               String        @id @default(uuid())
-  slug             String        @unique
-  cnpj             String        @unique
-  companyName      String
-  licenseStatus    LicenseStatus @default(trial)
-  licenseExpiresAt DateTime?
+  id                     String        @id @default(uuid())
+  slug                   String        @unique
+  cnpj                   String        @unique
+  companyName            String
+  licenseStatus          LicenseStatus @default(trial)
+  /// Início de validade da licença (preenchido na criação/renovação).
+  licenseValidFrom       DateTime?
+  licenseExpiresAt       DateTime?
+  /// Última vez em que a licença foi validada (login do tenant atualiza isto).
+  licenseLastValidatedAt DateTime?
+  /// Plano contratado — controla acesso a módulos opcionais (ex.: WhatsApp).
+  planCode               PlanCode      @default(STANDARD)
   /// Nome do database PostgreSQL dedicado (ex.: gv_tenant_acme)
-  databaseName     String        @unique
-  schemaVersion    String        @default("0")
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  databaseName           String        @unique
+  schemaVersion          String        @default("0")
+  /// Criação do banco + migrate deploy + seed mínimo (fluxo assíncrono na API, sem fila dedicada no MVP).
+  provisioningStatus     TenantProvisioningStatus @default(PENDING)
+  provisioningError      String?
+  provisioningUpdatedAt  DateTime?
+  /// E-mail do primeiro admin informado na criação (retry de provisionamento reutiliza se o body vier vazio).
+  provisionAdminEmail    String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+}
+
+/// Usuário do portal de licenciamento (totalmente separado dos usuários do tenant).
+/// Apenas SuperAdmins podem criar, editar, revalidar e excluir licenças.
+model SuperAdmin {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }

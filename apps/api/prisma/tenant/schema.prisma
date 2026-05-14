@@ -8,6 +8,34 @@ datasource db {
   url      = env("TENANT_DATABASE_URL")
 }
 
+// --- Cadastro da empresa (singleton por tenant) ---
+//
+// Mantemos um único registro de empresa por banco (a empresa "dona" do tenant).
+// Os campos cobrem o que é necessário em cabeçalhos de notas, recibos,
+// impressões e relatórios. Os atributos fiscais (IE/IM) são opcionais para
+// não bloquear cadastros iniciais.
+model Company {
+  id          String   @id @default(uuid())
+  legalName   String
+  tradeName   String
+  cnpj        String   @unique
+  ie          String?
+  im          String?
+  email       String?
+  phone       String?
+  address     String?
+  city        String?
+  state       String?
+  zip         String?
+  logoUrl     String?
+  /// Após finalizar venda no PDV, dispara impressão (janela de impressão do navegador na estação do operador).
+  saleReceiptAutoPrint Boolean @default(false)
+  /// Texto livre (ex.: modelo da impressora, porta USB) — lembrete para TI; não vincula tecnicamente o driver.
+  saleReceiptPrinterHint String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 // --- Auth / RBAC ---
 
 model Role {
@@ -117,6 +145,10 @@ model Product {
   id          String           @id @default(uuid())
   name        String
   description String?
+  /// Código de barras "principal" do produto (sincronizado com a variante
+  /// default na UI). Mantemos também o `barcode` por variante para suportar
+  /// SKUs com EANs distintos.
+  defaultBarcode String?       @db.VarChar(32)
   categoryId  String?
   category    Category?        @relation(fields: [categoryId], references: [id])
   /// Gancho Etapa 2 — NF-e
@@ -144,6 +176,8 @@ model ProductVariant {
   wholesalePrice     Decimal?           @db.Decimal(14, 4)
   promoPrice         Decimal?           @db.Decimal(14, 4)
   costAverage        Decimal            @default(0) @db.Decimal(14, 4)
+  /// Estoque mínimo recomendado (ponto de reposição) — usado para alertas no PDV e relatórios.
+  minStock           Decimal            @default(0) @db.Decimal(18, 4)
   saleItems          SaleItem[]
   stockBalances      StockBalance[]
   movements          StockMovement[]
@@ -227,6 +261,8 @@ enum GoodsReceiptStatus {
 /// Cabeçalho de entrada de mercadorias (espelho simplificado do layout NF-e / SPED).
 model GoodsReceipt {
   id               String             @id @default(uuid())
+  /// Número de controle sequencial humano-legível.
+  controlNumber    Int                @unique @default(autoincrement())
   mode             GoodsReceiptMode
   /// Chave de acesso NF-e (44 caracteres), obrigatória se mode = WITH_NFE_KEY
   nfeAccessKey     String?            @db.VarChar(44)
@@ -248,6 +284,7 @@ model GoodsReceipt {
   items            GoodsReceiptItem[]
   movements        StockMovement[]
   priceHistories   ProductVariantPriceHistory[]
+  payables         AccountPayable[]
 }
 
 model GoodsReceiptItem {
@@ -266,6 +303,8 @@ model GoodsReceiptItem {
 
 model StockMovement {
   id               String               @id @default(uuid())
+  /// Número de controle sequencial para impressões/conferência.
+  controlNumber    Int                  @unique @default(autoincrement())
   type             StockMovementType
   source           StockMovementSource    @default(OTHER)
   variantId        String
@@ -300,23 +339,32 @@ enum PaymentMethod {
   OTHER
 }
 
+/// Origem da venda — permite separar PDV físico de pedidos vindos do GestorVendChat (WhatsApp).
+enum SaleSource {
+  PDV
+  WHATSAPP
+}
+
 model Sale {
-  id           String         @id @default(uuid())
-  number       Int            @unique @default(autoincrement())
-  status       SaleStatus     @default(COMPLETED)
-  customerId   String?
-  customer     Customer?      @relation(fields: [customerId], references: [id])
-  userId       String?
-  user         User?          @relation(fields: [userId], references: [id])
-  subtotal     Decimal        @db.Decimal(14, 2)
-  discount     Decimal        @default(0) @db.Decimal(14, 2)
-  total        Decimal        @db.Decimal(14, 2)
-  notes        String?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  items        SaleItem[]
-  payments     SalePayment[]
-  receivables  AccountReceivable[]
+  id            String         @id @default(uuid())
+  number        Int            @unique @default(autoincrement())
+  status        SaleStatus     @default(COMPLETED)
+  source        SaleSource     @default(PDV)
+  /// Identificador externo (ex.: Order.id do GestorVendChat) — útil para conciliar com o sistema de origem.
+  externalRef   String?        @db.VarChar(64)
+  customerId    String?
+  customer      Customer?      @relation(fields: [customerId], references: [id])
+  userId        String?
+  user          User?          @relation(fields: [userId], references: [id])
+  subtotal      Decimal        @db.Decimal(14, 2)
+  discount      Decimal        @default(0) @db.Decimal(14, 2)
+  total         Decimal        @db.Decimal(14, 2)
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  items         SaleItem[]
+  payments      SalePayment[]
+  receivables   AccountReceivable[]
 }
 
 model SaleItem {
@@ -354,11 +402,20 @@ enum CashMovementType {
 
 model CashRegisterSession {
   id             String          @id @default(uuid())
+  /// Número sequencial humano-legível ("controle") para identificação rápida
+  /// nos relatórios e na conferência diária. Incrementado automaticamente.
+  controlNumber  Int             @unique @default(autoincrement())
   userId         String
   user           User            @relation(fields: [userId], references: [id])
   status         CashSessionStatus @default(OPEN)
   openingBalance Decimal         @default(0) @db.Decimal(14, 2)
   closingBalance Decimal?        @db.Decimal(14, 2)
+  /// Valores apresentados pelo operador no fechamento, por forma de pagamento.
+  /// Estrutura: { "CASH": "1234.56", "CARD": "...", "PIX": "...", ... }.
+  /// Mantido como Json para flexibilidade caso novos métodos sejam adicionados.
+  closingByMethod Json?
+  /// Observações livres registradas pelo operador ao fechar o caixa.
+  closingNotes   String?
   openedAt       DateTime        @default(now())
   closedAt       DateTime?
   movements      CashMovement[]
@@ -384,18 +441,39 @@ enum BillStatus {
   CANCELLED
 }
 
+/// Periodicidade para contas fixas. NONE = título único.
+enum Recurrence {
+  NONE
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
 model AccountPayable {
-  id          String     @id @default(uuid())
-  supplierId  String?
-  supplier    Supplier?  @relation(fields: [supplierId], references: [id])
-  description String
-  category    String?
-  amount      Decimal    @db.Decimal(14, 2)
-  dueDate     DateTime
-  paidAt      DateTime?
-  status      BillStatus @default(OPEN)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id             String     @id @default(uuid())
+  supplierId     String?
+  supplier       Supplier?  @relation(fields: [supplierId], references: [id])
+  description    String
+  category       String?
+  amount         Decimal    @db.Decimal(14, 2)
+  dueDate        DateTime
+  paidAt         DateTime?
+  status         BillStatus @default(OPEN)
+  /// Vínculo opcional com a entrada (nota) que originou a conta.
+  goodsReceiptId String?
+  goodsReceipt   GoodsReceipt? @relation(fields: [goodsReceiptId], references: [id])
+  /// Quando o título nasce de uma série recorrente.
+  recurrence     Recurrence @default(NONE)
+  /// Número da parcela na série (1, 2, 3…).
+  recurrenceIndex Int?
+  /// Total de parcelas geradas na série.
+  recurrenceCount Int?
+  /// Aponta para o primeiro título da série (a "âncora" da recorrência).
+  parentRecurringId String?
+  parentRecurring   AccountPayable? @relation("PayableRecurringChildren", fields: [parentRecurringId], references: [id])
+  recurringChildren AccountPayable[] @relation("PayableRecurringChildren")
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 }
 
 model AccountReceivable {
@@ -409,6 +487,12 @@ model AccountReceivable {
   dueDate     DateTime
   receivedAt  DateTime?
   status      BillStatus @default(OPEN)
+  recurrence     Recurrence @default(NONE)
+  recurrenceIndex Int?
+  recurrenceCount Int?
+  parentRecurringId String?
+  parentRecurring   AccountReceivable? @relation("ReceivableRecurringChildren", fields: [parentRecurringId], references: [id])
+  recurringChildren AccountReceivable[] @relation("ReceivableRecurringChildren")
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 }

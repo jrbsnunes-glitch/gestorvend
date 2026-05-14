@@ -29,12 +29,15 @@ type Variant = {
   retailPrice: string;
   wholesalePrice: string | null;
   costAverage?: string;
+  /** Estoque mínimo (ponto de reposição). Usado para alertas no PDV. */
+  minStock?: string;
 };
 
 type Product = {
   id: string;
   name: string;
   description: string | null;
+  defaultBarcode: string | null;
   ncm: string | null;
   cest: string | null;
   exTipi: string | null;
@@ -91,6 +94,7 @@ export function ProductsPage() {
   const searchQ = useDeferredValue(searchInput.trim());
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [defaultBarcode, setDefaultBarcode] = useState('');
   const [ncm, setNcm] = useState('');
   const [cest, setCest] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -100,10 +104,12 @@ export function ProductsPage() {
   const [taxUnit, setTaxUnit] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [sku, setSku] = useState('');
-  const [barcode, setBarcode] = useState('');
   const [retailPrice, setRetailPrice] = useState('0');
   const [costPrice, setCostPrice] = useState('0');
-  const [variantPrices, setVariantPrices] = useState<Record<string, { retail: string; cost: string }>>({});
+  const [minStockInput, setMinStockInput] = useState('0');
+  const [variantPrices, setVariantPrices] = useState<
+    Record<string, { retail: string; cost: string; minStock: string }>
+  >({});
   const [err, setErr] = useState<string | null>(null);
 
   const list = useQuery({
@@ -142,6 +148,8 @@ export function ProductsPage() {
 
   function resetCreateForm() {
     setName('');
+    setDescription('');
+    setDefaultBarcode('');
     setNcm('');
     setCest('');
     setCategoryId('');
@@ -150,15 +158,16 @@ export function ProductsPage() {
     setFiscalOrigin('');
     setTaxUnit('');
     setSku('');
-    setBarcode('');
     setRetailPrice('0');
     setCostPrice('0');
+    setMinStockInput('0');
     setErr(null);
   }
 
   function loadEditFromProduct(p: Product) {
     setName(p.name);
     setDescription(p.description ?? '');
+    setDefaultBarcode(p.defaultBarcode ?? '');
     setNcm(p.ncm ?? '');
     setCest(p.cest ?? '');
     setCategoryId(p.category?.id ?? '');
@@ -167,9 +176,13 @@ export function ProductsPage() {
     setFiscalOrigin(p.fiscalOrigin ?? '');
     setTaxUnit(p.taxUnit ?? '');
     setIsActive(p.isActive);
-    const vp: Record<string, { retail: string; cost: string }> = {};
+    const vp: Record<string, { retail: string; cost: string; minStock: string }> = {};
     for (const v of p.variants) {
-      vp[v.id] = { retail: String(v.retailPrice), cost: String(v.costAverage ?? '0') };
+      vp[v.id] = {
+        retail: String(v.retailPrice),
+        cost: String(v.costAverage ?? '0'),
+        minStock: String(v.minStock ?? '0'),
+      };
     }
     setVariantPrices(vp);
     setErr(null);
@@ -181,6 +194,8 @@ export function ProductsPage() {
         method: 'POST',
         json: {
           name,
+          description: description || null,
+          defaultBarcode: defaultBarcode.trim() || null,
           ncm: ncm || null,
           cest: cest || null,
           exTipi: exTipi.trim() || null,
@@ -190,9 +205,11 @@ export function ProductsPage() {
           variants: [
             {
               sku: sku || `SKU-${Date.now()}`,
-              barcode: barcode || null,
+              // Primeira variante: mesmo EAN que o padrão do produto.
+              barcode: defaultBarcode.trim() || null,
               retailPrice: parseFloat(retailPrice.replace(',', '.')) || 0,
               costAverage: parseFloat(costPrice.replace(',', '.')) || 0,
+              minStock: parseFloat(minStockInput.replace(',', '.')) || 0,
             },
           ],
         },
@@ -212,6 +229,7 @@ export function ProductsPage() {
         json: {
           name,
           description: description || null,
+          defaultBarcode: defaultBarcode.trim() || null,
           ncm: ncm || null,
           cest: cest || null,
           exTipi: exTipi.trim() || null,
@@ -225,6 +243,7 @@ export function ProductsPage() {
               variantId: v.id,
               retailPrice: parseFloat((row?.retail ?? v.retailPrice).replace(',', '.')) || 0,
               costAverage: parseFloat((row?.cost ?? v.costAverage ?? '0').replace(',', '.')) || 0,
+              minStock: parseFloat((row?.minStock ?? v.minStock ?? '0').replace(',', '.')) || 0,
             };
           }),
         },
@@ -491,9 +510,21 @@ export function ProductsPage() {
               Primeira variação (SKU) pode ser ajustada depois pela API.
             </p>
             {err && <div className="alert alert-error">{err}</div>}
+            <div className="form-row">
+              <div className="field" style={{ flex: 1 }}>
+                <label htmlFor="p-name">Nome *</label>
+                <input id="p-name" value={name} onChange={(e) => setName(e.target.value)} required />
+              </div>
+            </div>
             <div className="field">
-              <label htmlFor="p-name">Nome *</label>
-              <input id="p-name" value={name} onChange={(e) => setName(e.target.value)} required />
+              <label htmlFor="p-desc-c">Descrição</label>
+              <textarea
+                id="p-desc-c"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={2}
+                placeholder="Descrição complementar (aparece em recibos e relatórios)"
+              />
             </div>
             <div className="modal-wide-split">
               <details className="submenu-details" open>
@@ -589,7 +620,13 @@ export function ProductsPage() {
               </div>
               <div className="field">
                 <label htmlFor="p-ean">Código de barras</label>
-                <input id="p-ean" value={barcode} onChange={(e) => setBarcode(e.target.value)} />
+                <input
+                  id="p-ean"
+                  value={defaultBarcode}
+                  onChange={(e) => setDefaultBarcode(e.target.value.trim())}
+                  placeholder="EAN (ex.: 7891000000000)"
+                  inputMode="numeric"
+                />
               </div>
             </div>
             <div className="form-row">
@@ -642,6 +679,22 @@ export function ProductsPage() {
                 </div>
               </div>
             </div>
+            <div className="form-row">
+              <div className="field">
+                <label htmlFor="p-minstock">Estoque mínimo (ponto de reposição)</label>
+                <input
+                  id="p-minstock"
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={minStockInput}
+                  onChange={(e) => setMinStockInput(e.target.value)}
+                />
+                <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                  PDV avisa quando o saldo ficar abaixo deste valor.
+                </span>
+              </div>
+            </div>
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setCreateOpen(false)}>
                 Cancelar
@@ -665,11 +718,21 @@ export function ProductsPage() {
             <h2>Alterar produto</h2>
             {err && <div className="alert alert-error">{err}</div>}
             <div className="form-row">
-              <div className="field">
+              <div className="field" style={{ flex: 2 }}>
                 <label htmlFor="pe-name">Nome *</label>
                 <input id="pe-name" value={name} onChange={(e) => setName(e.target.value)} required />
               </div>
               <div className="field">
+                <label htmlFor="pe-bar">Código de barras</label>
+                <input
+                  id="pe-bar"
+                  value={defaultBarcode}
+                  onChange={(e) => setDefaultBarcode(e.target.value.trim())}
+                  placeholder="EAN do produto"
+                  inputMode="numeric"
+                />
+              </div>
+              <div className="field" style={{ flex: 2 }}>
                 <label htmlFor="pe-desc">Descrição</label>
                 <textarea id="pe-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
               </div>
@@ -777,6 +840,7 @@ export function ProductsPage() {
               const row = variantPrices[v.id] ?? {
                 retail: String(v.retailPrice),
                 cost: String(v.costAverage ?? '0'),
+                minStock: String(v.minStock ?? '0'),
               };
               return (
                 <div key={v.id} className="form-row">
@@ -817,6 +881,19 @@ export function ProductsPage() {
                       value={row.cost}
                       onChange={(e) =>
                         setVariantPrices((s) => ({ ...s, [v.id]: { ...row, cost: e.target.value } }))
+                      }
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`pe-m-${v.id}`}>Estoque mínimo</label>
+                    <input
+                      id={`pe-m-${v.id}`}
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={row.minStock}
+                      onChange={(e) =>
+                        setVariantPrices((s) => ({ ...s, [v.id]: { ...row, minStock: e.target.value } }))
                       }
                     />
                   </div>

@@ -208,6 +208,12 @@
   border: 1px solid #fecaca;
 }
 
+.alert-success {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid #a7f3d0;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -232,6 +238,88 @@
 /** Menos margem lateral — o modal ocupa mais a janela */
 .modal-backdrop--wide {
   padding: 0.65rem clamp(0.25rem, 1.25vw, 0.85rem);
+}
+
+/**
+ * Modal de impressão de caixa — seletor de modo (cartões).
+ *
+ * Mostra as opções "Caixa do dia / Período / Controle / Caixa do funcionário /
+ * Itens vendidos" como pílulas clicáveis. O cartão ativo recebe destaque com
+ * borda primária + leve preenchimento.
+ */
+.print-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+}
+
+.print-mode-card {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.15rem;
+  padding: 0.6rem 0.7rem;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.05s;
+  font: inherit;
+  color: inherit;
+}
+
+.print-mode-card:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-elevated);
+}
+
+.print-mode-card:active {
+  transform: translateY(1px);
+}
+
+.print-mode-card.is-active {
+  border-color: var(--color-primary, #1d4ed8);
+  background: rgba(29, 78, 216, 0.06);
+}
+
+.print-mode-card strong {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.print-mode-card.is-active strong {
+  color: var(--color-primary, #1d4ed8);
+}
+
+.print-mode-card span {
+  font-size: 0.74rem;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+/** Painel de cada modo (formulário específico) */
+.print-mode-panel {
+  border-top: 1px dashed var(--color-border);
+  padding-top: 0.85rem;
+}
+
+.print-mode-desc {
+  margin: 0 0 0.85rem;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.print-mode-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+  flex-wrap: wrap;
 }
 
 .modal {
@@ -317,6 +405,143 @@
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 1rem;
   margin-bottom: 1.5rem;
+}
+
+/* --- Dashboard (Início) --- */
+.dash-hero {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.dash-hero-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.dash-hero-today {
+  background: linear-gradient(135deg, #1e3a8a, #2563eb);
+  color: #f8fafc;
+  border-color: transparent;
+}
+.dash-hero-today .dash-hero-label,
+.dash-hero-today .dash-hero-foot {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.dash-hero-month {
+  background: linear-gradient(135deg, #047857, #059669);
+  color: #f8fafc;
+  border-color: transparent;
+}
+.dash-hero-month .dash-hero-label,
+.dash-hero-month .dash-hero-foot {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Estoque — painel (dashboard de movimentações) */
+.dash-hero-stock {
+  background: linear-gradient(135deg, #7c2d12, #c2410c);
+  color: #fff7ed;
+  border-color: transparent;
+}
+
+.dash-hero-stock .dash-hero-label,
+.dash-hero-stock .dash-hero-foot {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.dash-hero-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.dash-hero-value {
+  font-size: 1.85rem;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.dash-hero-foot {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.dash-block {
+  padding: 1rem 1.15rem;
+}
+
+.dash-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+  gap: 0.5rem;
+}
+
+.dash-block-head h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.dash-block-link {
+  font-size: 0.78rem;
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.dash-empty {
+  color: var(--color-text-muted);
+  font-size: 0.88rem;
+  margin: 0.25rem 0 0;
+}
+
+.dash-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dash-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px dashed var(--color-border);
+}
+
+.dash-list li:last-child {
+  border-bottom: 0;
+}
+
+.dash-list-meta {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin-top: 0.15rem;
+}
+
+.dash-list-amt {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .stat-card {

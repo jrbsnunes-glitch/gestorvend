@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { CrudToolbar, RowRecordActions } from '../../components/CrudToolbar';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
 import { api } from '../../lib/api';
 
 type Movement = {
   id: string;
+  controlNumber: number;
   type: string;
   source: string;
   quantity: string;
@@ -15,6 +17,12 @@ type Movement = {
   variant: { sku: string; product: { name: string } };
   location: { code: string; name: string };
 };
+
+type ControlRange = { min: number | null; max: number | null; count: number };
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 function sourceLabel(source: string): string {
   const map: Record<string, string> = {
@@ -29,6 +37,7 @@ function sourceLabel(source: string): string {
 
 export function StockMovimentosPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [viewMovement, setViewMovement] = useState<Movement | null>(null);
   const [reportsOpen, setReportsOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
@@ -41,6 +50,22 @@ export function StockMovimentosPage() {
   const [ref, setRef] = useState('');
   const [outboundReason, setOutboundReason] = useState('');
   const [movErr, setMovErr] = useState<string | null>(null);
+
+  // Modal de impressão
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printMode, setPrintMode] = useState<'period' | 'control'>('period');
+  const [printFrom, setPrintFrom] = useState(todayISO());
+  const [printTo, setPrintTo] = useState(todayISO());
+  const [printControlFrom, setPrintControlFrom] = useState('');
+  const [printControlTo, setPrintControlTo] = useState('');
+  const [printType, setPrintType] = useState<'' | 'IN' | 'OUT' | 'ADJUST'>('');
+  const [printVariantId, setPrintVariantId] = useState('');
+
+  const controlRange = useQuery({
+    queryKey: ['stock-mov-control-range'],
+    queryFn: () => api<ControlRange>('/stock-movements/control-range'),
+    enabled: printOpen,
+  });
 
   const locations = useQuery({
     queryKey: ['stock-locations'],
@@ -99,7 +124,7 @@ export function StockMovimentosPage() {
           setMovErr(null);
           setMovOpen(true);
         }}
-        onPrint={() => window.print()}
+        onPrint={() => setPrintOpen(true)}
         onReports={() => setReportsOpen(true)}
       />
 
@@ -129,6 +154,7 @@ export function StockMovimentosPage() {
         <table className="data-table">
           <thead>
             <tr>
+              <th style={{ width: 80 }}>Controle</th>
               <th>Data</th>
               <th>Tipo</th>
               <th>Origem</th>
@@ -142,20 +168,35 @@ export function StockMovimentosPage() {
           <tbody>
             {movements.isLoading && (
               <tr>
-                <td colSpan={8} className="empty">
+                <td colSpan={9} className="empty">
                   Carregando…
                 </td>
               </tr>
             )}
             {!movements.isLoading && !movements.data?.length && (
               <tr>
-                <td colSpan={8} className="empty">
+                <td colSpan={9} className="empty">
                   Sem movimentos.
                 </td>
               </tr>
             )}
             {movements.data?.map((m) => (
               <tr key={m.id}>
+                <td>
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      padding: '0.15rem 0.5rem',
+                      background: '#eef2ff',
+                      color: '#3730a3',
+                      borderRadius: 6,
+                      fontWeight: 700,
+                      fontSize: '0.8rem',
+                    }}
+                  >
+                    #{m.controlNumber}
+                  </span>
+                </td>
                 <td style={{ whiteSpace: 'nowrap', fontSize: '0.85rem' }}>
                   {new Date(m.createdAt).toLocaleString('pt-BR')}
                 </td>
@@ -317,6 +358,131 @@ export function StockMovimentosPage() {
                 onClick={() => createMov.mutate()}
               >
                 Registrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {printOpen && (
+        <div className="modal-backdrop no-print" role="presentation" onClick={() => setPrintOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ width: 'min(640px, 96vw)' }}>
+            <h2>Imprimir movimentações</h2>
+            <p style={{ margin: '0 0 0.75rem', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+              Selecione um recorte (período ou faixa de controle) e os filtros adicionais.
+            </p>
+            <div className="print-modes" style={{ marginBottom: '0.75rem' }}>
+              <button
+                type="button"
+                className={'print-mode-card ' + (printMode === 'period' ? 'is-active' : '')}
+                onClick={() => setPrintMode('period')}
+              >
+                <strong>Período</strong>
+                <span>Data inicial e final</span>
+              </button>
+              <button
+                type="button"
+                className={'print-mode-card ' + (printMode === 'control' ? 'is-active' : '')}
+                onClick={() => setPrintMode('control')}
+              >
+                <strong>Controle</strong>
+                <span>
+                  Faixa de #min a #máx{' '}
+                  {controlRange.data?.min != null && (
+                    <em>
+                      ({controlRange.data.min}–{controlRange.data.max})
+                    </em>
+                  )}
+                </span>
+              </button>
+            </div>
+
+            {printMode === 'period' && (
+              <div className="form-row">
+                <div className="field">
+                  <label htmlFor="pr-from">De</label>
+                  <input id="pr-from" type="date" value={printFrom} onChange={(e) => setPrintFrom(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label htmlFor="pr-to">Até</label>
+                  <input id="pr-to" type="date" value={printTo} onChange={(e) => setPrintTo(e.target.value)} />
+                </div>
+              </div>
+            )}
+
+            {printMode === 'control' && (
+              <div className="form-row">
+                <div className="field">
+                  <label htmlFor="pr-cf">Controle mínimo</label>
+                  <input
+                    id="pr-cf"
+                    type="number"
+                    min={1}
+                    value={printControlFrom}
+                    placeholder={controlRange.data?.min != null ? String(controlRange.data.min) : ''}
+                    onChange={(e) => setPrintControlFrom(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="pr-ct">Controle máximo</label>
+                  <input
+                    id="pr-ct"
+                    type="number"
+                    min={1}
+                    value={printControlTo}
+                    placeholder={controlRange.data?.max != null ? String(controlRange.data.max) : ''}
+                    onChange={(e) => setPrintControlTo(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="form-row">
+              <div className="field">
+                <label htmlFor="pr-type">Tipo (opcional)</label>
+                <select id="pr-type" value={printType} onChange={(e) => setPrintType(e.target.value as typeof printType)}>
+                  <option value="">Todos</option>
+                  <option value="IN">Entrada</option>
+                  <option value="OUT">Saída</option>
+                  <option value="ADJUST">Ajuste</option>
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="pr-var">Produto/SKU (opcional)</label>
+                <select id="pr-var" value={printVariantId} onChange={(e) => setPrintVariantId(e.target.value)}>
+                  <option value="">Todos</option>
+                  {variantOptions.data?.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setPrintOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  const qs = new URLSearchParams();
+                  if (printMode === 'control') {
+                    if (printControlFrom) qs.set('controlFrom', printControlFrom);
+                    if (printControlTo) qs.set('controlTo', printControlTo);
+                  } else {
+                    if (printFrom) qs.set('from', printFrom);
+                    if (printTo) qs.set('to', printTo);
+                  }
+                  if (printType) qs.set('type', printType);
+                  if (printVariantId) qs.set('variantId', printVariantId);
+                  setPrintOpen(false);
+                  navigate(`/estoque/movimentos/impressao?${qs.toString()}`);
+                }}
+              >
+                Imprimir
               </button>
             </div>
           </div>

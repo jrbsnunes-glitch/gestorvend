@@ -4,11 +4,13 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 import {
+  BillStatus,
   GoodsReceiptMode,
   GoodsReceiptStatus,
   Prisma,
@@ -29,6 +31,19 @@ type ReceiptItemDto = {
   ncm?: string | null;
   cfop?: string | null;
   description?: string | null;
+};
+
+/**
+ * Quando marcado, geramos N parcelas em A pagar vinculadas à entrada.
+ * - `installments` (1..N) - número de parcelas iguais
+ * - `intervalDays` (default 30) - dias entre parcelas
+ * - `firstDueDate` opcional - se omitido, usamos `hoje + intervalDays`
+ */
+type PayableOptionsDto = {
+  enabled: boolean;
+  installments?: number;
+  intervalDays?: number;
+  firstDueDate?: string | null;
 };
 
 type PrismaKnown = { code: string };
@@ -61,7 +76,8 @@ export class GoodsReceiptController {
     try {
       const db = await this.tenantPrisma.getClient(user.tenantSlug);
       return await db.goodsReceipt.findMany({
-        orderBy: { createdAt: 'desc' },
+        // Ordenação cronológica: entradas mais antigas no topo.
+        orderBy: { createdAt: 'asc' },
         take: 200,
         include: {
           supplier: true,
@@ -108,6 +124,8 @@ export class GoodsReceiptController {
       totalValue?: number | null;
       notes?: string | null;
       items: ReceiptItemDto[];
+      /** Quando enviado com `enabled: true`, gera contas a pagar vinculadas. */
+      payable?: PayableOptionsDto | null;
     },
   ) {
     if (!body.items?.length) {
@@ -215,13 +233,102 @@ export class GoodsReceiptController {
         });
       }
 
+      // Geração opcional de contas a pagar a partir da entrada.
+      if (body.payable?.enabled) {
+        const installments = Math.max(1, Math.min(60, Number(body.payable.installments ?? 1) | 0));
+        const intervalDays = Math.max(1, Math.min(180, Number(body.payable.intervalDays ?? 30) | 0));
+        const firstDue = body.payable.firstDueDate
+          ? new Date(body.payable.firstDueDate)
+          : new Date(Date.now() + intervalDays * 24 * 60 * 60 * 1000);
+
+        // Soma valores dos itens (preço unitário * quantidade) como fallback se totalValue não vier.
+        const total = body.totalValue != null
+          ? Number(body.totalValue)
+          : body.items.reduce((sum, it) => sum + Number(it.quantity) * Number(it.unitCost), 0);
+
+        const installmentAmount = total / installments;
+        const supplierName = body.supplierId
+          ? (await tx.supplier.findUnique({ where: { id: body.supplierId } }))?.legalName ?? ''
+          : '';
+        const docLabel = body.documentNumber
+          ? `NF ${body.documentNumber}`
+          : `Entrada #${receipt.controlNumber}`;
+
+        let parentId: string | null = null;
+        for (let i = 0; i < installments; i++) {
+          const due = new Date(firstDue.getTime());
+          due.setDate(due.getDate() + intervalDays * i);
+          const description =
+            installments > 1
+              ? `${docLabel} (${i + 1}/${installments})${supplierName ? ' - ' + supplierName : ''}`
+              : `${docLabel}${supplierName ? ' - ' + supplierName : ''}`;
+          const created: { id: string } = await tx.accountPayable.create({
+            data: {
+              supplierId: body.supplierId ?? null,
+              description,
+              amount: installmentAmount.toFixed(2),
+              dueDate: due,
+              status: BillStatus.OPEN,
+              goodsReceiptId: receipt.id,
+              recurrenceIndex: installments > 1 ? i + 1 : null,
+              recurrenceCount: installments > 1 ? installments : null,
+              parentRecurringId: parentId,
+            },
+          });
+          if (i === 0) parentId = created.id;
+        }
+      }
+
       return tx.goodsReceipt.findUniqueOrThrow({
         where: { id: receipt.id },
         include: {
           supplier: true,
           items: { include: { variant: { include: { product: true } } } },
+          payables: true,
         },
       });
     });
+  }
+
+  /**
+   * Edição parcial — apenas campos de cabeçalho (notas, fornecedor, documento,
+   * série, data de emissão, natureza). Os itens já lançados não são editáveis
+   * para preservar custo médio e estoque.
+   */
+  @Patch(':id')
+  @Roles('admin', 'manager')
+  async update(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      supplierId?: string | null;
+      documentNumber?: string | null;
+      series?: string | null;
+      issueDate?: string | null;
+      natureOperation?: string | null;
+      notes?: string | null;
+    },
+  ) {
+    try {
+      const db = await this.tenantPrisma.getClient(user.tenantSlug);
+      return await db.goodsReceipt.update({
+        where: { id },
+        data: {
+          supplierId: body.supplierId ?? null,
+          documentNumber: body.documentNumber ?? null,
+          series: body.series ?? null,
+          issueDate: body.issueDate ? new Date(body.issueDate) : null,
+          natureOperation: body.natureOperation ?? null,
+          notes: body.notes ?? null,
+        },
+        include: {
+          supplier: true,
+          items: { include: { variant: { include: { product: true } } } },
+        },
+      });
+    } catch (e) {
+      mapTenantDbError(e);
+    }
   }
 }

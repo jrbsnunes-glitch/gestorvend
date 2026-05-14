@@ -16,12 +16,22 @@ type Line = {
 
 type GoodsReceiptRow = {
   id: string;
+  controlNumber: number;
   mode: string;
   createdAt: string;
   documentNumber: string | null;
-  supplier: { legalName: string } | null;
+  series: string | null;
+  issueDate: string | null;
+  natureOperation: string | null;
+  notes: string | null;
+  totalValue: string | null;
+  supplier: { id: string; legalName: string } | null;
+  supplierId: string | null;
   items: Array<{
+    id: string;
     quantity: string;
+    unitCost: string;
+    description: string | null;
     variant: { sku: string; product: { name: string } };
   }>;
 };
@@ -34,6 +44,8 @@ export function StockEntradaPage() {
   const qc = useQueryClient();
   const [includeOpen, setIncludeOpen] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
+  const [viewing, setViewing] = useState<GoodsReceiptRow | null>(null);
+  const [editing, setEditing] = useState<GoodsReceiptRow | null>(null);
   const [mode, setMode] = useState<'WITH_NFE_KEY' | 'WITHOUT_NFE'>('WITHOUT_NFE');
   const [nfeKey, setNfeKey] = useState('');
   const [supplierId, setSupplierId] = useState('');
@@ -48,6 +60,13 @@ export function StockEntradaPage() {
   const [lines, setLines] = useState<Line[]>([
     { variantId: '', quantity: '1', unitCost: '0', ncm: '', cfop: '1102', description: '' },
   ]);
+  // Geração de contas a pagar a partir desta entrada.
+  const [genPayable, setGenPayable] = useState(false);
+  const [payInstallments, setPayInstallments] = useState(1);
+  const [payIntervalDays, setPayIntervalDays] = useState(30);
+  const [payFirstDue, setPayFirstDue] = useState(() =>
+    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+  );
   const [err, setErr] = useState<string | null>(null);
 
   const receipts = useQuery({
@@ -99,6 +118,10 @@ export function StockEntradaPage() {
     setTotalValue('');
     setNotes('');
     setLines([{ variantId: '', quantity: '1', unitCost: '0', ncm: '', cfop: '1102', description: '' }]);
+    setGenPayable(false);
+    setPayInstallments(1);
+    setPayIntervalDays(30);
+    setPayFirstDue(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
     setErr(null);
   }
 
@@ -127,6 +150,14 @@ export function StockEntradaPage() {
               cfop: l.cfop || null,
               description: l.description || null,
             })),
+          payable: genPayable
+            ? {
+                enabled: true,
+                installments: payInstallments,
+                intervalDays: payIntervalDays,
+                firstDueDate: payFirstDue ? new Date(payFirstDue).toISOString() : null,
+              }
+            : null,
         },
       }),
     onSuccess: () => {
@@ -134,6 +165,7 @@ export function StockEntradaPage() {
       qc.invalidateQueries({ queryKey: ['products'] });
       qc.invalidateQueries({ queryKey: ['reports', 'stock-position'] });
       qc.invalidateQueries({ queryKey: ['goods-receipts'] });
+      qc.invalidateQueries({ queryKey: ['payables'] });
       qc.invalidateQueries({ queryKey: ['suppliers'] });
       setErr(null);
       setIncludeOpen(false);
@@ -141,6 +173,33 @@ export function StockEntradaPage() {
       alert('Entrada registrada com sucesso.');
     },
     onError: (e: Error) => setErr(e.message),
+  });
+
+  const updateHeader = useMutation({
+    mutationFn: (payload: {
+      id: string;
+      supplierId: string | null;
+      documentNumber: string | null;
+      series: string | null;
+      issueDate: string | null;
+      natureOperation: string | null;
+      notes: string | null;
+    }) =>
+      api(`/goods-receipts/${payload.id}`, {
+        method: 'PATCH',
+        json: {
+          supplierId: payload.supplierId,
+          documentNumber: payload.documentNumber,
+          series: payload.series,
+          issueDate: payload.issueDate,
+          natureOperation: payload.natureOperation,
+          notes: payload.notes,
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['goods-receipts'] });
+      setEditing(null);
+    },
   });
 
   function setLine(i: number, p: Partial<Line>) {
@@ -189,31 +248,48 @@ export function StockEntradaPage() {
           <table className="data-table">
             <thead>
               <tr>
+                <th style={{ width: 80 }}>Controle</th>
                 <th>Data</th>
                 <th>Modo</th>
                 <th>Documento</th>
                 <th>Fornecedor</th>
                 <th>Itens</th>
                 <th>Resumo</th>
+                <th style={{ width: 180, textAlign: 'right' }}>Ações</th>
               </tr>
             </thead>
             <tbody>
               {receipts.isLoading && (
                 <tr>
-                  <td colSpan={6} className="empty">
+                  <td colSpan={8} className="empty">
                     Carregando…
                   </td>
                 </tr>
               )}
               {!receipts.isLoading && !recentReceipts.length && (
                 <tr>
-                  <td colSpan={6} className="empty">
+                  <td colSpan={8} className="empty">
                     Nenhuma entrada registrada. Clique em Incluir para lançar.
                   </td>
                 </tr>
               )}
               {recentReceipts.map((r) => (
                 <tr key={r.id}>
+                  <td>
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        padding: '0.15rem 0.5rem',
+                        background: '#eef2ff',
+                        color: '#3730a3',
+                        borderRadius: 6,
+                        fontWeight: 700,
+                        fontSize: '0.8rem',
+                      }}
+                    >
+                      #{r.controlNumber}
+                    </span>
+                  </td>
                   <td style={{ whiteSpace: 'nowrap', fontSize: '0.85rem' }}>
                     {new Date(r.createdAt).toLocaleString('pt-BR')}
                   </td>
@@ -228,12 +304,121 @@ export function StockEntradaPage() {
                       .join(' · ')}
                     {r.items.length > 2 ? '…' : ''}
                   </td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ fontSize: '0.8rem' }}
+                      onClick={() => setViewing(r)}
+                    >
+                      Visualizar
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ fontSize: '0.8rem', marginLeft: '0.25rem' }}
+                      onClick={() => setEditing(r)}
+                    >
+                      Editar
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
+
+      {viewing && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setViewing(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(820px, 96vw)' }}>
+            <h2>
+              Entrada #{viewing.controlNumber}
+              <span
+                style={{
+                  marginLeft: '0.5rem',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  color: 'var(--color-text-muted)',
+                }}
+              >
+                ({modeLabel(viewing.mode)})
+              </span>
+            </h2>
+            <dl style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem 1.25rem' }}>
+              <div>
+                <dt style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Data</dt>
+                <dd style={{ margin: 0 }}>{new Date(viewing.createdAt).toLocaleString('pt-BR')}</dd>
+              </div>
+              <div>
+                <dt style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Documento</dt>
+                <dd style={{ margin: 0 }}>
+                  {viewing.documentNumber ?? '—'}
+                  {viewing.series ? ` (série ${viewing.series})` : ''}
+                </dd>
+              </div>
+              <div>
+                <dt style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Fornecedor</dt>
+                <dd style={{ margin: 0 }}>{viewing.supplier?.legalName ?? '—'}</dd>
+              </div>
+              <div>
+                <dt style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Natureza</dt>
+                <dd style={{ margin: 0 }}>{viewing.natureOperation ?? '—'}</dd>
+              </div>
+              <div>
+                <dt style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Valor total</dt>
+                <dd style={{ margin: 0 }}>{viewing.totalValue ? `R$ ${viewing.totalValue}` : '—'}</dd>
+              </div>
+            </dl>
+            {viewing.notes && (
+              <p style={{ margin: '0.75rem 0 0', fontSize: '0.85rem' }}>
+                <strong>Observações:</strong> {viewing.notes}
+              </p>
+            )}
+            <h3 style={{ marginTop: '1rem', fontSize: '0.92rem' }}>Itens</h3>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Produto (SKU)</th>
+                    <th>Descrição</th>
+                    <th style={{ textAlign: 'right' }}>Qtd</th>
+                    <th style={{ textAlign: 'right' }}>Custo unit.</th>
+                    <th style={{ textAlign: 'right' }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {viewing.items.map((it) => (
+                    <tr key={it.id}>
+                      <td>{it.variant.sku} — {it.variant.product.name}</td>
+                      <td>{it.description ?? '—'}</td>
+                      <td style={{ textAlign: 'right' }}>{it.quantity}</td>
+                      <td style={{ textAlign: 'right' }}>R$ {it.unitCost}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        R$ {(Number(it.quantity) * Number(it.unitCost)).toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setViewing(null)}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editing && (
+        <EditReceiptModal
+          receipt={editing}
+          onCancel={() => setEditing(null)}
+          onSubmit={(values) => updateHeader.mutate({ id: editing.id, ...values })}
+          isPending={updateHeader.isPending}
+        />
+      )}
 
       {includeOpen && (
         <div
@@ -472,6 +657,75 @@ export function StockEntradaPage() {
                   </div>
                 </div>
               </details>
+
+              <details className="submenu-details entrada-receipt-section-full" open>
+                <summary className="submenu-summary">Contas a pagar (opcional)</summary>
+                <div className="submenu-body">
+                  <label
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.92rem',
+                      marginBottom: '0.75rem',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={genPayable}
+                      onChange={(e) => setGenPayable(e.target.checked)}
+                    />
+                    <span>
+                      <strong>Gerar contas a pagar a partir desta entrada</strong>
+                    </span>
+                  </label>
+                  {genPayable && (
+                    <>
+                      <p style={{ margin: '0 0 0.75rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                        Será criado um título em <strong>Financeiro → A pagar</strong> vinculado ao fornecedor e à
+                        entrada, com o valor total dividido em parcelas iguais.
+                      </p>
+                      <div className="form-row">
+                        <div className="field">
+                          <label htmlFor="ent-pay-n">Parcelas</label>
+                          <input
+                            id="ent-pay-n"
+                            type="number"
+                            min={1}
+                            max={60}
+                            value={payInstallments}
+                            onChange={(e) =>
+                              setPayInstallments(Math.max(1, Math.min(60, Number(e.target.value) || 1)))
+                            }
+                          />
+                        </div>
+                        <div className="field">
+                          <label htmlFor="ent-pay-int">Intervalo (dias)</label>
+                          <input
+                            id="ent-pay-int"
+                            type="number"
+                            min={1}
+                            max={180}
+                            value={payIntervalDays}
+                            onChange={(e) =>
+                              setPayIntervalDays(Math.max(1, Math.min(180, Number(e.target.value) || 30)))
+                            }
+                          />
+                        </div>
+                        <div className="field">
+                          <label htmlFor="ent-pay-due">Primeiro vencimento</label>
+                          <input
+                            id="ent-pay-due"
+                            type="date"
+                            value={payFirstDue}
+                            onChange={(e) => setPayFirstDue(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </details>
             </div>
 
             <div className="modal-actions">
@@ -497,6 +751,106 @@ export function StockEntradaPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+type EditValues = {
+  supplierId: string | null;
+  documentNumber: string | null;
+  series: string | null;
+  issueDate: string | null;
+  natureOperation: string | null;
+  notes: string | null;
+};
+
+function EditReceiptModal({
+  receipt,
+  onCancel,
+  onSubmit,
+  isPending,
+}: {
+  receipt: GoodsReceiptRow;
+  onCancel: () => void;
+  onSubmit: (values: EditValues) => void;
+  isPending: boolean;
+}) {
+  const [supplierId, setSupplierId] = useState(receipt.supplierId ?? '');
+  const [supplierHint, setSupplierHint] = useState(receipt.supplier?.legalName ?? '');
+  const [documentNumber, setDocumentNumber] = useState(receipt.documentNumber ?? '');
+  const [series, setSeries] = useState(receipt.series ?? '');
+  const [issueDate, setIssueDate] = useState(
+    receipt.issueDate ? new Date(receipt.issueDate).toISOString().slice(0, 10) : '',
+  );
+  const [natureOperation, setNatureOperation] = useState(receipt.natureOperation ?? '');
+  const [notes, setNotes] = useState(receipt.notes ?? '');
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onCancel}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(620px, 96vw)' }}>
+        <h2>Editar entrada #{receipt.controlNumber}</h2>
+        <p style={{ margin: '0 0 0.75rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+          Você pode ajustar apenas os campos do <strong>cabeçalho</strong>. Itens já lançados não podem ser
+          alterados para preservar estoque e custo médio.
+        </p>
+        <div className="field">
+          <span className="field-label-text">Fornecedor</span>
+          <SupplierSearchCombo
+            id={`ent-edit-forn-${receipt.id}`}
+            value={supplierId}
+            hintName={supplierHint}
+            onChange={(id, picked) => {
+              setSupplierId(id);
+              if (picked) setSupplierHint(picked);
+              if (!id) setSupplierHint('');
+            }}
+          />
+        </div>
+        <div className="form-row">
+          <div className="field">
+            <label htmlFor="edit-doc">Documento</label>
+            <input id="edit-doc" value={documentNumber} onChange={(e) => setDocumentNumber(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="edit-ser">Série</label>
+            <input id="edit-ser" value={series} onChange={(e) => setSeries(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="edit-dt">Emissão</label>
+            <input id="edit-dt" type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="edit-nat">Natureza da operação</label>
+          <input id="edit-nat" value={natureOperation} onChange={(e) => setNatureOperation(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="edit-notes">Observações</label>
+          <textarea id="edit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-secondary" onClick={onCancel}>
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={isPending}
+            onClick={() =>
+              onSubmit({
+                supplierId: supplierId || null,
+                documentNumber: documentNumber || null,
+                series: series || null,
+                issueDate: issueDate ? new Date(issueDate).toISOString() : null,
+                natureOperation: natureOperation || null,
+                notes: notes || null,
+              })
+            }
+          >
+            Salvar alterações
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   BillStatus,
   PaymentMethod,
   Prisma,
+  SaleSource,
   SaleStatus,
   StockMovementSource,
   StockMovementType,
@@ -15,6 +16,10 @@ export type CreateSaleInput = {
   customerId?: string | null;
   notes?: string | null;
   discount?: string | number;
+  /** Origem da venda (PDV físico, WhatsApp via GestorVendChat, etc.). */
+  source?: SaleSource;
+  /** Referência externa (ex.: ID do pedido no GestorVendChat) para conciliação. */
+  externalRef?: string | null;
   items: Array<{
     variantId: string;
     quantity: string | number;
@@ -27,6 +32,73 @@ export type CreateSaleInput = {
     installments?: number;
   }>;
 };
+
+const MONEY_EPS = 0.02;
+
+function roundMoney2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Garante que a soma dos pagamentos gravada = total da venda.
+ * Troco em dinheiro: abate o excedente dos lançamentos CASH da direita para a esquerda.
+ */
+function normalizePaymentsToSaleTotal(
+  payments: CreateSaleInput['payments'],
+  total: number,
+): Array<{ method: PaymentMethod; amount: number; installments: number }> {
+  const normalized = payments.map((p) => ({
+    method: p.method,
+    amount: roundMoney2(Number(p.amount)),
+    installments: Math.max(1, p.installments ?? 1),
+  }));
+
+  let paySum = normalized.reduce((s, p) => s + p.amount, 0);
+  if (paySum + MONEY_EPS < total) {
+    throw new BadRequestException('Pagamento insuficiente para o total da venda');
+  }
+
+  let excess = roundMoney2(paySum - total);
+  if (excess > MONEY_EPS) {
+    let toTrim = excess;
+    for (let i = normalized.length - 1; i >= 0 && toTrim > MONEY_EPS; i--) {
+      if (normalized[i].method !== PaymentMethod.CASH) continue;
+      const cur = normalized[i].amount;
+      if (cur <= MONEY_EPS) continue;
+      const cut = roundMoney2(Math.min(cur, toTrim));
+      normalized[i].amount = roundMoney2(cur - cut);
+      toTrim = roundMoney2(toTrim - cut);
+    }
+    if (toTrim > MONEY_EPS) {
+      throw new BadRequestException(
+        'Valor pago a maior: o troco só pode ser abatido em dinheiro. Ajuste cartão, Pix, crediário ou outro.',
+      );
+    }
+  }
+
+  paySum = normalized.reduce((s, p) => s + p.amount, 0);
+  const drift = roundMoney2(total - paySum);
+  if (Math.abs(drift) > MONEY_EPS) {
+    for (let i = normalized.length - 1; i >= 0; i--) {
+      if (normalized[i].method !== PaymentMethod.CASH) continue;
+      normalized[i].amount = roundMoney2(normalized[i].amount + drift);
+      break;
+    }
+    paySum = normalized.reduce((s, p) => s + p.amount, 0);
+  }
+
+  if (Math.abs(paySum - total) > MONEY_EPS) {
+    throw new BadRequestException('Soma dos pagamentos difere do total da venda');
+  }
+
+  for (const p of normalized) {
+    if (p.amount < -MONEY_EPS) {
+      throw new BadRequestException('Valor de pagamento inválido após troco');
+    }
+  }
+
+  return normalized;
+}
 
 @Injectable()
 export class SalesService {
@@ -47,10 +119,10 @@ export class SalesService {
       subtotal += q * p - d;
     }
     const total = Math.max(0, subtotal - discount);
-    const paySum = input.payments.reduce((s, p) => s + Number(p.amount), 0);
-    if (Math.abs(paySum - total) > 0.02) {
-      throw new BadRequestException('Soma dos pagamentos difere do total da venda');
+    if (!input.payments?.length) {
+      throw new BadRequestException('Informe ao menos uma forma de pagamento');
     }
+    const paymentsNorm = normalizePaymentsToSaleTotal(input.payments, total);
 
     const defaultLoc = await db.stockLocation.findFirst({
       where: { isDefault: true },
@@ -64,6 +136,8 @@ export class SalesService {
       const sale = await tx.sale.create({
         data: {
           status: SaleStatus.COMPLETED,
+          source: input.source ?? SaleSource.PDV,
+          externalRef: input.externalRef ?? null,
           customerId: input.customerId ?? null,
           userId: input.userId,
           subtotal: String(subtotal.toFixed(2)),
@@ -86,10 +160,10 @@ export class SalesService {
             }),
           },
           payments: {
-            create: input.payments.map((p) => ({
+            create: paymentsNorm.map((p) => ({
               method: p.method,
-              amount: String(Number(p.amount).toFixed(2)),
-              installments: p.installments ?? 1,
+              amount: String(p.amount.toFixed(2)),
+              installments: p.installments,
             })),
           },
         },
@@ -132,9 +206,9 @@ export class SalesService {
         });
       }
 
-      const credit = input.payments.filter((p) => p.method === PaymentMethod.CREDIT);
+      const credit = paymentsNorm.filter((p) => p.method === PaymentMethod.CREDIT);
       if (credit.length) {
-        const creditTotal = credit.reduce((s, p) => s + Number(p.amount), 0);
+        const creditTotal = credit.reduce((s, p) => s + p.amount, 0);
         const installments = Math.max(1, credit[0].installments ?? 1);
         const parcel = creditTotal / installments;
         const due = new Date();
@@ -158,6 +232,23 @@ export class SalesService {
     });
   }
 
+  async findById(tenantSlug: string, saleId: string) {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const sale = await db.sale.findUnique({
+      where: { id: saleId },
+      include: {
+        customer: true,
+        user: { select: { id: true, name: true, email: true } },
+        items: { include: { variant: { include: { product: true } } } },
+        payments: true,
+      },
+    });
+    if (!sale) {
+      throw new NotFoundException('Venda não encontrada');
+    }
+    return sale;
+  }
+
   async list(tenantSlug: string, from?: string, to?: string) {
     const db = await this.tenantPrisma.getClient(tenantSlug);
     const where: Prisma.SaleWhereInput = {};
@@ -166,10 +257,12 @@ export class SalesService {
       if (from) where.createdAt.gte = new Date(from);
       if (to) where.createdAt.lte = new Date(to);
     }
+    const hasDateFilter = Boolean(from || to);
     return db.sale.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      take: 100,
+      // Sem filtro: últimas 100 (lista geral). Com período: até 5000 (ex.: PDV "vendas hoje").
+      take: hasDateFilter ? 5000 : 100,
       include: {
         customer: true,
         items: { include: { variant: { include: { product: true } } } },

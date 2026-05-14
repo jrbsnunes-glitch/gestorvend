@@ -1,7 +1,21 @@
 import { Injectable, NotFoundException, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaClient } from '../generated/tenant-client';
+import { createRequire } from 'module';
+import { join } from 'path';
+import type { PrismaClient } from '../generated/tenant-client';
 import { CentralPrismaService } from './central-prisma.service';
+
+const requireTenant = createRequire(__filename);
+
+function instantiateTenantPrisma(url: string): PrismaClient {
+  const tenantClientPath = join(__dirname, '..', 'generated', 'tenant-client', 'index.js');
+  const { PrismaClient: TenantPrismaClient } = requireTenant(tenantClientPath) as {
+    PrismaClient: new (options: { datasources: { db: { url: string } } }) => PrismaClient;
+  };
+  return new TenantPrismaClient({
+    datasources: { db: { url } },
+  });
+}
 
 /** Pool de PrismaClient por slug de tenant (um database PostgreSQL por cliente). */
 @Injectable()
@@ -23,9 +37,7 @@ export class TenantPrismaService implements OnModuleDestroy {
     }
 
     const url = this.buildDatabaseUrl(tenant.databaseName);
-    const client = new PrismaClient({
-      datasources: { db: { url } },
-    });
+    const client = instantiateTenantPrisma(url);
     await client.$connect();
     this.clients.set(tenantSlug, client);
     return client;
@@ -38,6 +50,13 @@ export class TenantPrismaService implements OnModuleDestroy {
       throw new Error('TENANT_DATABASE_URL não configurada');
     }
     return template.replace(/\/[^/]+$/, `/${databaseName}`);
+  }
+
+  /** Remove cliente em cache (ex.: após criar o database do tenant ou retry). */
+  invalidateClient(tenantSlug: string): void {
+    const c = this.clients.get(tenantSlug);
+    this.clients.delete(tenantSlug);
+    void c?.$disconnect().catch(() => undefined);
   }
 
   async onModuleDestroy(): Promise<void> {

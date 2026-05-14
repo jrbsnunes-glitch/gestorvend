@@ -57,4 +57,44 @@ export class AuthService {
       user: { id: user.id, email: user.email, name: user.name, roles },
     };
   }
+
+  /** Emite novo access token a partir do refresh JWT (sessão longa, sem relogar). */
+  async refreshAccess(refreshToken: string) {
+    const secret = this.config.get<string>('JWT_REFRESH_SECRET');
+    if (!secret) {
+      throw new UnauthorizedException('Servidor sem JWT_REFRESH_SECRET');
+    }
+
+    let decoded: { sub?: string; tenantSlug?: string; type?: string };
+    try {
+      decoded = this.jwt.verify(refreshToken, { secret }) as typeof decoded;
+    } catch {
+      throw new UnauthorizedException('Sessão expirada. Faça login novamente.');
+    }
+
+    if (decoded.type !== 'refresh' || !decoded.sub || !decoded.tenantSlug) {
+      throw new UnauthorizedException('Sessão inválida.');
+    }
+
+    await this.tenantService.assertLicenseActive(decoded.tenantSlug);
+
+    const prisma = await this.tenantPrisma.getClient(decoded.tenantSlug);
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.sub },
+      include: { roles: true },
+    });
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Usuário inválido.');
+    }
+
+    const roles = user.roles.map((r) => r.name);
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      tenantSlug: decoded.tenantSlug,
+      roles,
+    };
+
+    return { accessToken: this.jwt.sign(payload) };
+  }
 }

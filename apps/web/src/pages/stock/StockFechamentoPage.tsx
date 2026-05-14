@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { CrudToolbar } from '../../components/CrudToolbar';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
 import { RecentMovementsSection } from './RecentMovementsSection';
@@ -23,6 +23,7 @@ type DailyLine = {
 type DailyResp = { date: string; locationId: string | null; note: string; lines: DailyLine[] };
 
 export function StockFechamentoPage() {
+  const qc = useQueryClient();
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [locationId, setLocationId] = useState('');
   const [reportsOpen, setReportsOpen] = useState(false);
@@ -32,13 +33,23 @@ export function StockFechamentoPage() {
     queryFn: () => api<Array<{ id: string; code: string }>>('/stock-locations'),
   });
 
+  // Fechamento Diário: ao entrar na tela ou trocar filtro, sempre recarregar.
+  // `placeholderData: keepPreviousData` evita flicker entre buscas consecutivas.
   const daily = useQuery({
     queryKey: ['reports', 'stock-daily', date, locationId],
     queryFn: () =>
       api<DailyResp>(
         `/reports/stock-daily?date=${encodeURIComponent(date)}${locationId ? `&locationId=${encodeURIComponent(locationId)}` : ''}`,
       ),
+    refetchOnMount: 'always',
+    placeholderData: keepPreviousData,
   });
+
+  // Ao trocar de data/local, invalida o cache antigo de outras combinações
+  // — assim, voltar ao filtro anterior também dispara refetch.
+  useEffect(() => {
+    qc.invalidateQueries({ queryKey: ['reports', 'stock-daily'], exact: false });
+  }, [date, locationId, qc]);
 
   return (
     <div>

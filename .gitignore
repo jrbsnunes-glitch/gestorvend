@@ -1,29 +1,39 @@
+# GestorVend — o que não entra no GitHub (código, migrations, docs de produto e
+# *.example de ambiente continuam versionados).
+
 # --- Dependências ---
 node_modules/
 
-# --- Build / empacotamento (regerados no CI e em produção) ---
+# --- Build e artefatos gerados ---
 dist/
 build/
 out/
 .next/
 *.tsbuildinfo
+*.eslintcache
+.cache/
+.parcel-cache/
 apps/api/dist/
 apps/web/dist/
 
-# --- Variáveis de ambiente e segredos (nunca enviar para produção assim) ---
+# --- Variáveis de ambiente e segredos ---
+# Templates permitidos: .env.example (raiz), apps/web/.env.development.example
 .env
 .env.local
 .env.*.local
 apps/api/.env
+apps/web/.env
 apps/web/.env.local
+apps/web/.env.development
+apps/web/.env.production
 apps/web/.env.production.local
-# Mantém .env.example e, se existir, .env.development sem segredos para padronizar o time
 
-# --- Prisma — client gerado (gerar com npm run prisma:generate na API) ---
+# --- Prisma — client gerado (npm run prisma:generate na API) ---
 apps/api/src/generated/
 
-# --- Logs e temporários ---
+# --- Logs, scratch e temporários ---
 logs/
+tmp/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -32,7 +42,6 @@ pnpm-debug.log*
 lerna-debug.log*
 *.tmp
 *.temp
-.cache/
 
 # --- Testes e cobertura ---
 coverage/
@@ -40,9 +49,10 @@ coverage/
 *.lcov
 junit.xml
 
-# --- SO ---
+# --- Sistema operacional ---
 .DS_Store
 Thumbs.db
+ehthumbs.db
 Desktop.ini
 
 # --- IDEs / editores ---
@@ -57,14 +67,21 @@ Desktop.ini
 !.vscode/extensions.json
 !.vscode/settings.json.example
 
-# --- Ferramentas locais (opcional) ---
+# --- Ferramentas e deploy local ---
 .turbo/
 .vercel/
 .netlify/
-
-# --- Docker / volumes locais (se criar depois) ---
 *.pid
 
-# --- Dumps e backups locais ---
+# --- Dumps, backups e dados locais ---
 *.dump
 *.sql.backup
+
+# --- Chaves e certificados (nunca commitar) ---
+*.pem
+*.p12
+id_rsa
+id_rsa.pub
+
+# --- Cursor (regras locais; se quiser versionar .cursor/rules, remova esta linha) ---
+.cursor/

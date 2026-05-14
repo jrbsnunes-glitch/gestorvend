@@ -1,0 +1,558 @@
+/* ============================================================================
+ * Layout da página de impressão de relatório de caixa.
+ *
+ * Estratégia:
+ *  - Em tela, mostra o documento "preview" centralizado em fundo cinza claro
+ *    (parecido com Google Docs) com toolbar de ações.
+ *  - Em impressão, aplica @media print para esconder toolbar, remover
+ *    backgrounds, normalizar fontes e maximizar contraste no papel.
+ *
+ * Tipografia: usamos uma família serif para o corpo (legibilidade impressa)
+ * mas mantemos sans-serif para os números (tabular-nums) e cabeçalhos.
+ * ========================================================================= */
+
+.print-page {
+  min-height: 100vh;
+  background: #e2e8f0;
+  padding: 1.5rem 1rem 3rem;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: #0f172a;
+}
+
+.print-toolbar {
+  max-width: 820px;
+  margin: 0 auto 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 0.55rem 0.75rem;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+}
+
+.print-doc {
+  background: #ffffff;
+  max-width: 820px;
+  margin: 0 auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  box-shadow: 0 14px 35px rgba(15, 23, 42, 0.12);
+  padding: 2.2rem 2.4rem;
+  min-height: 1024px;
+  position: relative;
+}
+
+/* === Bloco identidade da empresa (logo + nome + endereço) === */
+.print-company {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  border-bottom: 1px solid #cbd5e1;
+  padding-bottom: 0.55rem;
+  margin-bottom: 0.6rem;
+}
+
+.print-company-logo {
+  max-height: 56px;
+  max-width: 140px;
+  object-fit: contain;
+}
+
+.print-company-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  font-size: 0.78rem;
+  color: #334155;
+}
+
+.print-company-text strong {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #0f172a;
+}
+
+.print-company-legal {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.print-company-line {
+  font-size: 0.72rem;
+  color: #475569;
+}
+
+/* === Cabeçalho do documento === */
+.print-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+  border-bottom: 2px solid #0f172a;
+  padding-bottom: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.print-head h1 {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.print-sub {
+  margin: 0.15rem 0 0;
+  color: #475569;
+  font-size: 0.92rem;
+}
+
+.print-meta {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.print-meta-label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.print-meta strong {
+  font-weight: 700;
+}
+
+/* === Seções === */
+.print-section {
+  margin-bottom: 1.5rem;
+}
+
+.print-section h2 {
+  margin: 0 0 0.55rem;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  color: #0f172a;
+  border-bottom: 1px solid #cbd5e1;
+  padding-bottom: 0.25rem;
+}
+
+/* === KPI grid === */
+.print-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.print-kpi {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+  background: #f8fafc;
+}
+
+.print-kpi.is-highlight {
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.print-kpi.is-muted {
+  background: #f1f5f9;
+}
+
+.print-kpi-label {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.print-kpi-value {
+  display: block;
+  font-size: 0.98rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  margin-top: 0.15rem;
+  color: #0f172a;
+}
+
+.print-kpi.is-highlight .print-kpi-value {
+  color: #15803d;
+}
+
+/* === Tabela genérica do relatório === */
+.print-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.print-table th,
+.print-table td {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid #cbd5e1;
+  text-align: left;
+}
+
+.print-table thead th {
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+.print-table tfoot th {
+  background: #f1f5f9;
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+.print-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.print-table .is-ok {
+  color: #15803d;
+  font-weight: 700;
+}
+
+.print-table .is-over {
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.print-table .is-short {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.print-empty {
+  margin: 0.4rem 0;
+  font-size: 0.88rem;
+  color: #64748b;
+  font-style: italic;
+}
+
+/* Linhas de venda cancelada na tabela de itens */
+.print-table tr.is-cancelled td {
+  color: #94a3b8;
+  text-decoration: line-through;
+}
+
+.print-table tr.is-cancelled td .badge-cancelled {
+  text-decoration: none;
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.badge-cancelled {
+  font-size: 0.65rem;
+  background: #fee2e2;
+  color: #b91c1c;
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  margin-left: 0.35rem;
+  font-weight: 700;
+}
+
+/* === Bloco de cada sessão de caixa === */
+.print-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.print-session {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0.85rem 1rem 0.95rem;
+  break-inside: avoid;
+}
+
+.print-session-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px dashed #cbd5e1;
+  margin-bottom: 0.7rem;
+}
+
+.print-session-head h3 {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.print-pill {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+/* Etiqueta do número de controle do caixa, exibida ao lado do nome do operador
+   no detalhamento por caixa. Usa fonte monoespaçada para alinhar visualmente. */
+.print-control {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  background: #0f172a;
+  color: #ffffff;
+  padding: 0.08rem 0.4rem;
+  border-radius: 4px;
+  margin-right: 0.45rem;
+  letter-spacing: 0.02em;
+}
+
+.print-pill.is-open {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.print-pill.is-closed {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.print-session-meta {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.print-session-side {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 0.6rem;
+  row-gap: 0.1rem;
+  font-size: 0.82rem;
+}
+
+.print-session-side dt {
+  margin: 0;
+  color: #64748b;
+}
+
+.print-session-side dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.print-session-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin-bottom: 0.7rem;
+}
+
+.print-session-stats > div {
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.print-session-stats > div.is-muted {
+  background: #f8fafc;
+}
+
+.print-session-stats span {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.print-session-stats strong {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 800;
+  margin-top: 0.05rem;
+}
+
+.print-session-stats em {
+  display: block;
+  font-style: normal;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: #475569;
+}
+
+.print-notes {
+  margin-top: 0.7rem;
+  border-left: 3px solid #475569;
+  padding: 0.35rem 0.65rem;
+  background: #f8fafc;
+  font-size: 0.85rem;
+}
+
+.print-notes strong {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: #0f172a;
+}
+
+.print-notes p {
+  margin: 0;
+  color: #334155;
+  white-space: pre-wrap;
+}
+
+.print-foot {
+  margin-top: 2rem;
+  border-top: 1px solid #cbd5e1;
+  padding-top: 0.55rem;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+/* ============================================================================
+ * @media print — versão para papel
+ *
+ * Estratégia de compactação:
+ *  - Margens A4 de 8mm/10mm para aproveitar a folha sem ficar "apertado".
+ *  - Reduz a base do `html` para 12px — encolhe TUDO em `rem` para ~75% do
+ *    tamanho em tela, preservando as proporções do design.
+ *  - Remove sombras/backgrounds coloridos pesados para economizar tinta.
+ * ========================================================================= */
+@media print {
+  @page {
+    size: A4;
+    margin: 8mm 10mm;
+  }
+
+  /*
+   * IMPORTANTE: O index.css global aplica `font-size: 16px` no `:root`. Como
+   * todos os tamanhos do relatório usam `rem` (relativo ao `:root`/`html`),
+   * a única forma de "encolher tudo de uma vez" para impressão é reduzir a
+   * base do `html`. 12px ≈ 75% do tamanho original — espremendo o conteúdo
+   * sem perder legibilidade.
+   */
+  html {
+    font-size: 12px !important;
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body {
+    background: #ffffff !important;
+    line-height: 1.35;
+  }
+
+  .print-page {
+    background: #ffffff;
+    padding: 0;
+    min-height: auto;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-doc {
+    box-shadow: none;
+    border: none;
+    padding: 0;
+    max-width: 100%;
+    min-height: auto;
+  }
+
+  /*
+   * Como o `html` é 12px em impressão (vs 16px em tela), TODOS os tamanhos
+   * em `rem` desta folha já encolhem proporcionalmente (~25%). Aqui ficamos
+   * com os overrides necessários para impressão: backgrounds/bordas e quebra
+   * de página.
+   */
+
+  .print-kpi,
+  .print-session-stats > div {
+    background: #ffffff !important;
+    border: 1px solid #94a3b8;
+  }
+
+  .print-kpi.is-highlight {
+    background: #ffffff !important;
+    border: 1.5px solid #0f172a;
+  }
+
+  .print-kpi.is-highlight .print-kpi-value {
+    color: #0f172a;
+  }
+
+  .print-table thead th {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border-bottom: 1.5px solid #0f172a;
+  }
+
+  .print-table tfoot th {
+    background: #ffffff !important;
+  }
+
+  /* Não quebra dentro de uma sessão nem dentro de uma linha; a seção pode
+     quebrar para distribuir várias sessões nas páginas. */
+  .print-session,
+  .print-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+/* === Responsivo (tela menor que 768px) === */
+@media (max-width: 768px) {
+  .print-doc {
+    padding: 1.2rem 1.2rem;
+  }
+
+  .print-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .print-session-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .print-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .print-meta {
+    text-align: left;
+  }
+
+  .print-session-head {
+    flex-direction: column;
+  }
+
+  .print-session-side {
+    grid-template-columns: 1fr 1fr;
+  }
+}

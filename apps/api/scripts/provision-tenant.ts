@@ -1,6 +1,7 @@
 /**
  * Registra um novo tenant no banco central.
- * A criação física do database PostgreSQL deve existir antes (ou use superusuário em script separado).
+ * O provisionamento físico (CREATE DATABASE + migrate + seed) é feito pelo
+ * portal em background ou pelo `TenantProvisioningService`.
  *
  * Exemplo:
  *   TENANT_DATABASE_URL=postgresql://.../template npx ts-node scripts/provision-tenant.ts demo 12345678000199 "Minha Loja" gv_tenant_demo
@@ -32,10 +33,8 @@ async function main() {
   console.log('Tenant registrado:', row);
   // eslint-disable-next-line no-console
   console.log(
-    'Crie o database no PostgreSQL se ainda não existir: CREATE DATABASE "' + databaseName + '";',
+    'Se o database ainda não existe, crie no PostgreSQL ou use o portal (provisionamento automático). Depois: npm run tenant:migrate-all -w @gestorvend/api',
   );
-  // eslint-disable-next-line no-console
-  console.log('Depois rode: npm run tenant:migrate-all -w @gestorvend/api');
 }
 
 main().catch((e) => {

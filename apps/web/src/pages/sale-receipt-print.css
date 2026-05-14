@@ -1,0 +1,285 @@
+/**
+ * Cupom não fiscal — leiaute pensado para bobina térmica ~80 mm.
+ *
+ * Referências (modo caractere / largura em colunas — família ESC/POS):
+ *   - Epson: `ESC !` (seleção de fonte/modo) — Technical Reference
+ *     https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/esc_exclamation.html
+ *   - Bobina 80 mm, Font A típica: costuma caber ~42–48 caracteres por linha
+ *     conforme modelo/configuração da impressora.
+ *
+ * Este HTML é renderizado no navegador (Ctrl+P). Não envia bytes ESC/POS;
+ * ajuste margens na impressora para alinhar à área útil (~72 mm).
+ *
+ * Tamanhos calibrados para leitura em bobina 80 mm (ex.: Bematech MP-4200 TH):
+ * na impressão usamos `pt`, que o spooler costuma respeitar melhor que px pequeno.
+ */
+
+.sale-receipt-page {
+  min-height: 100vh;
+  background: #e8e8e8;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.sale-receipt-toolbar {
+  max-width: 64ch;
+  margin: 0 auto 1rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.sale-receipt-toolbar .btn {
+  margin: 0;
+}
+
+.sale-receipt-doc {
+  max-width: 28ch;
+  margin: 0 auto;
+  padding: 0.6rem 0.5rem 1rem;
+  background: #fff;
+  color: #000;
+  font-family: 'Courier New', Courier, 'Liberation Mono', monospace;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.52;
+  box-sizing: border-box;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  -webkit-font-smoothing: antialiased;
+}
+
+.sale-receipt-doc strong {
+  font-weight: 800;
+}
+
+.sale-receipt-center {
+  text-align: center;
+}
+
+.sale-receipt-title {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  margin: 0.35rem 0 0.2rem;
+}
+
+.sale-receipt-sub {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+  color: #000;
+}
+
+.sale-receipt-legal {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.sale-receipt-line {
+  margin: 0.4rem 0;
+  border: none;
+  border-top: 1px dashed #000;
+  opacity: 1;
+}
+
+.sale-receipt-banner {
+  text-align: center;
+  font-weight: 800;
+  font-size: 24px;
+  text-transform: uppercase;
+  margin: 0.25rem 0 0.15rem;
+  padding: 0.15rem;
+  background: #fecaca;
+  color: #450a0a;
+}
+
+.sale-receipt-meta {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0.15rem 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.sale-receipt-meta span:last-child {
+  text-align: right;
+}
+
+.sale-receipt-section-title {
+  font-size: 24px;
+  font-weight: 800;
+  text-transform: uppercase;
+  margin: 0.5rem 0 0.2rem;
+  letter-spacing: 0.04em;
+}
+
+.sale-receipt-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.sale-receipt-items li {
+  margin: 0.35rem 0;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px dotted #000;
+}
+
+.sale-receipt-items li:last-child {
+  border-bottom: none;
+}
+
+.sale-receipt-item-desc {
+  display: block;
+  word-break: break-word;
+}
+
+.sale-receipt-item-qty {
+  margin-top: 0.15rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  font-weight: 700;
+}
+
+.sale-receipt-item-sku {
+  display: block;
+  font-size: 22px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.sale-receipt-fiscal-note {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+  color: #000;
+}
+
+.sale-receipt-totals {
+  margin-top: 0.45rem;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.sale-receipt-totals-row {
+  display: flex;
+  justify-content: space-between;
+  margin: 0.15rem 0;
+}
+
+.sale-receipt-totals-row.is-total {
+  font-weight: 800;
+  font-size: 34px;
+  margin-top: 0.35rem;
+  padding-top: 0.25rem;
+  border-top: 2px solid #000;
+}
+
+.sale-receipt-payments {
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.sale-receipt-payments li {
+  display: flex;
+  justify-content: space-between;
+  margin: 0.12rem 0;
+}
+
+.sale-receipt-foot {
+  text-align: center;
+  font-size: 22px;
+  font-weight: 600;
+  color: #000;
+  margin: 0.65rem 0 0.2rem;
+}
+
+.sale-receipt-foot-muted {
+  margin: 0.35rem 0 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #262626;
+  text-align: center;
+  line-height: 1.38;
+}
+
+@media print {
+  .sale-receipt-page {
+    background: #fff;
+    padding: 0;
+  }
+
+  .sale-receipt-toolbar {
+    display: none !important;
+  }
+
+  .sale-receipt-doc {
+    box-shadow: none;
+    max-width: none;
+    width: 100%;
+    padding: 2mm 1mm 4mm;
+    font-size: 23pt;
+    font-weight: 600;
+    line-height: 1.58;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  @page {
+    size: 80mm auto;
+    margin: 2mm;
+  }
+
+  .sale-receipt-title {
+    font-size: 29pt;
+  }
+
+  .sale-receipt-sub,
+  .sale-receipt-legal {
+    font-size: 22pt;
+  }
+
+  .sale-receipt-banner {
+    font-size: 22pt;
+  }
+
+  .sale-receipt-meta,
+  .sale-receipt-section-title,
+  .sale-receipt-items,
+  .sale-receipt-totals,
+  .sale-receipt-payments {
+    color: #000;
+    font-size: 22pt;
+  }
+
+  .sale-receipt-item-sku,
+  .sale-receipt-fiscal-note {
+    color: #000;
+    font-size: 21pt;
+  }
+
+  .sale-receipt-totals-row.is-total {
+    font-size: 29pt;
+  }
+
+  .sale-receipt-foot {
+    font-size: 21pt;
+  }
+
+  .sale-receipt-foot-muted {
+    font-size: 20pt;
+  }
+}

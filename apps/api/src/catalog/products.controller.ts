@@ -26,7 +26,12 @@ export class ProductsController {
   private async applyVariantPriceUpdates(
     tx: Prisma.TransactionClient,
     productId: string,
-    updates: Array<{ variantId: string; retailPrice?: number | string; costAverage?: number | string }>,
+    updates: Array<{
+      variantId: string;
+      retailPrice?: number | string;
+      costAverage?: number | string;
+      minStock?: number | string;
+    }>,
   ) {
     for (const vp of updates) {
       const v = await tx.productVariant.findFirst({
@@ -36,6 +41,7 @@ export class ProductsController {
 
       let nextRetail: string | undefined;
       let nextCost: string | undefined;
+      let nextMinStock: string | undefined;
 
       if (vp.retailPrice !== undefined) {
         const newR = new Prisma.Decimal(String(vp.retailPrice));
@@ -67,13 +73,20 @@ export class ProductsController {
           nextCost = newC.toString();
         }
       }
+      if (vp.minStock !== undefined) {
+        const newMin = new Prisma.Decimal(String(vp.minStock));
+        if (!new Prisma.Decimal(v.minStock).equals(newMin)) {
+          nextMinStock = newMin.toString();
+        }
+      }
 
-      if (nextRetail !== undefined || nextCost !== undefined) {
+      if (nextRetail !== undefined || nextCost !== undefined || nextMinStock !== undefined) {
         await tx.productVariant.update({
           where: { id: v.id },
           data: {
             ...(nextRetail !== undefined ? { retailPrice: nextRetail } : {}),
             ...(nextCost !== undefined ? { costAverage: nextCost } : {}),
+            ...(nextMinStock !== undefined ? { minStock: nextMinStock } : {}),
           },
         });
       }
@@ -128,8 +141,10 @@ export class ProductsController {
         sku: v.sku,
         barcode: v.barcode,
         retailPrice: String(v.retailPrice),
+        promoPrice: v.promoPrice ? String(v.promoPrice) : null,
         costAverage: String(v.costAverage),
         stockTotal: stockTotal.toString(),
+        minStock: String(v.minStock),
       };
     });
   }
@@ -180,6 +195,7 @@ export class ProductsController {
     body: {
       name: string;
       description?: string | null;
+      defaultBarcode?: string | null;
       categoryId?: string | null;
       ncm?: string | null;
       cest?: string | null;
@@ -192,14 +208,20 @@ export class ProductsController {
         retailPrice: number | string;
         wholesalePrice?: number | string | null;
         costAverage?: number | string;
+        minStock?: number | string;
       }>;
     },
   ) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    // O código de barras "principal" do produto também é replicado para a
+    // primeira variante quando ela não tem código próprio — mantém a busca
+    // por EAN funcional no PDV.
+    const defaultBarcode = body.defaultBarcode?.trim() ? body.defaultBarcode.trim().slice(0, 32) : null;
     return db.product.create({
       data: {
         name: body.name,
         description: body.description ?? null,
+        defaultBarcode,
         categoryId: body.categoryId ?? null,
         ncm: body.ncm ?? null,
         cest: body.cest ?? null,
@@ -207,12 +229,13 @@ export class ProductsController {
         fiscalOrigin: body.fiscalOrigin?.trim() ? body.fiscalOrigin.trim().slice(0, 2) : null,
         taxUnit: body.taxUnit?.trim() ? body.taxUnit.trim().slice(0, 10).toUpperCase() : null,
         variants: {
-          create: body.variants.map((v) => ({
+          create: body.variants.map((v, idx) => ({
             sku: v.sku,
-            barcode: v.barcode ?? null,
+            barcode: v.barcode ?? (idx === 0 ? defaultBarcode : null),
             retailPrice: String(v.retailPrice),
             wholesalePrice: v.wholesalePrice != null ? String(v.wholesalePrice) : null,
             costAverage: v.costAverage != null ? String(v.costAverage) : '0',
+            minStock: v.minStock != null ? String(v.minStock) : '0',
           })),
         },
       },
@@ -231,6 +254,7 @@ export class ProductsController {
         variantId: string;
         retailPrice?: number | string;
         costAverage?: number | string;
+        minStock?: number | string;
       }>;
     },
   ) {
@@ -244,6 +268,11 @@ export class ProductsController {
           ...(body.name != null && { name: String(body.name) }),
           ...(body.description !== undefined && {
             description: body.description ? String(body.description) : null,
+          }),
+          ...(body.defaultBarcode !== undefined && {
+            defaultBarcode: body.defaultBarcode
+              ? String(body.defaultBarcode).trim().slice(0, 32) || null
+              : null,
           }),
           ...(body.ncm !== undefined && { ncm: body.ncm ? String(body.ncm) : null }),
           ...(body.cest !== undefined && { cest: body.cest ? String(body.cest) : null }),

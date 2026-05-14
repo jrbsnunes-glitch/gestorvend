@@ -25,6 +25,8 @@
     "tenant:provision": "ts-node -r tsconfig-paths/register scripts/provision-tenant.ts",
     "tenant:migrate-all": "ts-node -r tsconfig-paths/register scripts/migrate-all-tenants.ts",
     "seed": "ts-node -r tsconfig-paths/register scripts/seed.ts",
+    "seed:tenant-minimal": "ts-node -r tsconfig-paths/register scripts/seed-tenant-minimal.ts",
+    "bootstrap:superadmin": "ts-node -r tsconfig-paths/register scripts/create-superadmin.ts",
     "postinstall": "prisma generate --schema=prisma/central/schema.prisma && prisma generate --schema=prisma/tenant/schema.prisma"
   },
   "dependencies": {
@@ -40,6 +42,7 @@
     "class-validator": "^0.14.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
+    "pg": "^8.13.1",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1"
   },
@@ -51,6 +54,7 @@
     "@types/jest": "^29.5.2",
     "@types/bcrypt": "^5.0.2",
     "@types/passport-jwt": "^4.0.1",
+    "@types/pg": "^8.11.10",
     "@types/node": "^20.3.1",
     "@types/supertest": "^6.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",

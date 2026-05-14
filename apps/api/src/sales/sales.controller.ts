@@ -51,6 +51,12 @@ export class SalesController {
     });
   }
 
+  @Get(':id')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  getOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.sales.findById(user.tenantSlug, id);
+  }
+
   @Post(':id/cancel')
   @Roles('admin', 'manager')
   cancel(@CurrentUser() user: JwtPayload, @Param('id') id: string) {

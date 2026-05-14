@@ -1,64 +1,246 @@
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
-import { formatBRL } from '../lib/format';
+import { formatBRL, formatDate } from '../lib/format';
 
-type Health = { status: string; service: string };
-
-type SalesSummary = { count: number; total: number };
+type Overview = {
+  revenue: { today: number; month: number };
+  sales: { today: number; month: number; avgTicketMonth: number };
+  topProducts: Array<{
+    variantId: string;
+    sku: string;
+    productName: string;
+    quantity: number;
+    total: number;
+  }>;
+  lowStock: Array<{
+    variantId: string;
+    sku: string;
+    productName: string;
+    minStock: number;
+    onHand: number;
+  }>;
+  openSessions: Array<{
+    id: string;
+    controlNumber: number;
+    operator: string;
+    openedAt: string;
+    openingBalance: number;
+  }>;
+  payablesSoon: Array<{
+    id: string;
+    description: string;
+    amount: number;
+    dueDate: string;
+    supplier: string | null;
+  }>;
+  receivablesSoon: Array<{
+    id: string;
+    description: string;
+    amount: number;
+    dueDate: string;
+    customer: string | null;
+  }>;
+};
 
 export function DashboardPage() {
-  const health = useQuery({
-    queryKey: ['health'],
-    queryFn: () => api<Health>('/health'),
-    staleTime: 30_000,
+  const overview = useQuery({
+    queryKey: ['dashboard', 'overview'],
+    queryFn: () => api<Overview>('/dashboard/overview'),
+    refetchOnMount: 'always',
+    refetchInterval: 60_000,
   });
 
-  const sales = useQuery({
-    queryKey: ['reports', 'sales-summary'],
-    queryFn: () => api<SalesSummary>('/reports/sales-summary'),
-  });
+  const data = overview.data;
 
   return (
-    <div className="page">
-      <h1 className="page-title">Início</h1>
-      <p className="page-desc">
-        Visão geral do ambiente. Use o menu para cadastros, estoque, vendas e financeiro.
-      </p>
-
-      <div className="stat-grid">
-        <div className="stat-card">
-          <div className="label">API</div>
-          <div className="value" style={{ fontSize: '1rem' }}>
-            {health.isLoading ? '…' : health.data?.status === 'ok' ? 'Conectada' : '—'}
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="label">Vendas (período atual)</div>
-          <div className="value">
-            {sales.isLoading ? '…' : sales.data != null ? sales.data.count : '—'}
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="label">Faturamento</div>
-          <div className="value" style={{ fontSize: '1.15rem' }}>
-            {sales.isLoading ? '…' : formatBRL(sales.data?.total)}
-          </div>
+    <div className="page dashboard-page">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Início</h1>
+          <p className="page-desc">Resumo do dia e da operação.</p>
         </div>
       </div>
 
-      <div className="card">
-        <h2 className="page-title" style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>
-          Status do serviço
-        </h2>
-        {health.isError && (
-          <div className="alert alert-error">Não foi possível contatar a API.</div>
-        )}
-        {health.data && (
-          <pre style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
-            {JSON.stringify(health.data, null, 2)}
-          </pre>
-        )}
-      </div>
+      {overview.isError && (
+        <div className="alert alert-error">
+          {(overview.error as Error)?.message ?? 'Erro ao carregar o painel.'}
+        </div>
+      )}
+
+      <section className="dash-hero">
+        <article className="dash-hero-card dash-hero-today">
+          <span className="dash-hero-label">Faturamento de hoje</span>
+          <strong className="dash-hero-value">
+            {overview.isLoading ? '…' : formatBRL(data?.revenue.today ?? 0)}
+          </strong>
+          <span className="dash-hero-foot">
+            {data?.sales.today ?? 0} venda(s) concluída(s)
+          </span>
+        </article>
+        <article className="dash-hero-card dash-hero-month">
+          <span className="dash-hero-label">Faturamento do mês</span>
+          <strong className="dash-hero-value">
+            {overview.isLoading ? '…' : formatBRL(data?.revenue.month ?? 0)}
+          </strong>
+          <span className="dash-hero-foot">
+            {data?.sales.month ?? 0} venda(s) · ticket médio{' '}
+            <strong>{formatBRL(data?.sales.avgTicketMonth ?? 0)}</strong>
+          </span>
+        </article>
+        <article className="dash-hero-card dash-hero-sessions">
+          <span className="dash-hero-label">Caixas abertos</span>
+          <strong className="dash-hero-value">{data?.openSessions.length ?? 0}</strong>
+          <span className="dash-hero-foot">
+            {data?.openSessions.length
+              ? data.openSessions
+                  .slice(0, 2)
+                  .map((s) => `${s.operator} (#${s.controlNumber})`)
+                  .join(' · ')
+              : 'Nenhum operador em caixa no momento.'}
+          </span>
+        </article>
+      </section>
+
+      <section className="dash-grid">
+        <article className="card dash-block">
+          <header className="dash-block-head">
+            <h2>Top produtos (últimos 30 dias)</h2>
+            <Link to="/produtos" className="dash-block-link">
+              Ver produtos →
+            </Link>
+          </header>
+          {overview.isLoading && <p className="dash-empty">Carregando…</p>}
+          {!overview.isLoading && !data?.topProducts.length && (
+            <p className="dash-empty">Ainda sem vendas no período.</p>
+          )}
+          {data?.topProducts.length ? (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Produto</th>
+                  <th style={{ textAlign: 'right' }}>Qtd</th>
+                  <th style={{ textAlign: 'right' }}>Valor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.topProducts.map((p) => (
+                  <tr key={p.variantId}>
+                    <td>
+                      <strong>{p.productName}</strong>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>SKU {p.sku}</div>
+                    </td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {p.quantity.toLocaleString('pt-BR')}
+                    </td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatBRL(p.total)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+        </article>
+
+        <article className="card dash-block">
+          <header className="dash-block-head">
+            <h2>Estoque crítico</h2>
+            <Link to="/estoque/painel" className="dash-block-link">
+              Ver estoque →
+            </Link>
+          </header>
+          {overview.isLoading && <p className="dash-empty">Carregando…</p>}
+          {!overview.isLoading && !data?.lowStock.length && (
+            <p className="dash-empty">Nenhum produto abaixo do estoque mínimo.</p>
+          )}
+          {data?.lowStock.length ? (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Produto</th>
+                  <th style={{ textAlign: 'right' }}>Saldo</th>
+                  <th style={{ textAlign: 'right' }}>Mínimo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.lowStock.map((row) => (
+                  <tr key={row.variantId}>
+                    <td>
+                      <strong>{row.productName}</strong>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>SKU {row.sku}</div>
+                    </td>
+                    <td style={{ textAlign: 'right', color: row.onHand <= 0 ? '#b91c1c' : '#b45309', fontWeight: 700 }}>
+                      {row.onHand.toLocaleString('pt-BR')}
+                    </td>
+                    <td style={{ textAlign: 'right', color: 'var(--color-text-muted)' }}>
+                      {row.minStock.toLocaleString('pt-BR')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+        </article>
+
+        <article className="card dash-block">
+          <header className="dash-block-head">
+            <h2>A pagar (próximos 7 dias)</h2>
+            <Link to="/financeiro" className="dash-block-link">
+              Financeiro →
+            </Link>
+          </header>
+          {overview.isLoading && <p className="dash-empty">Carregando…</p>}
+          {!overview.isLoading && !data?.payablesSoon.length && (
+            <p className="dash-empty">Sem títulos a vencer.</p>
+          )}
+          {data?.payablesSoon.length ? (
+            <ul className="dash-list">
+              {data.payablesSoon.map((p) => (
+                <li key={p.id}>
+                  <div>
+                    <strong>{p.description}</strong>
+                    <div className="dash-list-meta">
+                      {p.supplier ?? '—'} · vence em {formatDate(p.dueDate)}
+                    </div>
+                  </div>
+                  <strong className="dash-list-amt">{formatBRL(p.amount)}</strong>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </article>
+
+        <article className="card dash-block">
+          <header className="dash-block-head">
+            <h2>A receber (próximos 7 dias)</h2>
+            <Link to="/financeiro" className="dash-block-link">
+              Financeiro →
+            </Link>
+          </header>
+          {overview.isLoading && <p className="dash-empty">Carregando…</p>}
+          {!overview.isLoading && !data?.receivablesSoon.length && (
+            <p className="dash-empty">Sem títulos a receber.</p>
+          )}
+          {data?.receivablesSoon.length ? (
+            <ul className="dash-list">
+              {data.receivablesSoon.map((r) => (
+                <li key={r.id}>
+                  <div>
+                    <strong>{r.description}</strong>
+                    <div className="dash-list-meta">
+                      {r.customer ?? '—'} · vence em {formatDate(r.dueDate)}
+                    </div>
+                  </div>
+                  <strong className="dash-list-amt" style={{ color: '#15803d' }}>
+                    {formatBRL(r.amount)}
+                  </strong>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </article>
+      </section>
     </div>
   );
 }

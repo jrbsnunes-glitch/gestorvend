@@ -10,10 +10,11 @@ ERP para varejo (Etapa 1: operacional; Etapa 2: fiscal). Multi-tenant com **um b
 ## Configuração rápida
 
 1. Copie `.env.example` para `.env` na raiz e para `apps/api/.env` (mesmos valores).
-2. `docker compose up -d` (Postgres em `localhost:5433`, Redis em `6380`).
-3. `cd apps/api && npx prisma migrate deploy --schema=prisma/central/schema.prisma && npx prisma migrate deploy --schema=prisma/tenant/schema.prisma`
-4. `npm run seed -w @gestorvend/api`
-5. `npm run dev:api` (API em http://localhost:3000/api) e em outro terminal `npm run dev:web` (UI em http://localhost:5173).
+2. Opcional: copie `apps/web/.env.development.example` para `apps/web/.env.development` se quiser fixar `VITE_API_BASE_URL` (o padrão já usa o proxy do Vite).
+3. `docker compose up -d` (Postgres em `localhost:5433`, Redis em `6380`).
+4. `cd apps/api && npx prisma migrate deploy --schema=prisma/central/schema.prisma && npx prisma migrate deploy --schema=prisma/tenant/schema.prisma`
+5. `npm run seed -w @gestorvend/api`
+6. `npm run dev:api` (API em http://localhost:3000/api) e em outro terminal `npm run dev:web` (UI em http://localhost:5173).
 
 Login seed: tenant `demo`, e-mail `admin@demo.local`, senha `Admin123!`.
 
