@@ -3,9 +3,9 @@ import { formatFetchNetworkError, setRefreshToken, setToken } from '../lib/api';
 import './login.css';
 
 export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
-  const [email, setEmail] = useState('admin@demo.local');
-  const [password, setPassword] = useState('Admin123!');
-  const [tenantSlug, setTenantSlug] = useState('demo');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [tenantSlug, setTenantSlug] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -57,9 +57,9 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
           </div>
         </div>
         <p className="login-hint">
-          Entre com a abreviatura da empresa, e-mail e senha cadastrados no banco do cliente. O e-mail do
-          primeiro admin aparece no portal de licenças; a senha padrão do provisionamento costuma ser
-          Admin123! se você não definiu outra.
+          Entre com a abreviatura da empresa, e-mail e senha do seu usuário administrador ou operador —
+          são definidos quando o cliente é provisionado no portal de licenciamento ou pelo administrador
+          técnico.
         </p>
         <form onSubmit={submit}>
           <div className="field">
