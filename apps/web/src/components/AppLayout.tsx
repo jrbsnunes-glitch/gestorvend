@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { getIdentity, profileFromRoles, profileLabel } from '../lib/auth';
+import { getIdentity, isAdmin, profileFromRoles, profileLabel } from '../lib/auth';
 import { useNavigationActivityLogger } from '../lib/use-navigation-activity-log';
 import './layout.css';
 
@@ -12,6 +12,8 @@ type NavItem = {
   end?: boolean;
   /** Quando true, o item só aparece para usuários com perfil de gerente. */
   managerOnly?: boolean;
+  /** Quando true, o item só aparece para usuários com role interna `admin`. */
+  adminOnly?: boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -25,7 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/financeiro', label: 'Financeiro', managerOnly: true },
   { to: '/empresa', label: 'Empresa', managerOnly: true },
   { to: '/usuarios', label: 'Usuários', managerOnly: true },
-  { to: '/logs', label: 'Logs', managerOnly: true },
+  { to: '/logs', label: 'Logs', adminOnly: true },
 ];
 
 type Me = { name: string; email: string; profile: 'manager' | 'cashier' };
@@ -38,6 +40,7 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
   const identity = useMemo(() => getIdentity(), []);
   const localProfile = identity ? profileFromRoles(identity.roles) : 'cashier';
   const isManager = localProfile === 'manager';
+  const userIsAdmin = isAdmin();
 
   const me = useQuery({
     queryKey: ['users', 'me'],
@@ -45,7 +48,9 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
     staleTime: 5 * 60_000,
   });
 
-  const items = NAV_ITEMS.filter((it) => !it.managerOnly || isManager);
+  const items = NAV_ITEMS.filter(
+    (it) => (!it.managerOnly || isManager) && (!it.adminOnly || userIsAdmin),
+  );
   const profile = me.data?.profile ?? localProfile;
 
   return (

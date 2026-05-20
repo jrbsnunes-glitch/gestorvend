@@ -59,3 +59,10 @@ export function isManager(): boolean {
   if (!id) return false;
   return id.roles.includes('admin') || id.roles.includes('manager');
 }
+
+/** Role interna `admin` (Administrador) — acima do perfil “Gerente” (`manager`). */
+export function isAdmin(): boolean {
+  const id = getIdentity();
+  if (!id) return false;
+  return id.roles.includes('admin');
+}

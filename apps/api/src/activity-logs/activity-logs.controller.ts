@@ -78,7 +78,7 @@ export class ActivityLogsController {
   }
 
   @Get()
-  @Roles('admin', 'manager')
+  @Roles('admin')
   async list(
     @CurrentUser() user: JwtPayload,
     @Query('userId') userId?: string,

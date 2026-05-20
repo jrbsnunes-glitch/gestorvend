@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from './components/AppLayout';
 import { GV_UNAUTHORIZED_EVENT, clearAuthStorage, getToken, scheduleAccessTokenRefresh } from './lib/api';
+import { isAdmin } from './lib/auth';
 import { CashPage } from './pages/CashPage';
 import { CashPrintPage } from './pages/CashPrintPage';
 import { CashPrintItemsPage } from './pages/CashPrintItemsPage';
@@ -39,6 +40,12 @@ const qc = new QueryClient({
     queries: { retry: 1, refetchOnWindowFocus: false },
   },
 });
+
+function RequireAdmin({ children }: { children: ReactNode }) {
+  const allowed = useMemo(() => isAdmin(), []);
+  if (!allowed) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
 
 function AppInner() {
   const [token, setTok] = useState(() => getToken());
@@ -135,7 +142,14 @@ function AppInner() {
           <Route path="financeiro" element={<FinancePage />} />
           <Route path="empresa" element={<CompanyPage />} />
           <Route path="usuarios" element={<UsersPage />} />
-          <Route path="logs" element={<LogsPage />} />
+          <Route
+            path="logs"
+            element={
+              <RequireAdmin>
+                <LogsPage />
+              </RequireAdmin>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
