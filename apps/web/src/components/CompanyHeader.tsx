@@ -1,9 +1,9 @@
 /**
- * Cabeçalho de impressão padronizado com os dados da empresa.
- * Aparece no topo de todos os relatórios (Caixa, Itens, Estoque…).
+ * Bloco compacto da empresa (razão fantasia / CNPJ / endereço) para papel/PDF.
+ * Em relatórios completos, esse bloco faz parte do `<StandardReportHeader />`,
+ * junto ao título, carimbo de data/hora e emitente.
  *
- * Se a empresa ainda não foi cadastrada, renderiza só o logotipo/título "GestorVend"
- * para o documento não ficar quebrado.
+ * Sem cadastro na rota `/company`, cai para o identificador "GestorVend".
  */
 
 export type CompanyHeaderData = {

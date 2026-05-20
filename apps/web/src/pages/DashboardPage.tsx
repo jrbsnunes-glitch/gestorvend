@@ -118,14 +118,18 @@ export function DashboardPage() {
             <table className="data-table">
               <thead>
                 <tr>
+                  <th className="num" style={{ width: '3rem' }}>
+                    Cont.
+                  </th>
                   <th>Produto</th>
                   <th style={{ textAlign: 'right' }}>Qtd</th>
                   <th style={{ textAlign: 'right' }}>Valor</th>
                 </tr>
               </thead>
               <tbody>
-                {data.topProducts.map((p) => (
+                {data.topProducts.map((p, idx) => (
                   <tr key={p.variantId}>
+                    <td className="num">{idx + 1}</td>
                     <td>
                       <strong>{p.productName}</strong>
                       <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>SKU {p.sku}</div>
@@ -158,14 +162,18 @@ export function DashboardPage() {
             <table className="data-table">
               <thead>
                 <tr>
+                  <th className="num" style={{ width: '3rem' }}>
+                    Cont.
+                  </th>
                   <th>Produto</th>
                   <th style={{ textAlign: 'right' }}>Saldo</th>
                   <th style={{ textAlign: 'right' }}>Mínimo</th>
                 </tr>
               </thead>
               <tbody>
-                {data.lowStock.map((row) => (
+                {data.lowStock.map((row, idx) => (
                   <tr key={row.variantId}>
+                    <td className="num">{idx + 1}</td>
                     <td>
                       <strong>{row.productName}</strong>
                       <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>SKU {row.sku}</div>

@@ -269,6 +269,8 @@ export class StockMovementsController {
     @CurrentUser() user: JwtPayload,
     @Query('take') take = '50',
     @Query('source') source?: string,
+    /** `desc` = mais recentes primeiro (ex.: tela de transferências). Padrão: `asc`. */
+    @Query('order') order?: string,
   ) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const n = Math.min(200, Math.max(1, parseInt(String(take), 10) || 50));
@@ -277,10 +279,10 @@ export class StockMovementsController {
       source && allSources.includes(source as StockMovementSource)
         ? { source: source as StockMovementSource }
         : undefined;
+    const dir = order === 'desc' ? 'desc' : 'asc';
     return db.stockMovement.findMany({
       where,
-      // Ordenação cronológica: movimentos mais antigos no topo.
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: dir },
       take: n,
       include: { variant: { include: { product: true } }, location: true },
     });

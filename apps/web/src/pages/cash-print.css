@@ -1,3 +1,5 @@
+@import '../styles/reports-document.css';
+
 /* ============================================================================
  * Layout da página de impressão de relatório de caixa.
  *
@@ -7,15 +9,14 @@
  *  - Em impressão, aplica @media print para esconder toolbar, remover
  *    backgrounds, normalizar fontes e maximizar contraste no papel.
  *
- * Tipografia: usamos uma família serif para o corpo (legibilidade impressa)
- * mas mantemos sans-serif para os números (tabular-nums) e cabeçalhos.
+ * Tipografia herdada das variáveis em `reports-document.css` (Spectral + Source Sans 3).
  * ========================================================================= */
 
 .print-page {
   min-height: 100vh;
   background: #e2e8f0;
   padding: 1.5rem 1rem 3rem;
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--gv-report-font-sans);
   color: #0f172a;
 }
 
@@ -44,90 +45,8 @@
   position: relative;
 }
 
-/* === Bloco identidade da empresa (logo + nome + endereço) === */
-.print-company {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  border-bottom: 1px solid #cbd5e1;
-  padding-bottom: 0.55rem;
-  margin-bottom: 0.6rem;
-}
-
-.print-company-logo {
-  max-height: 56px;
-  max-width: 140px;
-  object-fit: contain;
-}
-
-.print-company-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.25;
-  font-size: 0.78rem;
-  color: #334155;
-}
-
-.print-company-text strong {
-  font-size: 1rem;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-  color: #0f172a;
-}
-
-.print-company-legal {
-  font-size: 0.72rem;
-  color: #64748b;
-}
-
-.print-company-line {
-  font-size: 0.72rem;
-  color: #475569;
-}
-
-/* === Cabeçalho do documento === */
-.print-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 1.5rem;
-  border-bottom: 2px solid #0f172a;
-  padding-bottom: 0.85rem;
-  margin-bottom: 1.25rem;
-}
-
-.print-head h1 {
-  margin: 0;
-  font-size: 1.6rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-
-.print-sub {
-  margin: 0.15rem 0 0;
-  color: #475569;
-  font-size: 0.92rem;
-}
-
-.print-meta {
-  text-align: right;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.85rem;
-}
-
-.print-meta-label {
-  display: block;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: 700;
-  color: #64748b;
-}
-
-.print-meta strong {
-  font-weight: 700;
+.print-doc .gv-report-doc-head {
+  margin-bottom: 1.35rem;
 }
 
 /* === Seções === */
@@ -539,13 +458,14 @@
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .print-head {
+  .gv-report-doc-head {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .print-meta {
+  .gv-report-meta {
     text-align: left;
+    align-self: stretch;
   }
 
   .print-session-head {
@@ -554,5 +474,124 @@
 
   .print-session-side {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* === Movimentação de produtos — painel de filtros compacto (tela / preview) === */
+.pm-move-filters__title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #0f172a;
+  margin: 0 0 0.35rem;
+}
+
+.pm-move-filters__hint,
+.pm-move-filters__legacy {
+  margin: 0 0 0.35rem;
+  font-size: 0.6875rem;
+  color: #64748b;
+  line-height: 1.3;
+}
+
+.pm-move-filters .pm-move-filters__alert {
+  padding: 0.35rem 0.55rem;
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+}
+
+.pm-move-filters__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.35rem 0.65rem;
+  margin-bottom: 0.35rem;
+}
+
+.pm-move-filters__row--controls {
+  align-items: center;
+  padding-top: 0.1rem;
+  margin-bottom: 0;
+}
+
+.pm-move-filters .field {
+  margin-bottom: 0;
+}
+
+.pm-move-filters .field label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 0.08rem;
+}
+
+.pm-move-filters .field input,
+.pm-move-filters .field select {
+  padding: 0.28rem 0.4rem;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  min-height: 2rem;
+  box-sizing: border-box;
+}
+
+.pm-move-filters__cadgroup {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.45rem;
+}
+
+.pm-move-filters__muted-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #64748b;
+  padding-bottom: 0.35rem;
+  white-space: nowrap;
+}
+
+.pm-move-filters__locfield {
+  flex: 1 1 8rem;
+  min-width: 7.25rem;
+  max-width: 12rem;
+}
+
+.pm-move-filters__locfield select {
+  width: 100%;
+}
+
+.pm-move-filters__teto {
+  width: 5.5rem;
+  max-width: 6.5rem;
+}
+
+.pm-move-filters__chk {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.76rem;
+  color: #334155;
+  margin: 0;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.pm-move-filters__submit {
+  margin-left: auto;
+  padding: 0.34rem 0.85rem;
+  font-size: 0.8125rem;
+}
+
+.pm-move-filters__foot {
+  margin: 0.35rem 0 0;
+  font-size: 0.6625rem;
+  color: #64748b;
+  line-height: 1.3;
+}
+
+@media (max-width: 640px) {
+  .pm-move-filters__submit {
+    margin-left: 0;
+    width: 100%;
   }
 }

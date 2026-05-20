@@ -57,6 +57,23 @@ model User {
   stockMoves     StockMovement[]
   cashSessions   CashRegisterSession[]
   goodsReceipts  GoodsReceipt[]
+  navigationLogs UserNavigationLog[]
+}
+
+/// Acessos a telas (menus) registrados pelo cliente web — consulta em /logs.
+model UserNavigationLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  path      String
+  menuKey   String
+  menuLabel String
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([menuKey, createdAt])
+  @@index([createdAt])
 }
 
 // --- Cadastros ---
@@ -161,6 +178,8 @@ model Product {
   /// Unidade tributável (ex.: UN, KG)
   taxUnit     String?          @db.VarChar(10)
   isActive    Boolean          @default(true)
+  /// Controle agregado do produto: menor `minStock` entre as variantes (recalculado ao salvar variantes). Piso 1 por política cadastral.
+  inventoryControlMin Decimal @default(1) @db.Decimal(18, 4)
   variants    ProductVariant[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
@@ -176,8 +195,8 @@ model ProductVariant {
   wholesalePrice     Decimal?           @db.Decimal(14, 4)
   promoPrice         Decimal?           @db.Decimal(14, 4)
   costAverage        Decimal            @default(0) @db.Decimal(14, 4)
-  /// Estoque mínimo recomendado (ponto de reposição) — usado para alertas no PDV e relatórios.
-  minStock           Decimal            @default(0) @db.Decimal(18, 4)
+  /// Estoque mínimo recomendado (ponto de reposição) — alertas PDV/relatórios. Cadastro não usa valor abaixo de 1.
+  minStock           Decimal            @default(1) @db.Decimal(18, 4)
   saleItems          SaleItem[]
   stockBalances      StockBalance[]
   movements          StockMovement[]

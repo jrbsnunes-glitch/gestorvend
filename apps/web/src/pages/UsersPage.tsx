@@ -246,6 +246,9 @@ export function UsersPage() {
           <table className="data-table">
             <thead>
               <tr>
+                <th className="num" style={{ width: '3.2rem' }}>
+                  Cont.
+                </th>
                 <th>Nome</th>
                 <th>E-mail</th>
                 <th>Perfil</th>
@@ -256,15 +259,16 @@ export function UsersPage() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                  <td colSpan={6} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     Nenhum usuário encontrado.
                   </td>
                 </tr>
               )}
-              {filtered.map((u) => {
+              {filtered.map((u, idx) => {
                 const isSelf = identity?.sub === u.id;
                 return (
                   <tr key={u.id}>
+                    <td className="num">{idx + 1}</td>
                     <td>
                       <strong>{u.name}</strong>
                       {isSelf && (

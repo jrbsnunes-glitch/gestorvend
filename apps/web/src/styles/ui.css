@@ -158,6 +158,153 @@
   background: var(--color-surface-elevated);
 }
 
+.data-table td.num,
+.data-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table thead th.th-nowrap {
+  white-space: nowrap;
+}
+
+/* Valores monetários / alinhamento à direita em qualquer tabela */
+.data-table thead th.col-money,
+.data-table tbody td.col-money {
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ações sempre em uma única linha (evita altura alta na linha) */
+.data-table thead th.col-actions,
+.data-table tbody td.col-actions {
+  white-space: nowrap;
+  vertical-align: middle;
+  padding-left: 0.65rem;
+  padding-right: 0.65rem;
+}
+
+.products-list-table th.col-inv-ctrl,
+.products-list-table td.col-inv-ctrl {
+  box-sizing: border-box;
+  width: 6.25rem;
+  min-width: 5rem;
+}
+
+.products-list-table th.col-min-sku-table,
+.products-list-table td.col-min-sku-table {
+  box-sizing: border-box;
+  width: 5.75rem;
+  min-width: 4.75rem;
+}
+
+.products-list-table th.col-ncm-ce,
+.products-list-table td.col-ncm-ce {
+  width: 6.75rem;
+  max-width: 8.5rem;
+  white-space: nowrap;
+}
+
+.products-list-table th.col-money,
+.products-list-table td.col-money {
+  width: 7rem;
+}
+
+.products-list-table th.col-sku,
+.products-list-table td.col-sku {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.products-list-table th.col-category,
+.products-list-table td.col-category {
+  width: 7.25rem;
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.products-list-table th.col-status,
+.products-list-table td.col-status {
+  width: 5.5rem;
+  white-space: nowrap;
+}
+
+.products-list-table tbody td:not(.col-actions):not(.empty) {
+  vertical-align: middle;
+}
+
+.products-list-table thead th:not(.empty),
+.products-list-table tbody td:not(.empty) {
+  padding: 0.5rem 0.55rem;
+}
+
+.products-list-table .row-record-actions .btn-compact {
+  font-size: 0.74rem;
+  padding: 0.22rem 0.52rem;
+  line-height: 1.2;
+}
+
+/* Modal Pesquisar — mesma lógica de colunas compactas */
+.products-search-table thead th.products-search-table__ctr,
+.products-search-table tbody td.products-search-table__ctr {
+  width: 6rem;
+  min-width: 5rem;
+}
+
+.products-search-table thead th.products-search-table__vmin,
+.products-search-table tbody td.products-search-table__vmin {
+  width: 5.5rem;
+  min-width: 4.75rem;
+}
+
+.products-search-table thead th.products-search-table__stk,
+.products-search-table tbody td.products-search-table__stk {
+  width: 6rem;
+  min-width: 5rem;
+}
+
+.products-search-table thead th.products-search-table__money,
+.products-search-table tbody td.products-search-table__money {
+  width: 7rem;
+  min-width: 6rem;
+}
+
+.products-search-table thead th.products-search-table__sku-th,
+.products-search-table tbody td.products-search-table__sku {
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.products-search-table thead th.products-search-table__sku-th {
+  vertical-align: bottom;
+}
+
+.products-search-table tbody td.products-search-table__sku span:first-child {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.products-search-table thead th,
+.products-search-table tbody td:not(.empty) {
+  padding: 0.5rem 0.55rem;
+  vertical-align: middle;
+}
+
+.products-search-table tbody td.num {
+  font-variant-numeric: tabular-nums;
+}
+
 .data-table tbody tr:hover {
   background: #f8fafc;
 }

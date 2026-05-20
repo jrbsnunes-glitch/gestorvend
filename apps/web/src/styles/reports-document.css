@@ -1,0 +1,178 @@
+/**
+ * Tipografia e blocos comuns para relatórios formais / impressão.
+ * Spectral (títulos) + Source Sans 3 (corpo/números) — combinam bem em papel A4 e
+ * lembram memorandos/documentos institucionais sem depender apenas de Arial.
+ */
+
+:root {
+  --gv-report-font-serif:
+    Spectral, 'Georgia', 'Times New Roman', 'Liberation Serif', Times, serif;
+  --gv-report-font-sans:
+    'Source Sans 3', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
+}
+
+/* === Identidade da empresa (reuso no app inteiro quando impresso === */
+.print-company {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  border-bottom: 1px solid #cbd5e1;
+  padding-bottom: 0.55rem;
+  margin-bottom: 0.6rem;
+}
+
+.print-company-logo {
+  max-height: 56px;
+  max-width: 140px;
+  object-fit: contain;
+}
+
+.print-company-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.28;
+  font-size: 0.78rem;
+  color: #334155;
+  font-family: var(--gv-report-font-sans);
+}
+
+.print-company-text strong {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: #0f172a;
+  font-family: var(--gv-report-font-serif);
+}
+
+.print-company-legal {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.print-company-line {
+  font-size: 0.72rem;
+  color: #475569;
+}
+
+/* === Topo padronizado: título do relatório + rastreabilidade === */
+
+.gv-report-standard-top {
+  margin-bottom: 1rem;
+  font-family: var(--gv-report-font-sans);
+}
+
+/* Compatível com trechos herdados (.print-sub aparece também fora das páginas cash-print). */
+.print-sub {
+  margin: 0.15rem 0 0;
+  color: #475569;
+  font-size: 0.92rem;
+}
+
+.gv-report-doc-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+  border-bottom: 2px solid #0f172a;
+  padding-bottom: 0.85rem;
+  margin-bottom: 1.1rem;
+}
+
+.gv-report-doc-head h1 {
+  margin: 0;
+  font-family: var(--gv-report-font-serif);
+  font-size: 1.55rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+  line-height: 1.15;
+}
+
+.gv-report-meta {
+  flex-shrink: 0;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.gv-report-meta-label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.gv-report-meta strong {
+  font-weight: 600;
+  word-break: break-word;
+}
+
+/* Faixa só na impressão (listagens CRM / telas print-area) */
+.gv-report-print-only {
+  display: none !important;
+}
+
+@media print {
+  /* Em impressões de módulos, esconder chrome do app quando possível */
+  .sidebar {
+    display: none !important;
+  }
+
+  .main-content {
+    padding: 0.35rem 0.65rem !important;
+  }
+
+  .modal-backdrop {
+    position: static !important;
+    inset: unset !important;
+    background: transparent !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .modal-backdrop.modal-backdrop--wide {
+    padding: 0 !important;
+  }
+
+  .gv-report-print-only {
+    display: block !important;
+  }
+
+  .gv-report-sheet--embedded {
+    padding-bottom: 0.85rem;
+    margin-bottom: 0.85rem !important;
+    border-bottom: 1px dashed #94a3b8;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  /** Documento “tipo papel” dentro de páginas de listagem / modal **/
+  .print-area,
+  .gv-report-sheet,
+  .gv-report-sheet .data-table {
+    font-family: var(--gv-report-font-sans);
+    color: #0f172a;
+  }
+
+  .print-area .page-title:first-of-type {
+    font-family: var(--gv-report-font-serif);
+  }
+
+  .print-area table.data-table th,
+  .print-area table.data-table td {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings:
+      'tnum' 1,
+      'lnum' 1;
+  }
+
+  .gv-report-sheet .data-table,
+  .print-area table.data-table {
+    font-size: 0.9rem !important;
+  }
+}

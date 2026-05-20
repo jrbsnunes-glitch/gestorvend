@@ -200,6 +200,9 @@ export function FinancePage() {
             <table className="data-table">
               <thead>
                 <tr>
+                  <th className="num" style={{ width: '3.2rem' }}>
+                    Cont.
+                  </th>
                   <th>Vencimento</th>
                   <th>Descrição</th>
                   <th>Fornecedor</th>
@@ -211,20 +214,21 @@ export function FinancePage() {
               <tbody>
                 {payables.isLoading && (
                   <tr>
-                    <td colSpan={6} className="empty">
+                    <td colSpan={7} className="empty">
                       Carregando…
                     </td>
                   </tr>
                 )}
                 {!payables.isLoading && !payables.data?.length && (
                   <tr>
-                    <td colSpan={6} className="empty">
+                    <td colSpan={7} className="empty">
                       Nenhum título.
                     </td>
                   </tr>
                 )}
-                {payables.data?.map((p) => (
+                {payables.data?.map((p, idx) => (
                   <tr key={p.id}>
+                    <td className="num">{idx + 1}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{formatDate(p.dueDate)}</td>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -286,6 +290,9 @@ export function FinancePage() {
             <table className="data-table">
               <thead>
                 <tr>
+                  <th className="num" style={{ width: '3.2rem' }}>
+                    Cont.
+                  </th>
                   <th>Vencimento</th>
                   <th>Descrição</th>
                   <th>Cliente</th>
@@ -297,20 +304,21 @@ export function FinancePage() {
               <tbody>
                 {receivables.isLoading && (
                   <tr>
-                    <td colSpan={6} className="empty">
+                    <td colSpan={7} className="empty">
                       Carregando…
                     </td>
                   </tr>
                 )}
                 {!receivables.isLoading && !receivables.data?.length && (
                   <tr>
-                    <td colSpan={6} className="empty">
+                    <td colSpan={7} className="empty">
                       Nenhum título (vendas crediário geram aqui).
                     </td>
                   </tr>
                 )}
-                {receivables.data?.map((r) => (
+                {receivables.data?.map((r, idx) => (
                   <tr key={r.id}>
+                    <td className="num">{idx + 1}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{formatDate(r.dueDate)}</td>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>

@@ -11,10 +11,13 @@ import { CustomersPage } from './pages/CustomersPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { FinancePage } from './pages/FinancePage';
 import { Login } from './pages/Login';
+import { ProductReportMovementPrintPage } from './pages/ProductReportMovementPrintPage';
+import { ProductReportTurnoverPrintPage } from './pages/ProductReportTurnoverPrintPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { SaleReceiptPrintPage } from './pages/SaleReceiptPrintPage';
 import { SalesPage } from './pages/SalesPage';
 import { StockEntradaPage } from './pages/stock/StockEntradaPage';
+import { StockInventarioPage } from './pages/stock/StockInventarioPage';
 import { StockFechamentoPage } from './pages/stock/StockFechamentoPage';
 import { StockLocaisPage } from './pages/stock/StockLocaisPage';
 import { StockMovimentosPage } from './pages/stock/StockMovimentosPage';
@@ -23,10 +26,13 @@ import { PortalAdminApp } from './portal/PortalAdminApp';
 import { StockPainelPage } from './pages/stock/StockPainelPage';
 import { StockSaidasPage } from './pages/stock/StockSaidasPage';
 import { StockShell } from './pages/stock/StockShell';
+import { StockTransferenciasPage } from './pages/stock/StockTransferenciasPage';
 import { SuppliersPage } from './pages/SuppliersPage';
 import { UsersPage } from './pages/UsersPage';
+import { LogsPage } from './pages/LogsPage';
 import './index.css';
 import './styles/ui.css';
+import './styles/reports-document.css';
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -97,6 +103,8 @@ function AppInner() {
         <Route path="caixa/impressao" element={<CashPrintPage />} />
         <Route path="caixa/impressao/itens" element={<CashPrintItemsPage />} />
         <Route path="estoque/movimentos/impressao" element={<StockMovPrintPage />} />
+        <Route path="produtos/relatorio/movimentacao" element={<ProductReportMovementPrintPage />} />
+        <Route path="produtos/relatorio/giro" element={<ProductReportTurnoverPrintPage />} />
 
         <Route
           element={
@@ -118,6 +126,8 @@ function AppInner() {
             <Route path="entrada" element={<StockEntradaPage />} />
             <Route path="saidas" element={<StockSaidasPage />} />
             <Route path="locais" element={<StockLocaisPage />} />
+            <Route path="transferencias" element={<StockTransferenciasPage />} />
+            <Route path="inventario" element={<StockInventarioPage />} />
             <Route path="movimentos" element={<StockMovimentosPage />} />
             <Route path="fechamento" element={<StockFechamentoPage />} />
           </Route>
@@ -125,6 +135,7 @@ function AppInner() {
           <Route path="financeiro" element={<FinancePage />} />
           <Route path="empresa" element={<CompanyPage />} />
           <Route path="usuarios" element={<UsersPage />} />
+          <Route path="logs" element={<LogsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

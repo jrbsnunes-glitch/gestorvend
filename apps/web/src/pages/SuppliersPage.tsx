@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
+import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
 
 type Supplier = {
@@ -137,6 +138,16 @@ export function SuppliersPage() {
       <h1 className="page-title">Fornecedores</h1>
       <p className="page-desc">Cadastro fiscal e comercial de fornecedores.</p>
 
+      <ReportPrintSticker
+        documentTitle="Fornecedores"
+        documentExtras={
+          <p className="print-sub page-desc" style={{ marginBottom: 0 }}>
+            Lista atual do cadastro. Impressões servem apenas como cópia de trabalho até haver relatório formal
+            no módulo.
+          </p>
+        }
+      />
+
       <CrudToolbar
         onInclude={() => {
           resetForm();
@@ -165,6 +176,9 @@ export function SuppliersPage() {
         <table className="data-table">
           <thead>
             <tr>
+              <th className="num" style={{ width: '3.2rem' }}>
+                Cont.
+              </th>
               <th>Razão social</th>
               <th>Nome fantasia</th>
               <th>CNPJ/CPF</th>
@@ -176,20 +190,21 @@ export function SuppliersPage() {
           <tbody>
             {list.isLoading && (
               <tr>
-                <td colSpan={6} className="empty">
+                <td colSpan={7} className="empty">
                   Carregando…
                 </td>
               </tr>
             )}
             {!list.isLoading && !list.data?.length && (
               <tr>
-                <td colSpan={6} className="empty">
+                <td colSpan={7} className="empty">
                   Nenhum fornecedor.
                 </td>
               </tr>
             )}
-            {list.data?.map((s) => (
+            {list.data?.map((s, idx) => (
               <tr key={s.id}>
+                <td className="num">{idx + 1}</td>
                 <td>
                   <strong>{s.legalName}</strong>
                 </td>

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
+import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
 
@@ -144,6 +145,15 @@ export function CustomersPage() {
       <h1 className="page-title">Clientes</h1>
       <p className="page-desc">Cadastro de clientes para vendas e contas a receber.</p>
 
+      <ReportPrintSticker
+        documentTitle="Clientes"
+        documentExtras={
+          <p className="print-sub page-desc" style={{ marginBottom: 0 }}>
+            Lista de cadastro ao momento da impressão. Ocultamos barras da interface via estilos de impressão.
+          </p>
+        }
+      />
+
       <CrudToolbar
         onInclude={() => {
           resetForm();
@@ -172,6 +182,9 @@ export function CustomersPage() {
         <table className="data-table">
           <thead>
             <tr>
+              <th className="num" style={{ width: '3.2rem' }}>
+                Cont.
+              </th>
               <th>Nome</th>
               <th>CPF/CNPJ</th>
               <th>Contato</th>
@@ -183,20 +196,21 @@ export function CustomersPage() {
           <tbody>
             {list.isLoading && (
               <tr>
-                <td colSpan={6} className="empty">
+                <td colSpan={7} className="empty">
                   Carregando…
                 </td>
               </tr>
             )}
             {!list.isLoading && !list.data?.length && (
               <tr>
-                <td colSpan={6} className="empty">
+                <td colSpan={7} className="empty">
                   Nenhum cliente cadastrado.
                 </td>
               </tr>
             )}
-            {list.data?.map((c) => (
+            {list.data?.map((c, idx) => (
               <tr key={c.id}>
+                <td className="num">{idx + 1}</td>
                 <td>
                   <strong>{c.name}</strong>
                 </td>

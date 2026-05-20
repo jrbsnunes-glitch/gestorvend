@@ -186,6 +186,13 @@ function formatApiErrorBody(status: number, statusText: string, raw: string): st
     }
   }
   if (status === 401) return 'Sessão expirada ou inválida. Faça login novamente.';
+  if (status === 502 || status === 503) {
+    const baseHint =
+      status === 502
+        ? 'O proxy não conseguiu falar com a API Nest (conexão recusada ou processo não respondendo).'
+        : 'A API pode estar inicializando, reiniciando ou sobrecarregada.';
+    return `${baseHint} Em desenvolvimento: na raiz do projeto rode \`npm run dev\` (sobe API + Vite), ou apenas \`npm run dev:api\`. Confira se a porta bate com o proxy (variável \`VITE_API_PROXY_TARGET\`, padrão http://127.0.0.1:3000) e \`PORT\` no \`.env\` da API. Se a API subir e cair ao iniciar, veja Postgres, Redis e migrações.`;
+  }
   const st = statusText?.trim();
   if (st) {
     return `Falha ao chamar o servidor (HTTP ${status}: ${st}). Se estiver no modo desenvolvimento, confira se a API está rodando na porta configurada no proxy do Vite (geralmente 3000).`;

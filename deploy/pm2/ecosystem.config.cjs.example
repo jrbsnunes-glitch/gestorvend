@@ -1,0 +1,20 @@
+/**
+ * GestorVend — PM2 (exemplo).
+ * A API carrega .env via ConfigModule (apps/api/.env e raiz .env).
+ * Uso: ajuste cwd e rode a partir da máquina de deploy:
+ *   pm2 start deploy/pm2/ecosystem.config.cjs.example
+ */
+module.exports = {
+  apps: [
+    {
+      name: 'gestorvend-api',
+      cwd: '/opt/gestorvend/apps/api',
+      script: 'dist/main',
+      interpreter: 'node',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 10,
+      env: { NODE_ENV: 'production' },
+    },
+  ],
+};

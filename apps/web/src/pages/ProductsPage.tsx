@@ -2,11 +2,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useMemo, useState } from 'react';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
+import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import {
   CategorySearchCombo,
   FISCAL_ORIGIN_OPTIONS,
   FiscalCodeSearchCombo,
 } from '../components/ProductCatalogCombos';
+import { ProductReportsPanel } from '../components/ProductReportsPanel';
 import { api } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
 
@@ -14,12 +16,15 @@ type ProductSearchRow = {
   productId: string;
   productName: string;
   description: string | null;
+  /** Menor estoque mínimo entre SKUs — controle gravado no produto (mesmo relatório por intervalo). */
+  productInventoryControlMin?: string;
   variantId: string;
   sku: string;
   barcode: string | null;
   retailPrice: string;
   costAverage: string;
   stockTotal: string;
+  minStock?: string;
 };
 
 type Variant = {
@@ -38,6 +43,8 @@ type Product = {
   name: string;
   description: string | null;
   defaultBarcode: string | null;
+  /** Menor `minStock` entre variantes; usado nos relatórios por intervalo. */
+  inventoryControlMin?: string;
   ncm: string | null;
   cest: string | null;
   exTipi: string | null;
@@ -79,6 +86,21 @@ function marginOnSalePct(retailStr: string, costStr: string): string {
   return `${(((r - c) / r) * 100).toFixed(1)} %`;
 }
 
+/** Menor `minStock` entre variantes usando os valores já editados nos campos — prévia do próximo «controle produto». */
+function minMinStockFromVariantForm(
+  variants: Variant[],
+  vp: Record<string, { retail: string; cost: string; minStock: string }>,
+): number {
+  if (!variants.length) return 1;
+  return Math.min(
+    ...variants.map((v) => {
+      const n = parseFloat((vp[v.id]?.minStock ?? v.minStock ?? '1').replace(',', '.'));
+      const parsed = Number.isFinite(n) ? n : 1;
+      return Math.max(1, parsed);
+    }),
+  );
+}
+
 export function ProductsPage() {
   const qc = useQueryClient();
   const [viewProductId, setViewProductId] = useState<string | null>(null);
@@ -106,7 +128,7 @@ export function ProductsPage() {
   const [sku, setSku] = useState('');
   const [retailPrice, setRetailPrice] = useState('0');
   const [costPrice, setCostPrice] = useState('0');
-  const [minStockInput, setMinStockInput] = useState('0');
+  const [minStockInput, setMinStockInput] = useState('1');
   const [variantPrices, setVariantPrices] = useState<
     Record<string, { retail: string; cost: string; minStock: string }>
   >({});
@@ -160,7 +182,7 @@ export function ProductsPage() {
     setSku('');
     setRetailPrice('0');
     setCostPrice('0');
-    setMinStockInput('0');
+    setMinStockInput('1');
     setErr(null);
   }
 
@@ -181,7 +203,7 @@ export function ProductsPage() {
       vp[v.id] = {
         retail: String(v.retailPrice),
         cost: String(v.costAverage ?? '0'),
-        minStock: String(v.minStock ?? '0'),
+        minStock: String(v.minStock ?? '1'),
       };
     }
     setVariantPrices(vp);
@@ -209,7 +231,7 @@ export function ProductsPage() {
               barcode: defaultBarcode.trim() || null,
               retailPrice: parseFloat(retailPrice.replace(',', '.')) || 0,
               costAverage: parseFloat(costPrice.replace(',', '.')) || 0,
-              minStock: parseFloat(minStockInput.replace(',', '.')) || 0,
+              minStock: Math.max(1, parseFloat(minStockInput.replace(',', '.')) || 1),
             },
           ],
         },
@@ -243,7 +265,7 @@ export function ProductsPage() {
               variantId: v.id,
               retailPrice: parseFloat((row?.retail ?? v.retailPrice).replace(',', '.')) || 0,
               costAverage: parseFloat((row?.cost ?? v.costAverage ?? '0').replace(',', '.')) || 0,
-              minStock: parseFloat((row?.minStock ?? v.minStock ?? '0').replace(',', '.')) || 0,
+              minStock: Math.max(1, parseFloat((row?.minStock ?? v.minStock ?? '1').replace(',', '.')) || 1),
             };
           }),
         },
@@ -285,9 +307,20 @@ export function ProductsPage() {
     <div className="page print-area">
       <h1 className="page-title">Produtos</h1>
       <p className="page-desc">
-        Produtos e variações (SKU). Categoria e tabelas fiscais (NCM, CEST, origem, unidade) com cadastro
-        rápido no próprio formulário.
+        Produtos e variações (SKU). Cadastro não aceita estoque mínimo abaixo de <strong>1</strong> por SKU; o{' '}
+        <strong>Ctr. prod.</strong> replica o menor mínimo da família (usado também no relatório por intervalo).{' '}
+        <strong>Mín. SKU</strong> define o ponto de reposição no PDV/alertas. Categoria e dados fiscais no formulário.
       </p>
+
+      <ReportPrintSticker
+        documentTitle="Produtos e variações"
+        documentExtras={
+          <p className="print-sub page-desc" style={{ marginBottom: 0 }}>
+            Lista operacional atual da tabela abaixo. Use os filtros e a ordenação antes de imprimir quando
+            necessário para auditorias internas.
+          </p>
+        }
+      />
 
       <CrudToolbar
         leadingPrimary={
@@ -310,11 +343,8 @@ export function ProductsPage() {
         onReports={() => setReportsOpen(true)}
       />
 
-      <ModuleReportsModal open={reportsOpen} title="Produtos" onClose={() => setReportsOpen(false)}>
-        <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
-          <li>Catálogo com custo e margem</li>
-          <li>Lista de preços e etiquetas</li>
-        </ul>
+      <ModuleReportsModal open={reportsOpen} title="Produtos" compactLauncher onClose={() => setReportsOpen(false)}>
+        <ProductReportsPanel />
       </ModuleReportsModal>
 
       {searchOpen && (
@@ -344,28 +374,30 @@ export function ProductsPage() {
               <div className="alert alert-error">{(productSearch.error as Error).message}</div>
             )}
             <div className="table-wrap" style={{ maxHeight: 'min(55vh, 420px)', overflow: 'auto' }}>
-              <table className="data-table">
+              <table className="data-table products-search-table">
                 <thead>
                   <tr>
+                    <th className="num th-nowrap products-search-table__ctr">Ctr. prod.</th>
                     <th>Produto</th>
-                    <th>SKU</th>
+                    <th className="products-search-table__sku-th">SKU</th>
+                    <th className="num th-nowrap products-search-table__vmin">Mín. SKU</th>
                     <th>Descrição</th>
-                    <th>Venda</th>
-                    <th>Custo médio</th>
-                    <th>Estoque total</th>
+                    <th className="num col-money th-nowrap products-search-table__money">Venda</th>
+                    <th className="num col-money th-nowrap products-search-table__money">Custo</th>
+                    <th className="num th-nowrap products-search-table__stk">Est. total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {searchQ.length < 1 && (
                     <tr>
-                      <td colSpan={6} className="empty">
+                      <td colSpan={8} className="empty">
                         Digite para buscar.
                       </td>
                     </tr>
                   )}
                   {searchQ.length >= 1 && productSearch.isPending && (
                     <tr>
-                      <td colSpan={6} className="empty">
+                      <td colSpan={8} className="empty">
                         Buscando…
                       </td>
                     </tr>
@@ -375,7 +407,7 @@ export function ProductsPage() {
                     Array.isArray(productSearch.data) &&
                     productSearch.data.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="empty">
+                      <td colSpan={8} className="empty">
                         Nenhum resultado para «{searchQ}».
                       </td>
                     </tr>
@@ -392,10 +424,13 @@ export function ProductsPage() {
                         setViewOpen(true);
                       }}
                     >
+                      <td className="num products-search-table__ctr" title="Menor estoque mínimo entre SKUs deste produto">
+                        {formatStockQty(row.productInventoryControlMin ?? '1')}
+                      </td>
                       <td>
                         <strong>{row.productName}</strong>
                       </td>
-                      <td>
+                      <td className="products-search-table__sku" title={row.sku}>
                         <span>{row.sku}</span>
                         {row.barcode && (
                           <span style={{ display: 'block', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
@@ -403,12 +438,13 @@ export function ProductsPage() {
                           </span>
                         )}
                       </td>
+                      <td className="num products-search-table__vmin">{formatStockQty(row.minStock ?? '1')}</td>
                       <td style={{ maxWidth: '22rem', whiteSpace: 'normal', fontSize: '0.9rem' }}>
                         {row.description?.trim() ? row.description : '—'}
                       </td>
-                      <td>{formatBRL(row.retailPrice)}</td>
-                      <td>{formatBRL(row.costAverage)}</td>
-                      <td>{formatStockQty(row.stockTotal)}</td>
+                      <td className="num col-money products-search-table__money">{formatBRL(row.retailPrice)}</td>
+                      <td className="num col-money products-search-table__money">{formatBRL(row.costAverage)}</td>
+                      <td className="num products-search-table__stk">{formatStockQty(row.stockTotal)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -432,49 +468,64 @@ export function ProductsPage() {
       {list.isError && <div className="alert alert-error">{(list.error as Error).message}</div>}
 
       <div className="table-wrap">
-        <table className="data-table">
+        <table className="data-table products-list-table">
           <thead>
             <tr>
+              <th
+                className="num th-nowrap col-inv-ctrl"
+                title="Menor estoque mínimo entre SKUs deste produto"
+              >
+                Ctr. prod.
+              </th>
               <th>Produto</th>
-              <th>Categoria</th>
-              <th>SKU</th>
-              <th>NCM / CEST</th>
-              <th>Preço varejo</th>
-              <th>Custo médio</th>
-              <th>Status</th>
+              <th className="col-category">Categoria</th>
+              <th className="col-sku" title="Código SKU">
+                SKU
+              </th>
+              <th className="num th-nowrap col-min-sku-table" title="Est. mín. deste SKU">
+                Mín. SKU
+              </th>
+              <th className="col-ncm-ce">NCM / CEST</th>
+              <th className="num col-money th-nowrap">Varejo</th>
+              <th className="num col-money th-nowrap">Custo méd.</th>
+              <th className="col-status">Status</th>
               <th className="col-actions">Ações</th>
             </tr>
           </thead>
           <tbody>
             {list.isLoading && (
               <tr>
-                <td colSpan={8} className="empty">
+                <td colSpan={10} className="empty">
                   Carregando…
                 </td>
               </tr>
             )}
             {!list.isLoading && !rows.length && (
               <tr>
-                <td colSpan={8} className="empty">
+                <td colSpan={10} className="empty">
                   Nenhum produto.
                 </td>
               </tr>
             )}
             {rows.map(({ product, variant }) => (
               <tr key={`${product.id}-${variant?.id ?? 'x'}`}>
+                <td className="num col-inv-ctrl">{formatStockQty(product.inventoryControlMin ?? '1')}</td>
                 <td>
                   <strong>{product.name}</strong>
                 </td>
-                <td>{product.category?.name ?? '—'}</td>
-                <td>{variant?.sku ?? '—'}</td>
-                <td>
+                <td className="col-category">{product.category?.name ?? '—'}</td>
+                <td className="col-sku" title={variant?.sku ?? undefined}>
+                  {variant?.sku ?? '—'}
+                </td>
+                <td className="num col-min-sku-table">{variant ? formatStockQty(variant.minStock ?? '1') : '—'}</td>
+                <td className="col-ncm-ce">
                   <span style={{ fontSize: '0.85rem' }}>
                     {product.ncm ?? '—'} / {product.cest ?? '—'}
                   </span>
                 </td>
-                <td>{variant ? formatBRL(variant.retailPrice) : '—'}</td>
-                <td>{variant ? formatBRL(variant.costAverage ?? '0') : '—'}</td>
-                <td>
+                <td className="num col-money">{variant ? formatBRL(variant.retailPrice) : '—'}</td>
+                <td className="num col-money">{variant ? formatBRL(variant.costAverage ?? '0') : '—'}</td>
+                <td className="col-status">
                   <span className={'badge ' + (product.isActive ? 'badge-success' : 'badge-muted')}>
                     {product.isActive ? 'Ativo' : 'Inativo'}
                   </span>
@@ -686,12 +737,12 @@ export function ProductsPage() {
                   id="p-minstock"
                   type="number"
                   step="1"
-                  min="0"
+                  min="1"
                   value={minStockInput}
                   onChange={(e) => setMinStockInput(e.target.value)}
                 />
                 <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                  PDV avisa quando o saldo ficar abaixo deste valor.
+                  Cadastro mínimo 1. PDV avisa quando o saldo ficar abaixo deste valor.
                 </span>
               </div>
             </div>
@@ -824,6 +875,18 @@ export function ProductsPage() {
                 </div>
               </details>
             </div>
+            <p
+              style={{
+                fontSize: '0.82rem',
+                color: 'var(--color-text-muted)',
+                margin: '0.35rem 0 0.25rem',
+                lineHeight: 1.45,
+              }}
+            >
+              <strong>Controle produto</strong> gravado no cadastro (menor mínimo entre SKUs){' '}
+              <strong>{formatStockQty(editProduct.inventoryControlMin ?? '1')}</strong>. Atualiza ao salvar; prévia conforme formulário{' '}
+              <strong>{formatStockQty(String(minMinStockFromVariantForm(editProduct.variants, variantPrices)))}</strong>.
+            </p>
             <h3
               style={{
                 fontSize: '0.88rem',
@@ -840,7 +903,7 @@ export function ProductsPage() {
               const row = variantPrices[v.id] ?? {
                 retail: String(v.retailPrice),
                 cost: String(v.costAverage ?? '0'),
-                minStock: String(v.minStock ?? '0'),
+                minStock: String(v.minStock ?? '1'),
               };
               return (
                 <div key={v.id} className="form-row">
@@ -890,7 +953,7 @@ export function ProductsPage() {
                       id={`pe-m-${v.id}`}
                       type="number"
                       step="1"
-                      min="0"
+                      min="1"
                       value={row.minStock}
                       onChange={(e) =>
                         setVariantPrices((s) => ({ ...s, [v.id]: { ...row, minStock: e.target.value } }))
@@ -986,11 +1049,15 @@ export function ProductsPage() {
                 <p>
                   <strong>Status:</strong> {viewProduct.isActive ? 'Ativo' : 'Inativo'}
                 </p>
+                <p>
+                  <strong>Controle produto / estoque:</strong>{' '}
+                  {formatStockQty(viewProduct.inventoryControlMin ?? '1')} (menor mínimo entre SKUs cadastradas)
+                </p>
                 <h3 style={{ fontSize: '0.95rem', marginTop: '1rem' }}>Variações (SKU)</h3>
                 <ul style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.9rem' }}>
                   {viewProduct.variants.map((v) => (
                     <li key={v.id}>
-                      <strong>{v.sku}</strong> — venda {formatBRL(v.retailPrice)} · custo{' '}
+                      <strong>{v.sku}</strong> — mín. {formatStockQty(v.minStock ?? '1')} · venda {formatBRL(v.retailPrice)} · custo{' '}
                       {formatBRL(v.costAverage ?? '0')} · lucro {profitBRL(String(v.retailPrice), String(v.costAverage ?? '0'))}
                       {v.barcode ? ` · EAN ${v.barcode}` : ''}
                     </li>

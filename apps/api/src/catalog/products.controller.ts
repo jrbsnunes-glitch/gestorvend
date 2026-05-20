@@ -23,6 +23,30 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 export class ProductsController {
   constructor(private readonly tenantPrisma: TenantPrismaService) {}
 
+  /** Piso cadastral: variante sempre com reposição configurada como ≥ 1. */
+  private parseCadastroVariantMinStock(raw: unknown): string {
+    const n = Number(String(raw ?? '1').replace(',', '.'));
+    if (!Number.isFinite(n)) {
+      throw new BadRequestException('Estoque mínimo da variação deve ser um número válido.');
+    }
+    if (n < 1) {
+      throw new BadRequestException('O estoque mínimo cadastrado da variação deve ser no mínimo 1.');
+    }
+    return String(n);
+  }
+
+  private async syncProductInventoryControlMin(tx: Prisma.TransactionClient, productId: string) {
+    const agg = await tx.productVariant.aggregate({
+      where: { productId },
+      _min: { minStock: true },
+    });
+    const minVal = agg._min.minStock ?? new Prisma.Decimal(1);
+    await tx.product.update({
+      where: { id: productId },
+      data: { inventoryControlMin: minVal },
+    });
+  }
+
   private async applyVariantPriceUpdates(
     tx: Prisma.TransactionClient,
     productId: string,
@@ -74,7 +98,8 @@ export class ProductsController {
         }
       }
       if (vp.minStock !== undefined) {
-        const newMin = new Prisma.Decimal(String(vp.minStock));
+        const newMinStr = this.parseCadastroVariantMinStock(vp.minStock);
+        const newMin = new Prisma.Decimal(newMinStr);
         if (!new Prisma.Decimal(v.minStock).equals(newMin)) {
           nextMinStock = newMin.toString();
         }
@@ -123,7 +148,9 @@ export class ProductsController {
       take: 80,
       orderBy: [{ product: { name: 'asc' } }, { sku: 'asc' }],
       include: {
-        product: { select: { id: true, name: true, description: true } },
+        product: {
+          select: { id: true, name: true, description: true, inventoryControlMin: true },
+        },
         stockBalances: { select: { quantity: true } },
       },
     });
@@ -137,6 +164,7 @@ export class ProductsController {
         productId: v.product.id,
         productName: v.product.name,
         description: v.product.description,
+        productInventoryControlMin: String(v.product.inventoryControlMin),
         variantId: v.id,
         sku: v.sku,
         barcode: v.barcode,
@@ -147,6 +175,41 @@ export class ProductsController {
         minStock: String(v.minStock),
       };
     });
+  }
+
+  /**
+   * Manutenção: variantes com mínimo &lt; 1 passam a **1** e o controle produto é recalculado. Não altera `StockMovement`.
+   */
+  @Post('maintenance/lift-zero-min-stock-to-one')
+  @Roles('admin')
+  async liftZeroMinStockToOne(@CurrentUser() user: JwtPayload) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const variantsBelowOne = await db.productVariant.findMany({
+      where: { minStock: { lt: new Prisma.Decimal(1) } },
+      select: { productId: true },
+    });
+    const result = await db.productVariant.updateMany({
+      where: { minStock: { lt: new Prisma.Decimal(1) } },
+      data: { minStock: new Prisma.Decimal(1) },
+    });
+    await db.$executeRaw`
+      UPDATE "Product" AS p
+      SET "inventoryControlMin" = v.min_agg
+      FROM (
+        SELECT "productId", MIN("minStock") AS min_agg
+        FROM "ProductVariant"
+        GROUP BY "productId"
+      ) AS v
+      WHERE p.id = v."productId"
+    `;
+    const distinctProductsAffected = new Set(variantsBelowOne.map((v) => v.productId)).size;
+    return {
+      ok: true,
+      variantsUpdatedCount: result.count,
+      distinctProductsAffectedCount: distinctProductsAffected,
+      note:
+        'Movimentações de estoque (entradas, saídas, ajustes) não foram regravadas — apenas cadastro de mínimos/controle produto.',
+    };
   }
 
   @Get(':id/price-history')
@@ -217,29 +280,38 @@ export class ProductsController {
     // primeira variante quando ela não tem código próprio — mantém a busca
     // por EAN funcional no PDV.
     const defaultBarcode = body.defaultBarcode?.trim() ? body.defaultBarcode.trim().slice(0, 32) : null;
-    return db.product.create({
-      data: {
-        name: body.name,
-        description: body.description ?? null,
-        defaultBarcode,
-        categoryId: body.categoryId ?? null,
-        ncm: body.ncm ?? null,
-        cest: body.cest ?? null,
-        exTipi: body.exTipi?.trim() ? body.exTipi.trim().slice(0, 10) : null,
-        fiscalOrigin: body.fiscalOrigin?.trim() ? body.fiscalOrigin.trim().slice(0, 2) : null,
-        taxUnit: body.taxUnit?.trim() ? body.taxUnit.trim().slice(0, 10).toUpperCase() : null,
-        variants: {
-          create: body.variants.map((v, idx) => ({
-            sku: v.sku,
-            barcode: v.barcode ?? (idx === 0 ? defaultBarcode : null),
-            retailPrice: String(v.retailPrice),
-            wholesalePrice: v.wholesalePrice != null ? String(v.wholesalePrice) : null,
-            costAverage: v.costAverage != null ? String(v.costAverage) : '0',
-            minStock: v.minStock != null ? String(v.minStock) : '0',
-          })),
+
+    const createdId = await db.$transaction(async (tx) => {
+      const prod = await tx.product.create({
+        data: {
+          name: body.name,
+          description: body.description ?? null,
+          defaultBarcode,
+          categoryId: body.categoryId ?? null,
+          ncm: body.ncm ?? null,
+          cest: body.cest ?? null,
+          exTipi: body.exTipi?.trim() ? body.exTipi.trim().slice(0, 10) : null,
+          fiscalOrigin: body.fiscalOrigin?.trim() ? body.fiscalOrigin.trim().slice(0, 2) : null,
+          taxUnit: body.taxUnit?.trim() ? body.taxUnit.trim().slice(0, 10).toUpperCase() : null,
+          variants: {
+            create: body.variants.map((v, idx) => ({
+              sku: v.sku,
+              barcode: v.barcode ?? (idx === 0 ? defaultBarcode : null),
+              retailPrice: String(v.retailPrice),
+              wholesalePrice: v.wholesalePrice != null ? String(v.wholesalePrice) : null,
+              costAverage: v.costAverage != null ? String(v.costAverage) : '0',
+              minStock: this.parseCadastroVariantMinStock(v.minStock ?? 1),
+            })),
+          },
         },
-      },
-      include: { variants: true },
+      });
+      await this.syncProductInventoryControlMin(tx, prod.id);
+      return prod.id;
+    });
+
+    return db.product.findUniqueOrThrow({
+      where: { id: createdId },
+      include: { variants: true, category: true },
     });
   }
 
@@ -294,6 +366,7 @@ export class ProductsController {
 
       if (variantPrices.length) {
         await this.applyVariantPriceUpdates(tx, id, variantPrices);
+        await this.syncProductInventoryControlMin(tx, id);
       }
 
       return tx.product.findUniqueOrThrow({

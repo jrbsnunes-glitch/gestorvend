@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CompanyHeader } from '../components/CompanyHeader';
+import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
 import './cash-print.css';
@@ -45,20 +45,6 @@ type Report = {
 
 type Me = { name: string; email: string };
 type Operator = { id: string; name: string; email: string };
-
-type Company = {
-  legalName: string;
-  tradeName: string;
-  cnpj: string;
-  ie: string | null;
-  email: string | null;
-  phone: string | null;
-  address: string | null;
-  city: string | null;
-  state: string | null;
-  zip: string | null;
-  logoUrl: string | null;
-};
 
 const PAYMENT_LABELS: Record<string, string> = {
   CASH: 'Dinheiro',
@@ -121,12 +107,6 @@ export function CashPrintItemsPage() {
     staleTime: 5 * 60_000,
   });
 
-  const company = useQuery({
-    queryKey: ['company'],
-    queryFn: () => api<Company>('/company'),
-    staleTime: 10 * 60_000,
-  });
-
   // Para mostrar o nome do operador filtrado (sem precisar de outra rota).
   const operators = useQuery({
     queryKey: ['users'],
@@ -167,28 +147,19 @@ export function CashPrintItemsPage() {
       </div>
 
       <div className="print-doc">
-        <CompanyHeader company={company.data ?? null} />
-        <header className="print-head">
-          <div>
-            <h1>Relatório de Itens Vendidos</h1>
-            <p className="print-sub">{periodLabel(from, to)}</p>
-            {operatorLabel && (
-              <p className="print-sub" style={{ marginTop: '0.15rem' }}>
-                Operador: <strong>{operatorLabel}</strong>
-              </p>
-            )}
-          </div>
-          <div className="print-meta">
-            <div>
-              <span className="print-meta-label">Gerado em</span>
-              <strong>{new Date().toLocaleString('pt-BR')}</strong>
-            </div>
-            <div>
-              <span className="print-meta-label">Por</span>
-              <strong>{me.data?.name ?? '—'}</strong>
-            </div>
-          </div>
-        </header>
+        <StandardReportHeader
+          documentTitle="Relatório de Itens Vendidos"
+          documentExtras={
+            <>
+              <p className="print-sub">{periodLabel(from, to)}</p>
+              {operatorLabel && (
+                <p className="print-sub" style={{ marginTop: '0.15rem' }}>
+                  Operador: <strong>{operatorLabel}</strong>
+                </p>
+              )}
+            </>
+          }
+        />
 
         {report.isLoading && <p>Carregando…</p>}
         {report.isError && (

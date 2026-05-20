@@ -3,6 +3,7 @@ import { GoodsReceiptController } from './goods-receipt.controller';
 import { LocationsController } from './locations.controller';
 import { StockExitsController } from './stock-exits.controller';
 import { StockMovementsController } from './stock-movements.controller';
+import { StockTransfersController } from './stock-transfers.controller';
 
 @Module({
   controllers: [
@@ -10,6 +11,7 @@ import { StockMovementsController } from './stock-movements.controller';
     StockMovementsController,
     GoodsReceiptController,
     StockExitsController,
+    StockTransfersController,
   ],
 })
 export class InventoryModule {}

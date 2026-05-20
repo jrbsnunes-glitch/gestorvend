@@ -1,0 +1,24 @@
+# GestorVend — unidade systemd (exemplo).
+# Copie para /etc/systemd/system/gestorvend-api.service
+# Ajuste: User, WorkingDirectory, EnvironmentFile, ExecStart (caminho do node).
+#
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now gestorvend-api
+#   sudo systemctl status gestorvend-api
+
+[Unit]
+Description=GestorVend API (NestJS)
+# Se PostgreSQL/Redis forem containers Docker, comente a linha After= abaixo.
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/gestorvend/apps/api
+EnvironmentFile=/opt/gestorvend/apps/api/.env
+ExecStart=/usr/bin/node dist/main
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

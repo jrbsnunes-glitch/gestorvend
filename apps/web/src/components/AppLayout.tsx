@@ -3,6 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { getIdentity, profileFromRoles, profileLabel } from '../lib/auth';
+import { useNavigationActivityLogger } from '../lib/use-navigation-activity-log';
 import './layout.css';
 
 type NavItem = {
@@ -24,11 +25,13 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/financeiro', label: 'Financeiro', managerOnly: true },
   { to: '/empresa', label: 'Empresa', managerOnly: true },
   { to: '/usuarios', label: 'Usuários', managerOnly: true },
+  { to: '/logs', label: 'Logs', managerOnly: true },
 ];
 
 type Me = { name: string; email: string; profile: 'manager' | 'cashier' };
 
 export function AppLayout({ onLogout }: { onLogout: () => void }) {
+  useNavigationActivityLogger();
   // Identidade local (decodificada do JWT) para decidir o menu sem precisar
   // esperar a resposta da API. Em paralelo carregamos os dados reais (`/users/me`)
   // para mostrar nome do operador no rodapé.

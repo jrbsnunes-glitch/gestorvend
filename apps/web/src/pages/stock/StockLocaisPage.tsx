@@ -102,7 +102,7 @@ export function StockLocaisPage() {
       <ModuleReportsModal open={reportsOpen} title="Locais de estoque" onClose={() => setReportsOpen(false)}>
         <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
           <li>Lista de locais com saldo agregado (a implementar)</li>
-          <li>Transferências entre locais (futuro)</li>
+          <li>Transferências entre locais — veja o menu <strong>Estoque → Transferências</strong></li>
         </ul>
       </ModuleReportsModal>
 
@@ -125,6 +125,9 @@ export function StockLocaisPage() {
         <table className="data-table">
           <thead>
             <tr>
+              <th className="num" style={{ width: '3.2rem' }}>
+                Cont.
+              </th>
               <th>Código</th>
               <th>Nome</th>
               <th>Padrão</th>
@@ -134,20 +137,21 @@ export function StockLocaisPage() {
           <tbody>
             {locations.isLoading && (
               <tr>
-                <td colSpan={4} className="empty">
+                <td colSpan={5} className="empty">
                   Carregando…
                 </td>
               </tr>
             )}
             {!locations.isLoading && !sortedLocs.length && (
               <tr>
-                <td colSpan={4} className="empty">
+                <td colSpan={5} className="empty">
                   Cadastre pelo menos um local (ex.: Matriz).
                 </td>
               </tr>
             )}
-            {sortedLocs.map((l) => (
+            {sortedLocs.map((l, idx) => (
               <tr key={l.id}>
+                <td className="num">{idx + 1}</td>
                 <td>
                   <strong>{l.code}</strong>
                 </td>

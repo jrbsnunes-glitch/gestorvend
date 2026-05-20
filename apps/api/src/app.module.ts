@@ -17,6 +17,7 @@ import { SalesModule } from './sales/sales.module';
 import { TenantModule } from './tenant/tenant.module';
 import { UsersModule } from './users/users.module';
 import { WaChatModule } from './wachat/wachat.module';
+import { ActivityLogsModule } from './activity-logs/activity-logs.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { WaChatModule } from './wachat/wachat.module';
     PortalModule,
     UsersModule,
     WaChatModule,
+    ActivityLogsModule,
   ],
   controllers: [HealthController],
 })
