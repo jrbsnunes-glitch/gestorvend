@@ -24,6 +24,8 @@ git clone https://github.com/jrbsnunes-glitch/gestorvend.git .
 npm ci
 ```
 
+Não use `npm ci --ignore-scripts`: o projeto depende dos scripts de pós-instalação (e do `npm run build`) para gerar os clients Prisma em `apps/api/src/generated/` (pastas ignoradas pelo Git). Sem isso, o `dist` da API pode subir sem `central-client` e o PM2 falha com `Cannot find module '../generated/central-client'`.
+
 ## 3) PostgreSQL e Redis
 
 **Opção A — Docker** (somente postgres + redis do repositório):
@@ -73,6 +75,8 @@ npm run seed -w @gestorvend/api
 ```bash
 npm run build
 ```
+
+O script `build` na raiz executa **`npm run db:generate`** antes do Nest (ambos os schemas Prisma), garantindo que `src/generated/` exista e seja copiada para `apps/api/dist/` no `nest build`.
 
 Saídas: `apps/api/dist/`, `apps/web/dist/`.
 
