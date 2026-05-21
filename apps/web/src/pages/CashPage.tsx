@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { isManager } from '../lib/auth';
@@ -37,6 +43,10 @@ type CashSessionRow = {
   user: CashUser | null;
   movementsIn: number;
   movementsOut: number;
+  /** Total de vendas COMPLETED na janela do caixa (mesmo critério do detalhe). */
+  totalCompletedSales: number;
+  /** Declarado total − esperado total (Conciliação); null se não há fechamento/rubrica declarada. */
+  reconciliationDifference: number | null;
 };
 
 type SaleItemRow = {
@@ -111,9 +121,57 @@ const PAYMENT_LABELS: Record<string, string> = {
   EXPENSE: 'Despesa',
 };
 
+/** Coluna lista: mesma paleta das diferenças na conciliação do detalhe. */
+function listReconciliationDiffCell(value: number | null): ReactNode {
+  if (value == null)
+    return <span style={{ color: 'var(--color-text-muted)' }}>—</span>;
+  if (Math.abs(value) < 0.005)
+    return (
+      <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: '#15803d' }}>
+        {formatBRL(0)}
+      </span>
+    );
+  const positivo = value > 0;
+  return (
+    <span
+      style={{
+        fontVariantNumeric: 'tabular-nums',
+        fontWeight: 700,
+        color: positivo ? '#1d4ed8' : '#b91c1c',
+      }}
+    >
+      {positivo ? '+' : ''}
+      {formatBRL(value)}
+    </span>
+  );
+}
+
 function fmtDateTime(iso: string | null): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleString('pt-BR');
+}
+
+/** Data em uma linha e hora na outra — ocupa menos largura na tabela de caixa. */
+function CompactSessionDatetime({ iso }: { iso: string | null }): ReactNode {
+  if (!iso)
+    return <span style={{ color: 'var(--color-text-muted)' }}>—</span>;
+  const d = new Date(iso);
+  const datePart = d.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+  });
+  const timePart = d.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const full = d.toLocaleString('pt-BR');
+  return (
+    <span className="cash-ss-datetime" title={full}>
+      <span>{datePart}</span>
+      <span>{timePart}</span>
+    </span>
+  );
 }
 
 function todayISO(): string {
@@ -355,68 +413,118 @@ export function CashPage() {
           </div>
         )}
         {!list.isLoading && !list.isError && (
-          <div className="table-wrap">
-            <table className="data-table">
+          <div className="table-wrap table-wrap-cash-sessions">
+            <table className="data-table cash-sessions-table">
+              <colgroup>
+                <col style={{ width: '5%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '6.5%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '8.5%' }} />
+              </colgroup>
               <thead>
                 <tr>
-                  <th style={{ width: 80 }}>Controle</th>
+                  <th>Nº</th>
                   <th>Operador</th>
-                  <th>Status</th>
-                  <th>Conferência</th>
-                  <th>Aberto em</th>
-                  <th>Fechado em</th>
-                  <th style={{ textAlign: 'right' }}>Saldo inicial</th>
-                  <th style={{ textAlign: 'right' }}>Suprim. / Sangrias</th>
-                  <th style={{ textAlign: 'right' }}>Saldo final</th>
-                  <th style={{ textAlign: 'right' }}>Ações</th>
+                  <th>Estado</th>
+                  <th title="Conferência pelo gerente">Conf.</th>
+                  <th className="cash-ss-num">
+                    Tot.
+                    <br />
+                    vendas
+                  </th>
+                  <th
+                    className="cash-ss-num"
+                    title="Diferença de conferência: declarado menos esperado (mesmo critério do detalhe)"
+                  >
+                    Dif.
+                    <br />
+                    conf.
+                  </th>
+                  <th title="Abertura do caixa">
+                    Aberto
+                    <br />
+                    em
+                  </th>
+                  <th title="Fechado em">
+                    Fechado
+                    <br />
+                    em
+                  </th>
+                  <th className="cash-ss-num" title="Saldo inicial">
+                    Sd.
+                    <br />
+                    inicial
+                  </th>
+                  <th className="cash-ss-num" title="Suprimentos (+) e sangrias / retiradas (−)">
+                    +/-
+                    <br />
+                    cx.
+                  </th>
+                  <th className="cash-ss-num" title="Saldo final declarado">
+                    Sd.
+                    <br />
+                    final
+                  </th>
+                  <th className="col-actions cash-ss-num" title="Ir ao detalhe da sessão">
+                    Ações
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={10} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                    <td colSpan={12} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                       Nenhum caixa encontrado para este filtro.
                     </td>
                   </tr>
                 )}
                 {filtered.map((s) => (
                   <tr key={s.id}>
-                    <td>
+                    <td className="cash-ss-num">
                       <span
                         style={{
                           display: 'inline-block',
-                          padding: '0.1rem 0.5rem',
+                          padding: '0.08rem 0.35rem',
                           background: 'var(--color-surface-elevated)',
                           border: '1px solid var(--color-border-strong)',
-                          borderRadius: 6,
+                          borderRadius: 5,
                           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
                           fontWeight: 700,
-                          fontSize: '0.85rem',
+                          fontSize: '0.76rem',
                         }}
                         title={`ID: ${s.id}`}
                       >
                         #{s.controlNumber}
                       </span>
                     </td>
-                    <td>
-                      <strong>{s.user?.name ?? '—'}</strong>
-                      <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                        {s.user?.email ?? ''}
-                      </span>
+                    <td className="cash-ss-col-operator" title={[s.user?.name, s.user?.email].filter(Boolean).join(' · ') || undefined}>
+                      <span className="cash-ss-operator-name">{s.user?.name ?? '—'}</span>
+                      {s.user?.email ? <span className="cash-ss-operator-mail">{s.user.email}</span> : null}
                     </td>
                     <td>
                       <span
+                        className="cash-ss-chip"
                         style={{
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '0.28rem',
+                          gap: '0.18rem',
                           whiteSpace: 'nowrap',
                           verticalAlign: 'middle',
-                          padding: '0.12rem 0.5rem',
+                          padding: '0.1rem 0.38rem',
                           borderRadius: '999px',
-                          fontSize: '0.78rem',
+                          fontSize: '0.72rem',
                           fontWeight: 700,
                           lineHeight: 1.2,
+                          maxWidth: '100%',
+                          boxSizing: 'border-box',
                           background: s.status === 'OPEN' ? 'rgba(22,163,74,0.12)' : 'rgba(148,163,184,0.18)',
                           color: s.status === 'OPEN' ? '#15803d' : '#64748b',
                         }}
@@ -433,69 +541,87 @@ export function CashPage() {
                         )}
                       </span>
                     </td>
-                    <td style={{ fontSize: '0.82rem' }}>
+                    <td style={{ fontSize: '0.75rem', lineHeight: 1.2 }}>
                       {s.status === 'OPEN' ? (
                         <span style={{ color: 'var(--color-text-muted)' }}>—</span>
                       ) : s.reconciledAt ? (
                         <span
-                          title={s.reconciledBy?.name ? `Por ${s.reconciledBy.name}` : undefined}
+                          title={
+                            [
+                              'Conferido',
+                              s.reconciledBy?.name ? `por ${s.reconciledBy.name}` : '',
+                            ]
+                              .filter(Boolean)
+                              .join(' ')
+                          }
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
                             whiteSpace: 'nowrap',
                             verticalAlign: 'middle',
-                            padding: '0.12rem 0.5rem',
+                            padding: '0.1rem 0.38rem',
                             borderRadius: '999px',
-                            fontSize: '0.75rem',
+                            fontSize: '0.7rem',
                             fontWeight: 700,
-                            lineHeight: 1.2,
+                            lineHeight: 1.15,
+                            maxWidth: '100%',
+                            overflow: 'hidden',
                             background: 'rgba(22,163,74,0.16)',
                             color: '#15803d',
                           }}
                         >
-                          Conferido
+                          Conc.
                         </span>
                       ) : (
                         <span
+                          title={manager ? 'Pendente de conferência' : 'Aguardando conferência'}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
                             whiteSpace: 'nowrap',
                             verticalAlign: 'middle',
-                            padding: '0.12rem 0.5rem',
+                            padding: '0.1rem 0.38rem',
                             borderRadius: '999px',
-                            fontSize: '0.75rem',
+                            fontSize: '0.7rem',
                             fontWeight: 700,
-                            lineHeight: 1.2,
+                            lineHeight: 1.15,
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
                             background: 'rgba(234,179,8,0.18)',
                             color: '#a16207',
                           }}
                         >
-                          {manager ? 'Pendente' : 'Aguardando'}
+                          {manager ? 'Pend.' : 'Aguard.'}
                         </span>
                       )}
                     </td>
-                    <td style={{ fontSize: '0.85rem' }}>{fmtDateTime(s.openedAt)}</td>
-                    <td style={{ fontSize: '0.85rem' }}>{fmtDateTime(s.closedAt)}</td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                      {formatBRL(s.openingBalance)}
+                    <td className="cash-ss-num" style={{ fontWeight: 600 }}>
+                      {formatBRL(s.totalCompletedSales)}
                     </td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: '0.82rem' }}>
+                    <td className="cash-ss-num">{listReconciliationDiffCell(s.reconciliationDifference)}</td>
+                    <td>
+                      <CompactSessionDatetime iso={s.openedAt} />
+                    </td>
+                    <td>
+                      <CompactSessionDatetime iso={s.closedAt} />
+                    </td>
+                    <td className="cash-ss-num">{formatBRL(s.openingBalance)}</td>
+                    <td className="cash-ss-num cash-ss-movements-cell">
                       <span style={{ color: '#15803d' }}>+{formatBRL(s.movementsIn)}</span>
                       <br />
                       <span style={{ color: '#b91c1c' }}>−{formatBRL(s.movementsOut)}</span>
                     </td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                      {s.closingBalance ? formatBRL(s.closingBalance) : '—'}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
+                    <td className="cash-ss-num">{s.closingBalance ? formatBRL(s.closingBalance) : '—'}</td>
+                    <td className="col-actions cash-ss-num">
                       <button
                         type="button"
                         className="btn btn-ghost"
-                        style={{ padding: '0.3rem 0.65rem', fontSize: '0.82rem' }}
+                        title="Ver detalhes da sessão"
+                        style={{ padding: '0.26rem 0.45rem', fontSize: '0.74rem', whiteSpace: 'nowrap' }}
                         onClick={() => setDetailId(s.id)}
                       >
-                        Ver detalhes
+                        Detalhes
                       </button>
                     </td>
                   </tr>

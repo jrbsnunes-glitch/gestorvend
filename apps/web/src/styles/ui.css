@@ -313,6 +313,83 @@
   border-bottom: none;
 }
 
+/* --- Caixa: listagem de sessões compacta (evita barra horizontal) ---------- */
+.table-wrap.table-wrap-cash-sessions {
+  max-width: 100%;
+}
+
+.data-table.cash-sessions-table {
+  table-layout: fixed;
+  width: 100%;
+  font-size: 0.78rem;
+}
+
+.data-table.cash-sessions-table th,
+.data-table.cash-sessions-table td {
+  padding: 0.42rem 0.28rem;
+  vertical-align: middle;
+}
+
+.data-table.cash-sessions-table thead th {
+  font-size: 0.62rem;
+  line-height: 1.2;
+  padding: 0.36rem 0.26rem;
+}
+
+.data-table.cash-sessions-table .cash-ss-num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table.cash-sessions-table .cash-ss-col-operator {
+  min-width: 0;
+}
+
+.data-table.cash-sessions-table .cash-ss-operator-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: inherit;
+}
+
+.data-table.cash-sessions-table .cash-ss-operator-mail {
+  display: block;
+  font-size: 0.69rem;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table.cash-sessions-table .cash-ss-movements-cell {
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.data-table.cash-sessions-table .cash-ss-movements-cell span {
+  white-space: nowrap;
+}
+
+/** Data + hora em duas linhas — coluna mais estreita que um único timestamp longo */
+.cash-ss-datetime {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  line-height: 1.15;
+}
+
+.cash-ss-datetime span {
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table.cash-sessions-table .cash-ss-chip {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

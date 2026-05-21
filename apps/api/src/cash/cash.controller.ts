@@ -64,6 +64,86 @@ function parseQueryDate(raw: string, mode: 'start' | 'end'): Date {
   return new Date(raw);
 }
 
+function roundMoney(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/** Agrega total de vendas concluídas e diferença líquida (igual PaymentReconciliation no web). */
+function computeSessionListAggregates(params: {
+  sales: Array<{
+    status: SaleStatus;
+    total: unknown;
+    createdAt: Date;
+    payments: Array<{ method: string; amount: unknown }>;
+  }>;
+  movements: Array<{ type: CashMovementType; amount: unknown; method: PaymentMethod | null }>;
+  openingBalance: unknown;
+  closingByMethod: unknown;
+}): { totalCompletedSales: number; reconciliationDifference: number | null } {
+  let totalCompleted = 0;
+  const byMethod = new Map<string, number>();
+
+  for (const sale of params.sales) {
+    if (sale.status !== SaleStatus.COMPLETED) continue;
+    totalCompleted += Number(sale.total);
+    for (const p of sale.payments) {
+      byMethod.set(p.method, (byMethod.get(p.method) ?? 0) + Number(p.amount));
+    }
+  }
+
+  for (const m of params.movements) {
+    if (m.type === CashMovementType.OUT && m.method === PaymentMethod.EXPENSE) {
+      byMethod.set('EXPENSE', (byMethod.get('EXPENSE') ?? 0) + Number(m.amount));
+    }
+  }
+
+  const expected = Object.fromEntries(byMethod) as Record<string, number>;
+  const opening =
+    parseFloat(String(params.openingBalance ?? '0').replace(',', '.')) || 0;
+
+  const declared = (params.closingByMethod ?? null) as
+    | Record<string, number | string>
+    | null;
+
+  let reconciliationDifference: number | null = null;
+  if (declared) {
+    const methodKeys = Array.from(
+      new Set<string>([
+        ...Object.keys(expected),
+        ...Object.keys(declared),
+        'CASH',
+      ]),
+    );
+    let totalExpected = 0;
+    let totalDeclared = 0;
+    /** Mesmo critério de `buildCashReconciliationRows(...).filter` no front. */
+    let anyVisibleRow = false;
+    for (const key of methodKeys) {
+      const expectedFinal =
+        key === 'CASH' ? (expected[key] ?? 0) + opening : expected[key] ?? 0;
+      const rawDeclared = declared[key];
+      const declaredVal =
+        rawDeclared == null
+          ? null
+          : typeof rawDeclared === 'number'
+            ? rawDeclared
+            : parseFloat(String(rawDeclared).replace(',', '.'));
+      if (!(expectedFinal > 0 || declaredVal != null)) continue;
+      anyVisibleRow = true;
+      totalExpected += expectedFinal;
+      totalDeclared += declaredVal ?? 0;
+    }
+    reconciliationDifference = anyVisibleRow
+      ? roundMoney(totalDeclared - totalExpected)
+      : null;
+  }
+
+  return {
+    totalCompletedSales: roundMoney(totalCompleted),
+    reconciliationDifference,
+  };
+}
+
 function normalizeClosingByMethodInput(
   raw: Record<string, number | string> | undefined | null,
 ): Record<string, number> | null {
@@ -198,12 +278,55 @@ export class CashController {
       include: {
         user: { select: { id: true, name: true, email: true } },
         reconciledBy: { select: { id: true, name: true, email: true } },
-        movements: { select: { type: true, amount: true } },
+        movements: { select: { type: true, amount: true, method: true } },
       },
       take: 200,
     });
 
-    // Calcula totais leves (entradas/saídas) no servidor para evitar trabalho no front.
+    const now = new Date();
+    const saleWindowUserIds = [...new Set(sessions.map((s) => s.userId))];
+
+    /** Uma única consulta para vendas de todos os caixas listados (janelas filtradas em memória). */
+    let batchSales: Array<{
+      userId: string | null;
+      createdAt: Date;
+      status: SaleStatus;
+      total: unknown;
+      payments: Array<{ method: string; amount: unknown }>;
+    }> = [];
+    if (sessions.length && saleWindowUserIds.length > 0) {
+      let minOpened = sessions[0].openedAt;
+      let maxEnd = now;
+      for (const s of sessions) {
+        if (s.openedAt < minOpened) minOpened = s.openedAt;
+        const end = s.closedAt ?? now;
+        if (end > maxEnd) maxEnd = end;
+      }
+      batchSales = await db.sale.findMany({
+        where: {
+          userId: { in: saleWindowUserIds },
+          createdAt: { gte: minOpened, lte: maxEnd },
+        },
+        select: {
+          userId: true,
+          createdAt: true,
+          status: true,
+          total: true,
+          payments: { select: { method: true, amount: true } },
+        },
+      });
+    }
+
+    const salesByUserId = new Map<string, typeof batchSales>();
+    for (const sale of batchSales) {
+      const uid = sale.userId;
+      if (!uid) continue;
+      const bucket = salesByUserId.get(uid);
+      if (bucket) bucket.push(sale);
+      else salesByUserId.set(uid, [sale]);
+    }
+
+    // Calcula totais leves (entradas/saídas) + vendas/conferência no servidor.
     return sessions.map((s) => {
       let movIn = 0;
       let movOut = 0;
@@ -212,8 +335,28 @@ export class CashController {
         if (m.type === CashMovementType.IN) movIn += v;
         else movOut += v;
       }
+      const upper = s.closedAt ?? now;
+      const forUser = salesByUserId.get(s.userId) ?? [];
+      const sessionSales = forUser.filter(
+        (sale) =>
+          sale.createdAt >= s.openedAt && sale.createdAt <= upper,
+      );
+      const { totalCompletedSales, reconciliationDifference } =
+        computeSessionListAggregates({
+          sales: sessionSales,
+          movements: s.movements,
+          openingBalance: s.openingBalance,
+          closingByMethod: s.closingByMethod,
+        });
+
       const { movements: _movements, ...rest } = s;
-      return { ...rest, movementsIn: movIn, movementsOut: movOut };
+      return {
+        ...rest,
+        movementsIn: movIn,
+        movementsOut: movOut,
+        totalCompletedSales,
+        reconciliationDifference,
+      };
     });
   }
 
