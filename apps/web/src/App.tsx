@@ -11,6 +11,11 @@ import { CompanyPage } from './pages/CompanyPage';
 import { CustomersPage } from './pages/CustomersPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { FinancePage } from './pages/FinancePage';
+import { FinancialOverviewPage } from './pages/FinancialOverviewPage';
+import { FinancialOverviewPrintPage } from './pages/FinancialOverviewPrintPage';
+import { FinancialOverviewReportsPage } from './pages/FinancialOverviewReportsPage';
+import { ReferentialChartPage } from './pages/ReferentialChartPage';
+import { FinancePrintPage } from './pages/FinancePrintPage';
 import { Login } from './pages/Login';
 import { ProductReportMovementPrintPage } from './pages/ProductReportMovementPrintPage';
 import { ProductReportTurnoverPrintPage } from './pages/ProductReportTurnoverPrintPage';
@@ -112,6 +117,8 @@ function AppInner() {
         <Route path="estoque/movimentos/impressao" element={<StockMovPrintPage />} />
         <Route path="produtos/relatorio/movimentacao" element={<ProductReportMovementPrintPage />} />
         <Route path="produtos/relatorio/giro" element={<ProductReportTurnoverPrintPage />} />
+        <Route path="financeiro/impressao" element={<FinancePrintPage />} />
+        <Route path="balanco/impressao" element={<FinancialOverviewPrintPage />} />
 
         <Route
           element={
@@ -140,6 +147,9 @@ function AppInner() {
           </Route>
           <Route path="caixa" element={<CashPage />} />
           <Route path="financeiro" element={<FinancePage />} />
+          <Route path="balanco" element={<FinancialOverviewPage />} />
+          <Route path="balanco/relatorios" element={<FinancialOverviewReportsPage />} />
+          <Route path="balanco/plano-contas" element={<ReferentialChartPage />} />
           <Route path="empresa" element={<CompanyPage />} />
           <Route path="usuarios" element={<UsersPage />} />
           <Route

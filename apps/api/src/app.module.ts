@@ -7,6 +7,7 @@ import { CatalogModule } from './catalog/catalog.module';
 import { CompanyModule } from './company/company.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { FinanceModule } from './finance/finance.module';
+import { FinancialOverviewModule } from './financial-overview/financial-overview.module';
 import { PortalModule } from './portal/portal.module';
 import { FiscalModule } from './fiscal/fiscal.module';
 import { HealthController } from './health.controller';
@@ -36,6 +37,7 @@ import { ActivityLogsModule } from './activity-logs/activity-logs.module';
     SalesModule,
     CashModule,
     FinanceModule,
+    FinancialOverviewModule,
     ReportsModule,
     FiscalModule,
     CompanyModule,

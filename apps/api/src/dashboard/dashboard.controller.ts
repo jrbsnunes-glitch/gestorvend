@@ -89,8 +89,9 @@ export class DashboardController {
       }),
       db.accountPayable.findMany({
         where: {
-          status: BillStatus.OPEN,
-          dueDate: { gte: todayStart, lte: next7End },
+          status: { in: [BillStatus.OPEN, BillStatus.OVERDUE] },
+          // Títulos atrasados (qualquer data) ou com vencimento até o fim dos próximos 7 dias.
+          dueDate: { lte: next7End },
         },
         orderBy: { dueDate: 'asc' },
         include: { supplier: { select: { legalName: true } } },
@@ -98,8 +99,8 @@ export class DashboardController {
       }),
       db.accountReceivable.findMany({
         where: {
-          status: BillStatus.OPEN,
-          dueDate: { gte: todayStart, lte: next7End },
+          status: { in: [BillStatus.OPEN, BillStatus.OVERDUE] },
+          dueDate: { lte: next7End },
         },
         orderBy: { dueDate: 'asc' },
         include: { customer: { select: { name: true } } },
@@ -187,14 +188,18 @@ export class DashboardController {
       payablesSoon: payablesSoon.map((p) => ({
         id: p.id,
         description: p.description,
+        status: p.status,
         amount: Number(p.amount),
+        amountRemaining: Number(p.amountRemaining),
         dueDate: p.dueDate,
         supplier: p.supplier?.legalName ?? null,
       })),
       receivablesSoon: receivablesSoon.map((r) => ({
         id: r.id,
         description: r.description,
+        status: r.status,
         amount: Number(r.amount),
+        amountRemaining: Number(r.amountRemaining),
         dueDate: r.dueDate,
         customer: r.customer?.name ?? null,
       })),

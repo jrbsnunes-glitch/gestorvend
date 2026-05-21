@@ -1,15 +1,34 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ReportPrintSticker } from '../components/ReportPrintSticker';
+import { CostCenterSelect } from '../components/CostCenterSelect';
 import { api } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
+
+type CashSessionRow = {
+  id: string;
+  controlNumber: number;
+  status: 'OPEN' | 'CLOSED';
+  openedAt: string;
+  userId: string;
+  user: { id: string; name: string; email: string } | null;
+};
 
 type Payable = {
   id: string;
   description: string;
   amount: string;
+  /** Saldo em aberto (o valor ainda não quitado). */
+  amountRemaining?: string;
   dueDate: string;
   status: string;
-  supplier: { legalName: string } | null;
+  paidAt?: string | null;
+  paymentMethod?: string | null;
+  paymentNotes?: string | null;
+  settledAmount?: string | null;
+  supplier: { legalName: string; segment?: string | null } | null;
+  cashSession?: { controlNumber: number; user: { name: string } | null } | null;
   recurrence?: 'NONE' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
   recurrenceIndex?: number | null;
   recurrenceCount?: number | null;
@@ -19,9 +38,15 @@ type Receivable = {
   id: string;
   description: string;
   amount: string;
+  amountRemaining?: string;
   dueDate: string;
   status: string;
-  customer: { name: string } | null;
+  receivedAt?: string | null;
+  paymentMethod?: string | null;
+  paymentNotes?: string | null;
+  settledAmount?: string | null;
+  customer: { name: string; segment?: string | null } | null;
+  cashSession?: { controlNumber: number; user: { name: string } | null } | null;
   recurrence?: 'NONE' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
   recurrenceIndex?: number | null;
   recurrenceCount?: number | null;
@@ -39,6 +64,16 @@ type FormState = {
   recurrenceCount: number;
 };
 
+type SettlementState = {
+  amount: string;
+  method: string;
+  cashSessionId: string;
+  notes: string;
+  referentialAccountId: string;
+};
+
+type PrintModo = 'conta' | 'abertas' | 'pagas';
+
 const EMPTY_FORM: FormState = {
   description: '',
   amount: '',
@@ -48,6 +83,14 @@ const EMPTY_FORM: FormState = {
   recurrenceCount: 12,
 };
 
+const EMPTY_SETTLE: SettlementState = {
+  amount: '',
+  method: 'PIX',
+  cashSessionId: '',
+  notes: '',
+  referentialAccountId: '',
+};
+
 const RECURRENCE_LABEL: Record<Recurrence, string> = {
   NONE: 'Sem recorrência',
   WEEKLY: 'Semanal',
@@ -55,12 +98,71 @@ const RECURRENCE_LABEL: Record<Recurrence, string> = {
   YEARLY: 'Anual',
 };
 
+const PAYMENT_LABELS: Record<string, string> = {
+  CASH: 'Dinheiro',
+  CARD: 'Cartão',
+  PIX: 'Pix',
+  CREDIT: 'Crediário',
+  OTHER: 'Outro',
+};
+
+function statusPt(s: string): string {
+  switch (s) {
+    case 'OPEN':
+      return 'Aberto';
+    case 'PAID':
+      return 'Pago';
+    case 'OVERDUE':
+      return 'Vencido';
+    case 'CANCELLED':
+      return 'Cancelado';
+    default:
+      return s;
+  }
+}
+
+function todayLocalStart(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function isSameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function monthRangeDefaults(): { from: string; to: string } {
+  const n = new Date();
+  const start = new Date(n.getFullYear(), n.getMonth(), 1);
+  const end = new Date(n.getFullYear(), n.getMonth() + 1, 0);
+  return {
+    from: start.toISOString().slice(0, 10),
+    to: end.toISOString().slice(0, 10),
+  };
+}
+
 export function FinancePage() {
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>('pagar');
   const [openTab, setOpenTab] = useState<Tab | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [err, setErr] = useState<string | null>(null);
+  const [settleBill, setSettleBill] = useState<Payable | Receivable | null>(null);
+  const [settleForm, setSettleForm] = useState<SettlementState>(EMPTY_SETTLE);
+  const [settleErr, setSettleErr] = useState<string | null>(null);
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printModo, setPrintModo] = useState<PrintModo>('abertas');
+  const [printId, setPrintId] = useState('');
+  const { from: printFromDef, to: printToDef } = monthRangeDefaults();
+  const [printFrom, setPrintFrom] = useState(printFromDef);
+  const [printTo, setPrintTo] = useState(printToDef);
+  const [printSegment, setPrintSegment] = useState('');
+  const [printPartyId, setPrintPartyId] = useState('');
 
   const payables = useQuery({
     queryKey: ['payables'],
@@ -76,13 +178,36 @@ export function FinancePage() {
 
   const suppliers = useQuery({
     queryKey: ['suppliers'],
-    queryFn: () => api<Array<{ id: string; legalName: string }>>('/suppliers'),
+    queryFn: () => api<Array<{ id: string; legalName: string; segment?: string | null }>>('/suppliers'),
   });
 
   const customers = useQuery({
     queryKey: ['customers'],
-    queryFn: () => api<Array<{ id: string; name: string }>>('/customers'),
+    queryFn: () =>
+      api<Array<{ id: string; name: string; segment?: string | null }>>('/customers'),
   });
+
+  const openCashSessions = useQuery({
+    queryKey: ['cash', 'sessions', 'OPEN', 'finance'],
+    queryFn: () => api<CashSessionRow[]>('/cash/sessions?status=OPEN'),
+    enabled: !!settleBill,
+  });
+
+  const sessionsToday = useMemo(() => {
+    const t0 = todayLocalStart();
+    return (openCashSessions.data ?? []).filter((s) => isSameLocalDay(new Date(s.openedAt), t0));
+  }, [openCashSessions.data]);
+
+  const segmentOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of customers.data ?? []) {
+      if (c.segment?.trim()) set.add(c.segment.trim());
+    }
+    for (const s of suppliers.data ?? []) {
+      if (s.segment?.trim()) set.add(s.segment.trim());
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [customers.data, suppliers.data]);
 
   const createPayable = useMutation({
     mutationFn: () =>
@@ -125,13 +250,69 @@ export function FinancePage() {
   });
 
   const payOne = useMutation({
-    mutationFn: (id: string) => api(`/finance/payables/${id}/pay`, { method: 'PATCH' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['payables'] }),
+    mutationFn: ({
+      id,
+      amount,
+      method,
+      cashSessionId,
+      notes,
+      referentialAccountId,
+    }: {
+      id: string;
+      amount: number;
+      method: string;
+      cashSessionId: string | null;
+      notes: string | null;
+      referentialAccountId: string | null;
+    }) =>
+      api(`/finance/payables/${id}/pay`, {
+        method: 'PATCH',
+        json: {
+          amount,
+          method,
+          cashSessionId: cashSessionId || null,
+          notes,
+          referentialAccountId,
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['payables'] });
+      closeSettle();
+    },
+    onError: (e: Error) => setSettleErr(e.message),
   });
 
   const receiveOne = useMutation({
-    mutationFn: (id: string) => api(`/finance/receivables/${id}/receive`, { method: 'PATCH' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['receivables'] }),
+    mutationFn: ({
+      id,
+      amount,
+      method,
+      cashSessionId,
+      notes,
+      referentialAccountId,
+    }: {
+      id: string;
+      amount: number;
+      method: string;
+      cashSessionId: string | null;
+      notes: string | null;
+      referentialAccountId: string | null;
+    }) =>
+      api(`/finance/receivables/${id}/receive`, {
+        method: 'PATCH',
+        json: {
+          amount,
+          method,
+          cashSessionId: cashSessionId || null,
+          notes,
+          referentialAccountId,
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['receivables'] });
+      closeSettle();
+    },
+    onError: (e: Error) => setSettleErr(e.message),
   });
 
   function openModal(t: Tab) {
@@ -144,6 +325,59 @@ export function FinancePage() {
     setOpenTab(null);
     setForm(EMPTY_FORM);
     setErr(null);
+  }
+
+  function saldoAberto(row: Payable | Receivable): string {
+    const r = row.amountRemaining;
+    if (r != null && String(r).trim() !== '') return String(r);
+    return row.amount;
+  }
+
+  function openSettle(row: Payable | Receivable) {
+    setSettleBill(row);
+    setSettleForm({
+      ...EMPTY_SETTLE,
+      amount: saldoAberto(row),
+      method: 'PIX',
+    });
+    setSettleErr(null);
+  }
+
+  function closeSettle() {
+    setSettleBill(null);
+    setSettleForm(EMPTY_SETTLE);
+    setSettleErr(null);
+  }
+
+  function openPrintModal() {
+    const { from, to } = monthRangeDefaults();
+    setPrintFrom(from);
+    setPrintTo(to);
+    setPrintSegment('');
+    setPrintPartyId('');
+    setPrintModo('abertas');
+    setPrintId('');
+    setPrintOpen(true);
+  }
+
+  function launchPrint() {
+    const tipo = tab === 'pagar' ? 'pagar' : 'receber';
+    const p = new URLSearchParams();
+    p.set('tipo', tipo);
+    p.set('modo', printModo);
+    if (printModo === 'conta') {
+      if (!printId.trim()) {
+        return;
+      }
+      p.set('id', printId.trim());
+    } else {
+      if (printFrom) p.set('from', printFrom);
+      if (printTo) p.set('to', printTo);
+      if (printSegment.trim()) p.set('segment', printSegment.trim());
+      if (printPartyId) p.set('partyId', printPartyId);
+    }
+    navigate(`/financeiro/impressao?${p.toString()}`);
+    setPrintOpen(false);
   }
 
   function recurrenceBadge(r?: Payable['recurrence'], idx?: number | null, cnt?: number | null) {
@@ -160,10 +394,14 @@ export function FinancePage() {
     );
   }
 
+  const printTitle = tab === 'pagar' ? 'Financeiro — contas a pagar' : 'Financeiro — contas a receber';
+
   return (
-    <div className="page">
+    <div className="page print-area">
+      <ReportPrintSticker documentTitle={printTitle} />
+
       <h1 className="page-title">Financeiro</h1>
-      <p className="page-desc">Contas a pagar e a receber. Baixas manuais.</p>
+      <p className="page-desc">Contas a pagar e a receber. Baixa com forma de pagamento e vínculo opcional ao caixa.</p>
 
       <div className="toolbar" style={{ justifyContent: 'flex-start' }}>
         <button
@@ -180,6 +418,14 @@ export function FinancePage() {
           onClick={() => setTab('receber')}
         >
           A receber
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ marginLeft: 'auto' }}
+          onClick={openPrintModal}
+        >
+          Impressões…
         </button>
       </div>
 
@@ -206,22 +452,24 @@ export function FinancePage() {
                   <th>Vencimento</th>
                   <th>Descrição</th>
                   <th>Fornecedor</th>
-                  <th>Valor</th>
+                  <th>Valor (face)</th>
+                  <th>Saldo</th>
                   <th>Status</th>
+                  <th>Forma / caixa</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
                 {payables.isLoading && (
                   <tr>
-                    <td colSpan={7} className="empty">
+                    <td colSpan={9} className="empty">
                       Carregando…
                     </td>
                   </tr>
                 )}
                 {!payables.isLoading && !payables.data?.length && (
                   <tr>
-                    <td colSpan={7} className="empty">
+                    <td colSpan={9} className="empty">
                       Nenhum título.
                     </td>
                   </tr>
@@ -238,6 +486,7 @@ export function FinancePage() {
                     </td>
                     <td>{p.supplier?.legalName ?? '—'}</td>
                     <td>{formatBRL(p.amount)}</td>
+                    <td>{formatBRL(saldoAberto(p))}</td>
                     <td>
                       <span
                         className={
@@ -249,17 +498,41 @@ export function FinancePage() {
                               : 'badge-warn')
                         }
                       >
-                        {p.status}
+                        {statusPt(p.status)}
                       </span>
                     </td>
+                    <td style={{ fontSize: '0.82rem' }}>
+                      {p.status === 'PAID' ? (
+                        <>
+                          <div>{p.paymentMethod ? PAYMENT_LABELS[p.paymentMethod] ?? p.paymentMethod : '—'}</div>
+                          {p.cashSession && (
+                            <div className="no-print" style={{ opacity: 0.85 }}>
+                              Caixa #{p.cashSession.controlNumber}{' '}
+                              {p.cashSession.user ? `(${p.cashSession.user.name})` : ''}
+                            </div>
+                          )}
+                        </>
+                      ) : Number(p.settledAmount ?? 0) > 0 ? (
+                        <div>
+                          <div>
+                            Parcial: {formatBRL(p.settledAmount!)}
+                          </div>
+                          {p.paymentMethod ? (
+                            <div>Último: {PAYMENT_LABELS[p.paymentMethod] ?? p.paymentMethod}</div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     <td style={{ textAlign: 'right' }}>
-                      {p.status === 'OPEN' && (
+                      {(p.status === 'OPEN' || p.status === 'OVERDUE') && (
                         <button
                           type="button"
                           className="btn btn-ghost"
                           style={{ fontSize: '0.82rem' }}
                           disabled={payOne.isPending}
-                          onClick={() => payOne.mutate(p.id)}
+                          onClick={() => openSettle(p)}
                         >
                           Baixar
                         </button>
@@ -296,22 +569,24 @@ export function FinancePage() {
                   <th>Vencimento</th>
                   <th>Descrição</th>
                   <th>Cliente</th>
-                  <th>Valor</th>
+                  <th>Valor (face)</th>
+                  <th>Saldo</th>
                   <th>Status</th>
+                  <th>Forma / caixa</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
                 {receivables.isLoading && (
                   <tr>
-                    <td colSpan={7} className="empty">
+                    <td colSpan={9} className="empty">
                       Carregando…
                     </td>
                   </tr>
                 )}
                 {!receivables.isLoading && !receivables.data?.length && (
                   <tr>
-                    <td colSpan={7} className="empty">
+                    <td colSpan={9} className="empty">
                       Nenhum título (vendas crediário geram aqui).
                     </td>
                   </tr>
@@ -328,23 +603,51 @@ export function FinancePage() {
                     </td>
                     <td>{r.customer?.name ?? '—'}</td>
                     <td>{formatBRL(r.amount)}</td>
+                    <td>{formatBRL(saldoAberto(r))}</td>
                     <td>
                       <span
                         className={
-                          'badge ' + (r.status === 'PAID' ? 'badge-success' : 'badge-warn')
+                          'badge ' +
+                          (r.status === 'PAID'
+                            ? 'badge-success'
+                            : r.status === 'OVERDUE'
+                              ? 'badge-danger'
+                              : 'badge-warn')
                         }
                       >
-                        {r.status}
+                        {statusPt(r.status)}
                       </span>
                     </td>
+                    <td style={{ fontSize: '0.82rem' }}>
+                      {r.status === 'PAID' ? (
+                        <>
+                          <div>{r.paymentMethod ? PAYMENT_LABELS[r.paymentMethod] ?? r.paymentMethod : '—'}</div>
+                          {r.cashSession && (
+                            <div className="no-print" style={{ opacity: 0.85 }}>
+                              Caixa #{r.cashSession.controlNumber}{' '}
+                              {r.cashSession.user ? `(${r.cashSession.user.name})` : ''}
+                            </div>
+                          )}
+                        </>
+                      ) : Number(r.settledAmount ?? 0) > 0 ? (
+                        <div>
+                          <div>Parcial: {formatBRL(r.settledAmount!)}</div>
+                          {r.paymentMethod ? (
+                            <div>Último: {PAYMENT_LABELS[r.paymentMethod] ?? r.paymentMethod}</div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     <td style={{ textAlign: 'right' }}>
-                      {r.status === 'OPEN' && (
+                      {(r.status === 'OPEN' || r.status === 'OVERDUE') && (
                         <button
                           type="button"
                           className="btn btn-ghost"
                           style={{ fontSize: '0.82rem' }}
                           disabled={receiveOne.isPending}
-                          onClick={() => receiveOne.mutate(r.id)}
+                          onClick={() => openSettle(r)}
                         >
                           Receber
                         </button>
@@ -361,9 +664,7 @@ export function FinancePage() {
       {openTab && (
         <div className="modal-backdrop" role="presentation" onClick={closeModal}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(560px, 96vw)' }}>
-            <h2>
-              {openTab === 'pagar' ? 'Nova conta a pagar' : 'Nova conta a receber'}
-            </h2>
+            <h2>{openTab === 'pagar' ? 'Nova conta a pagar' : 'Nova conta a receber'}</h2>
             {err && <div className="alert alert-error">{err}</div>}
             <div className="field">
               <label htmlFor="fp-desc">Descrição *</label>
@@ -375,9 +676,7 @@ export function FinancePage() {
               />
             </div>
             <div className="field">
-              <label htmlFor="fp-party">
-                {openTab === 'pagar' ? 'Fornecedor' : 'Cliente'}
-              </label>
+              <label htmlFor="fp-party">{openTab === 'pagar' ? 'Fornecedor' : 'Cliente'}</label>
               <select
                 id="fp-party"
                 value={form.partyId}
@@ -493,6 +792,271 @@ export function FinancePage() {
                 }}
               >
                 Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {settleBill && (
+        <div className="modal-backdrop" role="presentation" onClick={closeSettle}>
+          <div
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 'min(480px, 96vw)' }}
+          >
+            <h2 style={{ fontSize: '1.15rem' }}>
+              {'supplier' in settleBill ? 'Baixar conta a pagar' : 'Registrar recebimento'}
+            </h2>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.88rem', marginTop: 0 }}>
+              {settleBill.description} · venc. {formatDate(settleBill.dueDate)}
+            </p>
+            <p style={{ fontSize: '0.88rem', marginTop: '0.25rem' }}>
+              Valor do título: <strong>{formatBRL(settleBill.amount)}</strong>
+              {' · '}
+              Saldo em aberto: <strong>{formatBRL(saldoAberto(settleBill))}</strong>
+            </p>
+            {settleErr && <div className="alert alert-error">{settleErr}</div>}
+            <div className="field">
+              <label htmlFor="st-amt">Valor deste pagamento / recebimento *</label>
+              <input
+                id="st-amt"
+                type="number"
+                step="0.01"
+                min="0"
+                value={settleForm.amount}
+                onChange={(e) => setSettleForm({ ...settleForm, amount: e.target.value })}
+              />
+              <small style={{ color: 'var(--color-text-muted)' }}>
+                Use até o saldo em aberto. Igual ao saldo quita o título; valor menor deixa o restante em aberto.
+                Campo vazio = utilizar o saldo total.
+              </small>
+            </div>
+            <div className="field">
+              <label htmlFor="st-method">Forma de pagamento *</label>
+              <select
+                id="st-method"
+                value={settleForm.method}
+                onChange={(e) => setSettleForm({ ...settleForm, method: e.target.value })}
+              >
+                {Object.entries(PAYMENT_LABELS).map(([k, lab]) => (
+                  <option key={k} value={k}>
+                    {lab}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <CostCenterSelect
+              flow={'supplier' in settleBill ? 'OUT' : 'IN'}
+              id="st-cost-center"
+              value={settleForm.referentialAccountId}
+              onChange={(v) => setSettleForm({ ...settleForm, referentialAccountId: v })}
+              label={
+                'supplier' in settleBill
+                  ? 'Centro de custo — plano referencial (exceto receitas — opcional)'
+                  : 'Centro de custo / receita (grupo 6 — opcional)'
+              }
+            />
+            <div className="field">
+              <label htmlFor="st-cash">Caixa aberto hoje (opcional)</label>
+              <select
+                id="st-cash"
+                value={settleForm.cashSessionId}
+                onChange={(e) => setSettleForm({ ...settleForm, cashSessionId: e.target.value })}
+              >
+                <option value="">— Não vincular ao caixa —</option>
+                {openCashSessions.isLoading && <option disabled>Carregando…</option>}
+                {sessionsToday.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    #{s.controlNumber} — {s.user?.name ?? s.userId} (aberto{' '}
+                    {new Date(s.openedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})
+                  </option>
+                ))}
+              </select>
+              {!sessionsToday.length && !openCashSessions.isLoading && (
+                <small style={{ color: 'var(--color-text-muted)' }}>
+                  Nenhum caixa aberto hoje — a baixa segue sem movimento de caixa.
+                </small>
+              )}
+            </div>
+            <div className="field">
+              <label htmlFor="st-notes">Observações</label>
+              <textarea
+                id="st-notes"
+                rows={3}
+                value={settleForm.notes}
+                onChange={(e) => setSettleForm({ ...settleForm, notes: e.target.value })}
+                placeholder="Referência bancária, comprovante, etc."
+              />
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={closeSettle}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={payOne.isPending || receiveOne.isPending}
+                onClick={() => {
+                  const raw = String(settleForm.amount).trim().replace(',', '.');
+                  const amt =
+                    raw === '' ? Number(saldoAberto(settleBill)) : parseFloat(raw);
+                  if (!Number.isFinite(amt) || amt <= 0) {
+                    setSettleErr('Informe um valor válido ou deixe em branco para usar o saldo em aberto.');
+                    return;
+                  }
+                  const notes =
+                    settleForm.notes.trim() === '' ? null : settleForm.notes.trim().slice(0, 4000);
+                  const sid = settleForm.cashSessionId.trim() || null;
+                  const refId = settleForm.referentialAccountId.trim() || null;
+                  if ('supplier' in settleBill) {
+                    payOne.mutate({
+                      id: settleBill.id,
+                      amount: amt,
+                      method: settleForm.method,
+                      cashSessionId: sid,
+                      notes,
+                      referentialAccountId: refId,
+                    });
+                  } else {
+                    receiveOne.mutate({
+                      id: settleBill.id,
+                      amount: amt,
+                      method: settleForm.method,
+                      cashSessionId: sid,
+                      notes,
+                      referentialAccountId: refId,
+                    });
+                  }
+                }}
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {printOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setPrintOpen(false)}>
+          <div
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 'min(520px, 96vw)' }}
+          >
+            <h2 style={{ fontSize: '1.15rem' }}>Impressões — {tab === 'pagar' ? 'a pagar' : 'a receber'}</h2>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.88rem' }}>
+              Abre uma nova aba pronta para imprimir (Ctrl+P).
+            </p>
+            <div className="field">
+              <label htmlFor="pr-modo">Tipo de documento</label>
+              <select
+                id="pr-modo"
+                value={printModo}
+                onChange={(e) => setPrintModo(e.target.value as PrintModo)}
+              >
+                <option value="conta">Uma conta (detalhe)</option>
+                <option value="abertas">Listagem em aberto (filtros)</option>
+                <option value="pagas">Listagem liquidada (filtros)</option>
+              </select>
+            </div>
+            {printModo === 'conta' ? (
+              <div className="field">
+                <label htmlFor="pr-id">Título</label>
+                <select
+                  id="pr-id"
+                  value={printId}
+                  onChange={(e) => setPrintId(e.target.value)}
+                >
+                  <option value="">— Selecione —</option>
+                  {tab === 'pagar'
+                    ? payables.data?.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {formatDate(p.dueDate)} · saldo {formatBRL(saldoAberto(p))} ·{' '}
+                          {p.description.slice(0, 60)}
+                        </option>
+                      ))
+                    : receivables.data?.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {formatDate(r.dueDate)} · saldo {formatBRL(saldoAberto(r))} ·{' '}
+                          {r.description.slice(0, 60)}
+                        </option>
+                      ))}
+                </select>
+              </div>
+            ) : (
+              <>
+                <div className="form-row">
+                  <div className="field">
+                    <label htmlFor="pr-from">De</label>
+                    <input
+                      id="pr-from"
+                      type="date"
+                      value={printFrom}
+                      onChange={(e) => setPrintFrom(e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="pr-to">Até</label>
+                    <input
+                      id="pr-to"
+                      type="date"
+                      value={printTo}
+                      onChange={(e) => setPrintTo(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="field">
+                  <label htmlFor="pr-seg">Grupo (segmento {tab === 'pagar' ? 'do fornecedor' : 'do cliente'})</label>
+                  <input
+                    id="pr-seg"
+                    list="seg-list-finance"
+                    value={printSegment}
+                    onChange={(e) => setPrintSegment(e.target.value)}
+                    placeholder="Opcional"
+                  />
+                  <datalist id="seg-list-finance">
+                    {segmentOptions.map((s) => (
+                      <option key={s} value={s} />
+                    ))}
+                  </datalist>
+                </div>
+                <div className="field">
+                  <label htmlFor="pr-party">
+                    {tab === 'pagar' ? 'Fornecedor específico' : 'Cliente específico'}
+                  </label>
+                  <select
+                    id="pr-party"
+                    value={printPartyId}
+                    onChange={(e) => setPrintPartyId(e.target.value)}
+                  >
+                    <option value="">— Todos —</option>
+                    {tab === 'pagar'
+                      ? suppliers.data?.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.legalName}
+                          </option>
+                        ))
+                      : customers.data?.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                  </select>
+                </div>
+              </>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setPrintOpen(false)}>
+                Fechar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={printModo === 'conta' && !printId}
+                onClick={launchPrint}
+              >
+                Abrir para imprimir
               </button>
             </div>
           </div>

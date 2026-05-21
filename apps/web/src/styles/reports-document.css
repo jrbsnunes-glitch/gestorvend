@@ -176,3 +176,27 @@
     font-size: 0.9rem !important;
   }
 }
+
+/* Financeiro — impressão detalhe de título */
+.gv-finance-print-root .gv-finance-print-detail h2 {
+  font-size: 1.05rem;
+  margin: 1rem 0 0.5rem;
+}
+
+.gv-finance-dl {
+  display: grid;
+  grid-template-columns: minmax(7rem, 11rem) 1fr;
+  gap: 0.4rem 1rem;
+  margin: 0;
+}
+
+.gv-finance-dl dt {
+  font-weight: 600;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.gv-finance-dl dd {
+  margin: 0;
+  font-size: 0.92rem;
+}

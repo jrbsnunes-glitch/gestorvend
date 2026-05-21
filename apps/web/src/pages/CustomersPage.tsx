@@ -15,6 +15,7 @@ type Customer = {
   creditLimit: string;
   city: string | null;
   state: string | null;
+  segment?: string | null;
 };
 
 export function CustomersPage() {
@@ -34,6 +35,7 @@ export function CustomersPage() {
   const [city, setCity] = useState('');
   const [stateUf, setStateUf] = useState('');
   const [creditLimit, setCreditLimit] = useState('0');
+  const [segment, setSegment] = useState('');
   const [err, setErr] = useState<string | null>(null);
 
   const list = useQuery({
@@ -57,6 +59,7 @@ export function CustomersPage() {
     setCity('');
     setStateUf('');
     setCreditLimit('0');
+    setSegment('');
     setErr(null);
   }
 
@@ -68,6 +71,7 @@ export function CustomersPage() {
     setCity(c.city ?? '');
     setStateUf(c.state ?? '');
     setCreditLimit(c.creditLimit ?? '0');
+    setSegment(c.segment ?? '');
     setErr(null);
   }
 
@@ -83,6 +87,7 @@ export function CustomersPage() {
           city: city || null,
           state: stateUf || null,
           creditLimit: creditLimit.replace(',', '.'),
+          segment: segment || null,
         },
       }),
     onSuccess: () => {
@@ -105,6 +110,7 @@ export function CustomersPage() {
           city: city || null,
           state: stateUf || null,
           creditLimit: creditLimit.replace(',', '.'),
+          segment: segment || null,
         },
       }),
     onSuccess: () => {
@@ -289,6 +295,15 @@ export function CustomersPage() {
               <label htmlFor="c-limit">Limite de crédito</label>
               <input id="c-limit" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} />
             </div>
+            <div className="field">
+              <label htmlFor="c-seg">Grupo / segmento</label>
+              <input
+                id="c-seg"
+                value={segment}
+                onChange={(e) => setSegment(e.target.value)}
+                placeholder="Ex.: varejo, cooperativas"
+              />
+            </div>
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setCreateOpen(false)}>
                 Cancelar
@@ -343,6 +358,15 @@ export function CustomersPage() {
               <label htmlFor="ce-limit">Limite de crédito</label>
               <input id="ce-limit" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} />
             </div>
+            <div className="field">
+              <label htmlFor="ce-seg">Grupo / segmento</label>
+              <input
+                id="ce-seg"
+                value={segment}
+                onChange={(e) => setSegment(e.target.value)}
+                placeholder="Ex.: varejo, cooperativas"
+              />
+            </div>
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setEditOpen(false)}>
                 Cancelar
@@ -388,6 +412,9 @@ export function CustomersPage() {
                 </p>
                 <p>
                   <strong>Limite:</strong> {formatBRL(viewData.creditLimit)}
+                </p>
+                <p>
+                  <strong>Segmento:</strong> {viewData.segment ?? '—'}
                 </p>
               </>
             )}

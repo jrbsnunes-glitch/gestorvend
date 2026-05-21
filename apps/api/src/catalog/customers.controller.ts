@@ -64,6 +64,7 @@ export class CustomersController {
         ...(body.creditLimit != null && { creditLimit: String(body.creditLimit) }),
         ...(body.city !== undefined && { city: body.city ? String(body.city) : null }),
         ...(body.state !== undefined && { state: body.state ? String(body.state) : null }),
+        ...(body.segment !== undefined && { segment: body.segment ? String(body.segment) : null }),
       },
     });
   }

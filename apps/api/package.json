@@ -26,6 +26,7 @@
     "tenant:migrate-all": "ts-node -r tsconfig-paths/register scripts/migrate-all-tenants.ts",
     "seed": "ts-node -r tsconfig-paths/register scripts/seed.ts",
     "seed:tenant-minimal": "ts-node -r tsconfig-paths/register scripts/seed-tenant-minimal.ts",
+    "import:referential-accounts": "ts-node -r tsconfig-paths/register scripts/import-referential-accounts.ts",
     "bootstrap:superadmin": "ts-node -r tsconfig-paths/register scripts/create-superadmin.ts",
     "postinstall": "prisma generate --schema=prisma/central/schema.prisma && prisma generate --schema=prisma/tenant/schema.prisma"
   },

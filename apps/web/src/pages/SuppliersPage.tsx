@@ -13,6 +13,7 @@ type Supplier = {
   email: string | null;
   phone: string | null;
   city: string | null;
+  segment: string | null;
 };
 
 export function SuppliersPage() {
@@ -31,6 +32,7 @@ export function SuppliersPage() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [city, setCity] = useState('');
+  const [segment, setSegment] = useState('');
   const [err, setErr] = useState<string | null>(null);
 
   const list = useQuery({
@@ -53,6 +55,7 @@ export function SuppliersPage() {
     setEmail('');
     setPhone('');
     setCity('');
+    setSegment('');
     setErr(null);
   }
 
@@ -63,6 +66,7 @@ export function SuppliersPage() {
     setEmail(s.email ?? '');
     setPhone(s.phone ?? '');
     setCity(s.city ?? '');
+    setSegment(s.segment ?? '');
     setErr(null);
   }
 
@@ -77,6 +81,7 @@ export function SuppliersPage() {
           email: email || null,
           phone: phone || null,
           city: city || null,
+          segment: segment || null,
         },
       }),
     onSuccess: () => {
@@ -98,6 +103,7 @@ export function SuppliersPage() {
           email: email || null,
           phone: phone || null,
           city: city || null,
+          segment: segment || null,
         },
       }),
     onSuccess: () => {
@@ -280,6 +286,15 @@ export function SuppliersPage() {
               <label htmlFor="s-city">Cidade</label>
               <input id="s-city" value={city} onChange={(e) => setCity(e.target.value)} />
             </div>
+            <div className="field">
+              <label htmlFor="s-seg">Grupo / segmento</label>
+              <input
+                id="s-seg"
+                value={segment}
+                onChange={(e) => setSegment(e.target.value)}
+                placeholder="Ex.: atacado, mats. construção"
+              />
+            </div>
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setCreateOpen(false)}>
                 Cancelar
@@ -328,6 +343,15 @@ export function SuppliersPage() {
               <label htmlFor="se-city">Cidade</label>
               <input id="se-city" value={city} onChange={(e) => setCity(e.target.value)} />
             </div>
+            <div className="field">
+              <label htmlFor="se-seg">Grupo / segmento</label>
+              <input
+                id="se-seg"
+                value={segment}
+                onChange={(e) => setSegment(e.target.value)}
+                placeholder="Ex.: atacado, mats. construção"
+              />
+            </div>
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setEditOpen(false)}>
                 Cancelar
@@ -372,6 +396,9 @@ export function SuppliersPage() {
                 </p>
                 <p>
                   <strong>Cidade:</strong> {viewData.city ?? '—'}
+                </p>
+                <p>
+                  <strong>Segmento:</strong> {viewData.segment ?? '—'}
                 </p>
               </>
             )}

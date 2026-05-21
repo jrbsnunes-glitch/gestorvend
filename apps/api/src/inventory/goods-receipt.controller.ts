@@ -262,11 +262,13 @@ export class GoodsReceiptController {
             installments > 1
               ? `${docLabel} (${i + 1}/${installments})${supplierName ? ' - ' + supplierName : ''}`
               : `${docLabel}${supplierName ? ' - ' + supplierName : ''}`;
+          const instStr = installmentAmount.toFixed(2);
           const created: { id: string } = await tx.accountPayable.create({
             data: {
               supplierId: body.supplierId ?? null,
               description,
-              amount: installmentAmount.toFixed(2),
+              amount: instStr,
+              amountRemaining: instStr,
               dueDate: due,
               status: BillStatus.OPEN,
               goodsReceiptId: receipt.id,

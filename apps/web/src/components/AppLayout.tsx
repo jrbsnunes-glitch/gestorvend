@@ -12,6 +12,8 @@ type NavItem = {
   end?: boolean;
   /** Quando true, o item só aparece para usuários com perfil de gerente. */
   managerOnly?: boolean;
+  /** Com `managerOnly: true`, também exibe para usuários com role `finance`. */
+  allowFinanceRole?: boolean;
   /** Quando true, o item só aparece para usuários com role interna `admin`. */
   adminOnly?: boolean;
 };
@@ -24,7 +26,8 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/estoque', label: 'Estoque', managerOnly: true },
   { to: '/vendas', label: 'Vendas' },
   { to: '/caixa', label: 'Caixa' },
-  { to: '/financeiro', label: 'Financeiro', managerOnly: true },
+  { to: '/financeiro', label: 'Financeiro', managerOnly: true, allowFinanceRole: true },
+  { to: '/balanco', label: 'Balanço', managerOnly: true, allowFinanceRole: true },
   { to: '/empresa', label: 'Empresa', managerOnly: true },
   { to: '/usuarios', label: 'Usuários', managerOnly: true },
   { to: '/logs', label: 'Logs', adminOnly: true },
@@ -40,6 +43,7 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
   const identity = useMemo(() => getIdentity(), []);
   const localProfile = identity ? profileFromRoles(identity.roles) : 'cashier';
   const isManager = localProfile === 'manager';
+  const hasFinance = identity?.roles.includes('finance') ?? false;
   const userIsAdmin = isAdmin();
 
   const me = useQuery({
@@ -48,9 +52,14 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
     staleTime: 5 * 60_000,
   });
 
-  const items = NAV_ITEMS.filter(
-    (it) => (!it.managerOnly || isManager) && (!it.adminOnly || userIsAdmin),
-  );
+  const items = NAV_ITEMS.filter((it) => {
+    if (it.adminOnly && !userIsAdmin) return false;
+    if (it.managerOnly) {
+      const ok = isManager || (it.allowFinanceRole === true && hasFinance);
+      if (!ok) return false;
+    }
+    return true;
+  });
   const profile = me.data?.profile ?? localProfile;
 
   return (

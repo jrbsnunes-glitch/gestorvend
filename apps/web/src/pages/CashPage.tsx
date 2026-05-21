@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { isManager } from '../lib/auth';
 import { formatBRL } from '../lib/format';
+import { CostCenterSelect } from '../components/CostCenterSelect';
 
 type CashUser = { id: string; name: string; email: string };
 
@@ -59,8 +60,10 @@ type SessionDetail = {
       id: string;
       type: 'IN' | 'OUT';
       amount: string;
+      method: string | null;
       reason: string | null;
       createdAt: string;
+      referentialAccount: { id: string; code: string; description: string } | null;
     }>;
     user: CashUser | null;
   };
@@ -89,6 +92,7 @@ const PAYMENT_LABELS: Record<string, string> = {
   PIX: 'Pix',
   CREDIT: 'Crediário',
   OTHER: 'Outro',
+  EXPENSE: 'Despesas',
 };
 
 function fmtDateTime(iso: string | null): string {
@@ -139,6 +143,8 @@ export function CashPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [movOpenForId, setMovOpenForId] = useState<string | null>(null);
   const [movType, setMovType] = useState<'IN' | 'OUT'>('OUT');
+  const [movOutKind, setMovOutKind] = useState<'WITHDRAWAL' | 'EXPENSE'>('WITHDRAWAL');
+  const [movRefId, setMovRefId] = useState('');
   const [movAmount, setMovAmount] = useState('');
   const [movReason, setMovReason] = useState('');
   const [movErr, setMovErr] = useState<string | null>(null);
@@ -198,6 +204,13 @@ export function CashPage() {
     enabled: !!detailId,
   });
 
+  useEffect(() => {
+    if (movType === 'IN') {
+      setMovOutKind('WITHDRAWAL');
+      setMovRefId('');
+    }
+  }, [movType]);
+
   const filtered = useMemo(() => {
     const data = list.data ?? [];
     const term = search.trim().toLowerCase();
@@ -210,20 +223,39 @@ export function CashPage() {
   }, [list.data, search]);
 
   const movement = useMutation({
-    mutationFn: () =>
-      api('/cash/movement', {
+    mutationFn: () => {
+      const amount = parseFloat(movAmount.replace(',', '.')) || 0;
+      if (amount <= 0) {
+        throw new Error('Informe um valor válido.');
+      }
+      if (movType === 'OUT' && movOutKind === 'EXPENSE' && !movRefId.trim()) {
+        throw new Error('Selecione o centro de custo para despesas.');
+      }
+      const json: Record<string, unknown> = {
+        type: movType,
+        amount,
+        reason: movReason.trim() || null,
+      };
+      if (movType === 'OUT') {
+        if (movOutKind === 'EXPENSE') {
+          json.method = 'EXPENSE';
+          json.referentialAccountId = movRefId.trim();
+        } else {
+          json.method = null;
+        }
+      }
+      return api('/cash/movement', {
         method: 'POST',
-        json: {
-          type: movType,
-          amount: parseFloat(movAmount.replace(',', '.')) || 0,
-          reason: movReason || null,
-        },
-      }),
+        json,
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cash', 'sessions'] });
       qc.invalidateQueries({ queryKey: ['cash', 'session'] });
       setMovAmount('');
       setMovReason('');
+      setMovRefId('');
+      setMovOutKind('WITHDRAWAL');
       setMovErr(null);
       setMovOpenForId(null);
     },
@@ -409,6 +441,8 @@ export function CashPage() {
           onOpenMovement={(sessionId) => {
             setMovOpenForId(sessionId);
             setMovType('OUT');
+            setMovOutKind('WITHDRAWAL');
+            setMovRefId('');
             setMovAmount('');
             setMovReason('');
             setMovErr(null);
@@ -824,18 +858,35 @@ export function CashPage() {
           >
             <h2>Movimentar caixa</h2>
             <p style={{ marginTop: 0, color: 'var(--color-text-secondary)', fontSize: '0.88rem' }}>
-              Lance sangria (saída) ou suprimento (entrada) no seu caixa atual.
-              Operadores só podem movimentar o próprio caixa.
+              Lance sangria, suprimento ou <strong>despesa</strong> (com centro de custo do plano
+              referencial) no seu caixa atual. Operadores só podem movimentar o próprio caixa.
             </p>
             {movErr && <div className="alert alert-error">{movErr}</div>}
             <div className="form-row">
               <div className="field">
                 <label>Tipo</label>
-                <select value={movType} onChange={(e) => setMovType(e.target.value as 'IN' | 'OUT')}>
-                  <option value="OUT">Saída (sangria)</option>
+                <select
+                  value={movType}
+                  onChange={(e) => setMovType(e.target.value as 'IN' | 'OUT')}
+                >
+                  <option value="OUT">Saída</option>
                   <option value="IN">Entrada (suprimento)</option>
                 </select>
               </div>
+              {movType === 'OUT' && (
+                <div className="field">
+                  <label>Saída</label>
+                  <select
+                    value={movOutKind}
+                    onChange={(e) =>
+                      setMovOutKind(e.target.value as 'WITHDRAWAL' | 'EXPENSE')
+                    }
+                  >
+                    <option value="WITHDRAWAL">Sangria</option>
+                    <option value="EXPENSE">Despesa (centro de custo)</option>
+                  </select>
+                </div>
+              )}
               <div className="field">
                 <label>Valor (R$)</label>
                 <input
@@ -847,8 +898,19 @@ export function CashPage() {
                 />
               </div>
             </div>
+            {movType === 'OUT' && movOutKind === 'EXPENSE' && (
+              <CostCenterSelect
+                flow="EXPENSE"
+                id="cash-mov-cost-center"
+                value={movRefId}
+                onChange={setMovRefId}
+                allowEmpty={false}
+                emptyLabel="— Selecione —"
+                label="Centro de custo *"
+              />
+            )}
             <div className="field">
-              <label>Motivo</label>
+              <label>Observações</label>
               <input value={movReason} onChange={(e) => setMovReason(e.target.value)} />
             </div>
             <div className="modal-actions">
@@ -977,15 +1039,17 @@ function SessionDetailDrawer({
               {s.movements.length > 0 && (
                 <div className="card" style={{ marginBottom: '1rem' }}>
                   <strong style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.88rem' }}>
-                    Suprimentos e sangrias
+                    Suprimentos, sangrias e despesas
                   </strong>
                   <table className="data-table">
                     <thead>
                       <tr>
                         <th>Data</th>
                         <th>Tipo</th>
+                        <th>Forma</th>
                         <th style={{ textAlign: 'right' }}>Valor</th>
-                        <th>Motivo</th>
+                        <th>Centro de custo</th>
+                        <th>Observações</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1003,11 +1067,23 @@ function SessionDetailDrawer({
                                 color: m.type === 'IN' ? '#15803d' : '#b91c1c',
                               }}
                             >
-                              {m.type === 'IN' ? 'Suprimento' : 'Sangria'}
+                              {m.type === 'IN'
+                                ? 'Suprimento'
+                                : m.method === 'EXPENSE'
+                                  ? 'Despesa'
+                                  : 'Sangria'}
                             </span>
+                          </td>
+                          <td style={{ fontSize: '0.8rem' }}>
+                            {m.method ? PAYMENT_LABELS[m.method] ?? m.method : '—'}
                           </td>
                           <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                             {formatBRL(m.amount)}
+                          </td>
+                          <td style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>
+                            {m.referentialAccount
+                              ? `${m.referentialAccount.code} — ${m.referentialAccount.description}`
+                              : '—'}
                           </td>
                           <td style={{ fontSize: '0.82rem' }}>{m.reason ?? '—'}</td>
                         </tr>
@@ -1170,7 +1246,7 @@ function SessionDetailDrawer({
                     className="btn btn-secondary"
                     onClick={() => onOpenMovement(s.id)}
                   >
-                    Lançar sangria / suprimento
+                    Lançar movimento (sangria / despesa / suprimento)
                   </button>
                 </div>
               )}

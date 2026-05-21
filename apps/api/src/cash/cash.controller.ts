@@ -22,6 +22,7 @@ import {
   SaleStatus,
 } from '../generated/tenant-client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { referentialCodeMatchesFlow } from '../common/referential-account-flow';
 
 // --- helpers de data (locais) -----------------------------------------------
 function startOfDay(d: Date): Date {
@@ -82,7 +83,7 @@ export class CashController {
    * Suporta `status=OPEN|CLOSED` e `userId=…` na query string para filtragem.
    */
   @Get('sessions')
-  @Roles('admin', 'manager', 'seller')
+  @Roles('admin', 'manager', 'seller', 'finance')
   async listSessions(
     @CurrentUser() user: JwtPayload,
     @Query('status') status?: string,
@@ -231,6 +232,12 @@ export class CashController {
           } else if (sale.status === SaleStatus.CANCELLED) {
             totalCancelled += total;
             cancelledCount += 1;
+          }
+        }
+
+        for (const m of s.movements) {
+          if (m.type === CashMovementType.OUT && m.method === PaymentMethod.EXPENSE) {
+            byMethod.set('EXPENSE', (byMethod.get('EXPENSE') ?? 0) + Number(m.amount));
           }
         }
 
@@ -567,7 +574,12 @@ export class CashController {
       where: { id },
       include: {
         user: { select: { id: true, name: true, email: true } },
-        movements: { orderBy: { createdAt: 'desc' } },
+        movements: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            referentialAccount: { select: { id: true, code: true, description: true } },
+          },
+        },
       },
     });
     if (!session) throw new NotFoundException('Sessão não encontrada.');
@@ -622,6 +634,13 @@ export class CashController {
         }
       } else if (sale.status === SaleStatus.CANCELLED) {
         totalCancelled += total;
+      }
+    }
+
+    for (const m of session.movements) {
+      if (m.type === CashMovementType.OUT && m.method === PaymentMethod.EXPENSE) {
+        const cur = byMethod.get('EXPENSE') ?? 0;
+        byMethod.set('EXPENSE', cur + Number(m.amount));
       }
     }
 
@@ -720,6 +739,7 @@ export class CashController {
       amount: number;
       method?: PaymentMethod | null;
       reason?: string | null;
+      referentialAccountId?: string | null;
     },
   ) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
@@ -727,13 +747,49 @@ export class CashController {
       where: { userId: user.sub, status: CashSessionStatus.OPEN },
     });
     if (!open) throw new BadRequestException('Abra o caixa antes');
+
+    const method = body.method ?? null;
+    if (body.type === CashMovementType.IN && method === PaymentMethod.EXPENSE) {
+      throw new BadRequestException('Despesas só podem ser registradas como saída.');
+    }
+
+    let referentialAccountId: string | null =
+      body.referentialAccountId != null && String(body.referentialAccountId).trim() !== ''
+        ? String(body.referentialAccountId).trim()
+        : null;
+
+    if (referentialAccountId) {
+      const acc = await db.referentialAccount.findUnique({
+        where: { id: referentialAccountId },
+      });
+      if (!acc) {
+        throw new BadRequestException('Centro de custo (plano referencial) não encontrado.');
+      }
+      if (body.type !== CashMovementType.OUT) {
+        throw new BadRequestException('Centro de custo aplica-se apenas a saídas de despesa.');
+      }
+      if (method !== PaymentMethod.EXPENSE) {
+        throw new BadRequestException(
+          'Para usar centro de custo, selecione o tipo “Despesas” (não sangria simples).',
+        );
+      }
+      if (!referentialCodeMatchesFlow(acc.code, 'OUT')) {
+        throw new BadRequestException(
+          'O centro de custo deve ser conta do grupo 4 (custos) ou 5 (despesas).',
+        );
+      }
+    } else if (method === PaymentMethod.EXPENSE) {
+      throw new BadRequestException('Despesas de caixa exigem centro de custo.');
+    }
+
     return db.cashMovement.create({
       data: {
         sessionId: open.id,
         type: body.type,
         amount: String(body.amount),
-        method: body.method ?? null,
+        method,
         reason: body.reason ?? null,
+        referentialAccountId,
       },
     });
   }

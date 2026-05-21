@@ -83,7 +83,7 @@ export function ProductReportsPanel() {
   /** Sem intervalo cadastro: ranking só de quem vendeu; com intervalo: mesmo conjunto da movimentação. */
   const canRunTurnover = Boolean(turnFrom && turnTo && !turnCadPartial);
 
-  function openMovementReport(target: '_self' | '_blank') {
+  function openMovementReport() {
     setMovErr(null);
     const fromN = cadFromNum;
     const toN = cadToNum;
@@ -123,15 +123,10 @@ export function ProductReportsPanel() {
       showNoMovement: movShowNoMovement,
       maxStockCeiling: movMaxCeiling,
     });
-    const path = `/produtos/relatorio/movimentacao?${qs}`;
-    if (target === '_blank') {
-      window.open(path, '_blank', 'noopener,noreferrer');
-    } else {
-      navigate(path);
-    }
+    navigate(`/produtos/relatorio/movimentacao?${qs}`);
   }
 
-  function openTurnoverReport(target: '_self' | '_blank') {
+  function openTurnoverReport() {
     setTurnErr(null);
     if (!turnFrom.trim() || !turnTo.trim()) {
       setTurnErr('Informe as datas inicial e final.');
@@ -171,12 +166,7 @@ export function ProductReportsPanel() {
       alertsOnly: turnAlertsOnly,
       maxStockCeiling: turnMaxCeiling,
     });
-    const path = `/produtos/relatorio/giro?${qs}`;
-    if (target === '_blank') {
-      window.open(path, '_blank', 'noopener,noreferrer');
-    } else {
-      navigate(path);
-    }
+    navigate(`/produtos/relatorio/giro?${qs}`);
   }
 
   const narrow: CSSProperties = { maxWidth: '420px', width: '100%' };
@@ -332,17 +322,9 @@ export function ProductReportsPanel() {
               type="button"
               className="btn btn-primary"
               disabled={!canRunMovement}
-              onClick={() => openMovementReport('_self')}
+              onClick={() => openMovementReport()}
             >
               Abrir relatório
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={!canRunMovement}
-              onClick={() => openMovementReport('_blank')}
-            >
-              Nova guia
             </button>
           </div>
         </div>
@@ -451,17 +433,9 @@ export function ProductReportsPanel() {
               type="button"
               className="btn btn-primary"
               disabled={!canRunTurnover}
-              onClick={() => openTurnoverReport('_self')}
+              onClick={() => openTurnoverReport()}
             >
               Abrir relatório
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={!canRunTurnover}
-              onClick={() => openTurnoverReport('_blank')}
-            >
-              Nova guia
             </button>
           </div>
         </div>

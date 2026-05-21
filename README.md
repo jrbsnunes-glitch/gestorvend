@@ -25,7 +25,7 @@ Login seed: tenant `demo`, e-mail `admin@demo.local`, senha `Admin123!`.
 
 ## Documentação
 
-- [docs/DEPLOY-VPS.md](docs/DEPLOY-VPS.md) — publicar na VPS (Nginx, systemd/PM2, Docker).
+- [docs/FINANCIAL-OVERVIEW.md](docs/FINANCIAL-OVERVIEW.md) — balanço financeiro, plano referencial e importação.
 - [docs/contexto.txt](docs/contexto.txt) — requisitos funcionais.
 - [docs/MVP-ETAPA1.md](docs/MVP-ETAPA1.md) — escopo MVP.
 - [docs/STACK.md](docs/STACK.md) — stack.

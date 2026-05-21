@@ -105,6 +105,8 @@ model Supplier {
   document       String?
   legalName      String
   tradeName      String?
+  /// Grupo / segmento (filtros em relatórios financeiros, mesmo conceito do cliente).
+  segment        String?
   email          String?
   phone          String?
   street         String?
@@ -356,6 +358,8 @@ enum PaymentMethod {
   PIX
   CREDIT
   OTHER
+  /// Saída de caixa classificada como despesa (conciliação / justificativa de falta).
+  EXPENSE
 }
 
 /// Origem da venda — permite separar PDV físico de pedidos vindos do GestorVendChat (WhatsApp).
@@ -438,6 +442,10 @@ model CashRegisterSession {
   openedAt       DateTime        @default(now())
   closedAt       DateTime?
   movements      CashMovement[]
+  payableSettlements   AccountPayable[]
+  receivableSettlements AccountReceivable[]
+  payablePaymentSettlements    PayableSettlement[]    @relation("PayableSettlementSession")
+  receivablePaymentSettlements ReceivableSettlement[] @relation("ReceivableSettlementSession")
 }
 
 model CashMovement {
@@ -448,7 +456,12 @@ model CashMovement {
   amount    Decimal               @db.Decimal(14, 2)
   method    PaymentMethod?
   reason    String?
+  /// Centro de custo (conta do plano referencial — grupos 4/5 saída, 6 entrada).
+  referentialAccountId String?
+  referentialAccount   ReferentialAccount? @relation(fields: [referentialAccountId], references: [id], onDelete: SetNull)
   createdAt DateTime              @default(now())
+
+  @@index([referentialAccountId])
 }
 
 // --- Financeiro ---
@@ -475,6 +488,8 @@ model AccountPayable {
   description    String
   category       String?
   amount         Decimal    @db.Decimal(14, 2)
+  /// Saldo ainda em aberto (pagamentos parciais reduzem até zero).
+  amountRemaining Decimal   @db.Decimal(14, 2)
   dueDate        DateTime
   paidAt         DateTime?
   status         BillStatus @default(OPEN)
@@ -491,8 +506,33 @@ model AccountPayable {
   parentRecurringId String?
   parentRecurring   AccountPayable? @relation("PayableRecurringChildren", fields: [parentRecurringId], references: [id])
   recurringChildren AccountPayable[] @relation("PayableRecurringChildren")
+  paymentMethod   PaymentMethod?
+  settledAmount   Decimal?    @db.Decimal(14, 2)
+  cashSessionId   String?
+  cashSession     CashRegisterSession? @relation(fields: [cashSessionId], references: [id])
+  paymentNotes    String?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
+  settlements   PayableSettlement[]
+}
+
+/// Cada liquidação (parcial ou total) de conta a pagar — valor efetivo pago e diário.
+model PayableSettlement {
+  id            String     @id @default(uuid())
+  payableId     String
+  payable       AccountPayable @relation(fields: [payableId], references: [id], onDelete: Cascade)
+  amount        Decimal    @db.Decimal(14, 2)
+  paidAt        DateTime   @default(now())
+  method        PaymentMethod?
+  cashSessionId String?
+  cashSession   CashRegisterSession? @relation("PayableSettlementSession", fields: [cashSessionId], references: [id], onDelete: SetNull)
+  notes         String?    @db.VarChar(4000)
+  referentialAccountId String?
+  referentialAccount   ReferentialAccount? @relation(fields: [referentialAccountId], references: [id], onDelete: SetNull)
+
+  @@index([payableId])
+  @@index([paidAt])
+  @@index([referentialAccountId])
 }
 
 model AccountReceivable {
@@ -502,7 +542,9 @@ model AccountReceivable {
   saleId      String?
   sale        Sale?      @relation(fields: [saleId], references: [id])
   description String
-  amount      Decimal    @db.Decimal(14, 2)
+  amount         Decimal    @db.Decimal(14, 2)
+  /// Saldo ainda em aberto (pagamentos parciais reduzem até zero).
+  amountRemaining Decimal   @db.Decimal(14, 2)
   dueDate     DateTime
   receivedAt  DateTime?
   status      BillStatus @default(OPEN)
@@ -512,8 +554,58 @@ model AccountReceivable {
   parentRecurringId String?
   parentRecurring   AccountReceivable? @relation("ReceivableRecurringChildren", fields: [parentRecurringId], references: [id])
   recurringChildren AccountReceivable[] @relation("ReceivableRecurringChildren")
+  paymentMethod   PaymentMethod?
+  settledAmount   Decimal?    @db.Decimal(14, 2)
+  cashSessionId   String?
+  cashSession     CashRegisterSession? @relation(fields: [cashSessionId], references: [id])
+  paymentNotes    String?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+  settlements ReceivableSettlement[]
+}
+
+model ReceivableSettlement {
+  id             String   @id @default(uuid())
+  receivableId   String
+  receivable     AccountReceivable @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+  amount         Decimal  @db.Decimal(14, 2)
+  receivedAt     DateTime @default(now())
+  method         PaymentMethod?
+  cashSessionId  String?
+  cashSession    CashRegisterSession? @relation("ReceivableSettlementSession", fields: [cashSessionId], references: [id], onDelete: SetNull)
+  notes          String?  @db.VarChar(4000)
+  referentialAccountId String?
+  referentialAccount   ReferentialAccount? @relation(fields: [referentialAccountId], references: [id], onDelete: SetNull)
+
+  @@index([receivableId])
+  @@index([receivedAt])
+  @@index([referentialAccountId])
+}
+
+/// Contas do Plano Referencial (RFB / SPED ECD) — versão importada; somente leitura na UI v1.
+model ReferentialAccount {
+  id            String    @id @default(uuid())
+  /// Código oficial da conta referencial.
+  code          String
+  description   String
+  level         Int       @default(1)
+  parentCode    String?
+  validFrom     DateTime?
+  validTo       DateTime?
+  /// Taxonomia / natureza quando aplicável (ex.: atributo do layout).
+  taxonomyCode  String?
+  /// Identificador da versão da importação (ex.: layout ECD, arquivo-fonte).
+  sourceVersion String    @default("RFB-sample-v1")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  cashMovements           CashMovement[]
+  payableSettlements      PayableSettlement[]
+  receivableSettlements   ReceivableSettlement[]
+
+  @@unique([code, sourceVersion])
+  @@index([code])
+  @@index([parentCode])
+  @@index([sourceVersion])
 }
 
 // --- Auditoria ---

@@ -30,18 +30,37 @@ type Overview = {
   payablesSoon: Array<{
     id: string;
     description: string;
+    status: string;
     amount: number;
+    amountRemaining: number;
     dueDate: string;
     supplier: string | null;
   }>;
   receivablesSoon: Array<{
     id: string;
     description: string;
+    status: string;
     amount: number;
+    amountRemaining: number;
     dueDate: string;
     customer: string | null;
   }>;
 };
+
+function isDueDatePast(dueDate: string): boolean {
+  const d = new Date(dueDate);
+  const today = new Date();
+  d.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  return d < today;
+}
+
+function dueLabelShort(status: string, dueDate: string): string {
+  if (status === 'OVERDUE' || isDueDatePast(dueDate)) {
+    return `venceu em ${formatDate(dueDate)}`;
+  }
+  return `vence em ${formatDate(dueDate)}`;
+}
 
 export function DashboardPage() {
   const overview = useQuery({
@@ -193,26 +212,39 @@ export function DashboardPage() {
 
         <article className="card dash-block">
           <header className="dash-block-head">
-            <h2>A pagar (próximos 7 dias)</h2>
+            <h2>A pagar (vencidos e até 7 dias)</h2>
             <Link to="/financeiro" className="dash-block-link">
               Financeiro →
             </Link>
           </header>
           {overview.isLoading && <p className="dash-empty">Carregando…</p>}
           {!overview.isLoading && !data?.payablesSoon.length && (
-            <p className="dash-empty">Sem títulos a vencer.</p>
+            <p className="dash-empty">Sem títulos vencidos ou a vencer nos próximos 7 dias.</p>
           )}
           {data?.payablesSoon.length ? (
             <ul className="dash-list">
               {data.payablesSoon.map((p) => (
                 <li key={p.id}>
                   <div>
-                    <strong>{p.description}</strong>
+                    <strong>
+                      {p.description}
+                      {p.status === 'OVERDUE' || isDueDatePast(p.dueDate) ? (
+                        <span style={{ color: '#b91c1c', fontWeight: 600, marginLeft: '0.35rem' }}>
+                          (vencido)
+                        </span>
+                      ) : null}
+                    </strong>
                     <div className="dash-list-meta">
-                      {p.supplier ?? '—'} · vence em {formatDate(p.dueDate)}
+                      {p.supplier ?? '—'} · {dueLabelShort(p.status, p.dueDate)}
+                      {p.amountRemaining < p.amount - 0.005 ? (
+                        <span>
+                          {' '}
+                          · face {formatBRL(p.amount)}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
-                  <strong className="dash-list-amt">{formatBRL(p.amount)}</strong>
+                  <strong className="dash-list-amt">{formatBRL(p.amountRemaining)}</strong>
                 </li>
               ))}
             </ul>
@@ -221,27 +253,40 @@ export function DashboardPage() {
 
         <article className="card dash-block">
           <header className="dash-block-head">
-            <h2>A receber (próximos 7 dias)</h2>
+            <h2>A receber (vencidos e até 7 dias)</h2>
             <Link to="/financeiro" className="dash-block-link">
               Financeiro →
             </Link>
           </header>
           {overview.isLoading && <p className="dash-empty">Carregando…</p>}
           {!overview.isLoading && !data?.receivablesSoon.length && (
-            <p className="dash-empty">Sem títulos a receber.</p>
+            <p className="dash-empty">Sem títulos vencidos ou a receber nos próximos 7 dias.</p>
           )}
           {data?.receivablesSoon.length ? (
             <ul className="dash-list">
               {data.receivablesSoon.map((r) => (
                 <li key={r.id}>
                   <div>
-                    <strong>{r.description}</strong>
+                    <strong>
+                      {r.description}
+                      {r.status === 'OVERDUE' || isDueDatePast(r.dueDate) ? (
+                        <span style={{ color: '#b91c1c', fontWeight: 600, marginLeft: '0.35rem' }}>
+                          (vencido)
+                        </span>
+                      ) : null}
+                    </strong>
                     <div className="dash-list-meta">
-                      {r.customer ?? '—'} · vence em {formatDate(r.dueDate)}
+                      {r.customer ?? '—'} · {dueLabelShort(r.status, r.dueDate)}
+                      {r.amountRemaining < r.amount - 0.005 ? (
+                        <span>
+                          {' '}
+                          · face {formatBRL(r.amount)}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                   <strong className="dash-list-amt" style={{ color: '#15803d' }}>
-                    {formatBRL(r.amount)}
+                    {formatBRL(r.amountRemaining)}
                   </strong>
                 </li>
               ))}

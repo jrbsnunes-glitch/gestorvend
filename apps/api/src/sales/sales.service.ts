@@ -47,6 +47,11 @@ function normalizePaymentsToSaleTotal(
   payments: CreateSaleInput['payments'],
   total: number,
 ): Array<{ method: PaymentMethod; amount: number; installments: number }> {
+  for (const p of payments) {
+    if (p.method === PaymentMethod.EXPENSE) {
+      throw new BadRequestException('Forma de pagamento “Despesas” não se aplica a vendas.');
+    }
+  }
   const normalized = payments.map((p) => ({
     method: p.method,
     amount: roundMoney2(Number(p.amount)),
@@ -215,12 +220,14 @@ export class SalesService {
         for (let i = 0; i < installments; i++) {
           const d = new Date(due);
           d.setMonth(d.getMonth() + i);
+          const parcelStr = String(parcel.toFixed(2));
           await tx.accountReceivable.create({
             data: {
               customerId: input.customerId ?? null,
               saleId: sale.id,
               description: `Parcela ${i + 1}/${installments} — venda #${sale.number}`,
-              amount: String(parcel.toFixed(2)),
+              amount: parcelStr,
+              amountRemaining: parcelStr,
               dueDate: d,
               status: BillStatus.OPEN,
             },

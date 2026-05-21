@@ -54,6 +54,7 @@ export class SuppliersController {
         email: body.email ? String(body.email) : null,
         phone: body.phone ? String(body.phone) : null,
         city: body.city ? String(body.city) : null,
+        segment: body.segment ? String(body.segment) : null,
       },
     });
   }
@@ -82,6 +83,7 @@ export class SuppliersController {
         ...(body.email !== undefined && { email: body.email ? String(body.email) : null }),
         ...(body.phone !== undefined && { phone: body.phone ? String(body.phone) : null }),
         ...(body.city !== undefined && { city: body.city ? String(body.city) : null }),
+        ...(body.segment !== undefined && { segment: body.segment ? String(body.segment) : null }),
       },
     });
   }

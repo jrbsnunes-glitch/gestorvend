@@ -103,6 +103,9 @@ type CartLine = {
 
 type PaymentKind = 'CASH' | 'CARD' | 'PIX' | 'CREDIT' | 'OTHER';
 
+/** Inclui `EXPENSE` só no fechamento (não é forma de pagamento de venda). */
+type CloseMethodKey = PaymentKind | 'EXPENSE';
+
 type CartPayment = {
   id: string;
   method: PaymentKind;
@@ -120,6 +123,11 @@ const PAY_METHODS: Array<{ key: PaymentKind; label: string; icon: string }> = [
   { key: 'PIX', label: 'Pix', icon: '⚡' },
   { key: 'CREDIT', label: 'Crediário', icon: '🧾' },
   { key: 'OTHER', label: 'Outro', icon: '➕' },
+];
+
+const CLOSE_ROWS: Array<{ key: CloseMethodKey; label: string; icon: string }> = [
+  ...PAY_METHODS,
+  { key: 'EXPENSE', label: 'Despesas', icon: '📤' },
 ];
 
 function uid() {
@@ -619,6 +627,7 @@ function PosScreen({
   onExit: () => void;
   onCashClosed: () => void;
 }) {
+  const navigate = useNavigate();
   const qc = useQueryClient();
 
   /* --- estado do carrinho atual --- */
@@ -637,12 +646,13 @@ function PosScreen({
   const [customerOpen, setCustomerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
-  const [closingByMethod, setClosingByMethod] = useState<Record<PaymentKind, string>>({
+  const [closingByMethod, setClosingByMethod] = useState<Record<CloseMethodKey, string>>({
     CASH: '',
     CARD: '',
     PIX: '',
     CREDIT: '',
     OTHER: '',
+    EXPENSE: '',
   });
   const [closingNotes, setClosingNotes] = useState('');
   const [closeErr, setCloseErr] = useState<string | null>(null);
@@ -1024,7 +1034,7 @@ function PosScreen({
         onExit={tryExit}
         onCloseCash={() => {
           setCloseOpen(true);
-          setClosingByMethod({ CASH: '', CARD: '', PIX: '', CREDIT: '', OTHER: '' });
+          setClosingByMethod({ CASH: '', CARD: '', PIX: '', CREDIT: '', OTHER: '', EXPENSE: '' });
           setClosingNotes('');
           setCloseErr(null);
         }}
@@ -1040,11 +1050,7 @@ function PosScreen({
               type="button"
               className="pos-btn pos-btn-ghost"
               onClick={() => {
-                window.open(
-                  `/vendas/impressao?id=${encodeURIComponent(receiptPrompt.id)}`,
-                  '_blank',
-                  'noopener',
-                );
+                navigate(`/vendas/impressao?id=${encodeURIComponent(receiptPrompt.id)}`);
               }}
             >
               Imprimir cupom
@@ -1506,7 +1512,7 @@ function PosScreen({
             {closeErr && <div className="alert alert-error">{closeErr}</div>}
 
             <div className="pos-close-grid">
-              {PAY_METHODS.map((m) => {
+              {CLOSE_ROWS.map((m) => {
                 const expected = closeDetailQ.data?.summary.byMethod[m.key] ?? 0;
                 // Para o dinheiro, o "esperado" mais útil é fundo + vendas em dinheiro.
                 const expectedDisplay =
@@ -1525,7 +1531,13 @@ function PosScreen({
                       <span>
                         <strong>{m.label}</strong>
                         <em>
-                          Esperado{m.key === 'CASH' ? ' (fundo + vendas)' : ''}:{' '}
+                          Esperado
+                          {m.key === 'CASH'
+                            ? ' (fundo + vendas)'
+                            : m.key === 'EXPENSE'
+                              ? ' (despesas lançadas)'
+                              : ''}
+                          :{' '}
                           {closeDetailQ.isLoading ? '…' : formatBRL(expectedDisplay)}
                         </em>
                       </span>
@@ -1672,11 +1684,7 @@ function PosScreen({
                           fontSize: '0.8rem',
                         }}
                         onClick={() => {
-                          window.open(
-                            `/vendas/impressao?id=${encodeURIComponent(s.id)}`,
-                            '_blank',
-                            'noopener',
-                          );
+                          navigate(`/vendas/impressao?id=${encodeURIComponent(s.id)}`);
                         }}
                       >
                         Cupom (não fiscal)
