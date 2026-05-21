@@ -53,7 +53,7 @@ function RequireAdmin({ children }: { children: ReactNode }) {
 }
 
 function AppInner() {
-  const [token, setTok] = useState(() => getToken());
+  const [token] = useState(() => getToken());
 
   useEffect(() => {
     if (token) scheduleAccessTokenRefresh();
