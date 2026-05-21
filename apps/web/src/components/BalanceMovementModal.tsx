@@ -39,10 +39,8 @@ export function BalanceMovementModal({ open, onClose }: Props) {
   }, [open]);
 
   useEffect(() => {
-    if (movType === 'IN') {
-      setMovOutKind('WITHDRAWAL');
-      setReferentialAccountId('');
-    }
+    if (movType === 'IN') setMovOutKind('WITHDRAWAL');
+    setReferentialAccountId('');
   }, [movType]);
 
   const movement = useMutation({
@@ -59,6 +57,8 @@ export function BalanceMovementModal({ open, onClose }: Props) {
       };
       if (movType === 'IN') {
         json.method = inMethod;
+        const cc = referentialAccountId.trim();
+        if (cc) json.referentialAccountId = cc;
       } else if (movOutKind === 'EXPENSE') {
         json.method = 'EXPENSE';
         json.referentialAccountId = referentialAccountId.trim();
@@ -90,8 +90,9 @@ export function BalanceMovementModal({ open, onClose }: Props) {
           Novo lançamento de caixa
         </h2>
         <p style={{ color: 'var(--color-text-muted)', fontSize: '0.88rem', marginTop: 0 }}>
-          Mesmo fluxo do pagamento no financeiro: valor, forma e, em despesas, centro de custo no plano
-          referencial. É necessário ter um <strong>caixa aberto</strong> para o seu usuário.
+          Valor e forma de pagamento; em <strong>saída despesa</strong> o centro (grupos 4/5) é obrigatório; em{' '}
+          <strong>entrada</strong> pode classificar por centro de receita (grupo 6), opcional. Exige{' '}
+          <strong>caixa aberto</strong> para o seu usuário.
         </p>
         {err && <div className="alert alert-error">{err}</div>}
 
@@ -134,20 +135,31 @@ export function BalanceMovementModal({ open, onClose }: Props) {
         </div>
 
         {movType === 'IN' ? (
-          <div className="field">
-            <label htmlFor="bal-mov-method-in">Forma de pagamento *</label>
-            <select
-              id="bal-mov-method-in"
-              value={inMethod}
-              onChange={(e) => setInMethod(e.target.value)}
-            >
-              {Object.entries(PAYMENT_IN_LABELS).map(([k, lab]) => (
-                <option key={k} value={k}>
-                  {lab}
-                </option>
-              ))}
-            </select>
-          </div>
+          <>
+            <div className="field">
+              <label htmlFor="bal-mov-method-in">Forma de pagamento *</label>
+              <select
+                id="bal-mov-method-in"
+                value={inMethod}
+                onChange={(e) => setInMethod(e.target.value)}
+              >
+                {Object.entries(PAYMENT_IN_LABELS).map(([k, lab]) => (
+                  <option key={k} value={k}>
+                    {lab}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <CostCenterSelect
+              flow="IN"
+              id="bal-mov-cc-in"
+              value={referentialAccountId}
+              onChange={setReferentialAccountId}
+              allowEmpty
+              label="Centro de custo — receitas (grupo 6, opcional)"
+              emptyLabel="— Não classificar no plano —"
+            />
+          </>
         ) : movOutKind === 'EXPENSE' ? (
           <>
             <div className="field">

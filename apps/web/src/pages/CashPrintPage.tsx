@@ -23,6 +23,8 @@ type ReportSession = {
   itemsCount: number;
   totalCompleted: number;
   totalCancelled: number;
+  /** Soma dos descontos em vendas concluídas (por linha + desconto no total do cupom). */
+  totalDiscounts: number;
   expectedByMethod: Record<string, number>;
   declaredByMethod: Record<string, number> | null;
   diffByMethod: Record<string, number> | null;
@@ -38,6 +40,7 @@ type ReportData = {
     itemsCount: number;
     totalCompleted: number;
     totalCancelled: number;
+    totalDiscounts: number;
     openingBalance: number;
     closingBalance: number;
     movementsIn: number;
@@ -55,6 +58,7 @@ const PAYMENT_LABELS: Record<string, string> = {
   PIX: 'Pix',
   CREDIT: 'Crediário',
   OTHER: 'Outro',
+  EXPENSE: 'Despesa',
 };
 
 function fmtDateTime(iso: string | null): string {
@@ -242,6 +246,13 @@ export function CashPrintPage() {
                   value={formatBRL(data.totals.totalCompleted)}
                   highlight
                 />
+                {data.totals.totalDiscounts > 0 ? (
+                  <KpiPrint
+                    label="Descontos (vendas concluídas)"
+                    value={formatBRL(data.totals.totalDiscounts)}
+                    muted
+                  />
+                ) : null}
                 <KpiPrint label="Itens vendidos" value={String(data.totals.itemsCount)} />
                 <KpiPrint
                   label="Vendas canceladas"
@@ -442,6 +453,12 @@ function SessionBlock({
           <strong>{session.completedCount}</strong>
           <em>{formatBRL(session.totalCompleted)}</em>
         </div>
+        {session.totalDiscounts > 0 ? (
+          <div className="is-muted">
+            <span>Descontos concedidos</span>
+            <strong>{formatBRL(session.totalDiscounts)}</strong>
+          </div>
+        ) : null}
         <div className="is-muted">
           <span>Vendas canceladas</span>
           <strong>{session.cancelledCount}</strong>

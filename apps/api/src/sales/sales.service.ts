@@ -43,7 +43,7 @@ function roundMoney2(n: number): number {
  * Garante que a soma dos pagamentos gravada = total da venda.
  * Troco em dinheiro: abate o excedente dos lançamentos CASH da direita para a esquerda.
  */
-function normalizePaymentsToSaleTotal(
+export function normalizePaymentsToSaleTotal(
   payments: CreateSaleInput['payments'],
   total: number,
 ): Array<{ method: PaymentMethod; amount: number; installments: number }> {
@@ -236,6 +236,134 @@ export class SalesService {
       }
 
       return sale;
+    });
+  }
+
+  /**
+   * Remove uma linha de item de uma venda concluída (mínimo duas linhas antes),
+   * recalcula totais e rebalanceia pagamentos (mesma lógica de troco só em dinheiro).
+   * Não permite com pagamento CREDIÁRIO nesta primeira versão.
+   */
+  async removeSaleItem(tenantSlug: string, saleId: string, saleItemId: string, userId: string) {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    return db.$transaction(async (tx) => {
+      const sale = await tx.sale.findUnique({
+        where: { id: saleId },
+        include: {
+          items: true,
+          payments: true,
+        },
+      });
+      if (!sale) throw new NotFoundException('Venda não encontrada');
+      if (sale.status !== SaleStatus.COMPLETED) {
+        throw new BadRequestException('Só é possível retirar item de venda finalizada.');
+      }
+      if (sale.items.length < 2) {
+        throw new BadRequestException(
+          'A venda tem apenas um item. Use “Cancelar venda” integral para estornar estoque.',
+        );
+      }
+
+      const hasCredit = sale.payments.some((p) => p.method === PaymentMethod.CREDIT);
+      if (hasCredit) {
+        throw new BadRequestException(
+          'Remoção de item automática não disponível quando há crediário. Cancele a venda inteira ou ajuste no financeiro.',
+        );
+      }
+
+      const victim = sale.items.find((it) => it.id === saleItemId);
+      if (!victim) {
+        throw new BadRequestException('Item não encontrado nesta venda.');
+      }
+
+      const defaultLoc = await tx.stockLocation.findFirst({
+        where: { isDefault: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (!defaultLoc) throw new BadRequestException('Local padrão não encontrado');
+
+      const qty = Number(victim.quantity);
+      const bal = await tx.stockBalance.findUnique({
+        where: {
+          variantId_locationId: { variantId: victim.variantId, locationId: defaultLoc.id },
+        },
+      });
+      const currentQty = bal ? Number(bal.quantity) : 0;
+      await tx.stockBalance.upsert({
+        where: {
+          variantId_locationId: { variantId: victim.variantId, locationId: defaultLoc.id },
+        },
+        create: {
+          variantId: victim.variantId,
+          locationId: defaultLoc.id,
+          quantity: String(currentQty + qty),
+        },
+        update: { quantity: String(currentQty + qty) },
+      });
+      await tx.stockMovement.create({
+        data: {
+          type: StockMovementType.IN,
+          source: StockMovementSource.OTHER,
+          variantId: victim.variantId,
+          locationId: defaultLoc.id,
+          quantity: String(qty),
+          reference: `Estorno linha · venda #${sale.number}`,
+          userId,
+        },
+      });
+
+      await tx.saleItem.delete({ where: { id: saleItemId } });
+
+      const remaining = sale.items.filter((it) => it.id !== saleItemId);
+      const newSubtotal = roundMoney2(
+        remaining.reduce((s, it) => s + Number(it.totalLine), 0),
+      );
+      const disc = Number(sale.discount);
+      let newTotal = roundMoney2(newSubtotal - disc);
+      if (newTotal < 0) {
+        throw new BadRequestException(
+          'Total da venda ficaria negativo com o desconto atual; reduza o desconto primeiro.',
+        );
+      }
+
+      const payInput = sale.payments.map((p) => ({
+        method: p.method as PaymentMethod,
+        amount: Number(p.amount),
+        installments: Math.max(1, p.installments ?? 1),
+      }));
+
+      let payNorm: ReturnType<typeof normalizePaymentsToSaleTotal>;
+      try {
+        payNorm = normalizePaymentsToSaleTotal(payInput, newTotal);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Não foi possível rebalancear os pagamentos.';
+        throw new BadRequestException(msg);
+      }
+
+      await tx.salePayment.deleteMany({ where: { saleId: sale.id } });
+      await tx.salePayment.createMany({
+        data: payNorm.map((p) => ({
+          saleId: sale.id,
+          method: p.method,
+          amount: String(p.amount.toFixed(2)),
+          installments: p.installments,
+        })),
+      });
+
+      const updated = await tx.sale.update({
+        where: { id: saleId },
+        data: {
+          subtotal: String(newSubtotal.toFixed(2)),
+          total: String(newTotal.toFixed(2)),
+        },
+        include: {
+          customer: true,
+          items: { include: { variant: { include: { product: true } } } },
+          payments: true,
+        },
+      });
+
+      return updated;
     });
   }
 

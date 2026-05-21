@@ -25,13 +25,23 @@ import './pos.css';
  * Tipos de domínio
  * ------------------------------------------------------------------------- */
 
-type Sale = {
+type SaleItemRowApi = {
+  id: string;
+  variantId: string;
+  quantity: string;
+  totalLine: string;
+  variant: { sku: string; product: { name: string } };
+};
+
+/** Venda como retornada por GET /sales (inclui itens quando expandido pelo backend). */
+type SaleSummary = {
   id: string;
   number: number;
   status: 'DRAFT' | 'COMPLETED' | 'CANCELLED';
   total: string;
   createdAt: string;
   customer: { name: string } | null;
+  items?: SaleItemRowApi[];
 };
 
 /** Limites do dia no fuso local (para contagem "vendas hoje" no PDV). */
@@ -174,7 +184,8 @@ export function SalesPage() {
   const operatorQ = useQuery({
     queryKey: ['users', 'me'],
     queryFn: () => api<Operator>('/users/me'),
-    staleTime: 5 * 60_000,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   // Gerente: lista de todos os caixas abertos no tenant, para que ele possa
@@ -635,9 +646,6 @@ function PosScreen({
   const [discount, setDiscount] = useState(0);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [payments, setPayments] = useState<CartPayment[]>([]);
-  const [payMethodSel, setPayMethodSel] = useState<PaymentKind>('CASH');
-  const [payAmount, setPayAmount] = useState('');
-  const [payInstallments, setPayInstallments] = useState('1');
 
   /* --- estado da UI --- */
   const [scannerValue, setScannerValue] = useState('');
@@ -670,6 +678,13 @@ function PosScreen({
 
   const scannerRef = useRef<HTMLInputElement>(null);
 
+  /** Devoluções / ajustes de vendas já concluídas (API: admin/manager). */
+  const [saleLineRemoveDraft, setSaleLineRemoveDraft] = useState<{
+    sale: SaleSummary;
+    selectedItemId: string;
+  } | null>(null);
+  const canManagePastSales = isManager();
+
   /* --- queries --- */
 
   const companyQ = useQuery({
@@ -684,7 +699,7 @@ function PosScreen({
 
   const sales = useQuery({
     queryKey: ['sales'],
-    queryFn: () => api<Sale[]>('/sales'),
+    queryFn: () => api<SaleSummary[]>('/sales'),
   });
 
   const salesTodayQ = useQuery({
@@ -693,7 +708,7 @@ function PosScreen({
       const now = new Date();
       const from = startOfLocalDay(now).toISOString();
       const to = endOfLocalDay(now).toISOString();
-      return api<Sale[]>(`/sales?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+      return api<SaleSummary[]>(`/sales?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
     },
     refetchInterval: 60_000,
   });
@@ -803,7 +818,26 @@ function PosScreen({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sales'] });
       qc.invalidateQueries({ queryKey: ['reports', 'sales-summary'] });
+      qc.invalidateQueries({ queryKey: ['cash'] });
+      setToast({ kind: 'ok', text: 'Venda cancelada. Estoque estornado.' });
     },
+    onError: (e: Error) => setToast({ kind: 'err', text: e.message }),
+  });
+
+  const removeSaleLineMut = useMutation({
+    mutationFn: ({ saleId, itemId }: { saleId: string; itemId: string }) =>
+      api(`/sales/${saleId}/items/${encodeURIComponent(itemId)}/remove`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sales'] });
+      qc.invalidateQueries({ queryKey: ['sales', 'today'] });
+      qc.invalidateQueries({ queryKey: ['reports', 'sales-summary'] });
+      qc.invalidateQueries({ queryKey: ['cash'] });
+      setSaleLineRemoveDraft(null);
+      setToast({ kind: 'ok', text: 'Item removido da venda. Totais e pagamentos foram recalculados.' });
+    },
+    onError: (e: Error) => setToast({ kind: 'err', text: e.message }),
   });
 
   // Soma de todos os valores contados por método -> total declarado.
@@ -893,34 +927,11 @@ function PosScreen({
     setDiscount(0);
     setCustomer(null);
     setPayments([]);
-    setPayMethodSel('CASH');
-    setPayAmount('');
-    setPayInstallments('1');
     setScannerValue('');
     setSuggestOpen(false);
   }
 
-  /* --- pagamento --- */
-
-  function addPayment(amountOverride?: number) {
-    const amt = amountOverride ?? parseDecimal(payAmount);
-    const value = amt > 0 ? amt : remaining;
-    if (value <= 0) return;
-    setPayments((p) => [
-      ...p,
-      {
-        id: uid(),
-        method: payMethodSel,
-        amount: Math.round(value * 100) / 100,
-        installments: parseInt(payInstallments, 10) || 1,
-      },
-    ]);
-    setPayAmount('');
-  }
-
-  function removePayment(id: string) {
-    setPayments((p) => p.filter((x) => x.id !== id));
-  }
+  /* --- pagamento apenas na overlay F2 --- */
 
   /* --- scanner --- */
 
@@ -981,9 +992,6 @@ function PosScreen({
           // F2 agora abre o submenu de pagamento (fluxo de caixa real:
           // 1º bipa produtos, 2º aperta F2, 3º escolhe forma de pagamento).
           setPayments([]);
-          setPayMethodSel('CASH');
-          setPayAmount('');
-          setPayInstallments('1');
           setPaymentMenuOpen(true);
         }
       } else if (ev.key === 'F4') {
@@ -1149,8 +1157,9 @@ function PosScreen({
                   </button>
                 )}
               </div>
-              <div className="pos-card-body" style={{ padding: 0 }}>
-                <div className="pos-items">
+              <div className="pos-card-body pos-cart-body-split" style={{ padding: 0 }}>
+                <div className="pos-items-scroll-area">
+                  <div className="pos-items">
                   {lines.length === 0 ? (
                     <div className="pos-items-empty">
                       <div className="pos-items-empty-icon" aria-hidden>
@@ -1244,6 +1253,31 @@ function PosScreen({
                       </tbody>
                     </table>
                   )}
+                  </div>
+                </div>
+                <div className="pos-cart-footer">
+                  <div className="pos-totals-row">
+                    <span>Subtotal</span>
+                    <strong>{formatBRL(subtotal)}</strong>
+                  </div>
+                  <div className="pos-totals-row">
+                    <span>Desconto</span>
+                    <div className="pos-discount-row" style={{ width: 160 }}>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={discount || ''}
+                        placeholder="0,00"
+                        onChange={(e) => setDiscount(Math.max(0, parseDecimal(e.target.value)))}
+                      />
+                    </div>
+                  </div>
+                  <div className="pos-totals-divider" />
+                  <div className="pos-total-big">
+                    <span className="pos-total-big-label">Total</span>
+                    <span className="pos-total-big-value">{formatBRL(total)}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1268,131 +1302,10 @@ function PosScreen({
               </span>
             </button>
 
-            <div className="pos-totals">
-              <div className="pos-totals-row">
-                <span>Subtotal</span>
-                <strong>{formatBRL(subtotal)}</strong>
-              </div>
-              <div className="pos-totals-row">
-                <span>Desconto</span>
-                <div className="pos-discount-row" style={{ width: 160 }}>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={discount || ''}
-                    placeholder="0,00"
-                    onChange={(e) => setDiscount(Math.max(0, parseDecimal(e.target.value)))}
-                  />
-                </div>
-              </div>
-              <div className="pos-totals-divider" />
-              <div className="pos-total-big">
-                <span className="pos-total-big-label">Total</span>
-                <span className="pos-total-big-value">{formatBRL(total)}</span>
-              </div>
-            </div>
-
-            <div className="pos-card">
-              <div className="pos-card-header">
-                <h3 className="pos-card-title">Pagamento</h3>
-                <span style={{ fontSize: '0.78rem', color: 'var(--pos-text-muted)' }}>
-                  Faltam <strong>{formatBRL(remaining)}</strong>
-                </span>
-              </div>
-              <div className="pos-card-body">
-                <div className="pos-pay-methods">
-                  {PAY_METHODS.map((m) => (
-                    <button
-                      type="button"
-                      key={m.key}
-                      className={`pos-pay-chip ${payMethodSel === m.key ? 'is-active' : ''}`}
-                      onClick={() => setPayMethodSel(m.key)}
-                    >
-                      <span className="pos-pay-chip-icon">{m.icon}</span>
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="form-row" style={{ marginBottom: '0.5rem' }}>
-                  <div className="field" style={{ marginBottom: 0 }}>
-                    <label htmlFor="pay-amount">Valor</label>
-                    <input
-                      id="pay-amount"
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      placeholder={`Restante ${formatBRL(remaining)}`}
-                      value={payAmount}
-                      onChange={(e) => setPayAmount(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          addPayment();
-                        }
-                      }}
-                    />
-                  </div>
-                  {payMethodSel === 'CREDIT' && (
-                    <div className="field" style={{ marginBottom: 0, maxWidth: 120 }}>
-                      <label htmlFor="pay-inst">Parcelas</label>
-                      <input
-                        id="pay-inst"
-                        type="number"
-                        min={1}
-                        value={payInstallments}
-                        onChange={(e) => setPayInstallments(e.target.value)}
-                      />
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    className="pos-btn pos-btn-ghost"
-                    style={{ alignSelf: 'flex-end' }}
-                    onClick={() => addPayment()}
-                    disabled={total <= 0 || remaining <= 0}
-                  >
-                    + Adicionar
-                  </button>
-                </div>
-
-                {payments.length > 0 && (
-                  <div className="pos-pay-list">
-                    {payments.map((p) => {
-                      const meta = PAY_METHODS.find((m) => m.key === p.method);
-                      return (
-                        <div key={p.id} className="pos-pay-row">
-                          <span aria-hidden>{meta?.icon}</span>
-                          <span className="pos-pay-row-method">
-                            {meta?.label}
-                            {p.method === 'CREDIT' && p.installments > 1 && (
-                              <span className="pos-pay-row-installments"> · {p.installments}×</span>
-                            )}
-                          </span>
-                          <span className="pos-pay-row-amount">{formatBRL(p.amount)}</span>
-                          <button
-                            type="button"
-                            className="pos-pay-row-remove"
-                            onClick={() => removePayment(p.id)}
-                            aria-label="Remover pagamento"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {(change > 0 || remaining > 0) && total > 0 && (
-                  <div className={`pos-change ${remaining > 0 ? 'is-missing' : ''}`}>
-                    <span>{remaining > 0 ? 'Faltam' : 'Troco'}</span>
-                    <strong>{formatBRL(remaining > 0 ? remaining : change)}</strong>
-                  </div>
-                )}
-              </div>
-            </div>
+            <p className="pos-pay-later-hint" role="note">
+              As formas de pagamento aparecem após{' '}
+              <span className="pos-shortcut-key">F2</span> Finalizar venda ou no botão abaixo.
+            </p>
 
             <button
               type="button"
@@ -1400,9 +1313,6 @@ function PosScreen({
               onClick={() => {
                 if (lines.length === 0 || total <= 0) return;
                 setPayments([]);
-                setPayMethodSel('CASH');
-                setPayAmount('');
-                setPayInstallments('1');
                 setPaymentMenuOpen(true);
               }}
               disabled={lines.length === 0 || total <= 0 || createSale.isPending}
@@ -1623,7 +1533,10 @@ function PosScreen({
         <div
           className="pos-history-drawer"
           role="presentation"
-          onClick={() => setHistoryOpen(false)}
+          onClick={() => {
+            setHistoryOpen(false);
+            setSaleLineRemoveDraft(null);
+          }}
         >
           <div
             className="pos-history-panel"
@@ -1635,7 +1548,10 @@ function PosScreen({
               <button
                 type="button"
                 className="pos-btn pos-btn-ghost"
-                onClick={() => setHistoryOpen(false)}
+                onClick={() => {
+                  setHistoryOpen(false);
+                  setSaleLineRemoveDraft(null);
+                }}
               >
                 Fechar
               </button>
@@ -1645,73 +1561,187 @@ function PosScreen({
               {!sales.isLoading && !sales.data?.length && (
                 <div className="pos-items-empty">Nenhuma venda ainda.</div>
               )}
-              {sales.data?.map((s) => (
-                <div key={s.id} className="pos-history-row">
-                  <span className="pos-history-num">#{s.number}</span>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{s.customer?.name ?? 'Balcão'}</div>
-                    <div className="pos-history-meta">{formatDate(s.createdAt)}</div>
-                  </div>
-                  <span
-                    className={
-                      'pos-stock-pill ' +
-                      (s.status === 'COMPLETED' ? 'ok' : s.status === 'CANCELLED' ? 'out' : 'low')
-                    }
-                  >
-                    {s.status === 'COMPLETED'
-                      ? 'OK'
-                      : s.status === 'CANCELLED'
-                        ? 'Cancelada'
-                        : 'Rascunho'}
-                  </span>
-                  <span className="pos-history-total">{formatBRL(s.total)}</span>
-                  {(s.status === 'COMPLETED' || s.status === 'CANCELLED') && (
-                    <div
-                      style={{
-                        gridColumn: '1 / -1',
-                        display: 'flex',
-                        gap: '0.45rem',
-                        justifyContent: 'flex-end',
-                        flexWrap: 'wrap',
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className="pos-btn pos-btn-ghost"
-                        style={{
-                          minHeight: 30,
-                          padding: '0.25rem 0.6rem',
-                          fontSize: '0.8rem',
-                        }}
-                        onClick={() => {
-                          navigate(`/vendas/impressao?id=${encodeURIComponent(s.id)}`);
-                        }}
+              {sales.data?.map((s) => {
+                const rows = s.items ?? [];
+                return (
+                  <div key={s.id} className="pos-history-stack">
+                    <div className="pos-history-row">
+                      <span className="pos-history-num">#{s.number}</span>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{s.customer?.name ?? 'Balcão'}</div>
+                        <div className="pos-history-meta">{formatDate(s.createdAt)}</div>
+                      </div>
+                      <span
+                        className={
+                          'pos-stock-pill ' +
+                          (s.status === 'COMPLETED'
+                            ? 'ok'
+                            : s.status === 'CANCELLED'
+                              ? 'out'
+                              : 'low')
+                        }
                       >
-                        Cupom (não fiscal)
-                      </button>
-                      {s.status === 'COMPLETED' && (
-                        <button
-                          type="button"
-                          className="pos-btn pos-btn-ghost"
-                          style={{
-                            minHeight: 30,
-                            padding: '0.25rem 0.6rem',
-                            fontSize: '0.8rem',
-                            color: 'var(--pos-danger)',
-                          }}
-                          disabled={cancelSale.isPending}
-                          onClick={() => {
-                            if (confirm(`Cancelar venda #${s.number} e estornar estoque?`))
-                              cancelSale.mutate(s.id);
-                          }}
-                        >
-                          Cancelar venda
-                        </button>
+                        {s.status === 'COMPLETED'
+                          ? 'OK'
+                          : s.status === 'CANCELLED'
+                            ? 'Cancelada'
+                            : 'Rascunho'}
+                      </span>
+                      <span className="pos-history-total">{formatBRL(s.total)}</span>
+                      {rows.length > 0 && (
+                        <ul className="pos-history-items-preview">
+                          {rows.map((it) => (
+                            <li key={it.id}>
+                              <span>
+                                {it.variant.product.name} · SKU {it.variant.sku}
+                              </span>
+                              <span>
+                                qty {parseDecimal(it.quantity).toLocaleString('pt-BR')} ·{' '}
+                                {formatBRL(it.totalLine)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {(s.status === 'COMPLETED' || s.status === 'CANCELLED') && (
+                        <div className="pos-history-actions">
+                          <button
+                            type="button"
+                            className="pos-btn pos-btn-ghost pos-history-action-print"
+                            onClick={() => {
+                              queueSaleReceiptAutoPrint(s.id);
+                              setHistoryOpen(false);
+                              setSaleLineRemoveDraft(null);
+                              window.setTimeout(() => scannerRef.current?.focus(), 0);
+                            }}
+                          >
+                            Cupom (não fiscal)
+                          </button>
+                          {s.status === 'COMPLETED' && canManagePastSales && (
+                            <>
+                              {rows.length >= 2 && (
+                                <button
+                                  type="button"
+                                  className="pos-btn pos-btn-ghost pos-history-action-warn"
+                                  disabled={removeSaleLineMut.isPending}
+                                  title="Escolha qual linha sairá do cupom; totais serão recalculados."
+                                  onClick={() => {
+                                    setSaleLineRemoveDraft({
+                                      sale: s,
+                                      selectedItemId: rows[0]!.id,
+                                    });
+                                  }}
+                                >
+                                  Remover um item…
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="pos-btn pos-btn-ghost pos-history-action-danger"
+                                disabled={cancelSale.isPending}
+                                onClick={() => {
+                                  if (
+                                    confirm(
+                                      `Cancelar integralmente a venda #${s.number}?\n\n` +
+                                        `Todo o pedido será anulado, todo o estoque desta venda volta ao inventário ` +
+                                        `e eventuais títulos de crediário vinculados a este cupom serão removidos.`,
+                                    )
+                                  ) {
+                                    cancelSale.mutate(s.id);
+                                  }
+                                }}
+                              >
+                                Cancelar venda inteira
+                              </button>
+                            </>
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
-              ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {saleLineRemoveDraft && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          style={{ zIndex: 70 }}
+          onClick={() =>
+            removeSaleLineMut.isPending ? undefined : setSaleLineRemoveDraft(null)
+          }
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pos-rem-line-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 'min(480px, 94vw)' }}
+          >
+            <h2 id="pos-rem-line-title" style={{ marginTop: 0, fontSize: '1.05rem' }}>
+              Remover item da venda #{saleLineRemoveDraft.sale.number}
+            </h2>
+            <p style={{ fontSize: '0.86rem', color: 'var(--color-text-muted, #64748b)' }}>
+              Escolha a linha a retirar do cupom. O subtotal e o total são recalculados e os valores
+              de pagamento podem ser ajustados automaticamente quando houver parte em{' '}
+              <strong>dinheiro</strong>.
+            </p>
+            <p style={{ fontSize: '0.8rem', color: 'var(--pos-danger)', marginTop: 0 }}>
+              Não disponível para vendas com <strong>crediário</strong> — cancele a venda inteira ou
+              ajuste no financeiro.
+            </p>
+            <div className="field">
+              <label htmlFor="pos-rem-line-select">Linha na venda</label>
+              <select
+                id="pos-rem-line-select"
+                value={saleLineRemoveDraft.selectedItemId}
+                onChange={(e) =>
+                  setSaleLineRemoveDraft((prev) =>
+                    prev ? { ...prev, selectedItemId: e.target.value } : prev,
+                  )
+                }
+              >
+                {(saleLineRemoveDraft.sale.items ?? []).map((it) => (
+                  <option key={it.id} value={it.id}>
+                    {it.variant.product.name} · SKU {it.variant.sku} · qty{' '}
+                    {parseDecimal(it.quantity)} · {formatBRL(it.totalLine)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="pos-btn pos-btn-ghost"
+                disabled={removeSaleLineMut.isPending}
+                onClick={() => setSaleLineRemoveDraft(null)}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                className="pos-btn pos-btn-finish"
+                disabled={removeSaleLineMut.isPending}
+                onClick={() => {
+                  if (
+                    !confirm(
+                      'Confirmar remoção deste item?\nSerá aplicado novo total e nova divisão das formas de pagamento.',
+                    )
+                  )
+                    return;
+                  removeSaleLineMut.mutate({
+                    saleId: saleLineRemoveDraft.sale.id,
+                    itemId: saleLineRemoveDraft.selectedItemId,
+                  });
+                }}
+              >
+                {removeSaleLineMut.isPending ? 'Aplicando…' : 'Confirmar remoção'}
+              </button>
             </div>
           </div>
         </div>

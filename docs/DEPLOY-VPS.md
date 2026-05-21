@@ -63,6 +63,14 @@ npx prisma migrate deploy --schema=prisma/tenant/schema.prisma
 cd ../..
 ```
 
+**Multi-tenant:** o comando acima aplica migrações de tenant apenas no database apontado por `TENANT_DATABASE_URL` no `.env` da API. Para **todos os clientes** registrados na tabela central `Tenant`, rode (a partir da raiz do repo, com `.env` carregando `CENTRAL_DATABASE_URL` + `TENANT_DATABASE_URL` modelo):
+
+```bash
+npm run tenant:migrate-all -w @gestorvend/api
+```
+
+Veja `apps/api/scripts/migrate-all-tenants.ts`.
+
 Seed / superadmin (só se necessário, com cuidado em produção):
 
 ```bash
@@ -117,6 +125,7 @@ cd /opt/gestorvend
 git pull
 npm ci
 cd apps/api && npx prisma migrate deploy --schema=prisma/central/schema.prisma && npx prisma migrate deploy --schema=prisma/tenant/schema.prisma && cd ../..
+npm run tenant:migrate-all -w @gestorvend/api
 npm run build
 sudo systemctl restart gestorvend-api   # ou pm2 restart gestorvend-api
 ```

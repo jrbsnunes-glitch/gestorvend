@@ -55,7 +55,8 @@ model User {
   roles          Role[]           @relation("UserRoles")
   sales          Sale[]
   stockMoves     StockMovement[]
-  cashSessions   CashRegisterSession[]
+  cashSessions        CashRegisterSession[]
+  cashSessionsReconciled CashRegisterSession[] @relation("CashSessionReconciledBy")
   goodsReceipts  GoodsReceipt[]
   navigationLogs UserNavigationLog[]
 }
@@ -439,6 +440,14 @@ model CashRegisterSession {
   closingByMethod Json?
   /// Observações livres registradas pelo operador ao fechar o caixa.
   closingNotes   String?
+  /// Conferência (gerente): quando o fluxo de fechamento foi auditado.
+  reconciledAt          DateTime?
+  reconciledByUserId    String?
+  reconciledBy          User?           @relation("CashSessionReconciledBy", fields: [reconciledByUserId], references: [id], onDelete: SetNull)
+  /// Observações do gerente na conferência (ex.: motivo de diferença).
+  reconciliationNotes   String?         @db.Text
+  /// Opcional — detalhamento linha a linha das despesas apresentadas (valor, observação, centro).
+  reconciliationExpenseDetails Json?
   openedAt       DateTime        @default(now())
   closedAt       DateTime?
   movements      CashMovement[]

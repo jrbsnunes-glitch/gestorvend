@@ -1783,14 +1783,61 @@
   padding: 0.5rem 0.75rem;
 }
 
+.pos-history-stack {
+  border-bottom: 1px solid var(--pos-border);
+  padding: 0.65rem 0.5rem 0.75rem;
+  font-size: 0.9rem;
+}
+
 .pos-history-row {
   display: grid;
   grid-template-columns: auto 1fr auto auto;
   gap: 0.5rem 0.75rem;
-  align-items: center;
-  padding: 0.65rem 0.5rem;
-  border-bottom: 1px solid var(--pos-border);
-  font-size: 0.9rem;
+  align-items: flex-start;
+}
+
+.pos-history-items-preview {
+  grid-column: 1 / -1;
+  margin: 0.35rem 0 0;
+  padding-left: 1.25rem;
+  font-size: 0.82rem;
+  color: var(--pos-text-muted);
+  list-style: disc;
+}
+
+.pos-history-items-preview li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0.2rem 0;
+}
+
+.pos-history-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+  padding-top: 0.55rem;
+}
+
+.pos-history-action-print {
+  min-height: 30px !important;
+  padding: 0.25rem 0.65rem !important;
+  font-size: 0.8rem !important;
+}
+
+.pos-history-action-warn {
+  min-height: 30px !important;
+  padding: 0.25rem 0.65rem !important;
+  font-size: 0.8rem !important;
+}
+
+.pos-history-action-danger {
+  min-height: 30px !important;
+  padding: 0.25rem 0.65rem !important;
+  font-size: 0.8rem !important;
+  color: var(--pos-danger, #dc2626) !important;
 }
 
 .pos-history-num {
@@ -1807,6 +1854,42 @@
 .pos-history-total {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+/* Carrinho — totais colados sob a listagem; formas só na overlay F2 */
+.pos-cart-body-split {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.pos-items-scroll-area {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.pos-cart-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--pos-border-strong);
+  padding: 0.65rem 0.95rem;
+  background: rgba(248, 250, 252, 0.85);
+}
+
+.pos-cart-footer .pos-total-big-value {
+  font-size: 1.55rem;
+}
+
+.pos-pay-later-hint {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.8rem;
+  line-height: 1.38;
+  color: var(--pos-text-muted);
+  border: 1px dashed var(--pos-border-strong);
+  border-radius: var(--pos-radius);
+  background: rgba(255, 255, 255, 0.5);
 }
 
 /* === Modal de cliente (reaproveita .modal-backdrop existente) === */

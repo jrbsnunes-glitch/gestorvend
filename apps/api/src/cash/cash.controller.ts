@@ -6,6 +6,7 @@ import {
   Get,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -19,10 +20,16 @@ import {
   CashMovementType,
   CashSessionStatus,
   PaymentMethod,
+  Prisma,
   SaleStatus,
+  type PrismaClient,
 } from '../generated/tenant-client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { referentialCodeMatchesFlow } from '../common/referential-account-flow';
+
+function isPlainObjectRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === 'object' && x !== null && !Array.isArray(x);
+}
 
 // --- helpers de data (locais) -----------------------------------------------
 function startOfDay(d: Date): Date {
@@ -55,6 +62,88 @@ function parseQueryDate(raw: string, mode: 'start' | 'end'): Date {
   }
   // ISO timestamp completo: respeita a hora informada.
   return new Date(raw);
+}
+
+function normalizeClosingByMethodInput(
+  raw: Record<string, number | string> | undefined | null,
+): Record<string, number> | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const acc: Record<string, number> = {};
+  for (const [key, val] of Object.entries(raw)) {
+    const num =
+      typeof val === 'number'
+        ? val
+        : parseFloat(String(val ?? '').replace(',', '.'));
+    if (Number.isFinite(num) && num >= 0) {
+      acc[key] = Math.round(num * 100) / 100;
+    }
+  }
+  return Object.keys(acc).length > 0 ? acc : null;
+}
+
+async function normalizeReconciliationExpenseDetailsInput(
+  db: PrismaClient,
+  raw: unknown,
+): Promise<
+  | { tag: 'omit' }
+  | { tag: 'clear' }
+  | {
+      tag: 'lines';
+      lines: Array<{ amount: number; notes: string | null; referentialAccountId: string }>;
+      sum: number;
+    }
+> {
+  if (raw === undefined) return { tag: 'omit' };
+  if (raw === null) return { tag: 'clear' };
+  if (!Array.isArray(raw)) {
+    throw new BadRequestException('reconciliationExpenseDetails deve ser uma lista ou null para limpar.');
+  }
+  if (raw.length === 0) return { tag: 'clear' };
+
+  type LineIn = {
+    amount?: number | string;
+    notes?: unknown;
+    referentialAccountId?: unknown;
+  };
+
+  const out: Array<{ amount: number; notes: string | null; referentialAccountId: string }> = [];
+  let sum = 0;
+  for (const item of raw as LineIn[]) {
+    if (!item || typeof item !== 'object') {
+      throw new BadRequestException('Cada linha de despesa deve ser um objeto.');
+    }
+    const amt =
+      typeof item.amount === 'number'
+        ? item.amount
+        : parseFloat(String(item.amount ?? '').replace(',', '.'));
+    if (!Number.isFinite(amt) || amt <= 0) {
+      throw new BadRequestException('Cada linha de despesa precisa de valor maior que zero.');
+    }
+    const refId =
+      item.referentialAccountId != null && String(item.referentialAccountId).trim() !== ''
+        ? String(item.referentialAccountId).trim()
+        : null;
+    if (!refId) {
+      throw new BadRequestException('Cada linha de despesa exige centro de custo.');
+    }
+    const acc = await db.referentialAccount.findUnique({ where: { id: refId } });
+    if (!acc) {
+      throw new BadRequestException('Centro de custo não encontrado para uma linha de despesa.');
+    }
+    if (!referentialCodeMatchesFlow(acc.code, 'OUT')) {
+      throw new BadRequestException(
+        'Centro de custo nas despesas deve ser conta do grupo 4 (custos) ou 5 (despesas).',
+      );
+    }
+    const notesRaw = item.notes;
+    const notes =
+      notesRaw != null && String(notesRaw).trim() !== '' ? String(notesRaw).trim() : null;
+    const rounded = Math.round(amt * 100) / 100;
+    sum += rounded;
+    out.push({ amount: rounded, notes, referentialAccountId: refId });
+  }
+
+  return { tag: 'lines', lines: out, sum: Math.round(sum * 100) / 100 };
 }
 
 @Controller('cash')
@@ -108,6 +197,7 @@ export class CashController {
       orderBy: { openedAt: 'asc' },
       include: {
         user: { select: { id: true, name: true, email: true } },
+        reconciledBy: { select: { id: true, name: true, email: true } },
         movements: { select: { type: true, amount: true } },
       },
       take: 200,
@@ -209,7 +299,7 @@ export class CashController {
           },
           include: {
             payments: true,
-            items: { select: { quantity: true } },
+            items: { select: { quantity: true, discount: true } },
           },
         });
 
@@ -218,6 +308,7 @@ export class CashController {
         let completedCount = 0;
         let cancelledCount = 0;
         let itemsCount = 0;
+        let totalDiscounts = 0;
         const byMethod = new Map<string, number>();
 
         for (const sale of sales) {
@@ -225,7 +316,11 @@ export class CashController {
           if (sale.status === SaleStatus.COMPLETED) {
             totalCompleted += total;
             completedCount += 1;
-            for (const it of sale.items) itemsCount += Number(it.quantity);
+            totalDiscounts += Number(sale.discount);
+            for (const it of sale.items) {
+              itemsCount += Number(it.quantity);
+              totalDiscounts += Number(it.discount);
+            }
             for (const p of sale.payments) {
               byMethod.set(p.method, (byMethod.get(p.method) ?? 0) + Number(p.amount));
             }
@@ -304,6 +399,7 @@ export class CashController {
           itemsCount,
           totalCompleted,
           totalCancelled,
+          totalDiscounts,
           expectedByMethod,
           declaredByMethod: declaredNormalized,
           diffByMethod,
@@ -319,6 +415,7 @@ export class CashController {
         acc.itemsCount += s.itemsCount;
         acc.totalCompleted += s.totalCompleted;
         acc.totalCancelled += s.totalCancelled;
+        acc.totalDiscounts += s.totalDiscounts;
         acc.openingBalance += Number(s.openingBalance);
         acc.closingBalance += s.closingBalance ? Number(s.closingBalance) : 0;
         acc.movementsIn += s.movementsIn;
@@ -339,6 +436,7 @@ export class CashController {
         itemsCount: 0,
         totalCompleted: 0,
         totalCancelled: 0,
+        totalDiscounts: 0,
         openingBalance: 0,
         closingBalance: 0,
         movementsIn: 0,
@@ -473,14 +571,15 @@ export class CashController {
       })),
     );
 
-    // Totais consolidados.
-    const totals = items.reduce(
+    // Totais consolidados — descontos de linha e desconto no total do cupom (sale.discount).
+    let linesSubtotalBeforeOrderDiscount = 0;
+    const totalsFromItems = items.reduce(
       (acc, it) => {
         if (it.saleStatus === SaleStatus.COMPLETED) {
           acc.totalItems += Number(it.quantity);
           acc.totalGross += Number(it.unitPrice) * Number(it.quantity);
-          acc.totalDiscount += Number(it.discount);
-          acc.totalNet += Number(it.totalLine);
+          acc.totalLineItemDiscount += Number(it.discount);
+          linesSubtotalBeforeOrderDiscount += Number(it.totalLine);
           acc.completedLineCount += 1;
         } else if (it.saleStatus === SaleStatus.CANCELLED) {
           acc.cancelledLineCount += 1;
@@ -490,12 +589,38 @@ export class CashController {
       {
         totalItems: 0,
         totalGross: 0,
-        totalDiscount: 0,
-        totalNet: 0,
+        totalLineItemDiscount: 0,
         completedLineCount: 0,
         cancelledLineCount: 0,
       },
     );
+
+    let totalOrderDiscount = 0;
+    /** Soma dos totais efetivamente faturados (alinhado a `sale.total`). */
+    let totalSalesNet = 0;
+    for (const s of sales) {
+      if (s.status !== SaleStatus.COMPLETED) continue;
+      totalOrderDiscount += Number(s.discount);
+      totalSalesNet += Number(s.total);
+    }
+
+    /** Descontos: linhas + desconto no cupom (não rateado pelas linhas no banco). */
+    const totalDiscount =
+      totalsFromItems.totalLineItemDiscount + totalOrderDiscount;
+
+    const totals = {
+      totalItems: totalsFromItems.totalItems,
+      totalGross: totalsFromItems.totalGross,
+      totalLineItemDiscount: totalsFromItems.totalLineItemDiscount,
+      totalOrderDiscount,
+      /** Soma útil para auditoria (subtotal antes do desconto do cupom). */
+      linesSubtotalBeforeOrderDiscount,
+      totalDiscount,
+      /** Receita das vendas concluídas = somatório dos `sale.total`. */
+      totalNet: totalSalesNet,
+      completedLineCount: totalsFromItems.completedLineCount,
+      cancelledLineCount: totalsFromItems.cancelledLineCount,
+    };
 
     // Resumo por produto (vendas concluídas).
     const byProductMap = new Map<
@@ -574,6 +699,7 @@ export class CashController {
       where: { id },
       include: {
         user: { select: { id: true, name: true, email: true } },
+        reconciledBy: { select: { id: true, name: true, email: true } },
         movements: {
           orderBy: { createdAt: 'desc' },
           include: {
@@ -620,13 +746,16 @@ export class CashController {
     let totalCompleted = 0;
     let totalCancelled = 0;
     let itemsCount = 0;
+    let totalDiscounts = 0;
     const byMethod = new Map<string, number>();
     for (const sale of sales) {
       const total = Number(sale.total);
       if (sale.status === SaleStatus.COMPLETED) {
         totalCompleted += total;
+        totalDiscounts += Number(sale.discount);
         for (const it of sale.items) {
           itemsCount += Number(it.quantity);
+          totalDiscounts += Number(it.discount);
         }
         for (const p of sale.payments) {
           const cur = byMethod.get(p.method) ?? 0;
@@ -644,8 +773,65 @@ export class CashController {
       }
     }
 
+    /** Enriquece linhas gravadas na conferência com código/descrição do plano referencial (só resposta GET). */
+    let reconciliationExpenseDetailsOut = session.reconciliationExpenseDetails;
+    const rawReconExpense = session.reconciliationExpenseDetails;
+    if (
+      Array.isArray(rawReconExpense) &&
+      rawReconExpense.length > 0 &&
+      rawReconExpense.every(isPlainObjectRecord)
+    ) {
+      const linesUnknown = rawReconExpense.filter(isPlainObjectRecord) as Record<string, unknown>[];
+      const ids = [
+        ...new Set(
+          linesUnknown
+            .map((x) =>
+              typeof x.referentialAccountId === 'string' ? x.referentialAccountId.trim() : '',
+            )
+            .filter(Boolean),
+        ),
+      ];
+      const accs = ids.length
+        ? await db.referentialAccount.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, code: true, description: true },
+          })
+        : [];
+      const map = new Map(accs.map((a) => [a.id, a]));
+      reconciliationExpenseDetailsOut = linesUnknown.map((line) => {
+        const ridRaw = line.referentialAccountId;
+        const rid =
+          typeof ridRaw === 'string'
+            ? ridRaw.trim()
+            : ridRaw != null
+              ? String(ridRaw).trim()
+              : '';
+        const amtRaw = line.amount;
+        const amt =
+          typeof amtRaw === 'number'
+            ? amtRaw
+            : parseFloat(String(amtRaw ?? '').replace(',', '.'));
+        const amount = Number.isFinite(amt) ? Math.round(amt * 100) / 100 : 0;
+        const notesRaw = line.notes;
+        return {
+          amount,
+          notes:
+            notesRaw != null && String(notesRaw).trim() !== ''
+              ? String(notesRaw).trim()
+              : null,
+          referentialAccountId: rid,
+          referentialAccount: rid ? map.get(rid) ?? null : null,
+        };
+      });
+    }
+
+    const sessionResponse = {
+      ...session,
+      reconciliationExpenseDetails: reconciliationExpenseDetailsOut,
+    };
+
     return {
-      session,
+      session: sessionResponse,
       sales,
       summary: {
         completedCount: sales.filter((s) => s.status === SaleStatus.COMPLETED).length,
@@ -653,9 +839,127 @@ export class CashController {
         totalCompleted,
         totalCancelled,
         itemsCount,
+        totalDiscounts,
         byMethod: Object.fromEntries(byMethod),
       },
     };
+  }
+
+  /**
+   * Gerente/admin: ajusta os valores apresentados no fechamento (conferência
+   * fisicamente o que foi contado). Recalcula `closingBalance` como a soma
+   * dos valores por forma de pagamento.
+   */
+  @Patch('sessions/:id/declared-amounts')
+  @Roles('admin', 'manager')
+  async patchDeclaredAmounts(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      closingByMethod: Record<string, number | string>;
+      reconciliationExpenseDetails?: unknown;
+    },
+  ) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const session = await db.cashRegisterSession.findUnique({ where: { id } });
+    if (!session) throw new NotFoundException('Sessão não encontrada.');
+    if (session.status !== CashSessionStatus.CLOSED) {
+      throw new BadRequestException('Só é possível ajustar apresentados em caixa já fechado.');
+    }
+    if (session.reconciledAt) {
+      throw new BadRequestException(
+        'Caixa já conferido. Reabra a conferência antes de alterar os valores.',
+      );
+    }
+
+    const expenseInterpret = await normalizeReconciliationExpenseDetailsInput(
+      db,
+      body.reconciliationExpenseDetails,
+    );
+
+    let normalized = { ...(normalizeClosingByMethodInput(body.closingByMethod) ?? {}) };
+    if (expenseInterpret.tag === 'lines') {
+      normalized = { ...normalized, EXPENSE: expenseInterpret.sum };
+    }
+
+    if (Object.keys(normalized).length === 0) {
+      throw new BadRequestException(
+        'Informe closingByMethod com ao menos um valor válido ou linhas detalhadas de despesa.',
+      );
+    }
+
+    const total = Object.values(normalized).reduce((a, b) => a + b, 0);
+
+    return db.cashRegisterSession.update({
+      where: { id },
+      data: {
+        closingByMethod: normalized,
+        closingBalance: String(total.toFixed(2)),
+        ...(expenseInterpret.tag === 'lines'
+          ? { reconciliationExpenseDetails: expenseInterpret.lines }
+          : expenseInterpret.tag === 'clear'
+            ? { reconciliationExpenseDetails: Prisma.DbNull }
+            : {}),
+      },
+    });
+  }
+
+  /**
+   * Registra que o gerente concluiu a conferência deste caixa (audit trail).
+   */
+  @Post('sessions/:id/reconcile')
+  @Roles('admin', 'manager')
+  async reconcileSession(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: { notes?: string | null },
+  ) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const session = await db.cashRegisterSession.findUnique({ where: { id } });
+    if (!session) throw new NotFoundException('Sessão não encontrada.');
+    if (session.status !== CashSessionStatus.CLOSED) {
+      throw new BadRequestException('Só é possível conferir caixa fechado.');
+    }
+    if (session.reconciledAt) {
+      throw new BadRequestException('Este caixa já foi conferido.');
+    }
+    return db.cashRegisterSession.update({
+      where: { id },
+      data: {
+        reconciledAt: new Date(),
+        reconciledByUserId: user.sub,
+        reconciliationNotes:
+          body.notes != null && String(body.notes).trim() !== ''
+            ? String(body.notes).trim()
+            : null,
+      },
+    });
+  }
+
+  /**
+   * Desfaz a marcação de conferência para permitir correção dos apresentados.
+   */
+  @Post('sessions/:id/unreconcile')
+  @Roles('admin', 'manager')
+  async unreconcileSession(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const session = await db.cashRegisterSession.findUnique({ where: { id } });
+    if (!session) throw new NotFoundException('Sessão não encontrada.');
+    if (!session.reconciledAt) {
+      throw new BadRequestException('Este caixa não está conferido.');
+    }
+    return db.cashRegisterSession.update({
+      where: { id },
+      data: {
+        reconciledAt: null,
+        reconciledByUserId: null,
+        reconciliationNotes: null,
+      },
+    });
   }
 
   @Post('open')
@@ -702,20 +1006,7 @@ export class CashController {
     // Saneamento do JSON de fechamento: aceita valores numéricos ou strings
     // que representem números, normaliza a vírgula como separador decimal e
     // descarta entradas inválidas (ex.: NaN, números negativos).
-    let normalized: Record<string, number> | null = null;
-    if (body.closingByMethod && typeof body.closingByMethod === 'object') {
-      const acc: Record<string, number> = {};
-      for (const [key, raw] of Object.entries(body.closingByMethod)) {
-        const num =
-          typeof raw === 'number'
-            ? raw
-            : parseFloat(String(raw ?? '').replace(',', '.'));
-        if (Number.isFinite(num) && num >= 0) {
-          acc[key] = Math.round(num * 100) / 100;
-        }
-      }
-      normalized = Object.keys(acc).length > 0 ? acc : null;
-    }
+    const normalized = normalizeClosingByMethodInput(body.closingByMethod);
 
     return db.cashRegisterSession.update({
       where: { id: open.id },
@@ -765,18 +1056,23 @@ export class CashController {
       if (!acc) {
         throw new BadRequestException('Centro de custo (plano referencial) não encontrado.');
       }
-      if (body.type !== CashMovementType.OUT) {
-        throw new BadRequestException('Centro de custo aplica-se apenas a saídas de despesa.');
-      }
-      if (method !== PaymentMethod.EXPENSE) {
-        throw new BadRequestException(
-          'Para usar centro de custo, selecione o tipo “Despesas” (não sangria simples).',
-        );
-      }
-      if (!referentialCodeMatchesFlow(acc.code, 'OUT')) {
-        throw new BadRequestException(
-          'O centro de custo deve ser conta do grupo 4 (custos) ou 5 (despesas).',
-        );
+      if (body.type === CashMovementType.IN) {
+        if (!referentialCodeMatchesFlow(acc.code, 'IN')) {
+          throw new BadRequestException(
+            'Para entradas (suprimento), o centro de custo deve ser conta de receita (grupo 6 do plano referencial).',
+          );
+        }
+      } else if (body.type === CashMovementType.OUT) {
+        if (method !== PaymentMethod.EXPENSE) {
+          throw new BadRequestException(
+            'Para usar centro de custo em saída, selecione o tipo “Despesas” (não sangria simples).',
+          );
+        }
+        if (!referentialCodeMatchesFlow(acc.code, 'OUT')) {
+          throw new BadRequestException(
+            'O centro de custo deve ser conta do grupo 4 (custos) ou 5 (despesas).',
+          );
+        }
       }
     } else if (method === PaymentMethod.EXPENSE) {
       throw new BadRequestException('Despesas de caixa exigem centro de custo.');

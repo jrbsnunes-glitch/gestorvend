@@ -23,6 +23,17 @@ Login seed: tenant `demo`, e-mail `admin@demo.local`, senha `Admin123!`.
 - `npm run tenant:migrate-all -w @gestorvend/api` — aplica migrations do schema de tenant em todos os databases listados no banco central.
 - `npx ts-node -r tsconfig-paths/register apps/api/scripts/provision-tenant.ts <slug> <cnpj> <nome> <databaseName>` — registra novo tenant (o `CREATE DATABASE` deve ser feito no PostgreSQL antes).
 
+## Erro HTTP 500 / mensagem sobre coluna não encontrada (Prisma)
+
+Cada cliente tem seu **PostgreSQL separado**. Rodar apenas `prisma migrate deploy` com o `TENANT_DATABASE_URL` do `.env` atualiza **só esse** nome de banco — o JWT usa o campo `Tenant.databaseName` no banco **central** para montar a URL dos demais tenants. Após atualizar o código/schema, aplique migrações em **todos** os bancos de tenant:
+
+```bash
+cd apps/api
+npm run tenant:migrate-all -w @gestorvend/api
+```
+
+Requer no ambiente `@gestorvend/api`/`apps/api`: `CENTRAL_DATABASE_URL` e um `TENANT_DATABASE_URL` “modelo” (mesmo host/credenciais; só o último segmento do nome do DB é substituído pelo de cada tenant), como em `scripts/migrate-all-tenants.ts`.
+
 ## Documentação
 
 - [docs/FINANCIAL-OVERVIEW.md](docs/FINANCIAL-OVERVIEW.md) — balanço financeiro, plano referencial e importação.

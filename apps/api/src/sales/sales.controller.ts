@@ -51,6 +51,16 @@ export class SalesController {
     });
   }
 
+  @Post(':id/items/:itemId/remove')
+  @Roles('admin', 'manager')
+  removeSaleLine(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+  ) {
+    return this.sales.removeSaleItem(user.tenantSlug, id, itemId, user.sub);
+  }
+
   @Get(':id')
   @Roles('admin', 'manager', 'seller', 'finance')
   getOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {

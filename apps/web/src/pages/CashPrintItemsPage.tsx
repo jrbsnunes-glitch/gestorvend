@@ -33,8 +33,17 @@ type Report = {
   items: ItemRow[];
   totals: {
     totalItems: number;
+    /** Soma qty × preço antes dos descontos de linha. */
     totalGross: number;
+    /** Descontos por linha. */
+    totalLineItemDiscount: number;
+    /** Desconto no total do cupom (PDV etc.) — não vem repetido linha a linha. */
+    totalOrderDiscount: number;
+    /** Σ totalLine antes do desconto do cupom — útil de auditoria. */
+    linesSubtotalBeforeOrderDiscount: number;
+    /** Linhas + cupom. */
     totalDiscount: number;
+    /** Σ sale.total vendas concluídas — faturamento líquido. */
     totalNet: number;
     completedLineCount: number;
     cancelledLineCount: number;
@@ -52,6 +61,7 @@ const PAYMENT_LABELS: Record<string, string> = {
   PIX: 'Pix',
   CREDIT: 'Crediário',
   OTHER: 'Outro',
+  EXPENSE: 'Despesa',
 };
 
 function parseLocalDate(s: string): Date {
@@ -185,7 +195,28 @@ export function CashPrintItemsPage() {
                   muted
                 />
                 <KpiPrint
-                  label="Total líquido"
+                  label="Bruto (qtd × preço)"
+                  value={formatBRL(data.totals.totalGross)}
+                  muted
+                />
+                {data.totals.totalDiscount > 0 ? (
+                  <>
+                    <KpiPrint
+                      label="Descontos (linhas + cupom)"
+                      value={formatBRL(data.totals.totalDiscount)}
+                      muted
+                    />
+                    {data.totals.totalOrderDiscount > 0 ? (
+                      <KpiPrint
+                        label="— no cupom (fora das linhas)"
+                        value={formatBRL(data.totals.totalOrderDiscount)}
+                        muted
+                      />
+                    ) : null}
+                  </>
+                ) : null}
+                <KpiPrint
+                  label="Total líquido (cupons)"
                   value={formatBRL(data.totals.totalNet)}
                   highlight
                 />
@@ -202,7 +233,7 @@ export function CashPrintItemsPage() {
                       <th>Produto</th>
                       <th>SKU</th>
                       <th className="num">Qtd</th>
-                      <th className="num">Total</th>
+                      <th className="num">Total (linhas)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -221,10 +252,21 @@ export function CashPrintItemsPage() {
                       <th className="num">
                         {Math.round(data.totals.totalItems * 100) / 100}
                       </th>
-                      <th className="num">{formatBRL(data.totals.totalNet)}</th>
+                      <th className="num">
+                        {formatBRL(data.totals.linesSubtotalBeforeOrderDiscount)}
+                      </th>
                     </tr>
                   </tfoot>
                 </table>
+                {data.totals.totalOrderDiscount > 0 && (
+                  <p
+                    className="print-sub"
+                    style={{ fontSize: '0.82rem', marginTop: '0.45rem', color: '#475569' }}
+                  >
+                    Soma igual às vendas só nas linhas. Com desconto no cupom, o líquido faturado está no
+                    resumo acima (<strong>{formatBRL(data.totals.totalNet)}</strong>).
+                  </p>
+                )}
               </section>
             )}
 
@@ -275,7 +317,7 @@ export function CashPrintItemsPage() {
                       <th className="num">Qtd</th>
                       <th className="num">Unit.</th>
                       <th className="num">Desc.</th>
-                      <th className="num">Total</th>
+                      <th className="num">Tot. linha</th>
                       <th>Pgto.</th>
                     </tr>
                   </thead>
@@ -310,8 +352,16 @@ export function CashPrintItemsPage() {
                       <th colSpan={userId ? 5 : 6}>Total</th>
                       <th className="num">{Math.round(data.totals.totalItems * 100) / 100}</th>
                       <th />
-                      <th className="num">{formatBRL(data.totals.totalDiscount)}</th>
-                      <th className="num">{formatBRL(data.totals.totalNet)}</th>
+                      <th className="num">{formatBRL(data.totals.totalLineItemDiscount)}
+                        {data.totals.totalOrderDiscount > 0 ? (
+                          <small style={{ display: 'block', fontWeight: 400, marginTop: 4 }}>
+                            + cupom {formatBRL(data.totals.totalOrderDiscount)}
+                          </small>
+                        ) : null}
+                      </th>
+                      <th className="num">
+                        {formatBRL(data.totals.linesSubtotalBeforeOrderDiscount)}
+                      </th>
                       <th />
                     </tr>
                   </tfoot>

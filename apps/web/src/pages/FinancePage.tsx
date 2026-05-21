@@ -104,6 +104,7 @@ const PAYMENT_LABELS: Record<string, string> = {
   PIX: 'Pix',
   CREDIT: 'Crediário',
   OTHER: 'Outro',
+  EXPENSE: 'Despesa',
 };
 
 function statusPt(s: string): string {

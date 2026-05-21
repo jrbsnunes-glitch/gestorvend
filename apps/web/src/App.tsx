@@ -61,8 +61,8 @@ function AppInner() {
 
   useEffect(() => {
     function onSessionExpired() {
-      setTok(null);
-      qc.clear();
+      clearAuthStorage();
+      window.location.assign('/');
     }
     window.addEventListener(GV_UNAUTHORIZED_EVENT, onSessionExpired);
     return () => window.removeEventListener(GV_UNAUTHORIZED_EVENT, onSessionExpired);
@@ -89,7 +89,7 @@ function AppInner() {
     return (
       <Login
         onLoggedIn={() => {
-          setTok(getToken());
+          window.location.reload();
         }}
       />
     );
@@ -125,7 +125,7 @@ function AppInner() {
             <AppLayout
               onLogout={() => {
                 clearAuthStorage();
-                setTok(null);
+                window.location.assign('/');
               }}
             />
           }

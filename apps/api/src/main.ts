@@ -1,9 +1,11 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { PrismaKnownRequestExceptionFilter } from './common/prisma-known-request-exception.filter';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.useGlobalFilters(new PrismaKnownRequestExceptionFilter());
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
     new ValidationPipe({
