@@ -12,6 +12,12 @@ import { api } from '../lib/api';
 import { isManager, profileLabel, type UserProfile } from '../lib/auth';
 import { formatBRL, formatDate } from '../lib/format';
 import {
+  expectedFinalForReconKey,
+  formatCashExpectedHint,
+  sumDeclaredForClosingBalance,
+  type CashMovementBreakdown,
+} from '../lib/cash-reconciliation';
+import {
   effectiveAutoPrintAfterSale,
   getPosAutoPrintMode,
   posAutoPrintModeLabel,
@@ -842,7 +848,11 @@ function PosScreen({
     queryKey: ['cash', 'sessions', session.id, 'detail'],
     queryFn: () =>
       api<{
-        summary: { byMethod: Record<string, number>; totalCompleted: number };
+        summary: {
+          byMethod: Record<string, number>;
+          totalCompleted: number;
+          movementBreakdown?: CashMovementBreakdown;
+        };
       }>(`/cash/sessions/${session.id}`),
     enabled: closeOpen,
   });
@@ -987,11 +997,7 @@ function PosScreen({
 
   // Soma de todos os valores contados por método -> total declarado.
   const closingTotal = useMemo(
-    () =>
-      (Object.values(closingByMethod) as string[]).reduce(
-        (s, v) => s + parseDecimal(v),
-        0,
-      ),
+    () => sumDeclaredForClosingBalance(closingByMethod),
     [closingByMethod],
   );
 
@@ -1568,12 +1574,13 @@ function PosScreen({
 
             <div className="pos-close-grid">
               {CLOSE_ROWS.map((m) => {
-                const expected = closeDetailQ.data?.summary.byMethod[m.key] ?? 0;
-                // Para o dinheiro, o "esperado" mais útil é fundo + vendas em dinheiro.
+                const openingNum = parseDecimal(session.openingBalance);
+                const expectedBase = closeDetailQ.data?.summary.byMethod[m.key] ?? 0;
+                const breakdown = closeDetailQ.data?.summary.movementBreakdown;
                 const expectedDisplay =
                   m.key === 'CASH'
-                    ? expected + parseDecimal(session.openingBalance)
-                    : expected;
+                    ? expectedFinalForReconKey('CASH', closeDetailQ.data?.summary.byMethod ?? {}, openingNum)
+                    : expectedBase;
                 const counted = parseDecimal(closingByMethod[m.key]);
                 const diff = counted - expectedDisplay;
                 const inputId = `close-${m.key.toLowerCase()}`;
@@ -1587,11 +1594,16 @@ function PosScreen({
                         <strong>{m.label}</strong>
                         <em>
                           Esperado
-                          {m.key === 'CASH'
-                            ? ' (fundo + vendas)'
-                            : m.key === 'EXPENSE'
-                              ? ' (despesas lançadas)'
-                              : ''}
+                          {m.key === 'CASH' ? (
+                            <>
+                              {' '}
+                              ({formatCashExpectedHint(openingNum, breakdown)})
+                            </>
+                          ) : m.key === 'EXPENSE' ? (
+                            ' (despesas lançadas · analítico)'
+                          ) : (
+                            ''
+                          )}
                           :{' '}
                           {closeDetailQ.isLoading ? '…' : formatBRL(expectedDisplay)}
                         </em>
@@ -1636,9 +1648,12 @@ function PosScreen({
             </div>
 
             <div className="pos-close-totals">
-              <span>Total declarado</span>
+              <span>Total apresentado (meios)</span>
               <strong>{formatBRL(closingTotal)}</strong>
             </div>
+            <p style={{ margin: '0.35rem 0 0', fontSize: '0.78rem', color: 'var(--pos-text-sub)' }}>
+              Despesas informadas acima são conferência analítica e não entram neste total.
+            </p>
 
             <div className="field" style={{ marginTop: '0.5rem' }}>
               <label htmlFor="closing-notes">Observações (opcional)</label>

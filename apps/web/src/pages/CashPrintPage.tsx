@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
+import { isExcludedFromClosingTotal, sumDeclaredForClosingBalance } from '../lib/cash-reconciliation';
 import './cash-print.css';
 
 type ReportSession = {
@@ -266,8 +267,11 @@ export function CashPrintPage() {
                 />
                 <KpiPrint label="Fundos iniciais" value={formatBRL(data.totals.openingBalance)} />
                 <KpiPrint
-                  label="Apresentado (total)"
-                  value={formatBRL(data.totals.closingBalance || sumValues(data.totals.declaredByMethod))}
+                  label="Apresentado (meios)"
+                  value={formatBRL(
+                    data.totals.closingBalance ||
+                      sumDeclaredForClosingBalance(data.totals.declaredByMethod),
+                  )}
                 />
               </div>
             </section>
@@ -355,8 +359,11 @@ function ReconTable({
     return <p className="print-empty">Sem movimentações por forma de pagamento.</p>;
   }
 
-  const totalExpected = rows.reduce((s, r) => s + r.ex, 0);
-  const totalDeclared = rows.reduce((s, r) => s + (r.dec ?? 0), 0);
+  const totalRows = emphasizeTotals
+    ? rows.filter((r) => !isExcludedFromClosingTotal(r.k))
+    : rows;
+  const totalExpected = totalRows.reduce((s, r) => s + r.ex, 0);
+  const totalDeclared = totalRows.reduce((s, r) => s + (r.dec ?? 0), 0);
   const totalDiff = declared ? totalDeclared - totalExpected : null;
 
   return (
@@ -382,7 +389,7 @@ function ReconTable({
       {emphasizeTotals && (
         <tfoot>
           <tr>
-            <th>Total</th>
+            <th>Total (meios)</th>
             <th className="num">{formatBRL(totalExpected)}</th>
             <th className="num">{declared ? formatBRL(totalDeclared) : '—'}</th>
             <th className={'num ' + diffClass(totalDiff)}>{fmtDiff(totalDiff)}</th>
@@ -440,7 +447,7 @@ function SessionBlock({
         <dl className="print-session-side">
           <dt>Fundo inicial</dt>
           <dd>{formatBRL(session.openingBalance)}</dd>
-          <dt>Saldo apresentado</dt>
+          <dt>Apresentado (meios)</dt>
           <dd>{session.closingBalance ? formatBRL(session.closingBalance) : '—'}</dd>
           <dt>Itens vendidos</dt>
           <dd>{session.itemsCount}</dd>

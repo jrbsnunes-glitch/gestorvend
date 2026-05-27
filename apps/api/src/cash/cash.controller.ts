@@ -27,6 +27,17 @@ import {
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { referentialCodeMatchesFlow } from '../common/referential-account-flow';
 import { assertLastSaleAllowsPdvEntry } from './pdv-entry.guard';
+import {
+  buildSessionExpectedByMethod,
+  computeClosingBalanceFromDeclared,
+  computeReconciliationDifference,
+  expectedFinalForMethodKey,
+} from './cash-session-expected';
+import {
+  clearReconciliationExpenseMovements,
+  syncReconciliationExpenseMovements,
+  type ReconciliationExpenseLineStored,
+} from './cash-reconciliation-expense-sync';
 
 function isPlainObjectRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -69,12 +80,11 @@ function roundMoney(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-/** Agrega total de vendas concluídas e diferença líquida (igual PaymentReconciliation no web). */
+/** Agrega total de vendas concluídas e diferença líquida (meios de recebimento; despesas fora do total). */
 function computeSessionListAggregates(params: {
   sales: Array<{
     status: SaleStatus;
     total: unknown;
-    createdAt: Date;
     payments: Array<{ method: string; amount: unknown }>;
   }>;
   movements: Array<{ type: CashMovementType; amount: unknown; method: PaymentMethod | null }>;
@@ -82,23 +92,12 @@ function computeSessionListAggregates(params: {
   closingByMethod: unknown;
 }): { totalCompletedSales: number; reconciliationDifference: number | null } {
   let totalCompleted = 0;
-  const byMethod = new Map<string, number>();
-
   for (const sale of params.sales) {
     if (sale.status !== SaleStatus.COMPLETED) continue;
     totalCompleted += Number(sale.total);
-    for (const p of sale.payments) {
-      byMethod.set(p.method, (byMethod.get(p.method) ?? 0) + Number(p.amount));
-    }
   }
 
-  for (const m of params.movements) {
-    if (m.type === CashMovementType.OUT && m.method === PaymentMethod.EXPENSE) {
-      byMethod.set('EXPENSE', (byMethod.get('EXPENSE') ?? 0) + Number(m.amount));
-    }
-  }
-
-  const expected = Object.fromEntries(byMethod) as Record<string, number>;
+  const { byMethod } = buildSessionExpectedByMethod(params.sales, params.movements);
   const opening =
     parseFloat(String(params.openingBalance ?? '0').replace(',', '.')) || 0;
 
@@ -106,38 +105,22 @@ function computeSessionListAggregates(params: {
     | Record<string, number | string>
     | null;
 
-  let reconciliationDifference: number | null = null;
-  if (declared) {
-    const methodKeys = Array.from(
-      new Set<string>([
-        ...Object.keys(expected),
-        ...Object.keys(declared),
-        'CASH',
-      ]),
-    );
-    let totalExpected = 0;
-    let totalDeclared = 0;
-    /** Mesmo critério de `buildCashReconciliationRows(...).filter` no front. */
-    let anyVisibleRow = false;
-    for (const key of methodKeys) {
-      const expectedFinal =
-        key === 'CASH' ? (expected[key] ?? 0) + opening : expected[key] ?? 0;
-      const rawDeclared = declared[key];
-      const declaredVal =
-        rawDeclared == null
-          ? null
-          : typeof rawDeclared === 'number'
-            ? rawDeclared
-            : parseFloat(String(rawDeclared).replace(',', '.'));
-      if (!(expectedFinal > 0 || declaredVal != null)) continue;
-      anyVisibleRow = true;
-      totalExpected += expectedFinal;
-      totalDeclared += declaredVal ?? 0;
-    }
-    reconciliationDifference = anyVisibleRow
-      ? roundMoney(totalDeclared - totalExpected)
-      : null;
-  }
+  const declaredNormalized: Record<string, number> | null = declared
+    ? Object.fromEntries(
+        Object.entries(declared)
+          .map(([k, v]) => [
+            k,
+            typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.')),
+          ])
+          .filter(([, v]) => Number.isFinite(v as number)) as Array<[string, number]>,
+      )
+    : null;
+
+  const reconciliationDifference = computeReconciliationDifference(
+    byMethod,
+    declaredNormalized,
+    opening,
+  );
 
   return {
     totalCompletedSales: roundMoney(totalCompleted),
@@ -170,7 +153,7 @@ async function normalizeReconciliationExpenseDetailsInput(
   | { tag: 'clear' }
   | {
       tag: 'lines';
-      lines: Array<{ amount: number; notes: string | null; referentialAccountId: string }>;
+      lines: ReconciliationExpenseLineStored[];
       sum: number;
     }
 > {
@@ -185,9 +168,10 @@ async function normalizeReconciliationExpenseDetailsInput(
     amount?: number | string;
     notes?: unknown;
     referentialAccountId?: unknown;
+    cashMovementId?: unknown;
   };
 
-  const out: Array<{ amount: number; notes: string | null; referentialAccountId: string }> = [];
+  const out: ReconciliationExpenseLineStored[] = [];
   let sum = 0;
   for (const item of raw as LineIn[]) {
     if (!item || typeof item !== 'object') {
@@ -219,9 +203,17 @@ async function normalizeReconciliationExpenseDetailsInput(
     const notesRaw = item.notes;
     const notes =
       notesRaw != null && String(notesRaw).trim() !== '' ? String(notesRaw).trim() : null;
+    const movRaw = item.cashMovementId;
+    const cashMovementId =
+      typeof movRaw === 'string' && movRaw.trim() !== '' ? movRaw.trim() : undefined;
     const rounded = Math.round(amt * 100) / 100;
     sum += rounded;
-    out.push({ amount: rounded, notes, referentialAccountId: refId });
+    out.push({
+      amount: rounded,
+      notes,
+      referentialAccountId: refId,
+      ...(cashMovementId ? { cashMovementId } : {}),
+    });
   }
 
   return { tag: 'lines', lines: out, sum: Math.round(sum * 100) / 100 };
@@ -471,8 +463,13 @@ export class CashController {
     const detailed = await Promise.all(
       sessions.map(async (s) => {
         const upper = s.closedAt ?? new Date();
-        const winStart = s.openedAt > from ? s.openedAt : from;
-        const winEnd = upper < to ? upper : to;
+        /** Por controle: toda a sessão [openedAt, closedAt]. Por data: interseção com from/to. */
+        const winStart = useControlFilter
+          ? s.openedAt
+          : s.openedAt > from
+            ? s.openedAt
+            : from;
+        const winEnd = useControlFilter ? upper : upper < to ? upper : to;
 
         const sales = await db.sale.findMany({
           where: {
@@ -491,7 +488,6 @@ export class CashController {
         let cancelledCount = 0;
         let itemsCount = 0;
         let totalDiscounts = 0;
-        const byMethod = new Map<string, number>();
 
         for (const sale of sales) {
           const total = Number(sale.total);
@@ -503,20 +499,16 @@ export class CashController {
               itemsCount += Number(it.quantity);
               totalDiscounts += Number(it.discount);
             }
-            for (const p of sale.payments) {
-              byMethod.set(p.method, (byMethod.get(p.method) ?? 0) + Number(p.amount));
-            }
           } else if (sale.status === SaleStatus.CANCELLED) {
             totalCancelled += total;
             cancelledCount += 1;
           }
         }
 
-        for (const m of s.movements) {
-          if (m.type === CashMovementType.OUT && m.method === PaymentMethod.EXPENSE) {
-            byMethod.set('EXPENSE', (byMethod.get('EXPENSE') ?? 0) + Number(m.amount));
-          }
-        }
+        const { byMethod: expectedByMethodBase } = buildSessionExpectedByMethod(
+          sales,
+          s.movements,
+        );
 
         let movIn = 0;
         let movOut = 0;
@@ -543,10 +535,13 @@ export class CashController {
 
         const opening = Number(s.openingBalance);
 
-        // Esperado por método (somando fundo de caixa apenas no CASH).
-        const expectedByMethod = Object.fromEntries(byMethod);
+        const expectedByMethod = { ...expectedByMethodBase };
         if (expectedByMethod['CASH'] != null || opening > 0) {
-          expectedByMethod['CASH'] = (expectedByMethod['CASH'] ?? 0) + opening;
+          expectedByMethod['CASH'] = expectedFinalForMethodKey(
+            'CASH',
+            expectedByMethodBase,
+            opening,
+          );
         }
 
         // Diferença por método.
@@ -628,9 +623,22 @@ export class CashController {
       },
     );
 
+    let reportFrom = from;
+    let reportTo = to;
+    if (useControlFilter && detailed.length > 0) {
+      reportFrom = detailed.reduce(
+        (min, s) => (s.openedAt < min ? s.openedAt : min),
+        detailed[0].openedAt,
+      );
+      reportTo = detailed.reduce((max, s) => {
+        const end = s.closedAt ?? new Date();
+        return end > max ? end : max;
+      }, detailed[0].closedAt ?? new Date());
+    }
+
     return {
-      from,
-      to,
+      from: reportFrom,
+      to: reportTo,
       sessions: detailed,
       totals,
     };
@@ -929,7 +937,6 @@ export class CashController {
     let totalCancelled = 0;
     let itemsCount = 0;
     let totalDiscounts = 0;
-    const byMethod = new Map<string, number>();
     for (const sale of sales) {
       const total = Number(sale.total);
       if (sale.status === SaleStatus.COMPLETED) {
@@ -939,21 +946,15 @@ export class CashController {
           itemsCount += Number(it.quantity);
           totalDiscounts += Number(it.discount);
         }
-        for (const p of sale.payments) {
-          const cur = byMethod.get(p.method) ?? 0;
-          byMethod.set(p.method, cur + Number(p.amount));
-        }
       } else if (sale.status === SaleStatus.CANCELLED) {
         totalCancelled += total;
       }
     }
 
-    for (const m of session.movements) {
-      if (m.type === CashMovementType.OUT && m.method === PaymentMethod.EXPENSE) {
-        const cur = byMethod.get('EXPENSE') ?? 0;
-        byMethod.set('EXPENSE', cur + Number(m.amount));
-      }
-    }
+    const { byMethod, movementBreakdown } = buildSessionExpectedByMethod(
+      sales,
+      session.movements,
+    );
 
     /** Enriquece linhas gravadas na conferência com código/descrição do plano referencial (só resposta GET). */
     let reconciliationExpenseDetailsOut = session.reconciliationExpenseDetails;
@@ -995,6 +996,9 @@ export class CashController {
             : parseFloat(String(amtRaw ?? '').replace(',', '.'));
         const amount = Number.isFinite(amt) ? Math.round(amt * 100) / 100 : 0;
         const notesRaw = line.notes;
+        const movRaw = line.cashMovementId;
+        const cashMovementId =
+          typeof movRaw === 'string' && movRaw.trim() !== '' ? movRaw.trim() : undefined;
         return {
           amount,
           notes:
@@ -1002,6 +1006,7 @@ export class CashController {
               ? String(notesRaw).trim()
               : null,
           referentialAccountId: rid,
+          ...(cashMovementId ? { cashMovementId } : {}),
           referentialAccount: rid ? map.get(rid) ?? null : null,
         };
       });
@@ -1022,7 +1027,8 @@ export class CashController {
         totalCancelled,
         itemsCount,
         totalDiscounts,
-        byMethod: Object.fromEntries(byMethod),
+        byMethod,
+        movementBreakdown,
       },
     };
   }
@@ -1030,7 +1036,7 @@ export class CashController {
   /**
    * Gerente/admin: ajusta os valores apresentados no fechamento (conferência
    * fisicamente o que foi contado). Recalcula `closingBalance` como a soma
-   * dos valores por forma de pagamento.
+   * dos meios de recebimento (exclui despesas analíticas).
    */
   @Patch('sessions/:id/declared-amounts')
   @Roles('admin', 'manager')
@@ -1061,8 +1067,23 @@ export class CashController {
     );
 
     let normalized = { ...(normalizeClosingByMethodInput(body.closingByMethod) ?? {}) };
+    let reconciliationExpenseDetailsUpdate:
+      | ReconciliationExpenseLineStored[]
+      | typeof Prisma.DbNull
+      | undefined;
+
     if (expenseInterpret.tag === 'lines') {
-      normalized = { ...normalized, EXPENSE: expenseInterpret.sum };
+      const synced = await syncReconciliationExpenseMovements(
+        db,
+        id,
+        expenseInterpret.lines,
+        session.reconciliationExpenseDetails,
+      );
+      normalized = { ...normalized, EXPENSE: synced.sum };
+      reconciliationExpenseDetailsUpdate = synced.lines;
+    } else if (expenseInterpret.tag === 'clear') {
+      await clearReconciliationExpenseMovements(db, id, session.reconciliationExpenseDetails);
+      reconciliationExpenseDetailsUpdate = Prisma.DbNull;
     }
 
     if (Object.keys(normalized).length === 0) {
@@ -1071,18 +1092,16 @@ export class CashController {
       );
     }
 
-    const total = Object.values(normalized).reduce((a, b) => a + b, 0);
+    const total = computeClosingBalanceFromDeclared(normalized);
 
     return db.cashRegisterSession.update({
       where: { id },
       data: {
         closingByMethod: normalized,
         closingBalance: String(total.toFixed(2)),
-        ...(expenseInterpret.tag === 'lines'
-          ? { reconciliationExpenseDetails: expenseInterpret.lines }
-          : expenseInterpret.tag === 'clear'
-            ? { reconciliationExpenseDetails: Prisma.DbNull }
-            : {}),
+        ...(reconciliationExpenseDetailsUpdate !== undefined
+          ? { reconciliationExpenseDetails: reconciliationExpenseDetailsUpdate }
+          : {}),
       },
     });
   }
@@ -1190,12 +1209,16 @@ export class CashController {
     // que representem números, normaliza a vírgula como separador decimal e
     // descarta entradas inválidas (ex.: NaN, números negativos).
     const normalized = normalizeClosingByMethodInput(body.closingByMethod);
+    const closingBalance =
+      normalized != null
+        ? computeClosingBalanceFromDeclared(normalized)
+        : roundMoney(Number(body.closingBalance ?? 0));
 
     return db.cashRegisterSession.update({
       where: { id: open.id },
       data: {
         status: CashSessionStatus.CLOSED,
-        closingBalance: String(body.closingBalance ?? 0),
+        closingBalance: String(closingBalance.toFixed(2)),
         closingByMethod: normalized ?? undefined,
         closingNotes: body.closingNotes ?? null,
         closedAt: new Date(),

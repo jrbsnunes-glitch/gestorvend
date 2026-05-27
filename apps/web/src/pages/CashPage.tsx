@@ -10,12 +10,19 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { isManager } from '../lib/auth';
 import { formatBRL } from '../lib/format';
+import {
+  expectedFinalForReconKey,
+  formatCashExpectedHint,
+  sumReconciliationTotals,
+  type CashMovementBreakdown,
+} from '../lib/cash-reconciliation';
 import { CostCenterSelect } from '../components/CostCenterSelect';
 
 type ReconciliationExpenseDetailLine = {
   amount: number;
   notes: string | null;
   referentialAccountId: string;
+  cashMovementId?: string;
   /** Preenchido só na resposta GET (conferência) para exibição legível. */
   referentialAccount?: { id: string; code: string; description: string } | null;
 };
@@ -101,6 +108,7 @@ type SessionDetail = {
     /** Somatório de descontos em vendas concluídas (linhas + desconto no cupom). */
     totalDiscounts: number;
     byMethod: Record<string, number>;
+    movementBreakdown?: CashMovementBreakdown;
   };
 };
 
@@ -1159,16 +1167,6 @@ function sortReconMethodKeys(keys: string[]): string[] {
   });
 }
 
-/** Esperado na conciliação — dinheiro inclui fundo inicial. */
-function expectedFinalForReconKey(
-  key: string,
-  expected: Record<string, number>,
-  opening: number,
-): number {
-  const base = expected[key] ?? 0;
-  return key === 'CASH' ? base + opening : base;
-}
-
 function buildCashReconciliationRows(
   session: SessionDetail['session'],
   expected: Record<string, number>,
@@ -1212,12 +1210,15 @@ function mergeManagerReconciliationKeys(
 function ManagerCashReconciliation({
   session,
   expected,
+  movementBreakdown,
   onUpdated,
 }: {
   session: SessionDetail['session'];
   expected: Record<string, number>;
+  movementBreakdown?: CashMovementBreakdown;
   onUpdated: () => void;
 }) {
+  const qc = useQueryClient();
   const [notes, setNotes] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [addedMethodKeys, setAddedMethodKeys] = useState<string[]>([]);
@@ -1259,6 +1260,7 @@ function ManagerCashReconciliation({
     amount: string;
     notes: string;
     referentialAccountId: string;
+    cashMovementId?: string;
   };
 
   const [expenseLineDrafts, setExpenseLineDrafts] = useState<ExpenseLineDraft[]>([]);
@@ -1331,6 +1333,7 @@ function ManagerCashReconciliation({
                 : '',
           notes: row.notes ? String(row.notes) : '',
           referentialAccountId: row.referentialAccountId ? String(row.referentialAccountId) : '',
+          ...(row.cashMovementId ? { cashMovementId: String(row.cashMovementId) } : {}),
         })),
       );
     } else {
@@ -1373,6 +1376,7 @@ function ManagerCashReconciliation({
     onSuccess: () => {
       setErr(null);
       setExpenseDetailExpanded(false);
+      void qc.invalidateQueries({ queryKey: ['financial-overview'] });
       onUpdated();
     },
     onError: (e: Error) => setErr(e.message),
@@ -1464,7 +1468,8 @@ function ManagerCashReconciliation({
         Edite valores já informados,{' '}
         <strong>inclua novas linhas</strong> (cartão, Pix, crediário). Em{' '}
         <strong>Despesas</strong> você pode usar um total único ou <strong>detalhar várias linhas</strong>{' '}
-        (valor, observação e centro de custo) — o servidor grava ambos por forma de auditoria.
+        (valor, observação e centro de custo). Linhas detalhadas geram movimentos de caixa classificados e entram no{' '}
+        <strong>Balanço</strong> e no relatório por centro de custo ao salvar.
       </p>
       {err && (
         <div className="alert alert-error" style={{ marginBottom: '0.65rem' }}>
@@ -1498,9 +1503,14 @@ function ManagerCashReconciliation({
                   >
                     Esperado (referência){' '}
                     <strong>{formatBRL(exp)}</strong>
-                    {key === 'EXPENSE'
-                      ? ' · somatório das despesas registradas como saídas no caixa'
-                      : null}
+                    {key === 'CASH' ? (
+                      <>
+                        {' '}
+                        · {formatCashExpectedHint(opening, movementBreakdown)}
+                      </>
+                    ) : key === 'EXPENSE' ? (
+                      ' · analítico (não soma no apresentado total)'
+                    ) : null}
                   </span>
                   {isExpenseRow && expenseLineStartsDetail ? (
                     <span
@@ -1856,6 +1866,7 @@ function ManagerCashReconciliation({
               amount: number;
               notes: string | null;
               referentialAccountId: string;
+              cashMovementId?: string;
             }> | null = null;
 
             const wantsExpenseBranch = mergedKeys.includes('EXPENSE');
@@ -1887,6 +1898,7 @@ function ManagerCashReconciliation({
                     amount: rounded,
                     notes: nt !== '' ? nt : null,
                     referentialAccountId: r.referentialAccountId.trim(),
+                    ...(r.cashMovementId?.trim() ? { cashMovementId: r.cashMovementId.trim() } : {}),
                   };
                 });
               }
@@ -2083,15 +2095,27 @@ function SessionDetailDrawer({
                 <KpiCard label="Itens vendidos" value={String(sum.itemsCount)} />
                 <KpiCard label="Vendas canceladas" value={String(sum.cancelledCount)} small />
                 <KpiCard label="Saldo inicial" value={formatBRL(s.openingBalance)} />
-                {s.closingBalance && <KpiCard label="Saldo final" value={formatBRL(s.closingBalance)} highlight />}
+                {s.closingBalance && (
+                  <KpiCard
+                    label="Apresentado (meios)"
+                    value={formatBRL(s.closingBalance)}
+                    highlight
+                  />
+                )}
               </div>
 
               <PaymentReconciliation
                 session={s}
                 expected={sum.byMethod}
+                movementBreakdown={sum.movementBreakdown}
               />
 
-              <ManagerCashReconciliation session={s} expected={sum.byMethod} onUpdated={onRefresh} />
+              <ManagerCashReconciliation
+                session={s}
+                expected={sum.byMethod}
+                movementBreakdown={sum.movementBreakdown}
+                onUpdated={onRefresh}
+              />
 
               {s.closingNotes && (
                 <div className="card" style={{ marginBottom: '1rem' }}>
@@ -2335,9 +2359,11 @@ function SessionDetailDrawer({
 function PaymentReconciliation({
   session,
   expected,
+  movementBreakdown,
 }: {
   session: SessionDetail['session'];
   expected: Record<string, number>;
+  movementBreakdown?: CashMovementBreakdown;
 }) {
   const declared = session.closingByMethod ?? null;
   const visible = buildCashReconciliationRows(session, expected);
@@ -2345,8 +2371,7 @@ function PaymentReconciliation({
 
   const opening = parseFloat(session.openingBalance) || 0;
 
-  const totalExpected = visible.reduce((s, r) => s + r.expectedFinal, 0);
-  const totalDeclared = visible.reduce((s, r) => s + (r.declaredVal ?? 0), 0);
+  const { totalExpected, totalDeclared } = sumReconciliationTotals(visible, false);
   const totalDiff = declared ? totalDeclared - totalExpected : null;
 
   const reconExpenseLines =
@@ -2391,16 +2416,17 @@ function PaymentReconciliation({
                 <tr>
                   <td>
                     <strong>{label}</strong>
-                    {r.key === 'CASH' && opening > 0 && (
+                    {r.key === 'CASH' && (
                       <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-                        inclui fundo de {formatBRL(opening)}
+                        {formatCashExpectedHint(opening, movementBreakdown)}
                       </span>
                     )}
-                    {r.key === 'EXPENSE' && reconExpenseLines ? (
+                    {r.key === 'EXPENSE' && (
                       <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-                        detalhes da conferência abaixo
+                        analítico — não entra no total apresentado
+                        {reconExpenseLines ? ' · detalhes abaixo' : ''}
                       </span>
-                    ) : null}
+                    )}
                   </td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                     {formatBRL(r.expectedFinal)}
@@ -2493,7 +2519,19 @@ function PaymentReconciliation({
         </tbody>
         <tfoot>
           <tr style={{ background: 'var(--color-surface-elevated)' }}>
-            <td style={{ fontWeight: 800 }}>Total</td>
+            <td style={{ fontWeight: 800 }}>
+              Total (meios)
+              <span
+                style={{
+                  display: 'block',
+                  fontSize: '0.68rem',
+                  fontWeight: 500,
+                  color: 'var(--color-text-muted)',
+                }}
+              >
+                sem linha de despesas
+              </span>
+            </td>
             <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 800 }}>
               {formatBRL(totalExpected)}
             </td>
