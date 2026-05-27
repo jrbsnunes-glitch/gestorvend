@@ -312,10 +312,6 @@ export function CashPrintPage() {
   );
 }
 
-function sumValues(obj: Record<string, number>): number {
-  return Object.values(obj).reduce((a, b) => a + b, 0);
-}
-
 function KpiPrint({
   label,
   value,
