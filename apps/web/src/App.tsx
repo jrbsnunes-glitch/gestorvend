@@ -2,7 +2,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from './components/AppLayout';
-import { GV_UNAUTHORIZED_EVENT, clearAuthStorage, getToken, scheduleAccessTokenRefresh } from './lib/api';
+import {
+  GV_AUTH_CHANGED_EVENT,
+  GV_UNAUTHORIZED_EVENT,
+  clearAuthStorage,
+  getToken,
+  scheduleAccessTokenRefresh,
+} from './lib/api';
 import { isAdmin } from './lib/auth';
 import { CashPage } from './pages/CashPage';
 import { CashPrintPage } from './pages/CashPrintPage';
@@ -13,7 +19,9 @@ import { DashboardPage } from './pages/DashboardPage';
 import { FinancePage } from './pages/FinancePage';
 import { FinancialOverviewPage } from './pages/FinancialOverviewPage';
 import { FinancialOverviewPrintPage } from './pages/FinancialOverviewPrintPage';
+import { FiscalSituationsPage } from './pages/FiscalSituationsPage';
 import { FinancialOverviewReportsPage } from './pages/FinancialOverviewReportsPage';
+import { GeneralRegistersShell } from './pages/GeneralRegistersShell';
 import { ReferentialChartPage } from './pages/ReferentialChartPage';
 import { FinancePrintPage } from './pages/FinancePrintPage';
 import { Login } from './pages/Login';
@@ -53,7 +61,22 @@ function RequireAdmin({ children }: { children: ReactNode }) {
 }
 
 function AppInner() {
-  const [token] = useState(() => getToken());
+  const [token, setAuthTokenSnap] = useState(() => getToken());
+
+  useEffect(() => {
+    function bumpTokenFromStorage(): void {
+      setAuthTokenSnap(getToken());
+    }
+    bumpTokenFromStorage();
+    window.addEventListener(GV_AUTH_CHANGED_EVENT, bumpTokenFromStorage);
+    window.addEventListener(GV_UNAUTHORIZED_EVENT, bumpTokenFromStorage);
+    window.addEventListener('storage', bumpTokenFromStorage);
+    return () => {
+      window.removeEventListener(GV_AUTH_CHANGED_EVENT, bumpTokenFromStorage);
+      window.removeEventListener(GV_UNAUTHORIZED_EVENT, bumpTokenFromStorage);
+      window.removeEventListener('storage', bumpTokenFromStorage);
+    };
+  }, []);
 
   useEffect(() => {
     if (token) scheduleAccessTokenRefresh();
@@ -61,7 +84,8 @@ function AppInner() {
 
   useEffect(() => {
     function onSessionExpired() {
-      clearAuthStorage();
+      // `api()` já chama clearAuthStorage em 401; limpamos o cache aqui antes do reload.
+      qc.clear();
       window.location.assign('/');
     }
     window.addEventListener(GV_UNAUTHORIZED_EVENT, onSessionExpired);
@@ -134,6 +158,10 @@ function AppInner() {
           <Route path="clientes" element={<CustomersPage />} />
           <Route path="fornecedores" element={<SuppliersPage />} />
           <Route path="produtos" element={<ProductsPage />} />
+          <Route path="cadastros" element={<GeneralRegistersShell />}>
+            <Route index element={<Navigate to="situacao-fiscal" replace />} />
+            <Route path="situacao-fiscal" element={<FiscalSituationsPage />} />
+          </Route>
           <Route path="estoque" element={<StockShell />}>
             <Route index element={<Navigate to="painel" replace />} />
             <Route path="painel" element={<StockPainelPage />} />

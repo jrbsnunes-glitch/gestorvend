@@ -29,3 +29,7 @@ Runtime: `TenantPrismaService` resolve o tenant pelo `slug`, lê `databaseName` 
 2. Registrar linha em `Tenant` (script `provision-tenant.ts`).
 3. Rodar migrations de tenant nesse database (`tenant:migrate-all` ou deploy manual com URL específica).
 4. Popular papéis/usuários (seed específico ou convite).
+
+## Emissão NFC-e (credenciais por tenant)
+
+Caminho do `.pfx`, **senha do certificado**, **CSC ID** e **token CSC** podem ser guardados em **`FiscalIssuerSettings`** (por tenant, no banco do cliente), editáveis pelo painel em **Empresa** (bloco emissor). As variáveis `FISCAL_ISSUER_CERT_*` e `FISCAL_NFCE_CSC*` no `.env` da API funcionam como **fallback** quando um campo na base está vazio — útil para desenvolvimento ou um único emitente na instância.

@@ -18,6 +18,8 @@ export const NAV_MENU_ROUTE_DEFS: NavMenuRouteDef[] = [
   { prefix: '/clientes', key: 'clientes', label: 'Clientes' },
   { prefix: '/fornecedores', key: 'fornecedores', label: 'Fornecedores' },
   { prefix: '/produtos', key: 'produtos', label: 'Produtos' },
+  { prefix: '/cadastros/situacao-fiscal', key: 'cadastros-fiscal-situacao', label: 'Cadastros gerais · Situação fiscal' },
+  { prefix: '/cadastros', key: 'cadastros', label: 'Cadastros gerais' },
   { prefix: '/balanco/relatorios', key: 'balanco-relatorios', label: 'Balanço · Relatórios' },
   { prefix: '/balanco', key: 'balanco', label: 'Balanço financeiro' },
   { prefix: '/financeiro/impressao', key: 'financeiro-impressao', label: 'Financeiro · Impressão' },

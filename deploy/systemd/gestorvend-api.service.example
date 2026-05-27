@@ -16,7 +16,7 @@ Type=simple
 User=www-data
 WorkingDirectory=/opt/gestorvend/apps/api
 EnvironmentFile=/opt/gestorvend/apps/api/.env
-ExecStart=/usr/bin/node dist/main
+ExecStart=/usr/bin/node dist/src/main.js
 Restart=on-failure
 RestartSec=5
 

@@ -14,12 +14,14 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     server: {
+      /** IPv4 explícito — no Windows o Vite pode ficar só em [::1] e o proxy para 127.0.0.1:3000 falha intermitentemente. */
+      host: '127.0.0.1',
       port: 5173,
-        proxy: {
+      strictPort: true,
+      proxy: {
         '/api': {
           target: apiTarget,
           changeOrigin: true,
-          /** Encaminha erros do alvo (evita 502 silencioso em alguns setups) */
           configure(proxy) {
             proxy.on('error', (err) => {
               // eslint-disable-next-line no-console

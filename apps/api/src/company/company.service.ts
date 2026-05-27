@@ -17,6 +17,7 @@ type CompanyInput = {
   logoUrl?: string | null;
   saleReceiptAutoPrint?: boolean;
   saleReceiptPrinterHint?: string | null;
+  pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED' | string;
 };
 
 /**
@@ -94,6 +95,16 @@ export class CompanyService {
 
     if (body.saleReceiptAutoPrint !== undefined) {
       data.saleReceiptAutoPrint = Boolean(body.saleReceiptAutoPrint);
+    }
+
+    if (body.pdvDocumentMode !== undefined) {
+      const m = String(body.pdvDocumentMode).trim();
+      if (m !== 'NON_FISCAL_RECEIPT' && m !== 'ELECTRONIC_FISCAL_PLANNED') {
+        throw new BadRequestException(
+          'Modo de documento do PDV inválido (use apenas comprovante interno ou planejamento de documento fiscal).',
+        );
+      }
+      data.pdvDocumentMode = m;
     }
 
     return db.company.update({ where: { id: current.id }, data });

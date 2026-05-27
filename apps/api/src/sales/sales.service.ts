@@ -374,6 +374,7 @@ export class SalesService {
       include: {
         customer: true,
         user: { select: { id: true, name: true, email: true } },
+        fiscalDocument: true,
         items: { include: { variant: { include: { product: true } } } },
         payments: true,
       },
@@ -400,6 +401,7 @@ export class SalesService {
       take: hasDateFilter ? 5000 : 100,
       include: {
         customer: true,
+        fiscalDocument: true,
         items: { include: { variant: { include: { product: true } } } },
         payments: true,
       },
@@ -461,6 +463,17 @@ export class SalesService {
         where: { id: saleId },
         data: { status: SaleStatus.CANCELLED },
       });
+    });
+  }
+
+  /** Libera novo PDV/caixa quando a pendência fiscal da venda foi resolvida manualmente (gerente). */
+  async clearFiscalIntegrationError(tenantSlug: string, saleId: string) {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const sale = await db.sale.findUnique({ where: { id: saleId } });
+    if (!sale) throw new NotFoundException('Venda não encontrada');
+    return db.sale.update({
+      where: { id: saleId },
+      data: { fiscalIntegrationError: null },
     });
   }
 }

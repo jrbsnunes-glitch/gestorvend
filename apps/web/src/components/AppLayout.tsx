@@ -23,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/clientes', label: 'Clientes', managerOnly: true },
   { to: '/fornecedores', label: 'Fornecedores', managerOnly: true },
   { to: '/produtos', label: 'Produtos', managerOnly: true },
+  { to: '/cadastros', label: 'Cadastros gerais', managerOnly: true },
   { to: '/estoque', label: 'Estoque', managerOnly: true },
   { to: '/vendas', label: 'Vendas' },
   { to: '/caixa', label: 'Caixa' },

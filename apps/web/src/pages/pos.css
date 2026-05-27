@@ -1856,6 +1856,65 @@
   font-variant-numeric: tabular-nums;
 }
 
+.pos-fiscal-banner {
+  grid-column: 1 / -1;
+  margin: 0.35rem 0 0;
+  padding: 0.55rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  border: 1px solid rgba(180, 83, 9, 0.35);
+  background: rgba(254, 243, 199, 0.55);
+}
+
+.pos-fiscal-banner--error {
+  border-color: rgba(220, 38, 38, 0.4);
+  background: rgba(254, 226, 226, 0.45);
+}
+
+.pos-fiscal-banner-msg {
+  display: inline;
+  word-break: break-word;
+}
+
+.pos-fiscal-banner-action {
+  display: inline-flex;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+  min-height: 30px !important;
+  padding: 0.2rem 0.55rem !important;
+  font-size: 0.78rem !important;
+}
+
+.pos-fiscal-doc-line {
+  grid-column: 1 / -1;
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+  color: var(--pos-text-muted);
+}
+
+.pos-fiscal-doc-label {
+  font-weight: 700;
+  color: var(--pos-text);
+}
+
+.pos-fiscal-doc-key,
+.pos-fiscal-doc-err {
+  font-size: 0.76rem;
+}
+
+.pos-fiscal-doc-err {
+  color: var(--pos-danger, #dc2626);
+}
+
+.pos-fiscal-hint-muted {
+  grid-column: 1 / -1;
+  margin: 0.2rem 0 0;
+  font-size: 0.76rem;
+  color: var(--pos-text-muted);
+  font-style: italic;
+}
+
 /* Carrinho — totais colados sob a listagem; formas só na overlay F2 */
 .pos-cart-body-split {
   display: flex;

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+
 import { api } from '../lib/api';
 import { isManager } from '../lib/auth';
 
@@ -17,6 +18,8 @@ type Company = {
   state: string | null;
   zip: string | null;
   logoUrl: string | null;
+  /** Comprovante interno × planejamento documento fiscal (NF-e futura). */
+  pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED';
   saleReceiptAutoPrint?: boolean;
   saleReceiptPrinterHint?: string | null;
 };
@@ -36,6 +39,7 @@ const EMPTY_FORM: FormState = {
   state: '',
   zip: '',
   logoUrl: '',
+  pdvDocumentMode: 'NON_FISCAL_RECEIPT',
   saleReceiptAutoPrint: false,
   saleReceiptPrinterHint: '',
 };
@@ -54,9 +58,305 @@ function toForm(c: Company): FormState {
     state: c.state ?? '',
     zip: c.zip ?? '',
     logoUrl: c.logoUrl ?? '',
+    pdvDocumentMode: c.pdvDocumentMode ?? 'NON_FISCAL_RECEIPT',
     saleReceiptAutoPrint: Boolean(c.saleReceiptAutoPrint),
     saleReceiptPrinterHint: c.saleReceiptPrinterHint ?? '',
   };
+}
+
+type IssuerSettingsPublic = {
+  sefazEnvironment: 'HOMOLOGACAO' | 'PRODUCAO';
+  crt: number;
+  uf: string;
+  municipalityIbge: string;
+  nfceSerie: number;
+  nfeSerie: number;
+  nfceLastNumber: number;
+  nfeLastNumber: number;
+  certificatePath: string | null;
+  certPathFromEnvFallback: boolean;
+  hasCertificatePasswordInDb: boolean;
+  certificatePasswordConfigured: boolean;
+  nfceCscId: string | null;
+  hasNfceCscSecretInDb: boolean;
+  nfceCscSecretConfigured: boolean;
+  nfceCscIdConfigured: boolean;
+  nfceCscIdFromEnvFallback: boolean;
+  nfceCscSecretFromEnvFallback: boolean;
+};
+
+function IssuerEmissorCard() {
+  const qc = useQueryClient();
+  const [uf, setUf] = useState('');
+  const [municipalityIbge, setMunicipalityIbge] = useState('');
+  const [nfceSerie, setNfceSerie] = useState(1);
+  const [crt, setCrt] = useState(1);
+  const [sefazEnvironment, setSefazEnvironment] = useState<'HOMOLOGACAO' | 'PRODUCAO'>(
+    'HOMOLOGACAO',
+  );
+  const [certificatePath, setCertificatePath] = useState('');
+  const [nfceCscIdInput, setNfceCscIdInput] = useState('');
+  const [nfceCscSecretInput, setNfceCscSecretInput] = useState('');
+  const [certificatePasswordInput, setCertificatePasswordInput] = useState('');
+  const [clearNfceCsc, setClearNfceCsc] = useState(false);
+  const [clearCertificatePassword, setClearCertificatePassword] = useState(false);
+  const [issuerFeedback, setIssuerFeedback] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(
+    null,
+  );
+
+  const issuer = useQuery({
+    queryKey: ['fiscal-issuer-settings'],
+    queryFn: () => api<IssuerSettingsPublic>('/fiscal/issuer-settings'),
+  });
+
+  useEffect(() => {
+    if (!issuer.data) return;
+    const d = issuer.data;
+    setUf(d.uf);
+    setMunicipalityIbge(d.municipalityIbge);
+    setNfceSerie(d.nfceSerie);
+    setCrt(d.crt);
+    setSefazEnvironment(d.sefazEnvironment);
+    setCertificatePath(d.certificatePath ?? '');
+    setNfceCscIdInput(d.nfceCscId ?? '');
+    setNfceCscSecretInput('');
+    setCertificatePasswordInput('');
+    setClearNfceCsc(false);
+    setClearCertificatePassword(false);
+  }, [issuer.data]);
+
+  const saveIssuer = useMutation({
+    mutationFn: () => {
+      const json: Record<string, unknown> = {
+        uf,
+        municipalityIbge,
+        nfceSerie,
+        crt,
+        sefazEnvironment,
+        certificatePath: certificatePath.trim() || null,
+        nfceCscId: nfceCscIdInput.trim() || null,
+      };
+      if (clearNfceCsc) json.clearNfceCsc = true;
+      else if (nfceCscSecretInput.trim()) json.nfceCsc = nfceCscSecretInput.trim();
+      if (clearCertificatePassword) json.clearCertificatePassword = true;
+      else if (certificatePasswordInput.trim()) json.certificatePassword = certificatePasswordInput.trim();
+      return api<IssuerSettingsPublic>('/fiscal/issuer-settings', {
+        method: 'PATCH',
+        json,
+      });
+    },
+    onSuccess: (data) => {
+      qc.setQueryData(['fiscal-issuer-settings'], data);
+      setIssuerFeedback({ kind: 'ok', msg: 'Configurações do emissor salvas.' });
+      setNfceCscSecretInput('');
+      setCertificatePasswordInput('');
+      setClearNfceCsc(false);
+      setClearCertificatePassword(false);
+    },
+    onError: (e: Error) => setIssuerFeedback({ kind: 'err', msg: e.message }),
+  });
+
+  return (
+    <>
+      <p style={{ margin: '0 0 0.75rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+        Usado pelo worker da API (~60&nbsp;s) com <code>FISCAL_MODULE_ENABLED=true</code>. CSC, token CSC e senha do
+        .pfx podem ser gravados por cliente (abaixo); variáveis <code>FISCAL_*</code> no servidor ficam só como
+        <strong> fallback</strong> quando o campo na base está vazio.
+      </p>
+      {issuer.isLoading && <p className="muted">Carregando emissor…</p>}
+      {issuer.isError && <div className="alert alert-error">{(issuer.error as Error).message}</div>}
+      {issuerFeedback && (
+        <div
+          className={issuerFeedback.kind === 'ok' ? 'alert alert-success' : 'alert alert-error'}
+          style={{ marginBottom: '0.75rem', fontSize: '0.86rem' }}
+        >
+          {issuerFeedback.msg}
+        </div>
+      )}
+      {issuer.data && (
+        <>
+          <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
+            Esta versão trata apenas <strong>CRT&nbsp;=&nbsp;1 (Simples)</strong> no XML. Última NFC-e gravada pelo
+            worker: <strong>{issuer.data.nfceLastNumber}</strong>. Certificado efetivo:{' '}
+            <strong>
+              [{issuer.data.certificatePasswordConfigured ? 'senha OK' : 'sem senha'} |{' '}
+              {issuer.data.certificatePath?.trim() || issuer.data.certPathFromEnvFallback
+                ? 'caminho OK'
+                : 'sem caminho'}
+              ]
+            </strong>
+            . CSC efetivo:{' '}
+            <strong>
+              [
+              {issuer.data.nfceCscIdConfigured ? 'ID OK' : 'sem ID'}, {issuer.data.nfceCscSecretConfigured ? 'token OK' : 'sem token'}
+              ]
+            </strong>
+            {(issuer.data.nfceCscIdFromEnvFallback || issuer.data.nfceCscSecretFromEnvFallback) && (
+              <span>
+                {' '}
+                · parte via <code>.env</code> da API
+              </span>
+            )}
+          </p>
+          <div className="form-row">
+            <div className="field">
+              <label htmlFor="iss-uf">UF emissor</label>
+              <input
+                id="iss-uf"
+                value={uf}
+                maxLength={2}
+                onChange={(e) => setUf(e.target.value.toUpperCase())}
+              />
+            </div>
+            <div className="field" style={{ flex: 2 }}>
+              <label htmlFor="iss-mun">IBGE município (7 dígitos)</label>
+              <input
+                id="iss-mun"
+                value={municipalityIbge}
+                onChange={(e) => setMunicipalityIbge(e.target.value.replace(/\D/g, '').slice(0, 7))}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="iss-serie">Série NFC-e</label>
+              <input
+                id="iss-serie"
+                type="number"
+                min={1}
+                max={999}
+                value={nfceSerie}
+                onChange={(e) => setNfceSerie(Number(e.target.value) || 1)}
+              />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="field">
+              <label htmlFor="iss-crt">CRT</label>
+              <select id="iss-crt" value={crt} onChange={(e) => setCrt(Number(e.target.value))}>
+                <option value={1}>1 — Simples Nacional</option>
+                <option value={2}>2 — SN excesso</option>
+                <option value={3}>3 — Regime normal</option>
+              </select>
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                O worker atual rejeitará CRT ≠ 1 até extensões do XML ICMS normal.
+              </span>
+            </div>
+            <div className="field" style={{ flex: 2 }}>
+              <label>Ambiente SEFAZ gravado nos documentos</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.25rem' }}>
+                <label style={{ display: 'flex', gap: '0.45rem', alignItems: 'center' }}>
+                  <input
+                    type="radio"
+                    name="iss-amb"
+                    checked={sefazEnvironment === 'HOMOLOGACAO'}
+                    onChange={() => setSefazEnvironment('HOMOLOGACAO')}
+                  />
+                  Homologação
+                </label>
+                <label style={{ display: 'flex', gap: '0.45rem', alignItems: 'center' }}>
+                  <input
+                    type="radio"
+                    name="iss-amb"
+                    checked={sefazEnvironment === 'PRODUCAO'}
+                    onChange={() => setSefazEnvironment('PRODUCAO')}
+                  />
+                  Produção
+                </label>
+              </div>
+            </div>
+          </div>
+          <div className="field" style={{ marginBottom: '0.85rem' }}>
+            <label htmlFor="iss-cert-path">Caminho absoluto .pfx no servidor (opcional)</label>
+            <input
+              id="iss-cert-path"
+              value={certificatePath}
+              onChange={(e) => setCertificatePath(e.target.value)}
+              placeholder="Ou use apenas FISCAL_ISSUER_CERT_PATH no servidor"
+              autoComplete="off"
+            />
+          </div>
+          <div className="field" style={{ marginBottom: '0.85rem' }}>
+            <label htmlFor="iss-cert-pwd">Senha do .pfx (grava na base deste cliente)</label>
+            <input
+              id="iss-cert-pwd"
+              type="password"
+              value={certificatePasswordInput}
+              onChange={(e) => setCertificatePasswordInput(e.target.value)}
+              placeholder={issuer.data.hasCertificatePasswordInDb ? '•••• deixe vazio para manter' : 'Obrigatório para emitir'}
+              autoComplete="new-password"
+            />
+            <label style={{ display: 'flex', gap: '0.45rem', alignItems: 'center', marginTop: '0.35rem' }}>
+              <input
+                type="checkbox"
+                checked={clearCertificatePassword}
+                onChange={(e) => {
+                  setClearCertificatePassword(e.target.checked);
+                  if (e.target.checked) setCertificatePasswordInput('');
+                }}
+              />
+              Remover senha guardada na base (passa a usar só <code>FISCAL_ISSUER_CERT_PASSWORD</code> se existir)
+            </label>
+          </div>
+          <div className="form-row" style={{ marginBottom: '0.85rem' }}>
+            <div className="field" style={{ flex: 1 }}>
+              <label htmlFor="iss-csc-id">CSC ID (NFC-e)</label>
+              <input
+                id="iss-csc-id"
+                value={nfceCscIdInput}
+                onChange={(e) => setNfceCscIdInput(e.target.value)}
+                placeholder="Código do contribuinte no portal estadual"
+                autoComplete="off"
+              />
+            </div>
+            <div className="field" style={{ flex: 2 }}>
+              <label htmlFor="iss-csc-token">Token / segredo CSC</label>
+              <input
+                id="iss-csc-token"
+                type="password"
+                value={nfceCscSecretInput}
+                onChange={(e) => setNfceCscSecretInput(e.target.value)}
+                placeholder={issuer.data.hasNfceCscSecretInDb ? '•••• deixe vazio para manter' : 'Inclua para QR / SOAP'}
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
+          <label
+            style={{
+              display: 'flex',
+              gap: '0.45rem',
+              alignItems: 'center',
+              marginBottom: '0.85rem',
+              fontSize: '0.86rem',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={clearNfceCsc}
+              onChange={(e) => {
+                setClearNfceCsc(e.target.checked);
+                if (e.target.checked) setNfceCscSecretInput('');
+              }}
+            />
+            Remover token CSC guardado na base (usa só <code>FISCAL_NFCE_CSC</code> se existir)
+          </label>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={saveIssuer.isPending}
+            onClick={() => {
+              setIssuerFeedback(null);
+              saveIssuer.mutate();
+            }}
+          >
+            {saveIssuer.isPending ? 'Salvando…' : 'Salvar emissor NFC-e'}
+          </button>
+          <p style={{ marginTop: '0.75rem', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+            <code>FISCAL_EMIT_TRANSPORT=dry-run</code> assina e autoriza NFC-e fictícia com protocolo <code>DRY-RUN</code>.
+            SOAP requer CSC e URL correta do autorizador.
+          </p>
+        </>
+      )}
+    </>
+  );
 }
 
 export function CompanyPage() {
@@ -238,6 +538,56 @@ export function CompanyPage() {
                 />
               </div>
             </div>
+          </section>
+
+          <section className="card" style={{ padding: '1.1rem 1.25rem', marginBottom: '1rem' }}>
+            <h2 style={{ marginTop: 0, fontSize: '0.95rem' }}>PDV — documento da venda</h2>
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+              Defina se o fluxo atual é apenas <strong>comprovante interno não fiscal</strong> (cupom térmico) ou se a
+              empresa está em <strong>preparação para documento fiscal eletrônico</strong> (NF-e/NFC-e + campos CBS/IBS na
+              transição). Isso não ativa integração com a SEFAZ — use a variável de ambiente <code>FISCAL_MODULE_ENABLED</code>{' '}
+              na API quando o certificado estiver pronto.
+            </p>
+            <div className="field" style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+              <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', fontWeight: 600 }}>
+                <input
+                  type="radio"
+                  name="pdv-doc-mode"
+                  checked={form.pdvDocumentMode === 'NON_FISCAL_RECEIPT'}
+                  onChange={() =>
+                    update('pdvDocumentMode', 'NON_FISCAL_RECEIPT')
+                  }
+                />
+                <span>
+                  Comprovante / cupom não fiscal (padrão)
+                  <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 400, color: 'var(--color-text-muted)' }}>
+                    Impressão local; sem transmissão à Receita.
+                  </span>
+                </span>
+              </label>
+              <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', fontWeight: 600 }}>
+                <input
+                  type="radio"
+                  name="pdv-doc-mode"
+                  checked={form.pdvDocumentMode === 'ELECTRONIC_FISCAL_PLANNED'}
+                  onChange={() =>
+                    update('pdvDocumentMode', 'ELECTRONIC_FISCAL_PLANNED')
+                  }
+                />
+                <span>
+                  Planejamento para documento fiscal (NF-e/NFC-e)
+                  <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 400, color: 'var(--color-text-muted)' }}>
+                    Usa cadastros fiscais mestre (Situação fiscal) e, quando o módulo estiver ativo, tentará emissão
+                    eletrônica. Em 2026 a legislação prevê destaque informativo CBS/IBS nos DFe — consulte normas atuais.
+                  </span>
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <section className="card" style={{ padding: '1.1rem 1.25rem', marginBottom: '1rem' }}>
+            <h2 style={{ marginTop: 0, fontSize: '0.95rem' }}>Emissor NFC-e (servidor)</h2>
+            <IssuerEmissorCard />
           </section>
 
           <section className="card" style={{ padding: '1.1rem 1.25rem', marginBottom: '1rem' }}>

@@ -51,6 +51,13 @@ export class SalesController {
     });
   }
 
+  /** Após tratativa manual da NF-e falha / retry externo — desbloqueia PDV/caixa para o operador. */
+  @Post(':id/fiscal-integration/clear')
+  @Roles('admin', 'manager')
+  clearFiscalError(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.sales.clearFiscalIntegrationError(user.tenantSlug, id);
+  }
+
   @Post(':id/items/:itemId/remove')
   @Roles('admin', 'manager')
   removeSaleLine(

@@ -26,6 +26,7 @@ import {
 } from '../generated/tenant-client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { referentialCodeMatchesFlow } from '../common/referential-account-flow';
+import { assertLastSaleAllowsPdvEntry } from './pdv-entry.guard';
 
 function isPlainObjectRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -243,6 +244,44 @@ export class CashController {
       where: { userId: user.sub, status: CashSessionStatus.OPEN },
       include: { movements: { orderBy: { createdAt: 'desc' } } },
     });
+  }
+
+  /**
+   * PDV / abertura de caixa: última venda do operador deve estar sem erro de
+   * integração fiscal (`Sale.fiscalIntegrationError`).
+   */
+  @Get('pdv-readiness')
+  @Roles('admin', 'manager', 'seller')
+  async pdvReadiness(@CurrentUser() user: JwtPayload) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const company = await db.company.findFirst({
+      select: { pdvDocumentMode: true },
+    });
+    const last = await db.sale.findFirst({
+      where: { userId: user.sub },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        number: true,
+        id: true,
+        fiscalIntegrationError: true,
+        createdAt: true,
+      },
+    });
+    const err = last?.fiscalIntegrationError?.trim();
+    const allowed = !err;
+    return {
+      pdvDocumentMode: company?.pdvDocumentMode ?? 'NON_FISCAL_RECEIPT',
+      lastSale: last
+        ? {
+            id: last.id,
+            number: last.number,
+            fiscalIntegrationError: last.fiscalIntegrationError,
+            createdAt: last.createdAt.toISOString(),
+          }
+        : null,
+      allowed,
+      blockReason: allowed ? null : `Última venda #${last!.number}: ${err}`,
+    };
   }
 
   /**
@@ -1109,6 +1148,7 @@ export class CashController {
   @Roles('admin', 'manager', 'seller')
   async open(@CurrentUser() user: JwtPayload, @Body() body: { openingBalance?: number }) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    await assertLastSaleAllowsPdvEntry(db, user.sub);
     const existing = await db.cashRegisterSession.findFirst({
       where: { userId: user.sub, status: CashSessionStatus.OPEN },
     });

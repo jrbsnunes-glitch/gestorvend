@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react';
-import { formatFetchNetworkError, setRefreshToken, setToken } from '../lib/api';
+import { formatFetchNetworkError, formatLoginFailureMessage, setRefreshToken, setToken } from '../lib/api';
 import './login.css';
 
 export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
@@ -21,21 +21,16 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, tenantSlug }),
       });
+      const bodyText = await res.text();
       if (!res.ok) {
-        let message = `Falha no login (HTTP ${res.status}).`;
-        try {
-          const data = (await res.json()) as { message?: string | string[] };
-          if (Array.isArray(data.message)) {
-            message = data.message.join('; ');
-          } else if (typeof data.message === 'string' && data.message.trim()) {
-            message = data.message;
-          }
-        } catch {
-          // resposta não é JSON — mantém mensagem padrão
-        }
-        throw new Error(message);
+        throw new Error(formatLoginFailureMessage(res.status, bodyText));
       }
-      const data = (await res.json()) as { accessToken: string; refreshToken: string };
+      let data: { accessToken: string; refreshToken: string };
+      try {
+        data = JSON.parse(bodyText) as { accessToken: string; refreshToken: string };
+      } catch {
+        throw new Error('Resposta inválida do servidor após login.');
+      }
       if (data.refreshToken) setRefreshToken(data.refreshToken);
       setToken(data.accessToken);
       onLoggedIn();

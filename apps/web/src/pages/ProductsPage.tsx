@@ -52,6 +52,8 @@ type Product = {
   taxUnit: string | null;
   isActive: boolean;
   category?: { id: string; name: string } | null;
+  fiscalSituationId?: string | null;
+  fiscalSituation?: { id: string; code: string; name: string } | null;
   variants: Variant[];
 };
 
@@ -124,6 +126,7 @@ export function ProductsPage() {
   const [exTipi, setExTipi] = useState('');
   const [fiscalOrigin, setFiscalOrigin] = useState('');
   const [taxUnit, setTaxUnit] = useState('');
+  const [fiscalSituationId, setFiscalSituationId] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [sku, setSku] = useState('');
   const [retailPrice, setRetailPrice] = useState('0');
@@ -137,6 +140,13 @@ export function ProductsPage() {
   const list = useQuery({
     queryKey: ['products'],
     queryFn: () => api<Product[]>('/products'),
+  });
+
+  const fiscalSituationsQ = useQuery({
+    queryKey: ['fiscal-situations'],
+    queryFn: () =>
+      api<Array<{ id: string; code: string; name: string; isActive: boolean }>>('/fiscal-situations'),
+    staleTime: 60_000,
   });
 
   const productSearch = useQuery({
@@ -179,6 +189,7 @@ export function ProductsPage() {
     setExTipi('');
     setFiscalOrigin('');
     setTaxUnit('');
+    setFiscalSituationId('');
     setSku('');
     setRetailPrice('0');
     setCostPrice('0');
@@ -197,6 +208,7 @@ export function ProductsPage() {
     setExTipi(p.exTipi ?? '');
     setFiscalOrigin(p.fiscalOrigin ?? '');
     setTaxUnit(p.taxUnit ?? '');
+    setFiscalSituationId(p.fiscalSituation?.id ?? p.fiscalSituationId ?? '');
     setIsActive(p.isActive);
     const vp: Record<string, { retail: string; cost: string; minStock: string }> = {};
     for (const v of p.variants) {
@@ -224,6 +236,7 @@ export function ProductsPage() {
           fiscalOrigin: fiscalOrigin || null,
           taxUnit: taxUnit.trim() || null,
           categoryId: categoryId || null,
+          fiscalSituationId: fiscalSituationId || null,
           variants: [
             {
               sku: sku || `SKU-${Date.now()}`,
@@ -257,8 +270,8 @@ export function ProductsPage() {
           exTipi: exTipi.trim() || null,
           fiscalOrigin: fiscalOrigin || null,
           taxUnit: taxUnit.trim() || null,
+          fiscalSituationId: fiscalSituationId || null,
           categoryId: categoryId || null,
-          isActive,
           variantPrices: payload.product.variants.map((v) => {
             const row = variantPrices[v.id];
             return {
@@ -599,6 +612,26 @@ export function ProductsPage() {
               <details className="submenu-details" open>
                 <summary className="submenu-summary">Dados fiscais</summary>
                 <div className="submenu-body">
+                  <div className="field">
+                    <label htmlFor="p-fiscal-sit-create">Situação fiscal (cadastro mestre)</label>
+                    <select
+                      id="p-fiscal-sit-create"
+                      value={fiscalSituationId}
+                      onChange={(e) => setFiscalSituationId(e.target.value)}
+                    >
+                      <option value="">— Apenas campos locais abaixo —</option>
+                      {(fiscalSituationsQ.data ?? [])
+                        .filter((s) => s.isActive)
+                        .map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.code} — {s.name}
+                          </option>
+                        ))}
+                    </select>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                      Opcional — <strong>Cadastros gerais → Situação fiscal</strong>.
+                    </span>
+                  </div>
                   <div className="form-row">
                     <div className="field">
                       <span className="field-label-text">NCM</span>
@@ -810,6 +843,26 @@ export function ProductsPage() {
               <details className="submenu-details" open>
                 <summary className="submenu-summary">Dados fiscais</summary>
                 <div className="submenu-body">
+                  <div className="field">
+                    <label htmlFor="p-fiscal-sit-edit">Situação fiscal (cadastro mestre)</label>
+                    <select
+                      id="p-fiscal-sit-edit"
+                      value={fiscalSituationId}
+                      onChange={(e) => setFiscalSituationId(e.target.value)}
+                    >
+                      <option value="">— Apenas campos locais abaixo —</option>
+                      {(fiscalSituationsQ.data ?? [])
+                        .filter((s) => s.isActive)
+                        .map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.code} — {s.name}
+                          </option>
+                        ))}
+                    </select>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                      Opcional — <strong>Cadastros gerais → Situação fiscal</strong>.
+                    </span>
+                  </div>
                   <div className="form-row">
                     <div className="field">
                       <span className="field-label-text">NCM</span>

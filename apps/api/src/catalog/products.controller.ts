@@ -123,7 +123,7 @@ export class ProductsController {
   async list(@CurrentUser() user: JwtPayload) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     return db.product.findMany({
-      include: { variants: true, category: true },
+      include: { variants: true, category: true, fiscalSituation: true },
       orderBy: { name: 'asc' },
     });
   }
@@ -246,7 +246,7 @@ export class ProductsController {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     return db.product.findUniqueOrThrow({
       where: { id },
-      include: { variants: true, category: true },
+      include: { variants: true, category: true, fiscalSituation: true },
     });
   }
 
@@ -260,6 +260,7 @@ export class ProductsController {
       description?: string | null;
       defaultBarcode?: string | null;
       categoryId?: string | null;
+      fiscalSituationId?: string | null;
       ncm?: string | null;
       cest?: string | null;
       exTipi?: string | null;
@@ -281,6 +282,16 @@ export class ProductsController {
     // por EAN funcional no PDV.
     const defaultBarcode = body.defaultBarcode?.trim() ? body.defaultBarcode.trim().slice(0, 32) : null;
 
+    let fiscalSituationId: string | null = null;
+    if (body.fiscalSituationId && String(body.fiscalSituationId).trim()) {
+      const fs = await db.fiscalSituation.findFirst({
+        where: { id: String(body.fiscalSituationId).trim(), isActive: true },
+      });
+      if (!fs)
+        throw new BadRequestException('Situação fiscal não encontrada ou inativa.');
+      fiscalSituationId = fs.id;
+    }
+
     const createdId = await db.$transaction(async (tx) => {
       const prod = await tx.product.create({
         data: {
@@ -288,6 +299,7 @@ export class ProductsController {
           description: body.description ?? null,
           defaultBarcode,
           categoryId: body.categoryId ?? null,
+          fiscalSituationId,
           ncm: body.ncm ?? null,
           cest: body.cest ?? null,
           exTipi: body.exTipi?.trim() ? body.exTipi.trim().slice(0, 10) : null,
@@ -311,7 +323,7 @@ export class ProductsController {
 
     return db.product.findUniqueOrThrow({
       where: { id: createdId },
-      include: { variants: true, category: true },
+      include: { variants: true, category: true, fiscalSituation: true },
     });
   }
 
@@ -333,6 +345,13 @@ export class ProductsController {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const variantPrices = Array.isArray(body.variantPrices) ? body.variantPrices : [];
 
+    if (body.fiscalSituationId !== undefined && body.fiscalSituationId) {
+      const fs = await db.fiscalSituation.findFirst({
+        where: { id: String(body.fiscalSituationId), isActive: true },
+      });
+      if (!fs) throw new BadRequestException('Situação fiscal não encontrada ou inativa.');
+    }
+
     return db.$transaction(async (tx) => {
       await tx.product.update({
         where: { id },
@@ -345,6 +364,9 @@ export class ProductsController {
             defaultBarcode: body.defaultBarcode
               ? String(body.defaultBarcode).trim().slice(0, 32) || null
               : null,
+          }),
+          ...(body.fiscalSituationId !== undefined && {
+            fiscalSituationId: body.fiscalSituationId ? String(body.fiscalSituationId) : null,
           }),
           ...(body.ncm !== undefined && { ncm: body.ncm ? String(body.ncm) : null }),
           ...(body.cest !== undefined && { cest: body.cest ? String(body.cest) : null }),
@@ -371,7 +393,7 @@ export class ProductsController {
 
       return tx.product.findUniqueOrThrow({
         where: { id },
-        include: { variants: true, category: true },
+        include: { variants: true, category: true, fiscalSituation: true },
       });
     });
   }

@@ -28,12 +28,100 @@ model Company {
   state       String?
   zip         String?
   logoUrl     String?
+  /// Comprovante térmico interno (não transmite SEFAZ) x planejamento para documento fiscal eletrônico.
+  pdvDocumentMode PdvDocumentMode @default(NON_FISCAL_RECEIPT)
   /// Após finalizar venda no PDV, dispara impressão (janela de impressão do navegador na estação do operador).
   saleReceiptAutoPrint Boolean @default(false)
   /// Texto livre (ex.: modelo da impressora, porta USB) — lembrete para TI; não vincula tecnicamente o driver.
   saleReceiptPrinterHint String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  fiscalIssuerSettings FiscalIssuerSettings?
+}
+
+/// Ambiente SEFAZ autorizador (homologação primeiro).
+enum FiscalSefazEnvironment {
+  HOMOLOGACAO
+  PRODUCAO
+}
+
+/// Parâmetros por empresa para emissão NFC-e/NF-e no worker (certificado via env + caminho opcional).
+model FiscalIssuerSettings {
+  id               String                 @id @default(uuid())
+  companyId        String                 @unique
+  company          Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  sefazEnvironment FiscalSefazEnvironment @default(HOMOLOGACAO)
+  /// CRT: 1 SN, 2 SN excesso, 3 normal (tabela NF-e / NT RFB).
+  crt              Int                    @default(1)
+  /// Sigla UF emitente (maiúsculas), ex.: SP, PR.
+  uf               String                 @db.VarChar(2)
+  /// Código IBGE município do emitente (7 dígitos) — campo cMunFG em ide.
+  municipalityIbge String                 @db.VarChar(7)
+  nfceSerie        Int                    @default(1)
+  nfeSerie         Int                    @default(1)
+  /// Último número NFC-e emitido com sucesso pelo worker (incrementa em transação).
+  nfceLastNumber   Int                    @default(0)
+  nfeLastNumber    Int                    @default(0)
+  /// Caminho absoluto ao .pfx/.p12 no servidor; se vazio, usar env FISCAL_ISSUER_CERT_PATH.
+  certificatePath  String?                @db.VarChar(512)
+  /// Senha do .pfx (por tenant). Se vazio, usar `FISCAL_ISSUER_CERT_PASSWORD` no servidor.
+  /// Manter backup e encriptação em repouso do PostgreSQL em produção.
+  certificatePassword String?             @db.VarChar(512)
+  /// ID do código de segurança do contribuinte (CSC) NFC-e; se vazio, usar `FISCAL_NFCE_CSC_ID`.
+  nfceCscId        String?                @db.VarChar(64)
+  /// Token/segredo CSC NFC-e; se vazio, usar `FISCAL_NFCE_CSC`. Não expor em GET da API.
+  nfceCsc          String?                @db.VarChar(512)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+}
+
+/// Modo de documento padrão ao finalizar venda no PDV.
+enum PdvDocumentMode {
+  /// Cupom / comprovante interno sem transmissão SEFAZ.
+  NON_FISCAL_RECEIPT
+  /// Planejamento para NF-e/NFC-e (Etapa SEFAZ + campos de reforma tributária).
+  ELECTRONIC_FISCAL_PLANNED
+}
+
+/// Tipo de documento fiscal eletrônico (fila antes da transmissão SEFAZ).
+enum FiscalDocumentKind {
+  NFC_E
+  NF_E
+}
+
+/// Ciclo local do documento (worker SEFAZ ainda não implementado).
+enum FiscalDocumentStatus {
+  QUEUED
+  BUILDING_XML
+  SENT
+  AUTHORIZED
+  REJECTED
+  ERROR
+}
+
+/// Situação fiscal parametrizável, reaproveitada por vários produtos (reforma tributária / NF-e futura).
+model FiscalSituation {
+  id              String    @id @default(uuid())
+  code            String    @unique @db.VarChar(48)
+  name            String
+  description     String?
+  exTipi          String?   @db.VarChar(10)
+  fiscalOrigin    String?   @db.VarChar(2)
+  cstIcms         String?   @db.VarChar(4)
+  csosn           String?   @db.VarChar(4)
+  cstPis          String?   @db.VarChar(4)
+  cstCofins       String?   @db.VarChar(4)
+  cfopInternal    String?   @db.VarChar(5)
+  cfopInterstate  String?   @db.VarChar(5)
+  ibsTestRate     Decimal   @default(0.1) @db.Decimal(8, 4)
+  cbsTestRate     Decimal   @default(0.9) @db.Decimal(8, 4)
+  regulationNotes String?   @db.Text
+  isActive        Boolean   @default(true)
+  products        Product[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([isActive])
 }
 
 // --- Auth / RBAC ---
@@ -171,6 +259,8 @@ model Product {
   defaultBarcode String?       @db.VarChar(32)
   categoryId  String?
   category    Category?        @relation(fields: [categoryId], references: [id])
+  fiscalSituationId String?
+  fiscalSituation   FiscalSituation? @relation(fields: [fiscalSituationId], references: [id], onDelete: SetNull)
   /// Gancho Etapa 2 — NF-e
   ncm         String?
   cest        String?
@@ -386,9 +476,30 @@ model Sale {
   notes         String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
-  items         SaleItem[]
-  payments      SalePayment[]
-  receivables   AccountReceivable[]
+  /// Erro de integração fiscal (NF-e/NFC-e/Sefaz). Impede novo caixa/PDV até resolução quando preenchido.
+  fiscalIntegrationError String? @db.VarChar(1024)
+  /// Registro de emissão (fila/status) quando o tenant usa documento fiscal — 1 venda ⇄ no máximo 1 fila.
+  fiscalDocument         FiscalDocument?
+  items                  SaleItem[]
+  payments               SalePayment[]
+  receivables            AccountReceivable[]
+}
+
+/// Metadados da fila de emissão DFe por venda (próximo passo: XML, assinatura, SEFAZ).
+model FiscalDocument {
+  id               String               @id @default(uuid())
+  saleId           String               @unique
+  sale             Sale                 @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  kind             FiscalDocumentKind
+  status           FiscalDocumentStatus @default(QUEUED)
+  /// Próxima janela de tentativa quando houver retry (worker futuro).
+  nextAttemptAt    DateTime?
+  lastError        String?              @db.VarChar(2048)
+  accessKey        String?              @db.VarChar(44)
+  protocol         String?              @db.VarChar(32)
+  sefazEnvironment String?              @db.VarChar(16)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
 }
 
 model SaleItem {

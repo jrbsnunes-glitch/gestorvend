@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import * as path from 'path';
 import { AuthModule } from './auth/auth.module';
 import { CashModule } from './cash/cash.module';
@@ -29,6 +30,7 @@ import { ActivityLogsModule } from './activity-logs/activity-logs.module';
         path.join(process.cwd(), '../../.env'),
       ],
     }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     TenantModule,
     AuthModule,

@@ -139,6 +139,57 @@ export function FinancialOverviewPrintPage() {
                     <dt>Líquido (diário filtrado)</dt>
                     <dd>{formatBRL(d.filteredCashFlow.net)}</dd>
                   </dl>
+                  <h3 style={{ fontSize: '1rem', marginTop: '1rem', marginBottom: '0.35rem' }}>
+                    Lançamentos do diário (centro selecionado)
+                  </h3>
+                  <p style={{ fontSize: '0.82rem', marginTop: 0, marginBottom: '0.5rem' }}>
+                    Linhas que compõem os totais acima (IN/OUT). Linhas INFO não entram nas entradas/saídas
+                    filtradas.
+                  </p>
+                  <table
+                    className="data-table gv-finance-print-table"
+                    style={{ width: '100%', fontSize: '0.75rem', marginTop: '0.25rem' }}
+                  >
+                    <thead>
+                      <tr>
+                        <th>Data</th>
+                        <th>Natureza</th>
+                        <th>Tipo</th>
+                        <th className="num">Valor</th>
+                        <th>Forma</th>
+                        <th>Centro</th>
+                        <th>Descrição</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {d.ledger.map((row, idx) => (
+                        <tr key={`cc-print-${row.occurredAt}-${row.kind}-${idx}`}>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            {new Date(row.occurredAt).toLocaleString('pt-BR')}
+                          </td>
+                          <td>{ledgerDirectionLabel(row.direction)}</td>
+                          <td>{ledgerKindLabel(row.kind)}</td>
+                          <td className="num">
+                            {row.direction === 'OUT' ? '−' : ''}
+                            {formatBRL(row.amount)}
+                          </td>
+                          <td>{row.methodLabel ?? '—'}</td>
+                          <td style={{ maxWidth: 100 }}>{row.referentialAccountLabel ?? '—'}</td>
+                          <td style={{ maxWidth: 220 }}>
+                            <strong>{row.title}</strong>
+                            {row.detail ? <div style={{ opacity: 0.9 }}>{row.detail}</div> : null}
+                          </td>
+                        </tr>
+                      ))}
+                      {!d.ledger.length && (
+                        <tr>
+                          <td colSpan={7} className="empty">
+                            Nenhum lançamento no período classificado neste centro.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                   <h3 style={{ fontSize: '1rem', marginTop: '1.25rem', marginBottom: '0.35rem' }}>
                     Indicadores gerais da loja (período)
                   </h3>
@@ -235,7 +286,7 @@ export function FinancialOverviewPrintPage() {
             </section>
           ) : null}
 
-          {showLedger ? (
+          {showLedger && !d.costCenter ? (
             <section className="gv-finance-print-detail" style={{ marginTop: '1rem' }}>
               <h2>Diário financeiro</h2>
               <table

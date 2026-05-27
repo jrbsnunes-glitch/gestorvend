@@ -21,6 +21,8 @@ import {
 } from '../lib/sale-receipt-print';
 import './pos.css';
 
+const GV_POS_CHECKOUT_FAILURE_KEY = 'gv_pos_checkout_failure_v1';
+
 /* ----------------------------------------------------------------------------
  * Tipos de domínio
  * ------------------------------------------------------------------------- */
@@ -42,6 +44,14 @@ type SaleSummary = {
   createdAt: string;
   customer: { name: string } | null;
   items?: SaleItemRowApi[];
+  fiscalIntegrationError?: string | null;
+  fiscalDocument?: {
+    id: string;
+    kind: 'NFC_E' | 'NF_E';
+    status: string;
+    accessKey: string | null;
+    lastError: string | null;
+  } | null;
 };
 
 /** Limites do dia no fuso local (para contagem "vendas hoje" no PDV). */
@@ -157,6 +167,22 @@ function classifyStock(stock: number, qtyInCart: number, minStock: number) {
   return 'ok';
 }
 
+function fiscalDocumentStatusPt(status: string): string {
+  const m: Record<string, string> = {
+    QUEUED: 'na fila',
+    BUILDING_XML: 'montando XML',
+    SENT: 'enviado à SEFAZ',
+    AUTHORIZED: 'autorizado',
+    REJECTED: 'rejeitado',
+    ERROR: 'erro',
+  };
+  return m[status] ?? status;
+}
+
+function fiscalDocumentKindPt(kind: string): string {
+  return kind === 'NF_E' ? 'NF-e' : 'NFC-e';
+}
+
 /* ----------------------------------------------------------------------------
  * Página principal — decide entre Gateway de Caixa e PDV
  * ------------------------------------------------------------------------- */
@@ -164,6 +190,8 @@ function classifyStock(stock: number, qtyInCart: number, minStock: number) {
 export function SalesPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+
+  const [localFailBump, setLocalFailBump] = useState(0);
 
   /**
    * Sessão de caixa atual do usuário. O backend só retorna sessões
@@ -210,11 +238,44 @@ export function SalesPage() {
   /** Mensagem para mostrar no gateway (ex.: confirmação de fechamento). */
   const [gatewayNotice, setGatewayNotice] = useState<string | null>(null);
 
+  const localCheckoutFailureMessage = useMemo(() => {
+    try {
+      const raw = sessionStorage.getItem(GV_POS_CHECKOUT_FAILURE_KEY);
+      if (!raw) return null;
+      const j = JSON.parse(raw) as { message?: string };
+      return typeof j.message === 'string' ? j.message : raw;
+    } catch {
+      return sessionStorage.getItem(GV_POS_CHECKOUT_FAILURE_KEY);
+    }
+  }, [localFailBump]);
+
+  const pdvReadinessQ = useQuery({
+    queryKey: ['cash', 'pdv-readiness'],
+    queryFn: () =>
+      api<{
+        allowed: boolean;
+        blockReason: string | null;
+        pdvDocumentMode: string;
+      }>('/cash/pdv-readiness'),
+    enabled: !entered,
+    refetchOnMount: 'always',
+  });
+
+  const gatewayBlocked =
+    Boolean(localCheckoutFailureMessage) ||
+    Boolean(pdvReadinessQ.data && !pdvReadinessQ.data.allowed);
+
+  const gatewayBlockMessages = [
+    localCheckoutFailureMessage,
+    pdvReadinessQ.data && !pdvReadinessQ.data.allowed ? pdvReadinessQ.data.blockReason : null,
+  ].filter(Boolean) as string[];
+
   function exitToDashboard() {
     navigate('/');
   }
 
   function enterPdv() {
+    if (gatewayBlocked) return;
     setEntered(true);
     setGatewayNotice(null);
   }
@@ -240,6 +301,12 @@ export function SalesPage() {
         isManagerView={managerView}
         openSessions={openSessionsQ.data ?? []}
         currentUserId={operator?.id ?? null}
+        gatewayBlocked={gatewayBlocked}
+        gatewayBlockMessages={gatewayBlockMessages}
+        onDismissCheckoutFailure={() => {
+          sessionStorage.removeItem(GV_POS_CHECKOUT_FAILURE_KEY);
+          setLocalFailBump((n) => n + 1);
+        }}
         onDismissNotice={() => setGatewayNotice(null)}
         onExit={exitToDashboard}
         onEnter={enterPdv}
@@ -359,6 +426,9 @@ function PosGateway({
   isManagerView,
   openSessions,
   currentUserId,
+  gatewayBlocked,
+  gatewayBlockMessages,
+  onDismissCheckoutFailure,
   onDismissNotice,
   onExit,
   onEnter,
@@ -372,6 +442,9 @@ function PosGateway({
   isManagerView: boolean;
   openSessions: OpenSessionSummary[];
   currentUserId: string | null;
+  gatewayBlocked: boolean;
+  gatewayBlockMessages: string[];
+  onDismissCheckoutFailure: () => void;
   onDismissNotice: () => void;
   onExit: () => void;
   onEnter: () => void;
@@ -412,6 +485,37 @@ function PosGateway({
             Para começar a registrar vendas, abra um novo caixa ou continue o
             atendimento em um caixa já aberto.
           </p>
+
+          {gatewayBlocked && gatewayBlockMessages.length > 0 && (
+            <div
+              role="alert"
+              style={{
+                marginBottom: '1rem',
+                padding: '0.85rem 1rem',
+                borderRadius: 10,
+                background: 'rgba(220, 38, 38, 0.22)',
+                border: '1px solid rgba(252,165,165,0.5)',
+                color: '#fecaca',
+                fontSize: '0.92rem',
+                lineHeight: 1.45,
+              }}
+            >
+              <strong style={{ display: 'block', marginBottom: '0.45rem' }}>PDV e caixa bloqueados nesta estação</strong>
+              <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
+                {gatewayBlockMessages.map((m, i) => (
+                  <li key={i}>{m}</li>
+                ))}
+              </ul>
+              <div style={{ marginTop: '0.65rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button type="button" className="pos-gateway-btn pos-gateway-btn-secondary" onClick={onDismissCheckoutFailure}>
+                  Limpar aviso da última tentativa (neste navegador)
+                </button>
+                <span style={{ fontSize: '0.8rem', opacity: 0.85 }}>
+                  Pendências gravadas na venda exigem ação do gerente: menu <strong>Vendas</strong> → cancelar erro fiscal ou usar a API «limpar fiscal».
+                </span>
+              </div>
+            </div>
+          )}
 
           {notice && (
             <div
@@ -461,10 +565,12 @@ function PosGateway({
                 <button
                   type="button"
                   className="pos-gateway-btn pos-gateway-btn-primary"
-                  disabled={!hasOpen || isFetching}
+                  disabled={!hasOpen || isFetching || gatewayBlocked}
                   onClick={onEnter}
                   title={
-                    isFetching
+                    gatewayBlocked
+                      ? 'Regularize pendências antes de operar.'
+                      : isFetching
                       ? 'Atualizando status do caixa…'
                       : hasOpen
                         ? 'Entrar no PDV'
@@ -508,7 +614,7 @@ function PosGateway({
                   onChange={(e) => setOpening(e.target.value)}
                   onFocus={(e) => e.currentTarget.select()}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !hasOpen) openMut.mutate();
+                    if (e.key === 'Enter' && !hasOpen && !gatewayBlocked) openMut.mutate();
                   }}
                   placeholder="0,00"
                 />
@@ -518,7 +624,7 @@ function PosGateway({
                 <button
                   type="button"
                   className="pos-gateway-btn pos-gateway-btn-secondary"
-                  disabled={hasOpen || openMut.isPending}
+                  disabled={hasOpen || openMut.isPending || gatewayBlocked}
                   onClick={() => openMut.mutate()}
                 >
                   {openMut.isPending ? 'Abrindo…' : 'Abrir caixa'}
@@ -693,6 +799,7 @@ function PosScreen({
       api<{
         saleReceiptAutoPrint?: boolean;
         saleReceiptPrinterHint?: string | null;
+        pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED';
       }>('/company'),
     staleTime: 60_000,
   });
@@ -795,6 +902,8 @@ function PosScreen({
         },
       }),
     onSuccess: (sale) => {
+      sessionStorage.removeItem(GV_POS_CHECKOUT_FAILURE_KEY);
+      qc.invalidateQueries({ queryKey: ['cash', 'pdv-readiness'] });
       qc.invalidateQueries({ queryKey: ['sales'] });
       qc.invalidateQueries({ queryKey: ['reports', 'sales-summary'] });
       const concluded = total;
@@ -810,7 +919,15 @@ function PosScreen({
       setToast({ kind: 'ok', text: `Venda #${sale.number} concluída ${formatBRL(concluded)}` });
       scannerRef.current?.focus();
     },
-    onError: (e: Error) => setToast({ kind: 'err', text: e.message }),
+    onError: (e: Error) => {
+      try {
+        sessionStorage.setItem(GV_POS_CHECKOUT_FAILURE_KEY, JSON.stringify({ message: e.message, at: new Date().toISOString() }));
+      } catch {
+        /* ignore */
+      }
+      qc.invalidateQueries({ queryKey: ['cash', 'pdv-readiness'] });
+      setToast({ kind: 'err', text: e.message });
+    },
   });
 
   const cancelSale = useMutation({
@@ -839,6 +956,34 @@ function PosScreen({
     },
     onError: (e: Error) => setToast({ kind: 'err', text: e.message }),
   });
+
+  /** Libera PDV/caixa quando a pendência foi tratada externamente (gerente/admin). */
+  const clearFiscalIntegrationMut = useMutation({
+    mutationFn: (saleId: string) =>
+      api(`/sales/${encodeURIComponent(saleId)}/fiscal-integration/clear`, { method: 'POST' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sales'] });
+      qc.invalidateQueries({ queryKey: ['sales', 'today'] });
+      qc.invalidateQueries({ queryKey: ['cash', 'pdv-readiness'] });
+      setToast({ kind: 'ok', text: 'Pendência fiscal da venda limpa — PDV pode seguir quando as regras do caixa permitirem.' });
+    },
+    onError: (e: Error) => setToast({ kind: 'err', text: e.message }),
+  });
+
+  /** Fila local DFe (stub até worker SEFAZ). Só faz sentido com empresa em modo fiscal planejado. */
+  const queueFiscalDocumentMut = useMutation({
+    mutationFn: (saleId: string) =>
+      api('/fiscal/documents/queue', { method: 'POST', json: { saleId } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sales'] });
+      qc.invalidateQueries({ queryKey: ['sales', 'today'] });
+      setToast({ kind: 'ok', text: 'Documento fiscal enfileirado (aguardando processamento).' });
+    },
+    onError: (e: Error) => setToast({ kind: 'err', text: e.message }),
+  });
+
+  const electronicFiscalPlanned =
+    companyQ.data?.pdvDocumentMode === 'ELECTRONIC_FISCAL_PLANNED';
 
   // Soma de todos os valores contados por método -> total declarado.
   const closingTotal = useMemo(
@@ -1603,6 +1748,57 @@ function PosScreen({
                           ))}
                         </ul>
                       )}
+                      {Boolean(s.fiscalIntegrationError?.trim()) && (
+                        <div className="pos-fiscal-banner pos-fiscal-banner--error" role="alert">
+                          <strong>Integração fiscal:</strong>{' '}
+                          <span className="pos-fiscal-banner-msg">{s.fiscalIntegrationError!.trim()}</span>
+                          {canManagePastSales && (
+                            <button
+                              type="button"
+                              className="pos-btn pos-btn-ghost pos-fiscal-banner-action"
+                              disabled={clearFiscalIntegrationMut.isPending}
+                              title="Use após corrigir a NF ou registrar a tratativa conforme política da loja."
+                              onClick={() => {
+                                if (
+                                  confirm(
+                                    `Limpar o erro fiscal da venda #${s.number}?\n\n` +
+                                      `Só faça isso depois de resolver a pendência na SEFAZ ou por processo manual acordado. ` +
+                                      `O operador poderá voltar a abrir caixa / PDV.`,
+                                  )
+                                ) {
+                                  clearFiscalIntegrationMut.mutate(s.id);
+                                }
+                              }}
+                            >
+                              {clearFiscalIntegrationMut.isPending ? 'Liberando…' : 'Liberar PDV'}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {s.status === 'COMPLETED' && s.fiscalDocument && (
+                        <div className="pos-fiscal-doc-line">
+                          <span className="pos-fiscal-doc-label">DFe</span>{' '}
+                          {fiscalDocumentKindPt(s.fiscalDocument.kind)} ·{' '}
+                          <strong>{fiscalDocumentStatusPt(s.fiscalDocument.status)}</strong>
+                          {s.fiscalDocument.accessKey?.trim() ? (
+                            <span className="pos-fiscal-doc-key">
+                              {' '}
+                              · chave {s.fiscalDocument.accessKey.trim().slice(0, 12)}…
+                            </span>
+                          ) : null}
+                          {s.fiscalDocument.lastError?.trim() ? (
+                            <span className="pos-fiscal-doc-err">
+                              {' '}
+                              ({s.fiscalDocument.lastError.trim()})
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
+                      {s.status === 'COMPLETED' && electronicFiscalPlanned && !s.fiscalDocument && (
+                        <p className="pos-fiscal-hint-muted">
+                          Modo fiscal planejado: ainda não há registro na fila de emissão para esta venda.
+                        </p>
+                      )}
                       {(s.status === 'COMPLETED' || s.status === 'CANCELLED') && (
                         <div className="pos-history-actions">
                           <button
@@ -1617,6 +1813,23 @@ function PosScreen({
                           >
                             Cupom (não fiscal)
                           </button>
+                          {s.status === 'COMPLETED' &&
+                            electronicFiscalPlanned &&
+                            canManagePastSales && (
+                              <button
+                                type="button"
+                                className="pos-btn pos-btn-ghost pos-history-action-warn"
+                                disabled={queueFiscalDocumentMut.isPending}
+                                title="Cria/atualiza registro na fila local (transmitir à SEFAZ é a etapa seguinte)."
+                                onClick={() => queueFiscalDocumentMut.mutate(s.id)}
+                              >
+                                {queueFiscalDocumentMut.isPending
+                                  ? 'Enfileirando…'
+                                  : s.fiscalDocument
+                                    ? 'Reenfileirar NFC-e (fila)'
+                                    : 'Enfileirar NFC-e (fila)'}
+                              </button>
+                            )}
                           {s.status === 'COMPLETED' && canManagePastSales && (
                             <>
                               {rows.length >= 2 && (

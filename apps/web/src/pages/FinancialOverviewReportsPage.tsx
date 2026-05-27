@@ -271,9 +271,20 @@ export function FinancialOverviewReportsPage() {
                 background: 'var(--color-surface-elevated)',
               }}
             >
-              <strong style={{ fontSize: '0.92rem' }}>
-                Fluxo filtrado (conta do centro e subcontas no diário)
-              </strong>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', justifyContent: 'space-between', rowGap: '0.65rem' }}>
+                <strong style={{ fontSize: '0.92rem' }}>
+                  Fluxo filtrado (conta do centro e subcontas no diário)
+                </strong>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ flexShrink: 0 }}
+                  onClick={exportLedgerCsv}
+                  disabled={!data.ledger.length}
+                >
+                  Exportar diário CSV (centro)
+                </button>
+              </div>
               <div
                 style={{
                   display: 'flex',
@@ -292,6 +303,55 @@ export function FinancialOverviewReportsPage() {
                 <span>
                   Líquido: <strong>{formatBRL(data.filteredCashFlow.net)}</strong>
                 </span>
+              </div>
+              <p style={{ margin: '0.75rem 0 0.5rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                Lançamentos que compõem o total acima (linhas IN/OUT do diário para este centro; linhas INFO
+                não entram nos totais de entradas/saídas).
+              </p>
+              <div className="table-wrap" style={{ marginTop: '0.35rem' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th>Natureza</th>
+                      <th>Tipo</th>
+                      <th className="num">Valor</th>
+                      <th>Forma</th>
+                      <th>Centro no plano</th>
+                      <th>Descrição</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.ledger.map((row, idx) => (
+                      <tr key={`cc-ledger-${row.occurredAt}-${row.kind}-${idx}`}>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {new Date(row.occurredAt).toLocaleString('pt-BR')}
+                        </td>
+                        <td>{ledgerDirectionLabel(row.direction)}</td>
+                        <td>{ledgerKindLabel(row.kind)}</td>
+                        <td className="num">
+                          {row.direction === 'OUT' ? '−' : ''}
+                          {formatBRL(row.amount)}
+                        </td>
+                        <td>{row.methodLabel ?? '—'}</td>
+                        <td style={{ fontSize: '0.82rem', maxWidth: 220 }}>
+                          {row.referentialAccountLabel ?? '—'}
+                        </td>
+                        <td style={{ maxWidth: 320, fontSize: '0.85rem' }}>
+                          <strong>{row.title}</strong>
+                          {row.detail ? <div style={{ opacity: 0.9 }}>{row.detail}</div> : null}
+                        </td>
+                      </tr>
+                    ))}
+                    {!data.ledger.length && (
+                      <tr>
+                        <td colSpan={7} className="empty">
+                          Nenhum lançamento no período classificado neste centro.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -316,7 +376,7 @@ export function FinancialOverviewReportsPage() {
                 }}
               >
                 Com centro de custo selecionado, os números abaixo não refletem só esse centro; use o
-                cartão “fluxo filtrado” e o diário.
+                cartão “fluxo filtrado” (totais e lançamentos do diário daquele centro).
               </p>
               <div
                 className="dash-hero"
@@ -390,64 +450,66 @@ export function FinancialOverviewReportsPage() {
             </article>
           </div>
 
-          <section className="card" style={{ marginTop: '1.25rem', padding: '1rem' }}>
-            <div className="toolbar" style={{ marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-              <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Diário do período</h2>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={exportLedgerCsv}
-                disabled={!data.ledger.length}
-              >
-                Exportar diário CSV
-              </button>
-            </div>
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Data</th>
-                    <th>Natureza</th>
-                    <th>Tipo</th>
-                    <th className="num">Valor</th>
-                    <th>Forma</th>
-                    <th>Centro de custo</th>
-                    <th>Descrição</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.ledger.map((row, idx) => (
-                    <tr key={`${row.occurredAt}-${row.kind}-${idx}`}>
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        {new Date(row.occurredAt).toLocaleString('pt-BR')}
-                      </td>
-                      <td>{ledgerDirectionLabel(row.direction)}</td>
-                      <td>{ledgerKindLabel(row.kind)}</td>
-                      <td className="num">
-                        {row.direction === 'OUT' ? '−' : ''}
-                        {formatBRL(row.amount)}
-                      </td>
-                      <td>{row.methodLabel ?? '—'}</td>
-                      <td style={{ fontSize: '0.82rem', maxWidth: 220 }}>
-                        {row.referentialAccountLabel ?? '—'}
-                      </td>
-                      <td style={{ maxWidth: 320, fontSize: '0.85rem' }}>
-                        <strong>{row.title}</strong>
-                        {row.detail ? <div style={{ opacity: 0.9 }}>{row.detail}</div> : null}
-                      </td>
-                    </tr>
-                  ))}
-                  {!data.ledger.length && (
+          {!data.costCenter ? (
+            <section className="card" style={{ marginTop: '1.25rem', padding: '1rem' }}>
+              <div className="toolbar" style={{ marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Diário do período</h2>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={exportLedgerCsv}
+                  disabled={!data.ledger.length}
+                >
+                  Exportar diário CSV
+                </button>
+              </div>
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
                     <tr>
-                      <td colSpan={7} className="empty">
-                        Nenhum lançamento no período.
-                      </td>
+                      <th>Data</th>
+                      <th>Natureza</th>
+                      <th>Tipo</th>
+                      <th className="num">Valor</th>
+                      <th>Forma</th>
+                      <th>Centro de custo</th>
+                      <th>Descrição</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                  </thead>
+                  <tbody>
+                    {data.ledger.map((row, idx) => (
+                      <tr key={`${row.occurredAt}-${row.kind}-${idx}`}>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {new Date(row.occurredAt).toLocaleString('pt-BR')}
+                        </td>
+                        <td>{ledgerDirectionLabel(row.direction)}</td>
+                        <td>{ledgerKindLabel(row.kind)}</td>
+                        <td className="num">
+                          {row.direction === 'OUT' ? '−' : ''}
+                          {formatBRL(row.amount)}
+                        </td>
+                        <td>{row.methodLabel ?? '—'}</td>
+                        <td style={{ fontSize: '0.82rem', maxWidth: 220 }}>
+                          {row.referentialAccountLabel ?? '—'}
+                        </td>
+                        <td style={{ maxWidth: 320, fontSize: '0.85rem' }}>
+                          <strong>{row.title}</strong>
+                          {row.detail ? <div style={{ opacity: 0.9 }}>{row.detail}</div> : null}
+                        </td>
+                      </tr>
+                    ))}
+                    {!data.ledger.length && (
+                      <tr>
+                        <td colSpan={7} className="empty">
+                          Nenhum lançamento no período.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
 
           <section className="card" style={{ marginTop: '1.25rem', padding: '1rem' }}>
             <ul style={{ margin: 0, paddingLeft: '1.2rem', lineHeight: 1.6 }}>
