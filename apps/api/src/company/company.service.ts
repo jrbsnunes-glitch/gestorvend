@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { TenantService } from '../tenant/tenant.service';
+import { CompanyLogoStorage } from './company-logo.storage';
 
 type CompanyInput = {
   legalName?: string;
@@ -31,6 +32,7 @@ export class CompanyService {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly tenants: TenantService,
+    private readonly logos: CompanyLogoStorage,
   ) {}
 
   async getOrCreate(tenantSlug: string) {
@@ -108,5 +110,29 @@ export class CompanyService {
     }
 
     return db.company.update({ where: { id: current.id }, data });
+  }
+
+  async uploadLogo(
+    tenantSlug: string,
+    file: { buffer: Buffer; mimetype?: string; size?: number } | undefined,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Nenhum arquivo enviado.');
+    }
+    const maxBytes = 2 * 1024 * 1024;
+    if (file.size != null && file.size > maxBytes) {
+      throw new BadRequestException('Arquivo muito grande. Máximo 2 MB.');
+    }
+    if (file.buffer.length > maxBytes) {
+      throw new BadRequestException('Arquivo muito grande. Máximo 2 MB.');
+    }
+
+    const logoUrl = await this.logos.save(tenantSlug, file.buffer, file.mimetype ?? '');
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const current = await this.getOrCreate(tenantSlug);
+    return db.company.update({
+      where: { id: current.id },
+      data: { logoUrl },
+    });
   }
 }

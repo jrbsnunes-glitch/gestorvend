@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
+import { CompanyLogo } from '../components/CompanyLogo';
 import { api } from '../lib/api';
+import { companyUsesCustomLogo } from '../lib/company-branding';
 import { formatBRL, formatDate } from '../lib/format';
 import { consumeAutoPrintNonce } from '../lib/sale-receipt-print';
 import './sale-receipt-print.css';
@@ -16,6 +18,7 @@ type Company = {
   state: string | null;
   zip: string | null;
   phone: string | null;
+  logoUrl?: string | null;
   saleReceiptAutoPrint?: boolean;
   saleReceiptPrinterHint?: string | null;
 };
@@ -138,6 +141,9 @@ export function SaleReceiptPrintPage() {
         <article className="sale-receipt-doc">
           {c ? (
             <header className="sale-receipt-center">
+              {companyUsesCustomLogo(c) ? (
+                <CompanyLogo className="sale-receipt-logo" company={c} alt={c.tradeName || c.legalName} />
+              ) : null}
               <p className="sale-receipt-title">{c.tradeName || c.legalName}</p>
               {c.tradeName && c.legalName !== c.tradeName && (
                 <p className="sale-receipt-legal">{c.legalName}</p>

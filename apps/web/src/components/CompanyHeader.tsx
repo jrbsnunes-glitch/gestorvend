@@ -6,6 +6,8 @@
  * Sem cadastro na rota `/company`, cai para o identificador "GestorVend".
  */
 
+import { companyDisplayName, resolveCompanyAssetUrl } from '../lib/company-branding';
+
 export type CompanyHeaderData = {
   legalName: string;
   tradeName: string;
@@ -50,8 +52,8 @@ export function CompanyHeader({ company }: { company: CompanyHeaderData }) {
     <div className="print-company">
       {company.logoUrl && (
         <img
-          src={company.logoUrl}
-          alt=""
+          src={resolveCompanyAssetUrl(company.logoUrl)}
+          alt={companyDisplayName(company)}
           className="print-company-logo"
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = 'none';

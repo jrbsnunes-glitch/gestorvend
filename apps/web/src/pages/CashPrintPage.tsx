@@ -53,6 +53,25 @@ type ReportData = {
 
 type Me = { name: string; email: string };
 
+type SoldItemRow = {
+  saleId: string;
+  saleNumber: number;
+  saleStatus: string;
+  saleCreatedAt: string;
+  itemId: string;
+  productName: string;
+  sku: string | null;
+  quantity: string;
+  unitPrice: string;
+  discount: string;
+  totalLine: string;
+  payments: { method: string; amount: string }[];
+};
+
+type ItemsReport = {
+  items: SoldItemRow[];
+};
+
 const PAYMENT_LABELS: Record<string, string> = {
   CASH: 'Dinheiro',
   CARD: 'Cartão',
@@ -115,6 +134,7 @@ export function CashPrintPage() {
   const userId = params.get('userId') ?? '';
   const controlFrom = params.get('controlFrom') ?? '';
   const controlTo = params.get('controlTo') ?? '';
+  const detailItems = params.get('detailItems') === '1';
   const hasControlFilter = Boolean(controlFrom || controlTo);
   const hasDateFilter = Boolean(from && to);
 
@@ -134,6 +154,34 @@ export function CashPrintPage() {
     },
     enabled: hasDateFilter || hasControlFilter,
   });
+
+  const itemsReport = useQuery({
+    queryKey: ['cash', 'report-items', from, to, userId, detailItems],
+    queryFn: () => {
+      const qs = new URLSearchParams({ from, to, status: 'COMPLETED' });
+      if (userId) qs.set('userId', userId);
+      return api<ItemsReport>(`/cash/report/items?${qs.toString()}`);
+    },
+    enabled: detailItems && hasDateFilter && !hasControlFilter,
+  });
+
+  const itemsBySession = useMemo(() => {
+    const map = new Map<string, SoldItemRow[]>();
+    if (!detailItems || !report.data?.sessions.length) return map;
+    const items = itemsReport.data?.items ?? [];
+    for (const session of report.data.sessions) {
+      const start = new Date(session.openedAt).getTime();
+      const end = session.closedAt ? new Date(session.closedAt).getTime() : Date.now();
+      map.set(
+        session.id,
+        items.filter((it) => {
+          const t = new Date(it.saleCreatedAt).getTime();
+          return t >= start && t <= end;
+        }),
+      );
+    }
+    return map;
+  }, [detailItems, itemsReport.data?.items, report.data?.sessions]);
 
   const operators = useQuery({
     queryKey: ['users'],
@@ -295,7 +343,13 @@ export function CashPrintPage() {
               ) : (
                 <div className="print-sessions">
                   {data.sessions.map((s) => (
-                    <SessionBlock key={s.id} session={s} methods={allMethods} />
+                    <SessionBlock
+                      key={s.id}
+                      session={s}
+                      methods={allMethods}
+                      soldItems={detailItems ? itemsBySession.get(s.id) : undefined}
+                      itemsDetailLoading={detailItems && itemsReport.isLoading}
+                    />
                   ))}
                 </div>
               )}
@@ -411,10 +465,16 @@ function fmtDiff(diff: number | null): string {
 function SessionBlock({
   session,
   methods,
+  soldItems,
+  itemsDetailLoading,
 }: {
   session: ReportSession;
   methods: string[];
+  soldItems?: SoldItemRow[];
+  itemsDetailLoading?: boolean;
 }) {
+  const itemsDetailMode = soldItems !== undefined;
+
   return (
     <article className="print-session">
       <header className="print-session-head">
@@ -440,48 +500,70 @@ function SessionBlock({
             )}
           </p>
         </div>
-        <dl className="print-session-side">
-          <dt>Fundo inicial</dt>
-          <dd>{formatBRL(session.openingBalance)}</dd>
-          <dt>Apresentado (meios)</dt>
-          <dd>{session.closingBalance ? formatBRL(session.closingBalance) : '—'}</dd>
-          <dt>Itens vendidos</dt>
-          <dd>{session.itemsCount}</dd>
-        </dl>
+        {!itemsDetailMode ? (
+          <dl className="print-session-side">
+            <dt>Fundo inicial</dt>
+            <dd>{formatBRL(session.openingBalance)}</dd>
+            <dt>Apresentado (meios)</dt>
+            <dd>{session.closingBalance ? formatBRL(session.closingBalance) : '—'}</dd>
+            <dt>Itens vendidos</dt>
+            <dd>{session.itemsCount}</dd>
+          </dl>
+        ) : null}
       </header>
 
-      <div className="print-session-stats">
-        <div>
-          <span>Vendas concluídas</span>
-          <strong>{session.completedCount}</strong>
-          <em>{formatBRL(session.totalCompleted)}</em>
-        </div>
-        {session.totalDiscounts > 0 ? (
-          <div className="is-muted">
-            <span>Descontos concedidos</span>
-            <strong>{formatBRL(session.totalDiscounts)}</strong>
+      {!itemsDetailMode ? (
+        <>
+          <div className="print-session-stats">
+            <div>
+              <span>Vendas concluídas</span>
+              <strong>{session.completedCount}</strong>
+              <em>{formatBRL(session.totalCompleted)}</em>
+            </div>
+            {session.totalDiscounts > 0 ? (
+              <div className="is-muted">
+                <span>Descontos concedidos</span>
+                <strong>{formatBRL(session.totalDiscounts)}</strong>
+              </div>
+            ) : null}
+            <div className="is-muted">
+              <span>Vendas canceladas</span>
+              <strong>{session.cancelledCount}</strong>
+              <em>{formatBRL(session.totalCancelled)}</em>
+            </div>
+            <div className="is-muted">
+              <span>Suprimentos</span>
+              <strong>+{formatBRL(session.movementsIn)}</strong>
+            </div>
+            <div className="is-muted">
+              <span>Sangrias</span>
+              <strong>−{formatBRL(session.movementsOut)}</strong>
+            </div>
           </div>
-        ) : null}
-        <div className="is-muted">
-          <span>Vendas canceladas</span>
-          <strong>{session.cancelledCount}</strong>
-          <em>{formatBRL(session.totalCancelled)}</em>
-        </div>
-        <div className="is-muted">
-          <span>Suprimentos</span>
-          <strong>+{formatBRL(session.movementsIn)}</strong>
-        </div>
-        <div className="is-muted">
-          <span>Sangrias</span>
-          <strong>−{formatBRL(session.movementsOut)}</strong>
-        </div>
-      </div>
 
-      <ReconTable
-        methods={methods}
-        expected={session.expectedByMethod}
-        declared={session.declaredByMethod}
-      />
+          <ReconTable
+            methods={methods}
+            expected={session.expectedByMethod}
+            declared={session.declaredByMethod}
+          />
+        </>
+      ) : null}
+
+      {itemsDetailMode ? (
+        <div className="print-session-items print-session-items--only">
+          {itemsDetailLoading ? (
+            <p className="print-empty" style={{ marginTop: 0, fontSize: '0.82rem' }}>
+              Carregando itens…
+            </p>
+          ) : soldItems.length > 0 ? (
+            <SoldItemsTable items={soldItems} />
+          ) : (
+            <p className="print-empty" style={{ marginTop: 0, fontSize: '0.82rem' }}>
+              Nenhum item vendido neste caixa.
+            </p>
+          )}
+        </div>
+      ) : null}
 
       {session.closingNotes && (
         <div className="print-notes">
@@ -491,4 +573,50 @@ function SessionBlock({
       )}
     </article>
   );
+}
+
+function SoldItemsTable({ items }: { items: SoldItemRow[] }) {
+  return (
+    <table className="print-table print-table-compact">
+      <thead>
+        <tr>
+          <th>Data / Hora</th>
+          <th>Venda</th>
+          <th>Produto</th>
+          <th>SKU</th>
+          <th className="num">Qtd</th>
+          <th className="num">Unit.</th>
+          <th className="num">Desc.</th>
+          <th className="num">Tot. linha</th>
+          <th>Pgto.</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((it) => (
+          <tr key={it.itemId}>
+            <td>{fmtDateTime(it.saleCreatedAt)}</td>
+            <td>#{it.saleNumber}</td>
+            <td>{it.productName}</td>
+            <td>{it.sku ?? '—'}</td>
+            <td className="num">{Number(it.quantity)}</td>
+            <td className="num">{formatBRL(it.unitPrice)}</td>
+            <td className="num">{Number(it.discount) > 0 ? formatBRL(it.discount) : '—'}</td>
+            <td className="num">{formatBRL(it.totalLine)}</td>
+            <td>{paymentsLabel(it.payments)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function paymentsLabel(payments: { method: string; amount: string }[]): string {
+  if (payments.length === 0) return '—';
+  const map = new Map<string, number>();
+  for (const p of payments) {
+    map.set(p.method, (map.get(p.method) ?? 0) + Number(p.amount));
+  }
+  return Array.from(map.entries())
+    .map(([k, v]) => `${PAYMENT_LABELS[k] ?? k} ${formatBRL(v)}`)
+    .join(' · ');
 }

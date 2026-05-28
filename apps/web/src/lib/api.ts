@@ -321,3 +321,55 @@ export async function api<T>(
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
+
+/** Upload multipart (ex.: logotipo da empresa). */
+export async function apiUpload<T>(path: string, file: File, fieldName = 'file'): Promise<T> {
+  const fd = new FormData();
+  fd.append(fieldName, file);
+
+  const buildHeaders = (): HeadersInit => {
+    const headers: HeadersInit = {};
+    const token = getToken();
+    if (token) {
+      (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  };
+
+  const request = () =>
+    fetch(resolveApiUrl(path), {
+      method: 'POST',
+      headers: buildHeaders(),
+      body: fd,
+    });
+
+  let res: Response;
+  try {
+    res = await request();
+  } catch (e) {
+    throw new Error(formatFetchNetworkError(e));
+  }
+
+  if (res.status === 401 && getRefreshToken()) {
+    const renewed = await refreshAccessToken();
+    if (renewed) {
+      try {
+        res = await request();
+      } catch (e) {
+        throw new Error(formatFetchNetworkError(e));
+      }
+    }
+  }
+
+  if (!res.ok) {
+    const text = await res.text();
+    if (res.status === 401) {
+      clearAuthStorage();
+      window.dispatchEvent(new CustomEvent(GV_UNAUTHORIZED_EVENT));
+      throw new Error(formatApiErrorBody(401, res.statusText, text));
+    }
+    throw new Error(formatApiErrorBody(res.status, res.statusText, text));
+  }
+
+  return (await res.json()) as T;
+}

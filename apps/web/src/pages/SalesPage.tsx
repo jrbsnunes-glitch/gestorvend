@@ -8,7 +8,13 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { CompanyLogo } from '../components/CompanyLogo';
 import { api } from '../lib/api';
+import {
+  companyDisplayName,
+  companyUsesCustomLogo,
+  useCompanyBranding,
+} from '../lib/company-branding';
 import { isManager, profileLabel, type UserProfile } from '../lib/auth';
 import { formatBRL, formatDate } from '../lib/format';
 import {
@@ -385,16 +391,21 @@ function PosGatewayHeader({
   operator: Operator | null;
   onExit: () => void;
 }) {
+  const company = useCompanyBranding();
+  const storeName = companyDisplayName(company.data);
+
   return (
     <div className="pos-gateway-header">
         <div className="pos-gateway-brand">
-          <img
+          <CompanyLogo
             className="pos-gateway-brand-mark"
-            src="/gestor-venda-logo.png"
-            alt="Gestor Vendas"
-            decoding="async"
+            company={company.data ?? null}
+            alt={storeName}
           />
           <div className="pos-gateway-brand-aside">
+            {companyUsesCustomLogo(company.data) ? (
+              <span className="pos-gateway-brand-name">{storeName}</span>
+            ) : null}
             <span className="pos-gateway-brand-tag">Frente de caixa</span>
           </div>
         </div>
@@ -2132,6 +2143,8 @@ function PosTopbar({
   onExit: () => void;
   onCloseCash: () => void;
 }) {
+  const company = useCompanyBranding();
+  const storeName = companyDisplayName(company.data);
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30_000);
@@ -2139,6 +2152,16 @@ function PosTopbar({
   }, []);
   return (
     <div className="pos-topbar">
+      <div className="pos-topbar-brand">
+        <CompanyLogo
+          className="pos-topbar-brand-mark"
+          company={company.data ?? null}
+          alt={storeName}
+        />
+        <span className="pos-topbar-brand-name" title={storeName}>
+          {storeName}
+        </span>
+      </div>
       <div className="pos-topbar-info">
         <span>
           <strong>PDV</strong>

@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
-import { api } from '../lib/api';
+import { api, apiUpload } from '../lib/api';
+import { resolveCompanyAssetUrl } from '../lib/company-branding';
 import { isManager } from '../lib/auth';
 
 type Company = {
@@ -370,10 +371,26 @@ export function CompanyPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [touched, setTouched] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
+  const [logoPreviewKey, setLogoPreviewKey] = useState(0);
 
   useEffect(() => {
     if (company.data && !touched) setForm(toForm(company.data));
   }, [company.data, touched]);
+
+  const uploadLogo = useMutation({
+    mutationFn: (file: File) => apiUpload<Company>('/company/logo', file),
+    onSuccess: (data) => {
+      qc.setQueryData(['company'], data);
+      setForm(toForm(data));
+      setTouched(false);
+      setLogoPreviewKey((k) => k + 1);
+      setFeedback({
+        kind: 'ok',
+        msg: 'Logotipo enviado ao servidor. Já aparece no PDV, relatórios e cupom.',
+      });
+    },
+    onError: (err: Error) => setFeedback({ kind: 'err', msg: err.message }),
+  });
 
   const save = useMutation({
     mutationFn: (payload: Partial<FormState>) =>
@@ -633,22 +650,65 @@ export function CompanyPage() {
 
           <section className="card" style={{ padding: '1.1rem 1.25rem', marginBottom: '1rem' }}>
             <h2 style={{ marginTop: 0, fontSize: '0.95rem' }}>Identidade visual</h2>
+            <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', marginTop: 0 }}>
+              A logo aparece nos relatórios, na página inicial, no PDV e no cupom não fiscal.
+              Caminhos do Windows (<code>C:\…\logo.png</code>) <strong>não funcionam</strong> no
+              navegador — use o envio de arquivo abaixo ou uma URL pública na internet.
+            </p>
+
+            <div className="field" style={{ marginBottom: '0.85rem' }}>
+              <label htmlFor="c-logo-file">Enviar arquivo do computador (recomendado)</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+                <input
+                  id="c-logo-file"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  disabled={uploadLogo.isPending}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    uploadLogo.mutate(file);
+                    e.target.value = '';
+                  }}
+                />
+                {uploadLogo.isPending ? (
+                  <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                    Enviando…
+                  </span>
+                ) : null}
+              </div>
+              <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                PNG, JPEG ou WebP · até 2 MB · fica salvo no servidor da loja.
+              </span>
+            </div>
+
             <div className="form-row">
               <div className="field" style={{ flex: 2 }}>
-                <label htmlFor="c-logo">URL do logotipo</label>
+                <label htmlFor="c-logo">Ou URL pública na internet (opcional)</label>
                 <input
                   id="c-logo"
                   value={form.logoUrl ?? ''}
                   onChange={(e) => update('logoUrl', e.target.value)}
-                  placeholder="https://…/logo.png"
+                  placeholder="https://seusite.com.br/logo.png"
                 />
+                <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                  Use se a imagem já estiver hospedada (site, CDN, Google Drive com link direto, etc.).
+                </span>
               </div>
               {form.logoUrl && (
                 <div style={{ alignSelf: 'flex-end' }}>
                   <img
-                    src={form.logoUrl}
+                    key={logoPreviewKey}
+                    src={`${resolveCompanyAssetUrl(form.logoUrl)}${form.logoUrl.includes('?') ? '&' : '?'}v=${logoPreviewKey}`}
                     alt="Pré-visualização do logotipo"
-                    style={{ maxHeight: 64, maxWidth: 200, border: '1px solid var(--color-border)', borderRadius: 8, padding: 4, background: '#fff' }}
+                    style={{
+                      maxHeight: 64,
+                      maxWidth: 200,
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 8,
+                      padding: 4,
+                      background: '#fff',
+                    }}
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.display = 'none';
                     }}

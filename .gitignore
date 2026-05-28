@@ -76,6 +76,8 @@ Desktop.ini
 # --- Dumps, backups e dados locais ---
 *.dump
 *.sql.backup
+data/uploads/
+apps/api/data/
 
 # --- Chaves e certificados (nunca commitar) ---
 *.pem

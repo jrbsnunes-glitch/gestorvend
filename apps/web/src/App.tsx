@@ -47,6 +47,7 @@ import { LogsPage } from './pages/LogsPage';
 import './index.css';
 import './styles/ui.css';
 import './styles/reports-document.css';
+import './styles/company-branding.css';
 
 const qc = new QueryClient({
   defaultOptions: {

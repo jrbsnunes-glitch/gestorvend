@@ -1707,7 +1707,7 @@
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.5rem 0.75rem;
   margin-bottom: 1rem;
   padding: 0.5rem 0.75rem;
   background: var(--pos-surface);
@@ -1718,8 +1718,10 @@
 .pos-topbar-info {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 1rem 1.25rem;
   flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 0.85rem;
   color: var(--pos-text-sub);
 }

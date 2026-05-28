@@ -10,6 +10,15 @@
   --gv-report-font-sans:
     'Source Sans 3', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
     Arial, sans-serif;
+
+  /* Folha A4 — dimensões compartilhadas (preview = impressão) */
+  --gv-a4-width: 210mm;
+  --gv-a4-height: 297mm;
+  --gv-a4-margin-top: 14mm;
+  --gv-a4-margin-right: 16mm;
+  --gv-a4-margin-bottom: 16mm;
+  --gv-a4-margin-left: 16mm;
+  --gv-a4-font-base: 12px;
 }
 
 /* === Identidade da empresa (reuso no app inteiro quando impresso === */
@@ -112,19 +121,141 @@
   word-break: break-word;
 }
 
+/* Cabeçalho e folha A4 dentro de `.print-doc` */
+.print-doc .gv-report-doc-head {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.55rem;
+  padding-bottom: 0.55rem;
+  margin-bottom: 0.75rem;
+}
+
+.print-doc .gv-report-doc-head h1 {
+  font-size: 1.15rem;
+  line-height: 1.2;
+}
+
+.print-doc .print-company-logo {
+  max-height: 44px;
+  max-width: 110px;
+}
+
+/* === Folha A4: mesma área útil na tela e no papel === */
+.print-doc {
+  box-sizing: border-box;
+  width: var(--gv-a4-width);
+  max-width: var(--gv-a4-width);
+  margin-left: auto;
+  margin-right: auto;
+  padding:
+    var(--gv-a4-margin-top)
+    var(--gv-a4-margin-right)
+    var(--gv-a4-margin-bottom)
+    var(--gv-a4-margin-left);
+  font-family: var(--gv-report-font-sans);
+  font-size: var(--gv-a4-font-base);
+  line-height: 1.45;
+  color: #0f172a;
+}
+
+.print-doc .gv-report-standard-top {
+  margin-bottom: 0.9rem;
+}
+
+.print-doc .print-sub {
+  font-size: 0.83rem;
+  line-height: 1.35;
+  margin-top: 0.2rem;
+}
+
+.print-doc .print-company-text {
+  font-size: 0.75rem;
+}
+
+.print-doc .print-company-text strong {
+  font-size: 0.95rem;
+}
+
+.print-doc .gv-report-meta {
+  text-align: left;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem 0.85rem;
+  font-size: 0.72rem;
+}
+
+.print-doc .gv-report-meta-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+}
+
+.print-doc .gv-report-meta > div {
+  min-width: 0;
+}
+
 /* Faixa só na impressão (listagens CRM / telas print-area) */
 .gv-report-print-only {
   display: none !important;
 }
 
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: var(--gv-a4-margin-top) var(--gv-a4-margin-right) var(--gv-a4-margin-bottom)
+      var(--gv-a4-margin-left);
+  }
+
+  /*
+   * Base em `rem` alinhada ao preview (12px) — legível em A4 sem cortar bordas.
+   */
+  html {
+    font-size: var(--gv-a4-font-base) !important;
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    line-height: 1.35;
+  }
+
   /* Em impressões de módulos, esconder chrome do app quando possível */
   .sidebar {
     display: none !important;
   }
 
-  .main-content {
-    padding: 0.35rem 0.65rem !important;
+  .app-shell,
+  .main-area,
+  .main-content,
+  #root {
+    display: block !important;
+    width: auto !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  .page,
+  .print-area,
+  .gv-finance-print-root,
+  .gv-report-standard-top {
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box;
+  }
+
+  .print-doc {
+    width: auto !important;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 
   .modal-backdrop {
@@ -151,6 +282,31 @@
     page-break-after: avoid;
   }
 
+  .gv-report-doc-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+    padding-bottom: 0.55rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .gv-report-doc-head h1 {
+    font-size: 1.2rem;
+  }
+
+  .gv-report-meta {
+    text-align: left;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.45rem 1.15rem;
+    font-size: 0.78rem;
+  }
+
+  .print-company-logo {
+    max-height: 44px;
+    max-width: 110px;
+  }
+
   /** Documento “tipo papel” dentro de páginas de listagem / modal **/
   .print-area,
   .gv-report-sheet,
@@ -161,10 +317,24 @@
 
   .print-area .page-title:first-of-type {
     font-family: var(--gv-report-font-serif);
+    font-size: 1.15rem;
+  }
+
+  .print-area .page-desc {
+    max-width: none;
+    font-size: 0.82rem;
+  }
+
+  .table-wrap {
+    overflow: visible !important;
   }
 
   .print-area table.data-table th,
-  .print-area table.data-table td {
+  .print-area table.data-table td,
+  .gv-finance-print-root table.data-table th,
+  .gv-finance-print-root table.data-table td,
+  .gv-finance-print-table th,
+  .gv-finance-print-table td {
     font-variant-numeric: tabular-nums;
     font-feature-settings:
       'tnum' 1,
@@ -172,8 +342,82 @@
   }
 
   .gv-report-sheet .data-table,
-  .print-area table.data-table {
-    font-size: 0.9rem !important;
+  .print-area table.data-table,
+  .gv-finance-print-root table.data-table,
+  .gv-finance-print-table {
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: fixed;
+    font-size: 0.72rem !important;
+    border-collapse: collapse;
+  }
+
+  .print-area table.data-table th,
+  .print-area table.data-table td,
+  .gv-finance-print-root table.data-table th,
+  .gv-finance-print-root table.data-table td,
+  .gv-finance-print-table th,
+  .gv-finance-print-table td {
+    padding: 0.2rem 0.3rem !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal !important;
+    vertical-align: top;
+  }
+
+  .print-area table.data-table th.num,
+  .print-area table.data-table td.num,
+  .gv-finance-print-root table.data-table th.num,
+  .gv-finance-print-root table.data-table td.num,
+  .gv-finance-print-table th.num,
+  .gv-finance-print-table td.num {
+    white-space: nowrap !important;
+  }
+
+  .gv-finance-print-root .gv-finance-print-detail h2,
+  .gv-finance-print-root .gv-finance-print-detail h3 {
+    font-size: 0.95rem;
+    margin-top: 0.75rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .gv-finance-dl {
+    grid-template-columns: minmax(5.5rem, 9rem) 1fr;
+    gap: 0.22rem 0.65rem;
+  }
+
+  .gv-finance-dl dt {
+    font-size: 0.72rem;
+  }
+
+  .gv-finance-dl dd {
+    font-size: 0.78rem;
+  }
+
+  .gv-finance-print-detail,
+  .print-section {
+    break-inside: auto;
+  }
+
+  .gv-finance-print-detail table tr,
+  .print-area table.data-table tr,
+  .gv-finance-print-root table.data-table tr,
+  .print-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .dash-hero {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 0.35rem !important;
+  }
+
+  .dash-hero-card {
+    padding: 0.35rem 0.45rem !important;
+  }
+
+  .dash-hero-value {
+    font-size: 0.95rem !important;
   }
 }
 

@@ -1,0 +1,133 @@
+/* Identidade visual da loja (logo cadastrada em Empresa) */
+
+.company-logo--tenant,
+.company-logo--default {
+  object-fit: contain;
+  object-position: left center;
+}
+
+/* Sidebar */
+.sidebar-brand-mark.company-logo--tenant {
+  max-height: 52px;
+  max-width: 100%;
+  width: auto;
+  object-position: left center;
+}
+
+.sidebar-brand-mark.company-logo--default {
+  width: 100%;
+  max-height: 64px;
+}
+
+.sidebar-brand-name {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  line-height: 1.25;
+  margin-top: 0.15rem;
+  word-break: break-word;
+}
+
+/* Página inicial */
+.company-page-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.15rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.company-page-head__logo {
+  flex-shrink: 0;
+  max-height: 56px;
+  max-width: 160px;
+  width: auto;
+}
+
+.company-page-head__text {
+  min-width: 0;
+}
+
+.company-page-head__text .page-title {
+  margin-bottom: 0.15rem;
+}
+
+.company-page-head__text .page-desc {
+  margin-bottom: 0;
+  max-width: none;
+}
+
+.company-page-head__store {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  margin-top: 0.15rem;
+}
+
+/* PDV — gateway (tela escura) */
+.pos-gateway-brand-mark {
+  height: 58px;
+  width: auto;
+  max-width: min(280px, 42vw);
+}
+
+.pos-gateway-brand-mark.company-logo--tenant {
+  max-height: 64px;
+}
+
+.pos-gateway-brand-name {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+/* PDV — barra superior durante a venda */
+.pos-topbar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-shrink: 0;
+  padding-right: 0.75rem;
+  margin-right: 0.25rem;
+  border-right: 1px solid var(--pos-border);
+}
+
+.pos-topbar-brand-mark {
+  height: 32px;
+  width: auto;
+  max-width: 120px;
+}
+
+.pos-topbar-brand-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--pos-text);
+  max-width: 10rem;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .pos-topbar-brand-name {
+    display: none;
+  }
+}
+
+/* Cupom não fiscal */
+.sale-receipt-logo {
+  display: block;
+  margin: 0 auto 0.35rem;
+  max-height: 72px;
+  max-width: 85%;
+  width: auto;
+  object-fit: contain;
+}

@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
+import './cash-print.css';
 
 const PAYMENT_LABELS: Record<string, string> = {
   CASH: 'Dinheiro',
@@ -294,17 +295,19 @@ export function FinancePrintPage() {
   }
 
   return (
-    <div className="page print-area gv-finance-print-root">
-      <StandardReportHeader documentTitle={documentTitle} documentExtras={subtitle} />
-
-      <div className="no-print" style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem' }}>
+    <div className="print-page">
+      <div className="print-toolbar no-print">
+        <Link to="/financeiro" className="btn btn-secondary">
+          ← Voltar ao financeiro
+        </Link>
+        <div style={{ flex: 1 }} />
         <button type="button" className="btn btn-primary" onClick={() => window.print()}>
           Imprimir
         </button>
-        <Link to="/financeiro" className="btn btn-secondary">
-          Voltar ao financeiro
-        </Link>
       </div>
+
+      <div className="print-doc gv-finance-print-root">
+        <StandardReportHeader documentTitle={documentTitle} documentExtras={subtitle} />
 
       {loading && <p>Carregando…</p>}
       {err && <div className="alert alert-error">{(err as Error).message}</div>}
@@ -435,6 +438,7 @@ export function FinancePrintPage() {
       )}
 
       {modo === 'conta' && !id && <p className="alert alert-error">Informe o id do título.</p>}
+      </div>
     </div>
   );
 }

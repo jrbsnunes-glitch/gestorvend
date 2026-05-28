@@ -79,7 +79,7 @@ export function FinancialOverviewPage() {
         <Link to="/balanco/relatorios">Relatórios por período</Link> (diário completo).
       </p>
 
-      <div className="toolbar" style={{ flexWrap: 'wrap', gap: '0.75rem', justifyContent: 'flex-start' }}>
+      <div className="toolbar no-print" style={{ flexWrap: 'wrap', gap: '0.75rem', justifyContent: 'flex-start' }}>
         <button type="button" className="btn btn-primary" onClick={() => setIncludeOpen(true)}>
           Incluir
         </button>

@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { CompanyLogo } from '../components/CompanyLogo';
 import { api } from '../lib/api';
+import { companyDisplayName, useCompanyBranding } from '../lib/company-branding';
 import { formatBRL, formatDate } from '../lib/format';
 
 type Overview = {
@@ -63,6 +65,7 @@ function dueLabelShort(status: string, dueDate: string): string {
 }
 
 export function DashboardPage() {
+  const company = useCompanyBranding();
   const overview = useQuery({
     queryKey: ['dashboard', 'overview'],
     queryFn: () => api<Overview>('/dashboard/overview'),
@@ -74,12 +77,16 @@ export function DashboardPage() {
 
   return (
     <div className="page dashboard-page">
-      <div className="page-header">
-        <div>
+      <header className="company-page-head">
+        <CompanyLogo className="company-page-head__logo" company={company.data ?? null} />
+        <div className="company-page-head__text">
           <h1 className="page-title">Início</h1>
           <p className="page-desc">Resumo do dia e da operação.</p>
+          {company.data ? (
+            <p className="company-page-head__store">{companyDisplayName(company.data)}</p>
+          ) : null}
         </div>
-      </div>
+      </header>
 
       {overview.isError && (
         <div className="alert alert-error">

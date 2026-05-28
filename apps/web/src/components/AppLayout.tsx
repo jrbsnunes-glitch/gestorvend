@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { CompanyLogo } from './CompanyLogo';
 import { api } from '../lib/api';
+import { companyDisplayName, companyUsesCustomLogo } from '../lib/company-branding';
 import { getIdentity, isAdmin, profileFromRoles, profileLabel } from '../lib/auth';
 import { useNavigationActivityLogger } from '../lib/use-navigation-activity-log';
 import './layout.css';
@@ -53,6 +55,13 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
     staleTime: 5 * 60_000,
   });
 
+  const company = useQuery({
+    queryKey: ['company'],
+    queryFn: () =>
+      api<{ tradeName: string; legalName: string; logoUrl?: string | null }>('/company'),
+    staleTime: 10 * 60_000,
+  });
+
   const items = NAV_ITEMS.filter((it) => {
     if (it.adminOnly && !userIsAdmin) return false;
     if (it.managerOnly) {
@@ -67,12 +76,14 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
     <div className="app-shell">
       <aside className="sidebar" aria-label="Navegação principal">
         <div className="sidebar-brand">
-          <img
+          <CompanyLogo
             className="sidebar-brand-mark"
-            src="/gestor-venda-logo.png"
-            alt="Gestor Vendas"
-            decoding="async"
+            company={company.data ?? null}
+            alt={companyDisplayName(company.data)}
           />
+          {companyUsesCustomLogo(company.data) ? (
+            <span className="sidebar-brand-name">{companyDisplayName(company.data)}</span>
+          ) : null}
           <span className="sidebar-tag">{profileLabel(profile)}</span>
         </div>
         <nav className="sidebar-nav">

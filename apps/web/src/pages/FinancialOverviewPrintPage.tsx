@@ -4,6 +4,7 @@ import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
 import { ledgerDirectionLabel, ledgerKindLabel } from '../lib/financial-overview-ledger-labels';
+import './cash-print.css';
 
 type PrintSummary = {
   period: { from: string; to: string; label?: string };
@@ -86,31 +87,33 @@ export function FinancialOverviewPrintPage() {
   const d = q.data;
 
   return (
-    <div className="page print-area gv-finance-print-root">
-      <StandardReportHeader
-        documentTitle="Balanço financeiro — relatório"
-        documentExtras={
-          <span>
-            Período: {formatDate(from)} — {formatDate(to)}
-            {costCenterId?.trim()
-              ? ` · Centro: ${
-                  d?.costCenter
-                    ? `${d.costCenter.code} — ${d.costCenter.description}`
-                    : `#${costCenterId.slice(0, 8)}…`
-                }`
-              : ''}
-          </span>
-        }
-      />
-
-      <div className="no-print" style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem' }}>
+    <div className="print-page">
+      <div className="print-toolbar no-print">
+        <Link to="/balanco" className="btn btn-secondary">
+          ← Voltar ao balanço
+        </Link>
+        <div style={{ flex: 1 }} />
         <button type="button" className="btn btn-primary" onClick={() => window.print()}>
           Imprimir
         </button>
-        <Link to="/balanco" className="btn btn-secondary">
-          Voltar ao balanço
-        </Link>
       </div>
+
+      <div className="print-doc gv-finance-print-root">
+        <StandardReportHeader
+          documentTitle="Balanço financeiro — relatório"
+          documentExtras={
+            <span>
+              Período: {formatDate(from)} — {formatDate(to)}
+              {costCenterId?.trim()
+                ? ` · Centro: ${
+                    d?.costCenter
+                      ? `${d.costCenter.code} — ${d.costCenter.description}`
+                      : `#${costCenterId.slice(0, 8)}…`
+                  }`
+                : ''}
+            </span>
+          }
+        />
 
       {q.isLoading && <p className="no-print">Carregando…</p>}
       {q.isError && (
@@ -337,6 +340,7 @@ export function FinancialOverviewPrintPage() {
           ) : null}
         </>
       )}
+      </div>
     </div>
   );
 }

@@ -250,6 +250,8 @@ export function CashPage() {
   const [printItemsStatus, setPrintItemsStatus] = useState<'COMPLETED' | 'CANCELLED' | 'ALL'>(
     'COMPLETED',
   );
+  /** Caixa do funcionário: incluir tabela de itens vendidos no relatório consolidado. */
+  const [printOperatorDetailItems, setPrintOperatorDetailItems] = useState(false);
 
   /**
    * Lista de operadores para o seletor "Caixa do dia de um operador".
@@ -911,6 +913,25 @@ export function CashPage() {
                     />
                   </div>
                 </div>
+                <label
+                  className="print-mode-check"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    marginTop: '0.65rem',
+                    fontSize: '0.88rem',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={printOperatorDetailItems}
+                    onChange={(e) => setPrintOperatorDetailItems(e.target.checked)}
+                  />
+                  Detalhar itens vendidos no caixa
+                </label>
                 <div className="print-mode-actions">
                   <button
                     type="button"
@@ -934,6 +955,7 @@ export function CashPage() {
                         to: printFrom,
                       });
                       if (printUserId) qs.set('userId', printUserId);
+                      if (printOperatorDetailItems) qs.set('detailItems', '1');
                       navigate(`/caixa/impressao?${qs.toString()}`);
                     }}
                   >
