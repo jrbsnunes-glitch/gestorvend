@@ -94,6 +94,12 @@ type ProductSearchRow = {
 };
 
 type Customer = { id: string; name: string };
+type CustomerSearchRow = {
+  id: string;
+  name: string;
+  document: string | null;
+  phone: string | null;
+};
 
 type CashSession = {
   id: string;
@@ -775,6 +781,8 @@ function PosScreen({
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [suggestIdx, setSuggestIdx] = useState(0);
   const [customerOpen, setCustomerOpen] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerSearchIdx, setCustomerSearchIdx] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [closingByMethod, setClosingByMethod] = useState<Record<CloseMethodKey, string>>({
@@ -800,6 +808,7 @@ function PosScreen({
   const [printPrefsOpen, setPrintPrefsOpen] = useState(false);
 
   const scannerRef = useRef<HTMLInputElement>(null);
+  const customerSearchRef = useRef<HTMLInputElement>(null);
 
   /** Devoluções / ajustes de vendas já concluídas (API: admin/manager). */
   const [saleLineRemoveDraft, setSaleLineRemoveDraft] = useState<{
@@ -837,10 +846,14 @@ function PosScreen({
     refetchInterval: 60_000,
   });
 
-  const customers = useQuery({
-    queryKey: ['customers'],
-    queryFn: () => api<Customer[]>('/customers'),
-    enabled: customerOpen,
+  const customerSearchQ = useQuery({
+    queryKey: ['customers', 'search', customerSearch],
+    queryFn: () =>
+      api<CustomerSearchRow[]>(
+        `/customers/search?q=${encodeURIComponent(customerSearch.trim())}`,
+      ),
+    enabled: customerOpen && customerSearch.trim().length >= 1,
+    staleTime: 2_000,
   });
 
   const search = useQuery({
@@ -1093,6 +1106,47 @@ function PosScreen({
     setSuggestOpen(false);
   }
 
+  function closeCustomerDialog() {
+    setCustomerOpen(false);
+    setCustomerSearch('');
+    setCustomerSearchIdx(0);
+  }
+
+  function openCustomerDialog() {
+    setCustomerSearch('');
+    setCustomerSearchIdx(0);
+    setCustomerOpen(true);
+  }
+
+  function selectCustomer(c: Customer | null) {
+    setCustomer(c);
+    closeCustomerDialog();
+  }
+
+  function handleCustomerSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    const results = customerSearchQ.data ?? [];
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const picked = results[customerSearchIdx];
+      if (picked) selectCustomer({ id: picked.id, name: picked.name });
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setCustomerSearchIdx((i) => Math.min(Math.max(results.length - 1, 0), i + 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setCustomerSearchIdx((i) => Math.max(0, i - 1));
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeCustomerDialog();
+    }
+  }
+
+  useEffect(() => {
+    if (!customerOpen) return;
+    const t = window.setTimeout(() => customerSearchRef.current?.focus(), 0);
+    return () => window.clearTimeout(t);
+  }, [customerOpen]);
+
   /* --- pagamento apenas na overlay F2 --- */
 
   /* --- scanner --- */
@@ -1158,7 +1212,7 @@ function PosScreen({
         }
       } else if (ev.key === 'F4') {
         ev.preventDefault();
-        setCustomerOpen(true);
+        openCustomerDialog();
       } else if (ev.key === 'F8') {
         ev.preventDefault();
         const v = prompt('Desconto em R$ no total da venda', String(discount));
@@ -1450,7 +1504,7 @@ function PosScreen({
             <button
               type="button"
               className="pos-customer-btn"
-              onClick={() => setCustomerOpen(true)}
+              onClick={openCustomerDialog}
               title="Selecionar cliente (F4)"
             >
               <span className="pos-customer-avatar" aria-hidden>
@@ -1505,57 +1559,99 @@ function PosScreen({
         <div
           className="modal-backdrop"
           role="presentation"
-          onClick={() => setCustomerOpen(false)}
+          onClick={closeCustomerDialog}
         >
           <div
-            className="modal"
+            className="modal pos-customer-modal"
             role="dialog"
+            aria-label="Pesquisar cliente"
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 520 }}
           >
-            <h2>Selecionar cliente</h2>
-            <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem', color: 'var(--pos-text-sub)' }}>
-              Escolha um cliente cadastrado ou mantenha a venda como balcão.
+            <h2>Cliente da venda</h2>
+            <p className="pos-customer-modal-hint">
+              Pesquise por nome, CPF/CNPJ ou telefone. Use{' '}
+              <span className="pos-shortcut-key">↑</span>{' '}
+              <span className="pos-shortcut-key">↓</span> e{' '}
+              <span className="pos-shortcut-key">Enter</span>.
             </p>
-            <div className="pos-customer-list">
-              <div
-                className="pos-customer-item"
-                onClick={() => {
-                  setCustomer(null);
-                  setCustomerOpen(false);
+
+            <button
+              type="button"
+              className="pos-customer-item pos-customer-item--balcao"
+              onClick={() => selectCustomer(null)}
+            >
+              <strong>Balcão (sem cliente)</strong>
+              <span className="pos-customer-item-meta">venda anônima</span>
+            </button>
+
+            <div className="pos-customer-search-wrap">
+              <span className="pos-customer-search-icon" aria-hidden>
+                🔍
+              </span>
+              <input
+                ref={customerSearchRef}
+                type="search"
+                className="pos-customer-search-input"
+                placeholder="Digite para pesquisar…"
+                value={customerSearch}
+                autoComplete="off"
+                onChange={(e) => {
+                  setCustomerSearch(e.target.value);
+                  setCustomerSearchIdx(0);
                 }}
-              >
-                <strong>Balcão (sem cliente)</strong>
-                <span style={{ color: 'var(--pos-text-muted)', fontSize: '0.85rem' }}>
-                  venda anônima
-                </span>
-              </div>
-              {customers.isLoading && (
-                <div className="pos-items-empty">Carregando clientes…</div>
-              )}
-              {customers.data?.map((c) => (
-                <div
-                  key={c.id}
-                  className="pos-customer-item"
-                  onClick={() => {
-                    setCustomer(c);
-                    setCustomerOpen(false);
-                  }}
-                >
-                  <strong>{c.name}</strong>
-                  {customer?.id === c.id && (
-                    <span className="pos-stock-pill ok">Selecionado</span>
-                  )}
-                </div>
-              ))}
+                onKeyDown={handleCustomerSearchKeyDown}
+              />
             </div>
+
+            <div className="pos-customer-list" role="listbox">
+              {customerSearch.trim().length < 1 ? (
+                <div className="pos-items-empty">
+                  Digite ao menos 1 caractere para buscar clientes.
+                </div>
+              ) : customerSearchQ.isLoading ? (
+                <div className="pos-items-empty">Pesquisando…</div>
+              ) : customerSearchQ.data && customerSearchQ.data.length > 0 ? (
+                customerSearchQ.data.map((c, i) => (
+                  <div
+                    key={c.id}
+                    role="option"
+                    aria-selected={i === customerSearchIdx}
+                    className={
+                      'pos-customer-item' +
+                      (i === customerSearchIdx ? ' is-active' : '') +
+                      (customer?.id === c.id ? ' is-selected' : '')
+                    }
+                    onMouseEnter={() => setCustomerSearchIdx(i)}
+                    onClick={() => selectCustomer({ id: c.id, name: c.name })}
+                  >
+                    <div>
+                      <strong>{c.name}</strong>
+                      {(c.document || c.phone) && (
+                        <span className="pos-customer-item-meta">
+                          {[c.document, c.phone].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
+                    </div>
+                    {customer?.id === c.id && (
+                      <span className="pos-stock-pill ok">Atual</span>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="pos-items-empty">
+                  Nenhum cliente para “{customerSearch.trim()}”.
+                </div>
+              )}
+            </div>
+
             <div className="modal-actions">
               <button
                 type="button"
                 className="pos-btn pos-btn-ghost"
-                onClick={() => setCustomerOpen(false)}
+                onClick={closeCustomerDialog}
               >
                 Fechar
+                <span className="pos-shortcut-key">Esc</span>
               </button>
             </div>
           </div>

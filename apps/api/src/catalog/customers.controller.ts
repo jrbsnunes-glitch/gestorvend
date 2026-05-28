@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -16,6 +16,29 @@ export class CustomersController {
   async list(@CurrentUser() user: JwtPayload) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     return db.customer.findMany({ orderBy: { name: 'asc' } });
+  }
+
+  /** Busca por nome, documento, telefone ou e-mail (PDV e cadastros). */
+  @Get('search')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  async search(@CurrentUser() user: JwtPayload, @Query('q') q?: string) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const term = (q ?? '').trim();
+    if (term.length < 1) return [];
+
+    return db.customer.findMany({
+      where: {
+        OR: [
+          { name: { contains: term, mode: 'insensitive' } },
+          { document: { contains: term, mode: 'insensitive' } },
+          { phone: { contains: term, mode: 'insensitive' } },
+          { email: { contains: term, mode: 'insensitive' } },
+        ],
+      },
+      take: 30,
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, document: true, phone: true },
+    });
   }
 
   @Get(':id')
