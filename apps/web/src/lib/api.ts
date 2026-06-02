@@ -279,13 +279,14 @@ function formatApiErrorBody(status: number, statusText: string, raw: string): st
 
 /** Erro HTTP da API com corpo JSON original (ex.: duplicidade 409). */
 export class ApiHttpError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly payload?: unknown,
-  ) {
+  status: number;
+  payload?: unknown;
+
+  constructor(message: string, status: number, payload?: unknown) {
     super(message);
     this.name = 'ApiHttpError';
+    this.status = status;
+    this.payload = payload;
   }
 }
 
