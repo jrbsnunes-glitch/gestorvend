@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Get,
   Param,
@@ -23,6 +24,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { validateNfeAccessKey } from '../fiscal/utils/nfe-access-key';
 
 type ReceiptItemDto = {
   variantId: string;
@@ -132,16 +134,35 @@ export class GoodsReceiptController {
       throw new BadRequestException('Informe ao menos um item');
     }
     if (body.mode === GoodsReceiptMode.WITH_NFE_KEY) {
-      const k = (body.nfeAccessKey ?? '').replace(/\D/g, '');
-      if (k.length !== 44) {
-        throw new BadRequestException('Chave de acesso deve conter 44 dígitos');
+      const validated = validateNfeAccessKey(body.nfeAccessKey ?? '');
+      if (!validated.ok) {
+        throw new BadRequestException(validated.reason);
       }
-      body.nfeAccessKey = k;
+      body.nfeAccessKey = validated.key;
     } else {
       body.nfeAccessKey = null;
     }
 
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
+
+    if (body.nfeAccessKey) {
+      const existing = await db.goodsReceipt.findFirst({
+        where: { nfeAccessKey: body.nfeAccessKey },
+        select: { id: true, controlNumber: true, documentNumber: true, createdAt: true },
+      });
+      if (existing) {
+        throw new ConflictException({
+          message: `Esta NF-e já foi importada na entrada #${existing.controlNumber}.`,
+          duplicate: {
+            accessKey: body.nfeAccessKey,
+            goodsReceiptId: existing.id,
+            controlNumber: existing.controlNumber,
+            documentNumber: existing.documentNumber,
+            createdAt: existing.createdAt.toISOString(),
+          },
+        });
+      }
+    }
 
     return db.$transaction(async (tx) => {
       const receipt = await tx.goodsReceipt.create({
@@ -289,6 +310,14 @@ export class GoodsReceiptController {
           payables: true,
         },
       });
+    }).then(async (result) => {
+      if (body.nfeAccessKey) {
+        await db.inboundNfeDocument.updateMany({
+          where: { accessKey: body.nfeAccessKey, goodsReceiptId: null },
+          data: { goodsReceiptId: result.id },
+        });
+      }
+      return result;
     });
   }
 

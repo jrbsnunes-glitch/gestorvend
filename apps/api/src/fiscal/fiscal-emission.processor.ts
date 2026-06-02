@@ -7,6 +7,7 @@ import {
   FiscalDocumentStatus,
   FiscalSefazEnvironment,
   PaymentMethod,
+  ActivityLogAction,
 } from '../generated/tenant-client';
 import { CentralPrismaService } from '../prisma/central-prisma.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
@@ -26,6 +27,7 @@ import {
   postNfceAutorizacaoLote,
 } from './sefaz/nfce-autorizacao-soap';
 import { FiscalIssuerSettingsService } from './fiscal-issuer-settings.service';
+import { ActivityLogService } from '../activity-logs/activity-log.service';
 
 const DEFAULT_SEFAZ_NFCE_SOAP =
   'https://nfce-homologacao.svrs.rs.gov.br/ws/NfeAutorizacao/NfeAutorizacao4.asmx';
@@ -41,6 +43,7 @@ export class FiscalEmissionProcessorService {
     private readonly central: CentralPrismaService,
     private readonly tenantPrisma: TenantPrismaService,
     private readonly issuerSvc: FiscalIssuerSettingsService,
+    private readonly activityLog: ActivityLogService,
   ) {}
 
   @Interval(60_000)
@@ -92,6 +95,22 @@ export class FiscalEmissionProcessorService {
         });
       }
     }
+  }
+
+  private logFiscalAuthorized(
+    tenantSlug: string,
+    sale: { number: number; userId: string | null },
+    accessKey: string,
+  ): void {
+    if (!sale.userId) return;
+    this.activityLog.record({
+      tenantSlug,
+      userId: sale.userId,
+      action: ActivityLogAction.FISCAL_DOC,
+      summary: `Gerou nota fiscal — venda #${sale.number}`,
+      entityType: 'fiscal_document',
+      entityRef: accessKey.slice(0, 44),
+    });
   }
 
   private async processOneDocument(tenantSlug: string, docId: string): Promise<void> {
@@ -323,6 +342,7 @@ export class FiscalEmissionProcessorService {
         where: { id: doc.saleId },
         data: { fiscalIntegrationError: null },
       });
+      this.logFiscalAuthorized(tenantSlug, sale, chave44);
       this.log.log(`[dry-run] NFC-e simulada tenant=${tenantSlug} chave=${chave44}`);
       return;
     }
@@ -349,6 +369,7 @@ export class FiscalEmissionProcessorService {
         where: { id: doc.saleId },
         data: { fiscalIntegrationError: null },
       });
+      this.logFiscalAuthorized(tenantSlug, sale, parsed.accessKey ?? chave44);
       this.log.log(`NFC-e autorizada tenant=${tenantSlug} chave=${parsed.accessKey ?? chave44}`);
     } else {
       const short = parsed.motive.slice(0, 2000);

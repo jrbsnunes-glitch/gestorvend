@@ -2,6 +2,8 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { ActivityLogAction } from '../generated/tenant-client';
+import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { TenantService } from '../tenant/tenant.service';
 import { LoginDto } from './dto/login.dto';
@@ -14,6 +16,7 @@ export class AuthService {
     private readonly tenantService: TenantService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly activityLog: ActivityLogService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -42,6 +45,14 @@ export class AuthService {
     };
 
     const accessToken = this.jwt.sign(payload);
+
+    this.activityLog.record({
+      tenantSlug: dto.tenantSlug,
+      userId: user.id,
+      action: ActivityLogAction.LOGIN,
+      summary: 'Acessou o sistema',
+      entityType: 'auth',
+    });
 
     const refreshToken = this.jwt.sign(
       { sub: user.id, tenantSlug: dto.tenantSlug, type: 'refresh' },

@@ -5,7 +5,6 @@ import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
 import { formatDate } from '../lib/format';
-import { NAV_MENU_FILTER_OPTIONS } from '../lib/nav-menu-registry';
 
 function daysAgoISO(days: number): string {
   const d = new Date();
@@ -14,13 +13,15 @@ function daysAgoISO(days: number): string {
 }
 
 type UserOpt = { id: string; name: string; email: string };
+type ActionOpt = { key: string; label: string };
 type LogItem = {
   id: string;
   createdAt: string;
-  path: string;
-  menuKey: string;
-  menuLabel: string;
-  detail: string | null;
+  action: string;
+  actionLabel: string;
+  summary: string;
+  entityType: string | null;
+  entityRef: string | null;
   user: UserOpt;
 };
 
@@ -28,7 +29,7 @@ type LogsResponse = { take: number; count: number; items: LogItem[] };
 
 function buildQuery(params: {
   userId: string;
-  menuKey: string;
+  action: string;
   from: string;
   to: string;
   q: string;
@@ -36,7 +37,7 @@ function buildQuery(params: {
 }): string {
   const sp = new URLSearchParams();
   if (params.userId.trim()) sp.set('userId', params.userId.trim());
-  if (params.menuKey.trim()) sp.set('menuKey', params.menuKey.trim());
+  if (params.action.trim()) sp.set('action', params.action.trim());
   if (params.from.trim()) sp.set('from', params.from.trim());
   if (params.to.trim()) sp.set('to', params.to.trim());
   if (params.q.trim()) sp.set('q', params.q.trim());
@@ -47,7 +48,7 @@ function buildQuery(params: {
 export function LogsPage() {
   const [reportsOpen, setReportsOpen] = useState(false);
   const [draftUserId, setDraftUserId] = useState('');
-  const [draftMenuKey, setDraftMenuKey] = useState('');
+  const [draftAction, setDraftAction] = useState('');
   const [draftFrom, setDraftFrom] = useState(() => daysAgoISO(7));
   const [draftTo, setDraftTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [draftQ, setDraftQ] = useState('');
@@ -55,7 +56,7 @@ export function LogsPage() {
 
   const [applied, setApplied] = useState(() => ({
     userId: '',
-    menuKey: '',
+    action: '',
     from: daysAgoISO(7),
     to: new Date().toISOString().slice(0, 10),
     q: '',
@@ -69,6 +70,11 @@ export function LogsPage() {
     queryFn: () => api<UserOpt[]>('/users'),
   });
 
+  const actionTypes = useQuery({
+    queryKey: ['activity-log-action-types'],
+    queryFn: () => api<ActionOpt[]>('/activity-logs/action-types'),
+  });
+
   const logs = useQuery({
     queryKey: ['activity-logs', qs],
     queryFn: () => api<LogsResponse>(`/activity-logs?${qs}`),
@@ -77,7 +83,7 @@ export function LogsPage() {
   function runSearch() {
     setApplied({
       userId: draftUserId,
-      menuKey: draftMenuKey,
+      action: draftAction,
       from: draftFrom,
       to: draftTo,
       q: draftQ,
@@ -89,7 +95,7 @@ export function LogsPage() {
     <p className="print-sub" style={{ margin: 0 }}>
       Período {applied.from || '—'} a {applied.to || '—'}
       {!applied.userId ? ' · todos os usuários' : ' · um usuário filtrado'}
-      {!applied.menuKey ? ' · todos os menus' : ` · menu “${applied.menuKey}”`}
+      {!applied.action ? ' · todas as ações' : ` · ação filtrada`}
       {applied.q ? ` · texto “${applied.q}”` : ''}
       {' · limite '}
       {applied.take}
@@ -98,12 +104,12 @@ export function LogsPage() {
 
   return (
     <div className="page print-area">
-      <ReportPrintSticker documentTitle="Logs de navegação" documentExtras={printExtras} />
+      <ReportPrintSticker documentTitle="Logs de auditoria" documentExtras={printExtras} />
 
       <h1 className="page-title">Logs</h1>
       <p className="page-desc">
-        Registro automático de acessos às telas ao navegar no sistema (layout principal). Use os filtros e{' '}
-        <strong>Imprimir</strong> para gerar PDF ou papel no padrão dos demais módulos.
+        Registro de ações relevantes: acesso ao sistema, caixa no PDV, cupons e notas fiscais, relatórios e
+        inclusão/alteração/exclusão de cadastros.
       </p>
 
       <CrudToolbar onPrint={() => window.print()} onReports={() => setReportsOpen(true)} />
@@ -135,12 +141,12 @@ export function LogsPage() {
             </select>
           </div>
           <div className="field">
-            <label htmlFor="log-menu">Menu</label>
-            <select id="log-menu" value={draftMenuKey} onChange={(e) => setDraftMenuKey(e.target.value)} style={{ minWidth: '14rem' }}>
-              <option value="">Todos</option>
-              {NAV_MENU_FILTER_OPTIONS.map((m) => (
-                <option key={m.key} value={m.key}>
-                  {m.label}
+            <label htmlFor="log-action">Tipo de ação</label>
+            <select id="log-action" value={draftAction} onChange={(e) => setDraftAction(e.target.value)} style={{ minWidth: '14rem' }}>
+              <option value="">Todas</option>
+              {(actionTypes.data ?? []).map((a) => (
+                <option key={a.key} value={a.key}>
+                  {a.label}
                 </option>
               ))}
             </select>
@@ -154,7 +160,7 @@ export function LogsPage() {
             <input id="log-to" type="date" value={draftTo} onChange={(e) => setDraftTo(e.target.value)} />
           </div>
           <div className="field" style={{ flex: '1 1 12rem', minWidth: '10rem' }}>
-            <label htmlFor="log-q">Texto (caminho, menu, e-mail, nome…)</label>
+            <label htmlFor="log-q">Texto (ação, usuário…)</label>
             <input id="log-q" value={draftQ} onChange={(e) => setDraftQ(e.target.value)} placeholder="Opcional" />
           </div>
           <div className="field" style={{ width: '5.5rem' }}>
@@ -184,22 +190,21 @@ export function LogsPage() {
               </th>
               <th>Quando</th>
               <th>Usuário</th>
-              <th>Menu</th>
-              <th>Caminho</th>
-              <th>Detalhe</th>
+              <th>Tipo</th>
+              <th>Ação</th>
             </tr>
           </thead>
           <tbody>
             {logs.isLoading && (
               <tr>
-                <td colSpan={6} className="empty">
+                <td colSpan={5} className="empty">
                   Carregando…
                 </td>
               </tr>
             )}
             {!logs.isLoading && !logs.data?.items.length && (
               <tr>
-                <td colSpan={6} className="empty">
+                <td colSpan={5} className="empty">
                   Nenhum registro com os filtros atuais.
                 </td>
               </tr>
@@ -212,9 +217,15 @@ export function LogsPage() {
                   <strong>{row.user.name}</strong>
                   <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>{row.user.email}</div>
                 </td>
-                <td>{row.menuLabel}</td>
-                <td style={{ fontSize: '0.85rem', wordBreak: 'break-all' }}>{row.path}</td>
-                <td style={{ fontSize: '0.85rem' }}>{row.detail ?? '—'}</td>
+                <td style={{ whiteSpace: 'nowrap', fontSize: '0.85rem' }}>{row.actionLabel}</td>
+                <td>
+                  <strong>{row.summary}</strong>
+                  {row.entityRef && row.entityRef !== row.summary && (
+                    <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: '0.15rem' }}>
+                      {row.entityRef}
+                    </div>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

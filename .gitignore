@@ -78,10 +78,13 @@ Desktop.ini
 *.sql.backup
 data/uploads/
 apps/api/data/
+data/nfe-inbound/
+apps/api/data/nfe-inbound/
 
 # --- Chaves e certificados (nunca commitar) ---
 *.pem
 *.p12
+*.pfx
 id_rsa
 id_rsa.pub
 

@@ -235,6 +235,17 @@ function formatApiErrorBody(status: number, statusText: string, raw: string): st
         if (status === 401) return unauthorizedUserMessage(joined);
         return joined;
       }
+      if (typeof j.message === 'object' && j.message !== null) {
+        const nested = j.message as { message?: string };
+        if (typeof nested.message === 'string' && nested.message.trim()) {
+          return nested.message.trim();
+        }
+        try {
+          return JSON.stringify(j.message);
+        } catch {
+          /* fall through */
+        }
+      }
       if (typeof j.message === 'string' && j.message.trim()) {
         const ms = j.message.trim();
         if (status === 401 && /^Unauthorized$/iu.test(ms)) {
@@ -264,6 +275,18 @@ function formatApiErrorBody(status: number, statusText: string, raw: string): st
     return `Falha ao chamar o servidor (HTTP ${status}: ${st}). Se estiver no modo desenvolvimento, confira se a API está rodando na porta configurada no proxy do Vite (geralmente 3000).`;
   }
   return `Falha ao chamar o servidor (HTTP ${status}). Verifique se a API está em execução e se as migrações do banco do tenant foram aplicadas.`;
+}
+
+/** Erro HTTP da API com corpo JSON original (ex.: duplicidade 409). */
+export class ApiHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly payload?: unknown,
+  ) {
+    super(message);
+    this.name = 'ApiHttpError';
+  }
 }
 
 export async function api<T>(
@@ -316,7 +339,13 @@ export async function api<T>(
       window.dispatchEvent(new CustomEvent(GV_UNAUTHORIZED_EVENT));
       throw new Error(formatApiErrorBody(401, res.statusText, text));
     }
-    throw new Error(formatApiErrorBody(res.status, res.statusText, text));
+    let payload: unknown;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = undefined;
+    }
+    throw new ApiHttpError(formatApiErrorBody(res.status, res.statusText, text), res.status, payload);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

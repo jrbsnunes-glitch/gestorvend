@@ -147,6 +147,23 @@
   background: var(--color-surface);
 }
 
+.entrada-nfe-key-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.entrada-nfe-key-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.entrada-nfe-key-hint {
+  margin: 0.45rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .nfe-section h3 {
   margin: 0 0 0.75rem;
   font-size: 0.82rem;

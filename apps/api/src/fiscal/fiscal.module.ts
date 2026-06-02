@@ -13,6 +13,9 @@ import { FiscalIssuerSettingsController } from './fiscal-issuer-settings.control
 import { FiscalIssuerSettingsService } from './fiscal-issuer-settings.service';
 
 import { FiscalController } from './fiscal.controller';
+import { InboundNfeController } from './inbound/inbound-nfe.controller';
+import { InboundNfeService } from './inbound/inbound-nfe.service';
+import { InboundNfeStorage } from './inbound/inbound-nfe.storage';
 
 
 
@@ -28,6 +31,8 @@ import { FiscalController } from './fiscal.controller';
 
     FiscalIssuerSettingsController,
 
+    InboundNfeController,
+
   ],
 
   providers: [
@@ -37,6 +42,10 @@ import { FiscalController } from './fiscal.controller';
     FiscalIssuerSettingsService,
 
     FiscalEmissionProcessorService,
+
+    InboundNfeService,
+
+    InboundNfeStorage,
 
   ],
 

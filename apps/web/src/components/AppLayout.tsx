@@ -5,7 +5,6 @@ import { CompanyLogo } from './CompanyLogo';
 import { api } from '../lib/api';
 import { companyDisplayName, companyUsesCustomLogo } from '../lib/company-branding';
 import { getIdentity, isAdmin, profileFromRoles, profileLabel } from '../lib/auth';
-import { useNavigationActivityLogger } from '../lib/use-navigation-activity-log';
 import './layout.css';
 
 type NavItem = {
@@ -39,7 +38,6 @@ const NAV_ITEMS: NavItem[] = [
 type Me = { name: string; email: string; profile: 'manager' | 'cashier' };
 
 export function AppLayout({ onLogout }: { onLogout: () => void }) {
-  useNavigationActivityLogger();
   // Identidade local (decodificada do JWT) para decidir o menu sem precisar
   // esperar a resposta da API. Em paralelo carregamos os dados reais (`/users/me`)
   // para mostrar nome do operador no rodapé.

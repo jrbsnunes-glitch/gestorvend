@@ -18,6 +18,27 @@ export function nfeDvBase43Chars(base43Digits: string): string {
 }
 
 /**
+ * Valida chave NF-e de 44 dígitos (modelo 55) incluindo DV.
+ */
+export function validateNfeAccessKey(
+  keyRaw: string,
+): { ok: true; key: string } | { ok: false; reason: string } {
+  const key = keyRaw.replace(/\D/g, '');
+  if (key.length !== 44) {
+    return { ok: false, reason: 'Chave de acesso deve conter 44 dígitos.' };
+  }
+  const model = key.slice(20, 22);
+  if (model !== '55') {
+    return { ok: false, reason: 'Use chave de NF-e modelo 55 (nota de entrada).' };
+  }
+  const expectedDv = nfeDvBase43Chars(key.slice(0, 43));
+  if (key.slice(43) !== expectedDv) {
+    return { ok: false, reason: 'Dígito verificador da chave inválido.' };
+  }
+  return { ok: true, key };
+}
+
+/**
  * Monta 44 dígitos da chave NFC-e modelo 65: cUF + AAMM + CNPJ(14) + mod(02) + série(03) +
  * nNF(09) + tpEmiss(01) + cNF(08) + DV(01).
  */

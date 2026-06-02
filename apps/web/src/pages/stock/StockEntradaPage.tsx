@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { CrudToolbar } from '../../components/CrudToolbar';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
 import { SupplierSearchCombo } from '../../components/ProductCatalogCombos';
-import { api } from '../../lib/api';
+import { api, ApiHttpError } from '../../lib/api';
 
 type Line = {
   variantId: string;
@@ -34,6 +34,49 @@ type GoodsReceiptRow = {
     description: string | null;
     variant: { sku: string; product: { name: string } };
   }>;
+};
+
+type InboundFetchResponse = {
+  duplicate: false;
+  cached: boolean;
+  preview: {
+    accessKey: string;
+    documentNumber: string | null;
+    series: string | null;
+    issueDate: string | null;
+    natureOperation: string | null;
+    totalValue: number | null;
+    emitter: { cnpj: string; name: string };
+    recipient: { cnpj: string; name: string };
+    items: Array<{
+      lineNumber: number;
+      supplierCode: string | null;
+      ean: string | null;
+      description: string;
+      ncm: string | null;
+      cfop: string | null;
+      unit: string | null;
+      quantity: number;
+      unitCost: number;
+      total: number;
+    }>;
+  };
+  suggestedMatches: Array<{
+    lineNumber: number;
+    variantId: string | null;
+    sku: string | null;
+    label: string | null;
+    confidence: string;
+  }>;
+  supplierId: string | null;
+  supplierName: string | null;
+  warnings: string[];
+};
+
+type DuplicateReceiptInfo = {
+  controlNumber: number;
+  goodsReceiptId: string;
+  message: string;
 };
 
 function modeLabel(mode: string): string {
@@ -68,6 +111,9 @@ export function StockEntradaPage() {
     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
   );
   const [err, setErr] = useState<string | null>(null);
+  const [duplicateInfo, setDuplicateInfo] = useState<DuplicateReceiptInfo | null>(null);
+  const [nfeWarnings, setNfeWarnings] = useState<string[]>([]);
+  const [nfeFetchMsg, setNfeFetchMsg] = useState<string | null>(null);
 
   const receipts = useQuery({
     queryKey: ['goods-receipts'],
@@ -123,7 +169,79 @@ export function StockEntradaPage() {
     setPayIntervalDays(30);
     setPayFirstDue(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
     setErr(null);
+    setDuplicateInfo(null);
+    setNfeWarnings([]);
+    setNfeFetchMsg(null);
   }
+
+  function applyInboundPreview(data: InboundFetchResponse) {
+    const p = data.preview;
+    setMode('WITH_NFE_KEY');
+    setNfeKey(p.accessKey);
+    setDocumentNumber(p.documentNumber ?? '');
+    setSeries(p.series ?? '');
+    if (p.issueDate) {
+      setIssueDate(p.issueDate.slice(0, 10));
+    }
+    setNatureOperation(p.natureOperation ?? 'Compra para comercialização');
+    setTotalValue(p.totalValue != null ? String(p.totalValue) : '');
+    if (data.supplierId) {
+      setSupplierId(data.supplierId);
+      setSupplierNameHint(data.supplierName ?? '');
+    } else if (data.supplierName) {
+      setSupplierNameHint(data.supplierName);
+    }
+    const matchByLine = new Map(data.suggestedMatches.map((m) => [m.lineNumber, m]));
+    setLines(
+      p.items.length > 0
+        ? p.items.map((item) => {
+            const match = matchByLine.get(item.lineNumber);
+            return {
+              variantId: match?.variantId ?? '',
+              quantity: String(item.quantity),
+              unitCost: String(item.unitCost),
+              ncm: item.ncm ?? '',
+              cfop: item.cfop ?? '1102',
+              description: item.description,
+            };
+          })
+        : [{ variantId: '', quantity: '1', unitCost: '0', ncm: '', cfop: '1102', description: '' }],
+    );
+  }
+
+  const fetchNfe = useMutation({
+    mutationFn: () =>
+      api<InboundFetchResponse>('/fiscal/inbound/fetch-by-key', {
+        method: 'POST',
+        json: { accessKey: nfeKey.replace(/\D/g, '') },
+      }),
+    onSuccess: (data) => {
+      setDuplicateInfo(null);
+      setErr(null);
+      applyInboundPreview(data);
+      setNfeWarnings(data.warnings);
+      setNfeFetchMsg(data.cached ? 'NF-e carregada do cache local.' : 'NF-e baixada da SEFAZ.');
+    },
+    onError: (e: Error) => {
+      if (e instanceof ApiHttpError && e.status === 409 && e.payload && typeof e.payload === 'object') {
+        const body = e.payload as {
+          message?: { message?: string; duplicate?: { controlNumber: number; goodsReceiptId: string } };
+        };
+        const dup = body.message?.duplicate;
+        if (dup) {
+          setDuplicateInfo({
+            controlNumber: dup.controlNumber,
+            goodsReceiptId: dup.goodsReceiptId,
+            message: body.message?.message ?? e.message,
+          });
+          setErr(body.message?.message ?? e.message);
+          return;
+        }
+      }
+      setDuplicateInfo(null);
+      setErr(e.message);
+    },
+  });
 
   const submit = useMutation({
     mutationFn: () =>
@@ -172,7 +290,24 @@ export function StockEntradaPage() {
       resetEntradaForm();
       alert('Entrada registrada com sucesso.');
     },
-    onError: (e: Error) => setErr(e.message),
+    onError: (e: Error) => {
+      if (e instanceof ApiHttpError && e.status === 409 && e.payload && typeof e.payload === 'object') {
+        const body = e.payload as {
+          message?: { message?: string; duplicate?: { controlNumber: number; goodsReceiptId: string } };
+        };
+        const dup = body.message?.duplicate;
+        if (dup) {
+          setDuplicateInfo({
+            controlNumber: dup.controlNumber,
+            goodsReceiptId: dup.goodsReceiptId,
+            message: body.message?.message ?? e.message,
+          });
+          setErr(body.message?.message ?? e.message);
+          return;
+        }
+      }
+      setErr(e.message);
+    },
   });
 
   const updateHeader = useMutation({
@@ -467,13 +602,60 @@ export function StockEntradaPage() {
                       {mode === 'WITH_NFE_KEY' && (
                         <div className="field">
                           <label htmlFor="ent-key">Chave de acesso</label>
-                          <input
-                            id="ent-key"
-                            value={nfeKey}
-                            onChange={(e) => setNfeKey(e.target.value.replace(/\D/g, '').slice(0, 44))}
-                            placeholder="44 dígitos"
-                            maxLength={44}
-                          />
+                          <div className="entrada-nfe-key-row">
+                            <input
+                              id="ent-key"
+                              value={nfeKey}
+                              onChange={(e) => {
+                                setNfeKey(e.target.value.replace(/\D/g, '').slice(0, 44));
+                                setDuplicateInfo(null);
+                                setNfeFetchMsg(null);
+                              }}
+                              placeholder="44 dígitos"
+                              maxLength={44}
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              disabled={nfeKey.replace(/\D/g, '').length !== 44 || fetchNfe.isPending}
+                              onClick={() => fetchNfe.mutate()}
+                            >
+                              {fetchNfe.isPending ? 'Buscando…' : 'Buscar NF-e'}
+                            </button>
+                          </div>
+                          <p className="muted entrada-nfe-key-hint">
+                            Informe a chave e clique em <strong>Buscar NF-e</strong> para baixar o XML na SEFAZ e
+                            preencher os campos automaticamente.
+                          </p>
+                          {nfeFetchMsg && (
+                            <p className="alert alert-success" style={{ marginTop: '0.5rem' }}>
+                              {nfeFetchMsg}
+                            </p>
+                          )}
+                          {nfeWarnings.map((w) => (
+                            <p key={w} className="alert alert-warn" style={{ marginTop: '0.5rem' }}>
+                              {w}
+                            </p>
+                          ))}
+                          {duplicateInfo && (
+                            <div className="alert alert-error" style={{ marginTop: '0.5rem' }}>
+                              {duplicateInfo.message}
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                style={{ marginLeft: '0.5rem' }}
+                                onClick={() => {
+                                  const row = receipts.data?.find((r) => r.id === duplicateInfo.goodsReceiptId);
+                                  if (row) {
+                                    setIncludeOpen(false);
+                                    setViewing(row);
+                                  }
+                                }}
+                              >
+                                Ver entrada #{duplicateInfo.controlNumber}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                       <div className="form-row">
@@ -505,8 +687,8 @@ export function StockEntradaPage() {
                     <summary className="submenu-summary">Destinatário (seu estabelecimento)</summary>
                     <div className="submenu-body">
                       <p className="muted" style={{ marginBottom: '0.75rem' }}>
-                        Dados do tenant/carimbo serão preenchidos automaticamente na emissão de NF-e (Etapa 2). Neste
-                        lançamento apenas o <strong>local de estoque</strong> recebe a mercadoria.
+                        Após buscar a NF-e pela chave, confira emitente e itens. O{' '}
+                        <strong>local de estoque</strong> recebe a mercadoria ao confirmar.
                       </p>
                       <div className="field">
                         <label htmlFor="ent-loc">Local de recebimento *</label>

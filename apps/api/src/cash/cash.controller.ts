@@ -25,6 +25,8 @@ import {
   type PrismaClient,
 } from '../generated/tenant-client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { ActivityLogAction } from '../generated/tenant-client';
+import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { referentialCodeMatchesFlow } from '../common/referential-account-flow';
 import { assertLastSaleAllowsPdvEntry } from './pdv-entry.guard';
 import {
@@ -222,7 +224,10 @@ async function normalizeReconciliationExpenseDetailsInput(
 @Controller('cash')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class CashController {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    private readonly activityLog: ActivityLogService,
+  ) {}
 
   /**
    * Caixa aberto do operador logado. Mantido por compatibilidade — Caixa só
@@ -1174,12 +1179,22 @@ export class CashController {
     if (existing) {
       throw new BadRequestException('Já existe caixa aberto para este usuário');
     }
-    return db.cashRegisterSession.create({
+    const session = await db.cashRegisterSession.create({
       data: {
         userId: user.sub,
         openingBalance: String(body.openingBalance ?? 0),
       },
     });
+    const fund = Number(body.openingBalance ?? 0);
+    this.activityLog.record({
+      tenantSlug: user.tenantSlug,
+      userId: user.sub,
+      action: ActivityLogAction.CASH_OPEN,
+      summary: `Abriu caixa no PDV (fundo R$ ${fund.toFixed(2)})`,
+      entityType: 'cash_session',
+      entityRef: session.id,
+    });
+    return session;
   }
 
   @Post('close')
@@ -1214,7 +1229,7 @@ export class CashController {
         ? computeClosingBalanceFromDeclared(normalized)
         : roundMoney(Number(body.closingBalance ?? 0));
 
-    return db.cashRegisterSession.update({
+    const updated = await db.cashRegisterSession.update({
       where: { id: open.id },
       data: {
         status: CashSessionStatus.CLOSED,
@@ -1224,6 +1239,15 @@ export class CashController {
         closedAt: new Date(),
       },
     });
+    this.activityLog.record({
+      tenantSlug: user.tenantSlug,
+      userId: user.sub,
+      action: ActivityLogAction.CASH_CLOSE,
+      summary: `Fechou caixa no PDV (R$ ${closingBalance.toFixed(2)})`,
+      entityType: 'cash_session',
+      entityRef: updated.id,
+    });
+    return updated;
   }
 
   @Post('movement')

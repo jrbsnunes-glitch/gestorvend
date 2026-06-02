@@ -146,22 +146,34 @@ model User {
   cashSessions        CashRegisterSession[]
   cashSessionsReconciled CashRegisterSession[] @relation("CashSessionReconciledBy")
   goodsReceipts  GoodsReceipt[]
-  navigationLogs UserNavigationLog[]
+  activityLogs   UserActivityLog[]
 }
 
-/// Acessos a telas (menus) registrados pelo cliente web — consulta em /logs.
-model UserNavigationLog {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  path      String
-  menuKey   String
-  menuLabel String
-  detail    String?
-  createdAt DateTime @default(now())
+enum ActivityLogAction {
+  LOGIN
+  CASH_OPEN
+  CASH_CLOSE
+  RECEIPT
+  FISCAL_DOC
+  REPORT
+  CREATE
+  UPDATE
+  DELETE
+}
+
+/// Auditoria: login, caixa PDV, cupons/NF-e, relatórios e CRUD de cadastros.
+model UserActivityLog {
+  id         String            @id @default(uuid())
+  userId     String
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action     ActivityLogAction
+  summary    String
+  entityType String?
+  entityRef  String?
+  createdAt  DateTime          @default(now())
 
   @@index([userId, createdAt])
-  @@index([menuKey, createdAt])
+  @@index([action, createdAt])
   @@index([createdAt])
 }
 
@@ -377,7 +389,7 @@ model GoodsReceipt {
   controlNumber    Int                @unique @default(autoincrement())
   mode             GoodsReceiptMode
   /// Chave de acesso NF-e (44 caracteres), obrigatória se mode = WITH_NFE_KEY
-  nfeAccessKey     String?            @db.VarChar(44)
+  nfeAccessKey     String?            @unique @db.VarChar(44)
   supplierId       String?
   supplier         Supplier?          @relation(fields: [supplierId], references: [id])
   /// Número / série / data emissão conforme documento fiscal
@@ -397,6 +409,21 @@ model GoodsReceipt {
   movements        StockMovement[]
   priceHistories   ProductVariantPriceHistory[]
   payables         AccountPayable[]
+  inboundNfeDocument InboundNfeDocument?
+}
+
+/// XML de NF-e de entrada baixado da SEFAZ (Distribuição DF-e).
+model InboundNfeDocument {
+  id             String        @id @default(uuid())
+  accessKey      String        @unique @db.VarChar(44)
+  xmlPath        String        @db.VarChar(512)
+  xmlSha256      String        @db.VarChar(64)
+  nsu            String?       @db.VarChar(20)
+  sefazCStat     String?       @db.VarChar(3)
+  sefazMotivo    String?       @db.VarChar(512)
+  fetchedAt      DateTime      @default(now())
+  goodsReceiptId String?       @unique
+  goodsReceipt   GoodsReceipt? @relation(fields: [goodsReceiptId], references: [id], onDelete: SetNull)
 }
 
 model GoodsReceiptItem {

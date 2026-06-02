@@ -7,7 +7,9 @@ import {
   SaleStatus,
   StockMovementSource,
   StockMovementType,
+  ActivityLogAction,
 } from '../generated/tenant-client';
+import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 
 export type CreateSaleInput = {
@@ -107,7 +109,10 @@ export function normalizePaymentsToSaleTotal(
 
 @Injectable()
 export class SalesService {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    private readonly activityLog: ActivityLogService,
+  ) {}
 
   async create(input: CreateSaleInput) {
     const db = await this.tenantPrisma.getClient(input.tenantSlug);
@@ -235,6 +240,16 @@ export class SalesService {
         }
       }
 
+      return sale;
+    }).then((sale) => {
+      this.activityLog.record({
+        tenantSlug: input.tenantSlug,
+        userId: input.userId,
+        action: ActivityLogAction.RECEIPT,
+        summary: `Gerou cupom — venda #${sale.number} (R$ ${Number(sale.total).toFixed(2)})`,
+        entityType: 'sale',
+        entityRef: `#${sale.number}`,
+      });
       return sale;
     });
   }

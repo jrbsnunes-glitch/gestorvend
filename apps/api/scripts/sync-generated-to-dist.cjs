@@ -12,6 +12,37 @@ const path = require('path');
 const apiRoot = path.join(__dirname, '..');
 const from = path.join(apiRoot, 'src', 'generated');
 
+/** DLL do query engine pode ficar bloqueada com a API em execução no Windows. */
+const SKIP_IF_LOCKED = /\.(dll|node)$/i;
+
+function copyGeneratedRecursive(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const name of fs.readdirSync(src)) {
+    const srcPath = path.join(src, name);
+    const destPath = path.join(dest, name);
+    const stat = fs.statSync(srcPath);
+    if (stat.isDirectory()) {
+      copyGeneratedRecursive(srcPath, destPath);
+      continue;
+    }
+    try {
+      fs.copyFileSync(srcPath, destPath);
+    } catch (err) {
+      const locked =
+        err &&
+        (err.code === 'EPERM' ||
+          err.code === 'EBUSY' ||
+          err.code === 'EPIPE' ||
+          err.code === 'ENOENT');
+      if (SKIP_IF_LOCKED.test(name) && locked) {
+        console.warn('[sync-generated] arquivo bloqueado (ignorado):', destPath);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 if (!fs.existsSync(from)) {
   console.error(
     '[sync-generated] Pasta ausente: %s — rode npm run prisma:generate -w @gestorvend/api',
@@ -45,7 +76,6 @@ if (targets.length === 0) {
 }
 
 for (const to of targets) {
-  fs.mkdirSync(to, { recursive: true });
-  fs.cpSync(from, to, { recursive: true, force: true });
+  copyGeneratedRecursive(from, to);
   console.log('[sync-generated]', from, '→', to);
 }
