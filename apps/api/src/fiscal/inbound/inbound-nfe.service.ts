@@ -46,7 +46,8 @@ export type InboundFetchResponse = {
     variantId: string | null;
     sku: string | null;
     label: string | null;
-    confidence: 'barcode' | 'sku' | 'none';
+    confidence: 'supplier_link' | 'barcode' | 'sku' | 'none';
+    supplierProductCode: string | null;
   }>;
   supplierId: string | null;
   supplierName: string | null;
@@ -320,38 +321,6 @@ export class InboundNfeService {
     preview: ReturnType<typeof parseInboundNfeXml>,
   ) {
     const db = await this.tenantPrisma.getClient(tenantSlug);
-    const variants = await db.productVariant.findMany({
-      select: {
-        id: true,
-        sku: true,
-        barcode: true,
-        product: { select: { name: true, ncm: true } },
-      },
-    });
-
-    const suggestedMatches = preview.items.map((item) => {
-      const ean = (item.ean ?? '').replace(/\D/g, '');
-      const code = (item.supplierCode ?? '').trim();
-      let match: (typeof variants)[0] | undefined;
-      let confidence: 'barcode' | 'sku' | 'none' = 'none';
-
-      if (ean && ean !== 'SEM GTIN') {
-        match = variants.find((v) => (v.barcode ?? '').replace(/\D/g, '') === ean);
-        if (match) confidence = 'barcode';
-      }
-      if (!match && code) {
-        match = variants.find((v) => v.sku === code);
-        if (match) confidence = 'sku';
-      }
-
-      return {
-        lineNumber: item.lineNumber,
-        variantId: match?.id ?? null,
-        sku: match?.sku ?? null,
-        label: match ? `${match.sku} — ${match.product.name}` : null,
-        confidence,
-      };
-    });
 
     let supplierId: string | null = null;
     let supplierName: string | null = null;
@@ -369,6 +338,64 @@ export class InboundNfeService {
         supplierName = preview.emitter.name;
       }
     }
+
+    const variants = await db.productVariant.findMany({
+      select: {
+        id: true,
+        sku: true,
+        barcode: true,
+        product: { select: { name: true, ncm: true } },
+      },
+    });
+
+    const linkByCode = new Map<string, (typeof variants)[0]>();
+    if (supplierId) {
+      const links = await db.supplierProductLink.findMany({
+        where: { supplierId },
+        include: {
+          variant: {
+            select: {
+              id: true,
+              sku: true,
+              barcode: true,
+              product: { select: { name: true, ncm: true } },
+            },
+          },
+        },
+      });
+      for (const link of links) {
+        linkByCode.set(link.supplierProductCode.trim(), link.variant as (typeof variants)[0]);
+      }
+    }
+
+    const suggestedMatches = preview.items.map((item) => {
+      const ean = (item.ean ?? '').replace(/\D/g, '');
+      const code = (item.supplierCode ?? '').trim();
+      let match: (typeof variants)[0] | undefined;
+      let confidence: 'supplier_link' | 'barcode' | 'sku' | 'none' = 'none';
+
+      if (code && linkByCode.has(code)) {
+        match = linkByCode.get(code);
+        confidence = 'supplier_link';
+      }
+      if (!match && ean && ean !== 'SEM GTIN') {
+        match = variants.find((v) => (v.barcode ?? '').replace(/\D/g, '') === ean);
+        if (match) confidence = 'barcode';
+      }
+      if (!match && code) {
+        match = variants.find((v) => v.sku === code);
+        if (match) confidence = 'sku';
+      }
+
+      return {
+        lineNumber: item.lineNumber,
+        variantId: match?.id ?? null,
+        sku: match?.sku ?? null,
+        label: match ? `${match.sku} — ${match.product.name}` : null,
+        confidence,
+        supplierProductCode: code || null,
+      };
+    });
 
     return { suggestedMatches, supplierId, supplierName };
   }

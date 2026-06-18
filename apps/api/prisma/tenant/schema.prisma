@@ -97,6 +97,7 @@ enum FiscalDocumentStatus {
   AUTHORIZED
   REJECTED
   ERROR
+  CANCELLED
 }
 
 /// Situação fiscal parametrizável, reaproveitada por vários produtos (reforma tributária / NF-e futura).
@@ -147,6 +148,27 @@ model User {
   cashSessionsReconciled CashRegisterSession[] @relation("CashSessionReconciledBy")
   goodsReceipts  GoodsReceipt[]
   activityLogs   UserActivityLog[]
+  permissions    UserPermission[]
+}
+
+/// Permissões operacionais concedidas pelo administrador (com senha de autorização).
+enum UserPermissionCode {
+  SALE_DISCOUNT
+  SALE_CANCEL
+  FISCAL_DOC_CANCEL
+}
+
+model UserPermission {
+  id           String             @id @default(uuid())
+  userId       String
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code         UserPermissionCode
+  passwordHash String
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@unique([userId, code])
+  @@index([userId])
 }
 
 enum ActivityLogAction {
@@ -222,6 +244,7 @@ model Supplier {
   updatedAt      DateTime        @updatedAt
   payables       AccountPayable[]
   goodsReceipts  GoodsReceipt[]
+  productLinks   SupplierProductLink[]
 }
 
 model Category {
@@ -282,6 +305,8 @@ model Product {
   fiscalOrigin String?         @db.VarChar(2)
   /// Unidade tributável (ex.: UN, KG)
   taxUnit     String?          @db.VarChar(10)
+  /// Conversão de unidade na entrada NF-e (ex.: CX-12 → 1 CX = 12 unidades no estoque)
+  conversion  String?          @db.VarChar(32)
   isActive    Boolean          @default(true)
   /// Controle agregado do produto: menor `minStock` entre as variantes (recalculado ao salvar variantes). Piso 1 por política cadastral.
   inventoryControlMin Decimal @default(1) @db.Decimal(18, 4)
@@ -307,6 +332,23 @@ model ProductVariant {
   movements          StockMovement[]
   goodsReceiptItems  GoodsReceiptItem[]
   priceHistory       ProductVariantPriceHistory[]
+  supplierLinks      SupplierProductLink[]
+}
+
+/// Vínculo código do produto no fornecedor (cProd NF-e) → variação interna.
+model SupplierProductLink {
+  id                  String         @id @default(uuid())
+  supplierId          String
+  supplier            Supplier       @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  variantId           String
+  variant             ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  /// Código do produto na NF-e do fornecedor (tag cProd).
+  supplierProductCode String         @db.VarChar(60)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@unique([supplierId, supplierProductCode])
+  @@index([variantId])
 }
 
 /// Histórico de alterações de preço de venda (varejo) e custo médio por variação.
@@ -438,6 +480,10 @@ model GoodsReceiptItem {
   ncm         String?
   cfop        String?
   description String?
+  /// Código do produto no fornecedor (cProd) — vínculo editável na entrada.
+  supplierProductCode String?  @db.VarChar(60)
+  /// Unidade informada na NF-e (uCom) — usada na conversão de estoque.
+  invoiceUnit         String?  @db.VarChar(10)
 }
 
 model StockMovement {

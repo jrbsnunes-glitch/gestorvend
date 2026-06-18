@@ -1,12 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
+import { getIdentity, isManager, profileLabel, type UserProfile } from '../lib/auth';
 import {
-  getIdentity,
-  isManager,
-  profileLabel,
-  type UserProfile,
-} from '../lib/auth';
+  type UserPermissionRow,
+  type UserPermissionsResponse,
+} from '../lib/user-permissions';
 
 type SystemUser = {
   id: string;
@@ -26,6 +25,13 @@ type FormState = {
   password: string;
   confirmPassword: string;
 };
+
+type PermFormRow = UserPermissionRow & {
+  password: string;
+  confirmPassword: string;
+};
+
+type UserModalTab = 'dados' | 'permissoes';
 
 const EMPTY_FORM: FormState = {
   name: '',
@@ -47,6 +53,9 @@ export function UsersPage() {
   const [passwordTarget, setPasswordTarget] = useState<SystemUser | null>(null);
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [userModalTab, setUserModalTab] = useState<UserModalTab>('dados');
+  const [permRows, setPermRows] = useState<PermFormRow[]>([]);
+  const [permErr, setPermErr] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -71,8 +80,64 @@ export function UsersPage() {
 
   function resetForm() {
     setForm(EMPTY_FORM);
+    setUserModalTab('dados');
+    setPermRows([]);
+    setPermErr(null);
     setErr(null);
   }
+
+  const editingPermsQ = useQuery({
+    queryKey: ['users', editing?.id, 'permissions'],
+    queryFn: () => api<UserPermissionsResponse>(`/users/${editing!.id}/permissions`),
+    enabled: !!editing,
+  });
+
+  useEffect(() => {
+    if (!editing || !editingPermsQ.data) return;
+    setPermRows(
+      editingPermsQ.data.permissions.map((p) => ({
+        ...p,
+        password: '',
+        confirmPassword: '',
+      })),
+    );
+  }, [editing, editingPermsQ.data]);
+
+  const savePermissions = useMutation({
+    mutationFn: () => {
+      if (!editing) throw new Error('Nenhum usuário selecionado.');
+      for (const row of permRows) {
+        if (!row.enabled) continue;
+        if (row.password && row.password !== row.confirmPassword) {
+          throw new Error(`As senhas da permissão «${row.label}» não coincidem.`);
+        }
+        if (!row.hasPassword && row.password.length < 4) {
+          throw new Error(`Informe a senha de autorização para «${row.label}» (mín. 4 caracteres).`);
+        }
+        if (row.hasPassword && row.password && row.password.length < 4) {
+          throw new Error(`Nova senha de «${row.label}» precisa ter pelo menos 4 caracteres.`);
+        }
+      }
+      return api(`/users/${editing.id}/permissions`, {
+        method: 'PATCH',
+        json: {
+          grants: permRows.map((row) => ({
+            code: row.code,
+            enabled: row.enabled,
+            password: row.password.trim() || undefined,
+          })),
+        },
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users', editing?.id, 'permissions'] });
+      qc.invalidateQueries({ queryKey: ['users', 'me', 'permissions'] });
+      setPermErr(null);
+      setEditing(null);
+      resetForm();
+    },
+    onError: (e: Error) => setPermErr(e.message),
+  });
 
   function openCreate() {
     resetForm();
@@ -81,6 +146,8 @@ export function UsersPage() {
 
   function openEdit(u: SystemUser) {
     setEditing(u);
+    setUserModalTab('dados');
+    setPermErr(null);
     setForm({
       name: u.name,
       email: u.email,
@@ -395,16 +462,42 @@ export function UsersPage() {
             role="dialog"
             aria-modal="true"
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 520 }}
+            style={{ maxWidth: 560 }}
           >
             <h2>{editing ? `Editar “${editing.name}”` : 'Novo usuário'}</h2>
+
+            {editing && (
+              <div className="user-modal-tabs" role="tablist" aria-label="Seções do cadastro">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={userModalTab === 'dados'}
+                  className={'user-modal-tab' + (userModalTab === 'dados' ? ' is-active' : '')}
+                  onClick={() => setUserModalTab('dados')}
+                >
+                  Dados
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={userModalTab === 'permissoes'}
+                  className={'user-modal-tab' + (userModalTab === 'permissoes' ? ' is-active' : '')}
+                  onClick={() => setUserModalTab('permissoes')}
+                >
+                  Permissões
+                </button>
+              </div>
+            )}
+
+            {(err || permErr) && <div className="alert alert-error">{err || permErr}</div>}
+
+            {(!editing || userModalTab === 'dados') && (
+              <>
             <p style={{ marginTop: 0, color: 'var(--color-text-secondary)', fontSize: '0.88rem' }}>
               {editing
                 ? 'Atualize os dados de acesso. Para alterar a senha use o botão Trocar senha.'
-                : 'Cadastre um novo operador. Ele poderá entrar com o e-mail e senha definidos abaixo.'}
+                : 'Cadastre um novo operador. Permissões operacionais podem ser definidas após salvar, na aba Permissões.'}
             </p>
-
-            {err && <div className="alert alert-error">{err}</div>}
 
             <div className="field">
               <label htmlFor="user-name">Nome completo</label>
@@ -432,13 +525,13 @@ export function UsersPage() {
                 <ProfileChoice
                   active={form.profile === 'manager'}
                   title="Gerente"
-                  subtitle="Acesso total. Pode gerenciar usuários, cadastros e relatórios."
+                  subtitle="Gerencia cadastros, usuários e relatórios. Permissões sensíveis são concedidas pelo administrador."
                   onClick={() => setForm((f) => ({ ...f, profile: 'manager' }))}
                 />
                 <ProfileChoice
                   active={form.profile === 'cashier'}
                   title="Caixa"
-                  subtitle="Opera o PDV e o caixa. Não altera cadastros nem usuários."
+                  subtitle="Opera o PDV e o caixa. Ações sensíveis exigem permissão e senha do administrador."
                   onClick={() => setForm((f) => ({ ...f, profile: 'cashier' }))}
                 />
               </div>
@@ -473,6 +566,87 @@ export function UsersPage() {
                 </p>
               </>
             )}
+              </>
+            )}
+
+            {editing && userModalTab === 'permissoes' && (
+              <div className="user-permissions-panel">
+                <p style={{ marginTop: 0, color: 'var(--color-text-secondary)', fontSize: '0.88rem' }}>
+                  Conceda permissões operacionais com senha de autorização. O{' '}
+                  <strong>Administrador</strong> possui acesso total e não utiliza estas senhas.
+                </p>
+                {editing.roles.includes('admin') ? (
+                  <div className="alert alert-info">
+                    Este usuário é <strong>Administrador</strong> e pode realizar todas as operações sem senha
+                    adicional.
+                  </div>
+                ) : editingPermsQ.isLoading ? (
+                  <p>Carregando permissões…</p>
+                ) : (
+                  <div className="user-permissions-list">
+                    {permRows.map((row, idx) => (
+                      <div key={row.code} className="user-permission-card">
+                        <label className="user-permission-toggle">
+                          <input
+                            type="checkbox"
+                            checked={row.enabled}
+                            onChange={(e) =>
+                              setPermRows((rows) =>
+                                rows.map((r, i) =>
+                                  i === idx ? { ...r, enabled: e.target.checked } : r,
+                                ),
+                              )
+                            }
+                          />
+                          <span>
+                            <strong>{row.label}</strong>
+                            <span className="user-permission-desc">{row.description}</span>
+                          </span>
+                        </label>
+                        {row.enabled && (
+                          <div className="form-row">
+                            <div className="field">
+                              <label htmlFor={`perm-pwd-${row.code}`}>
+                                {row.hasPassword ? 'Nova senha (opcional)' : 'Senha de autorização *'}
+                              </label>
+                              <input
+                                id={`perm-pwd-${row.code}`}
+                                type="password"
+                                autoComplete="new-password"
+                                value={row.password}
+                                onChange={(e) =>
+                                  setPermRows((rows) =>
+                                    rows.map((r, i) =>
+                                      i === idx ? { ...r, password: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                              />
+                            </div>
+                            <div className="field">
+                              <label htmlFor={`perm-pwd2-${row.code}`}>Confirmar senha</label>
+                              <input
+                                id={`perm-pwd2-${row.code}`}
+                                type="password"
+                                autoComplete="new-password"
+                                value={row.confirmPassword}
+                                onChange={(e) =>
+                                  setPermRows((rows) =>
+                                    rows.map((r, i) =>
+                                      i === idx ? { ...r, confirmPassword: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="modal-actions">
               <button
@@ -486,14 +660,29 @@ export function UsersPage() {
               >
                 Cancelar
               </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={create.isPending || update.isPending}
-                onClick={() => (editing ? update.mutate() : create.mutate())}
-              >
-                {editing ? 'Salvar alterações' : 'Cadastrar usuário'}
-              </button>
+              {editing && userModalTab === 'permissoes' ? (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={
+                    editing.roles.includes('admin') ||
+                    savePermissions.isPending ||
+                    editingPermsQ.isLoading
+                  }
+                  onClick={() => savePermissions.mutate()}
+                >
+                  Salvar permissões
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={!form.name.trim() || create.isPending || update.isPending}
+                  onClick={() => (editing ? update.mutate() : create.mutate())}
+                >
+                  {editing ? 'Salvar alterações' : 'Cadastrar usuário'}
+                </button>
+              )}
             </div>
           </div>
         </div>

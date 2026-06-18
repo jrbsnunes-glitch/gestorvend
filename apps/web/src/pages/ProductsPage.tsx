@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
@@ -8,6 +8,13 @@ import {
   FISCAL_ORIGIN_OPTIONS,
   FiscalCodeSearchCombo,
 } from '../components/ProductCatalogCombos';
+import {
+  draftLinksFromApi,
+  linksToCreatePayload,
+  linksToPayload,
+  ProductSupplierLinksSection,
+  type SupplierLinkDraft,
+} from '../components/ProductSupplierLinksSection';
 import { ProductReportsPanel } from '../components/ProductReportsPanel';
 import { api } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
@@ -50,6 +57,7 @@ type Product = {
   exTipi: string | null;
   fiscalOrigin: string | null;
   taxUnit: string | null;
+  conversion: string | null;
   isActive: boolean;
   category?: { id: string; name: string } | null;
   fiscalSituationId?: string | null;
@@ -126,6 +134,7 @@ export function ProductsPage() {
   const [exTipi, setExTipi] = useState('');
   const [fiscalOrigin, setFiscalOrigin] = useState('');
   const [taxUnit, setTaxUnit] = useState('');
+  const [conversion, setConversion] = useState('');
   const [fiscalSituationId, setFiscalSituationId] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [sku, setSku] = useState('');
@@ -136,6 +145,7 @@ export function ProductsPage() {
     Record<string, { retail: string; cost: string; minStock: string }>
   >({});
   const [err, setErr] = useState<string | null>(null);
+  const [supplierLinks, setSupplierLinks] = useState<SupplierLinkDraft[]>([]);
 
   const list = useQuery({
     queryKey: ['products'],
@@ -155,6 +165,26 @@ export function ProductsPage() {
     enabled: searchOpen && searchQ.length >= 1,
     staleTime: 5_000,
   });
+
+  const editSupplierLinksQ = useQuery({
+    queryKey: ['products', editProduct?.id, 'supplier-links'],
+    queryFn: () =>
+      api<
+        Array<{
+          supplierId: string;
+          variantId: string;
+          supplierProductCode: string;
+          supplier: { legalName: string };
+        }>
+      >(`/products/${editProduct!.id}/supplier-links`),
+    enabled: !!editProduct && editOpen,
+  });
+
+  useEffect(() => {
+    if (editOpen && editSupplierLinksQ.data) {
+      setSupplierLinks(draftLinksFromApi(editSupplierLinksQ.data));
+    }
+  }, [editOpen, editSupplierLinksQ.data]);
 
   const viewRow = list.data?.find((p) => p.id === viewProductId) ?? null;
 
@@ -189,11 +219,13 @@ export function ProductsPage() {
     setExTipi('');
     setFiscalOrigin('');
     setTaxUnit('');
+    setConversion('');
     setFiscalSituationId('');
     setSku('');
     setRetailPrice('0');
     setCostPrice('0');
     setMinStockInput('1');
+    setSupplierLinks([]);
     setErr(null);
   }
 
@@ -208,6 +240,7 @@ export function ProductsPage() {
     setExTipi(p.exTipi ?? '');
     setFiscalOrigin(p.fiscalOrigin ?? '');
     setTaxUnit(p.taxUnit ?? '');
+    setConversion(p.conversion ?? '');
     setFiscalSituationId(p.fiscalSituation?.id ?? p.fiscalSituationId ?? '');
     setIsActive(p.isActive);
     const vp: Record<string, { retail: string; cost: string; minStock: string }> = {};
@@ -219,6 +252,7 @@ export function ProductsPage() {
       };
     }
     setVariantPrices(vp);
+    setSupplierLinks([]);
     setErr(null);
   }
 
@@ -235,6 +269,7 @@ export function ProductsPage() {
           exTipi: exTipi.trim() || null,
           fiscalOrigin: fiscalOrigin || null,
           taxUnit: taxUnit.trim() || null,
+          conversion: conversion.trim() || null,
           categoryId: categoryId || null,
           fiscalSituationId: fiscalSituationId || null,
           variants: [
@@ -247,6 +282,7 @@ export function ProductsPage() {
               minStock: Math.max(1, parseFloat(minStockInput.replace(',', '.')) || 1),
             },
           ],
+          supplierLinks: linksToCreatePayload(supplierLinks),
         },
       }),
     onSuccess: () => {
@@ -258,8 +294,8 @@ export function ProductsPage() {
   });
 
   const update = useMutation({
-    mutationFn: (payload: { id: string; product: Product }) =>
-      api<Product>(`/products/${payload.id}`, {
+    mutationFn: async (payload: { id: string; product: Product }) => {
+      const product = await api<Product>(`/products/${payload.id}`, {
         method: 'PATCH',
         json: {
           name,
@@ -270,6 +306,7 @@ export function ProductsPage() {
           exTipi: exTipi.trim() || null,
           fiscalOrigin: fiscalOrigin || null,
           taxUnit: taxUnit.trim() || null,
+          conversion: conversion.trim() || null,
           fiscalSituationId: fiscalSituationId || null,
           categoryId: categoryId || null,
           variantPrices: payload.product.variants.map((v) => {
@@ -282,9 +319,16 @@ export function ProductsPage() {
             };
           }),
         },
-      }),
+      });
+      await api(`/products/${payload.id}/supplier-links`, {
+        method: 'PUT',
+        json: { links: linksToPayload(supplierLinks) },
+      });
+      return product;
+    },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: ['products', vars.id, 'supplier-links'] });
       qc.invalidateQueries({ queryKey: ['products', vars.id, 'price-history'] });
       setEditOpen(false);
       setEditProduct(null);
@@ -574,44 +618,115 @@ export function ProductsPage() {
               Primeira variação (SKU) pode ser ajustada depois pela API.
             </p>
             {err && <div className="alert alert-error">{err}</div>}
-            <div className="form-row">
-              <div className="field" style={{ flex: 1 }}>
-                <label htmlFor="p-name">Nome *</label>
-                <input id="p-name" value={name} onChange={(e) => setName(e.target.value)} required />
-              </div>
-            </div>
-            <div className="field">
-              <label htmlFor="p-desc-c">Descrição</label>
-              <textarea
-                id="p-desc-c"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={2}
-                placeholder="Descrição complementar (aparece em recibos e relatórios)"
-              />
-            </div>
-            <div className="modal-wide-split">
-              <details className="submenu-details" open>
-                <summary className="submenu-summary">Categoria</summary>
-                <div className="submenu-body">
+            <div className="product-form">
+              <section className="product-form__section" aria-label="Identificação e preços">
+                <p className="product-form__section-title">Identificação e preços</p>
+                <div className="field product-form__name">
+                  <label htmlFor="p-name">Nome *</label>
+                  <input id="p-name" value={name} onChange={(e) => setName(e.target.value)} required />
+                </div>
+                <div className="product-form__grid product-form__grid--4">
                   <div className="field">
-                    <span className="field-label-text">Pesquisar ou incluir</span>
-                    <CategorySearchCombo
-                      id="p-cat"
-                      value={categoryId}
-                      onChange={(id, picked) => {
-                        setCategoryId(id);
-                        if (picked) setCategoryNameHint(picked);
-                        if (!id) setCategoryNameHint('');
-                      }}
-                      hintName={categoryNameHint}
+                    <label htmlFor="p-sku">SKU</label>
+                    <input id="p-sku" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Auto se vazio" />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="p-ean">Código de barras</label>
+                    <input
+                      id="p-ean"
+                      value={defaultBarcode}
+                      onChange={(e) => setDefaultBarcode(e.target.value.trim())}
+                      placeholder="EAN (ex.: 7891000000000)"
+                      inputMode="numeric"
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="p-price">Preço de venda (varejo) *</label>
+                    <input
+                      id="p-price"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={retailPrice}
+                      onChange={(e) => setRetailPrice(e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="p-cost">Preço de custo</label>
+                    <input
+                      id="p-cost"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={costPrice}
+                      onChange={(e) => setCostPrice(e.target.value)}
                     />
                   </div>
                 </div>
-              </details>
-              <details className="submenu-details" open>
-                <summary className="submenu-summary">Dados fiscais</summary>
-                <div className="submenu-body">
+                <div className="product-form__grid product-form__grid--2">
+                  <div className="field">
+                    <span className="field-label-text">Lucro (automático)</span>
+                    <div className="product-form__profit">
+                      {profitBRL(retailPrice, costPrice)}
+                      <span className="product-form__profit-meta">
+                        Margem sobre venda: {marginOnSalePct(retailPrice, costPrice)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="p-minstock">Estoque mínimo (ponto de reposição)</label>
+                    <input
+                      id="p-minstock"
+                      type="number"
+                      step="1"
+                      min="1"
+                      value={minStockInput}
+                      onChange={(e) => setMinStockInput(e.target.value)}
+                    />
+                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                      Cadastro mínimo 1. PDV avisa quando o saldo ficar abaixo deste valor.
+                    </span>
+                  </div>
+                </div>
+              </section>
+
+              <div className="modal-wide-split product-form__split">
+                <div className="product-form__col">
+                  <p className="product-form__section-title">Classificação</p>
+                  <details className="submenu-details" open>
+                    <summary className="submenu-summary">Categoria</summary>
+                    <div className="submenu-body">
+                      <div className="field">
+                        <span className="field-label-text">Pesquisar ou incluir</span>
+                        <CategorySearchCombo
+                          id="p-cat"
+                          value={categoryId}
+                          onChange={(id, picked) => {
+                            setCategoryId(id);
+                            if (picked) setCategoryNameHint(picked);
+                            if (!id) setCategoryNameHint('');
+                          }}
+                          hintName={categoryNameHint}
+                        />
+                      </div>
+                    </div>
+                  </details>
+                  <div className="field field--grow">
+                    <label htmlFor="p-desc-c">Descrição</label>
+                    <textarea
+                      id="p-desc-c"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      rows={4}
+                      placeholder="Descrição complementar (aparece em recibos e relatórios)"
+                    />
+                  </div>
+                </div>
+                <div className="product-form__col">
+                  <p className="product-form__section-title">Fiscal</p>
+                  <details className="submenu-details" open>
+                    <summary className="submenu-summary">Dados fiscais</summary>
+                    <div className="submenu-body">
                   <div className="field">
                     <label htmlFor="p-fiscal-sit-create">Situação fiscal (cadastro mestre)</label>
                     <select
@@ -694,90 +809,37 @@ export function ProductsPage() {
                       hintLabel={taxUnit || null}
                     />
                   </div>
+                  <div className="field">
+                    <label htmlFor="p-conversion">Conversão (entrada NF-e)</label>
+                    <input
+                      id="p-conversion"
+                      value={conversion}
+                      onChange={(e) => setConversion(e.target.value.toUpperCase())}
+                      placeholder="Ex.: CX-12"
+                    />
+                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                      Formato <strong>UNIDADE-QUANTIDADE</strong>. Ex.: CX-12 — quando a NF-e vier com unidade CX,
+                      o estoque receberá 12 unidades por caixa informada.
+                    </span>
+                  </div>
                 </div>
               </details>
-            </div>
-            <div className="form-row">
-              <div className="field">
-                <label htmlFor="p-sku">SKU</label>
-                <input id="p-sku" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Auto se vazio" />
-              </div>
-              <div className="field">
-                <label htmlFor="p-ean">Código de barras</label>
-                <input
-                  id="p-ean"
-                  value={defaultBarcode}
-                  onChange={(e) => setDefaultBarcode(e.target.value.trim())}
-                  placeholder="EAN (ex.: 7891000000000)"
-                  inputMode="numeric"
-                />
-              </div>
-            </div>
-            <div className="form-row">
-              <div className="field">
-                <label htmlFor="p-price">Preço de venda (varejo) *</label>
-                <input
-                  id="p-price"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={retailPrice}
-                  onChange={(e) => setRetailPrice(e.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="p-cost">Preço de custo</label>
-                <input
-                  id="p-cost"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={costPrice}
-                  onChange={(e) => setCostPrice(e.target.value)}
-                />
-              </div>
-              <div className="field">
-                <span className="field-label-text">Lucro (automático)</span>
-                <div
-                  className="product-profit-box"
-                  style={{
-                    padding: '0.55rem 0.75rem',
-                    border: '1px solid var(--color-border-strong)',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'var(--color-surface-elevated)',
-                    fontWeight: 600,
-                  }}
-                >
-                  {profitBRL(retailPrice, costPrice)}
-                  <span
-                    style={{
-                      display: 'block',
-                      fontSize: '0.8rem',
-                      fontWeight: 500,
-                      color: 'var(--color-text-secondary)',
-                      marginTop: '0.2rem',
-                    }}
-                  >
-                    Margem sobre venda: {marginOnSalePct(retailPrice, costPrice)}
-                  </span>
                 </div>
               </div>
-            </div>
-            <div className="form-row">
-              <div className="field">
-                <label htmlFor="p-minstock">Estoque mínimo (ponto de reposição)</label>
-                <input
-                  id="p-minstock"
-                  type="number"
-                  step="1"
-                  min="1"
-                  value={minStockInput}
-                  onChange={(e) => setMinStockInput(e.target.value)}
-                />
-                <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                  Cadastro mínimo 1. PDV avisa quando o saldo ficar abaixo deste valor.
-                </span>
-              </div>
+
+              <section className="product-form__section product-form__section--full" aria-label="Vínculos fornecedor">
+                <details className="submenu-details" open>
+                  <summary className="submenu-summary">Vínculos com fornecedores (entrada NF-e)</summary>
+                  <div className="submenu-body">
+                    <ProductSupplierLinksSection
+                      idPrefix="p-create"
+                      variants={[{ id: '__new__', sku: sku.trim() || '(gerado ao salvar)' }]}
+                      links={supplierLinks}
+                      onChange={setSupplierLinks}
+                    />
+                  </div>
+                </details>
+              </section>
             </div>
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setCreateOpen(false)}>
@@ -801,48 +863,64 @@ export function ProductsPage() {
           <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Alterar produto</h2>
             {err && <div className="alert alert-error">{err}</div>}
-            <div className="form-row">
-              <div className="field" style={{ flex: 2 }}>
-                <label htmlFor="pe-name">Nome *</label>
-                <input id="pe-name" value={name} onChange={(e) => setName(e.target.value)} required />
-              </div>
-              <div className="field">
-                <label htmlFor="pe-bar">Código de barras</label>
-                <input
-                  id="pe-bar"
-                  value={defaultBarcode}
-                  onChange={(e) => setDefaultBarcode(e.target.value.trim())}
-                  placeholder="EAN do produto"
-                  inputMode="numeric"
-                />
-              </div>
-              <div className="field" style={{ flex: 2 }}>
-                <label htmlFor="pe-desc">Descrição</label>
-                <textarea id="pe-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
-              </div>
-            </div>
-            <div className="modal-wide-split">
-              <details className="submenu-details" open>
-                <summary className="submenu-summary">Categoria</summary>
-                <div className="submenu-body">
-                  <div className="field">
-                    <span className="field-label-text">Pesquisar ou incluir</span>
-                    <CategorySearchCombo
-                      id="pe-cat"
-                      value={categoryId}
-                      onChange={(id, picked) => {
-                        setCategoryId(id);
-                        if (picked) setCategoryNameHint(picked);
-                        if (!id) setCategoryNameHint('');
-                      }}
-                      hintName={categoryNameHint}
+            <div className="product-form">
+              <section className="product-form__section" aria-label="Identificação">
+                <p className="product-form__section-title">Identificação</p>
+                <div className="product-form__grid product-form__grid--4">
+                  <div className="field" style={{ gridColumn: 'span 2' }}>
+                    <label htmlFor="pe-name">Nome *</label>
+                    <input id="pe-name" value={name} onChange={(e) => setName(e.target.value)} required />
+                  </div>
+                  <div className="field" style={{ gridColumn: 'span 2' }}>
+                    <label htmlFor="pe-bar">Código de barras</label>
+                    <input
+                      id="pe-bar"
+                      value={defaultBarcode}
+                      onChange={(e) => setDefaultBarcode(e.target.value.trim())}
+                      placeholder="EAN do produto"
+                      inputMode="numeric"
                     />
                   </div>
                 </div>
-              </details>
-              <details className="submenu-details" open>
-                <summary className="submenu-summary">Dados fiscais</summary>
-                <div className="submenu-body">
+              </section>
+
+              <div className="modal-wide-split product-form__split">
+                <div className="product-form__col">
+                  <p className="product-form__section-title">Classificação</p>
+                  <details className="submenu-details" open>
+                    <summary className="submenu-summary">Categoria</summary>
+                    <div className="submenu-body">
+                      <div className="field">
+                        <span className="field-label-text">Pesquisar ou incluir</span>
+                        <CategorySearchCombo
+                          id="pe-cat"
+                          value={categoryId}
+                          onChange={(id, picked) => {
+                            setCategoryId(id);
+                            if (picked) setCategoryNameHint(picked);
+                            if (!id) setCategoryNameHint('');
+                          }}
+                          hintName={categoryNameHint}
+                        />
+                      </div>
+                    </div>
+                  </details>
+                  <div className="field field--grow">
+                    <label htmlFor="pe-desc">Descrição</label>
+                    <textarea
+                      id="pe-desc"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      rows={4}
+                      placeholder="Descrição complementar (aparece em recibos e relatórios)"
+                    />
+                  </div>
+                </div>
+                <div className="product-form__col">
+                  <p className="product-form__section-title">Fiscal</p>
+                  <details className="submenu-details" open>
+                    <summary className="submenu-summary">Dados fiscais</summary>
+                    <div className="submenu-body">
                   <div className="field">
                     <label htmlFor="p-fiscal-sit-edit">Situação fiscal (cadastro mestre)</label>
                     <select
@@ -925,33 +1003,59 @@ export function ProductsPage() {
                       hintLabel={taxUnit || null}
                     />
                   </div>
+                  <div className="field">
+                    <label htmlFor="pe-conversion">Conversão (entrada NF-e)</label>
+                    <input
+                      id="pe-conversion"
+                      value={conversion}
+                      onChange={(e) => setConversion(e.target.value.toUpperCase())}
+                      placeholder="Ex.: CX-12"
+                    />
+                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                      Formato <strong>UNIDADE-QUANTIDADE</strong>. Ex.: CX-12 — na entrada por NF-e, multiplica a
+                      quantidade no estoque quando a unidade da nota coincidir.
+                    </span>
+                  </div>
                 </div>
               </details>
-            </div>
-            <p
-              style={{
-                fontSize: '0.82rem',
-                color: 'var(--color-text-muted)',
-                margin: '0.35rem 0 0.25rem',
-                lineHeight: 1.45,
-              }}
-            >
-              <strong>Controle produto</strong> gravado no cadastro (menor mínimo entre SKUs){' '}
-              <strong>{formatStockQty(editProduct.inventoryControlMin ?? '1')}</strong>. Atualiza ao salvar; prévia conforme formulário{' '}
-              <strong>{formatStockQty(String(minMinStockFromVariantForm(editProduct.variants, variantPrices)))}</strong>.
-            </p>
-            <h3
-              style={{
-                fontSize: '0.88rem',
-                fontWeight: 700,
-                margin: '1rem 0 0.5rem',
-                color: 'var(--color-text-secondary)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-              }}
-            >
-              Preços por variação
-            </h3>
+                </div>
+              </div>
+
+              <section className="product-form__section product-form__section--full" aria-label="Vínculos fornecedor">
+                <details className="submenu-details" open>
+                  <summary className="submenu-summary">Vínculos com fornecedores (entrada NF-e)</summary>
+                  <div className="submenu-body">
+                    {editSupplierLinksQ.isLoading && (
+                      <p className="muted" style={{ margin: '0 0 0.5rem', fontSize: '0.85rem' }}>
+                        Carregando vínculos…
+                      </p>
+                    )}
+                    <ProductSupplierLinksSection
+                      idPrefix="p-edit"
+                      variants={editProduct.variants.map((v) => ({ id: v.id, sku: v.sku }))}
+                      links={supplierLinks}
+                      onChange={setSupplierLinks}
+                    />
+                  </div>
+                </details>
+              </section>
+
+              <p
+                style={{
+                  fontSize: '0.82rem',
+                  color: 'var(--color-text-muted)',
+                  margin: 0,
+                  lineHeight: 1.45,
+                }}
+              >
+                <strong>Controle produto</strong> gravado no cadastro (menor mínimo entre SKUs){' '}
+                <strong>{formatStockQty(editProduct.inventoryControlMin ?? '1')}</strong>. Atualiza ao salvar; prévia conforme formulário{' '}
+                <strong>{formatStockQty(String(minMinStockFromVariantForm(editProduct.variants, variantPrices)))}</strong>.
+              </p>
+
+              <section className="product-form__section" aria-label="Preços por variação">
+                <p className="product-form__section-title">Preços por variação (SKU)</p>
+                <div className="product-form__variants">
             {editProduct.variants.map((v) => {
               const row = variantPrices[v.id] ?? {
                 retail: String(v.retailPrice),
@@ -959,20 +1063,10 @@ export function ProductsPage() {
                 minStock: String(v.minStock ?? '1'),
               };
               return (
-                <div key={v.id} className="form-row">
+                <div key={v.id} className="product-form__variant-row">
                   <div className="field">
                     <span className="field-label-text">SKU</span>
-                    <div
-                      style={{
-                        padding: '0.55rem 0.75rem',
-                        border: '1px solid var(--color-border)',
-                        borderRadius: 'var(--radius-md)',
-                        background: 'var(--color-surface)',
-                        fontSize: '0.9rem',
-                      }}
-                    >
-                      {v.sku}
-                    </div>
+                    <div className="product-form__sku-readonly">{v.sku}</div>
                   </div>
                   <div className="field">
                     <label htmlFor={`pe-r-${v.id}`}>Preço de venda</label>
@@ -1015,25 +1109,9 @@ export function ProductsPage() {
                   </div>
                   <div className="field">
                     <span className="field-label-text">Lucro</span>
-                    <div
-                      style={{
-                        padding: '0.55rem 0.75rem',
-                        border: '1px solid var(--color-border-strong)',
-                        borderRadius: 'var(--radius-md)',
-                        background: 'var(--color-surface-elevated)',
-                        fontWeight: 600,
-                      }}
-                    >
+                    <div className="product-form__profit">
                       {profitBRL(row.retail, row.cost)}
-                      <span
-                        style={{
-                          display: 'block',
-                          fontSize: '0.8rem',
-                          fontWeight: 500,
-                          color: 'var(--color-text-secondary)',
-                          marginTop: '0.2rem',
-                        }}
-                      >
+                      <span className="product-form__profit-meta">
                         Margem: {marginOnSalePct(row.retail, row.cost)}
                       </span>
                     </div>
@@ -1041,6 +1119,9 @@ export function ProductsPage() {
                 </div>
               );
             })}
+                </div>
+              </section>
+            </div>
             <div className="field">
               <label style={{ flexDirection: 'row', alignItems: 'center', gap: '0.5rem' }}>
                 <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />

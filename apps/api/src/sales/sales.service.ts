@@ -8,13 +8,17 @@ import {
   StockMovementSource,
   StockMovementType,
   ActivityLogAction,
+  UserPermissionCode,
 } from '../generated/tenant-client';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { UserPermissionsService } from '../users/user-permissions.service';
 
 export type CreateSaleInput = {
   tenantSlug: string;
   userId: string;
+  userRoles: string[];
+  permissionPassword?: string;
   customerId?: string | null;
   notes?: string | null;
   discount?: string | number;
@@ -112,6 +116,7 @@ export class SalesService {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly activityLog: ActivityLogService,
+    private readonly permissions: UserPermissionsService,
   ) {}
 
   async create(input: CreateSaleInput) {
@@ -119,6 +124,16 @@ export class SalesService {
 
     const discount = Number(input.discount ?? 0);
     if (discount < 0) throw new BadRequestException('Desconto inválido');
+
+    if (discount > 0) {
+      await this.permissions.assertPermission(
+        input.tenantSlug,
+        input.userId,
+        input.userRoles,
+        UserPermissionCode.SALE_DISCOUNT,
+        input.permissionPassword,
+      );
+    }
 
     let subtotal = 0;
     for (const it of input.items) {
@@ -423,7 +438,21 @@ export class SalesService {
     });
   }
 
-  async cancel(tenantSlug: string, saleId: string, userId: string) {
+  async cancel(
+    tenantSlug: string,
+    saleId: string,
+    userId: string,
+    userRoles: string[],
+    permissionPassword?: string,
+  ) {
+    await this.permissions.assertPermission(
+      tenantSlug,
+      userId,
+      userRoles,
+      UserPermissionCode.SALE_CANCEL,
+      permissionPassword,
+    );
+
     const db = await this.tenantPrisma.getClient(tenantSlug);
     return db.$transaction(async (tx) => {
       const sale = await tx.sale.findUniqueOrThrow({
@@ -474,10 +503,22 @@ export class SalesService {
 
       await tx.accountReceivable.deleteMany({ where: { saleId } });
 
-      return tx.sale.update({
+      const updated = await tx.sale.update({
         where: { id: saleId },
         data: { status: SaleStatus.CANCELLED },
       });
+
+      return updated;
+    }).then((sale) => {
+      this.activityLog.record({
+        tenantSlug,
+        userId,
+        action: ActivityLogAction.UPDATE,
+        summary: `Cancelou venda #${sale.number}`,
+        entityType: 'sale',
+        entityRef: `#${sale.number}`,
+      });
+      return sale;
     });
   }
 

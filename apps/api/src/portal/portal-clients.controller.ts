@@ -26,6 +26,7 @@ import { TenantProvisioningService } from '../provisioning/tenant-provisioning.s
 import { CentralPrismaService } from '../prisma/central-prisma.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { PortalAuthGuard } from './portal-auth.guard';
+import { TenantService } from '../tenant/tenant.service';
 
 function slugify(input: string): string {
   return String(input)
@@ -55,14 +56,18 @@ export class PortalClientsController {
     private readonly config: ConfigService,
     private readonly provisioning: TenantProvisioningService,
     private readonly tenantPrisma: TenantPrismaService,
+    private readonly tenantService: TenantService,
   ) {}
 
   /** Lista todos os clientes/licenças com cálculo de tempo restante. */
   @Get()
   async list() {
-    const tenants = await this.central.tenant.findMany({
+    const raw = await this.central.tenant.findMany({
       orderBy: { companyName: 'asc' },
     });
+    const tenants = await Promise.all(
+      raw.map((t) => this.tenantService.syncLicenseExpiryStatus(t)),
+    );
     const now = Date.now();
     return tenants.map((t) => ({
       id: t.id,

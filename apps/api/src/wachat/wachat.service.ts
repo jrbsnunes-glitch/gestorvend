@@ -104,7 +104,7 @@ export class WaChatService {
 
     const sale = await this.sales.create({
       tenantSlug: input.tenantSlug,
-      userId: await this.getSystemUserId(input.tenantSlug),
+      ...(await this.getSystemUserContext(input.tenantSlug)),
       customerId,
       notes: notesParts.join(' | '),
       discount,
@@ -188,24 +188,28 @@ export class WaChatService {
    * Procura um usuário com papel `admin`; se não houver, usa o primeiro usuário ativo.
    * Lança erro claro se o tenant não tem nenhum usuário, já que sem isso a venda não pode ser registrada.
    */
-  private async getSystemUserId(tenantSlug: string): Promise<string> {
+  private async getSystemUserContext(
+    tenantSlug: string,
+  ): Promise<{ userId: string; userRoles: string[] }> {
     const db = await this.tenantPrisma.getClient(tenantSlug);
     const admin = await db.user.findFirst({
       where: { isActive: true, roles: { some: { name: 'admin' } } },
       orderBy: { createdAt: 'asc' },
-      select: { id: true },
+      include: { roles: true },
     });
-    if (admin) return admin.id;
+    if (admin) {
+      return { userId: admin.id, userRoles: admin.roles.map((r) => r.name) };
+    }
     const any = await db.user.findFirst({
       where: { isActive: true },
       orderBy: { createdAt: 'asc' },
-      select: { id: true },
+      include: { roles: true },
     });
     if (!any) {
       throw new BadRequestException(
         'Tenant sem usuário ativo: cadastre ao menos um admin antes de receber pedidos do WhatsApp.',
       );
     }
-    return any.id;
+    return { userId: any.id, userRoles: any.roles.map((r) => r.name) };
   }
 }

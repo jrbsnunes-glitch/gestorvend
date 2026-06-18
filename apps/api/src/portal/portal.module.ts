@@ -6,10 +6,12 @@ import { PortalAuthGuard } from './portal-auth.guard';
 import { PortalAuthController } from './portal-auth.controller';
 import { PortalClientsController } from './portal-clients.controller';
 import { TenantProvisioningService } from '../provisioning/tenant-provisioning.service';
+import { TenantModule } from '../tenant/tenant.module';
 
 @Module({
   imports: [
     PrismaModule,
+    TenantModule,
     ConfigModule,
     // O portal usa um segredo próprio para os tokens. Se `PORTAL_JWT_SECRET`
     // não estiver definido, caímos no segredo do app principal — útil em dev.

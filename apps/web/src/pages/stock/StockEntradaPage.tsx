@@ -1,18 +1,44 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { CrudToolbar } from '../../components/CrudToolbar';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
 import { SupplierSearchCombo } from '../../components/ProductCatalogCombos';
+import { ProductSearchModal, type ProductSearchRow } from '../../components/ProductSearchModal';
 import { api, ApiHttpError } from '../../lib/api';
+import { formatConversionHint } from '../../lib/product-conversion';
 
 type Line = {
+  lineNumber?: number;
   variantId: string;
+  variantLabel: string;
+  supplierProductCode: string;
+  invoiceUnit: string;
+  invoiceQuantity: string;
   quantity: string;
   unitCost: string;
   ncm: string;
   cfop: string;
   description: string;
+  fromNfe: boolean;
+  pendingResolution: boolean;
 };
+
+function emptyLine(): Line {
+  return {
+    variantId: '',
+    variantLabel: '',
+    supplierProductCode: '',
+    invoiceUnit: '',
+    invoiceQuantity: '1',
+    quantity: '1',
+    unitCost: '0',
+    ncm: '',
+    cfop: '1102',
+    description: '',
+    fromNfe: false,
+    pendingResolution: false,
+  };
+}
 
 type GoodsReceiptRow = {
   id: string;
@@ -67,6 +93,7 @@ type InboundFetchResponse = {
     sku: string | null;
     label: string | null;
     confidence: string;
+    supplierProductCode: string | null;
   }>;
   supplierId: string | null;
   supplierName: string | null;
@@ -100,9 +127,7 @@ export function StockEntradaPage() {
   const [natureOperation, setNatureOperation] = useState('Compra para comercialização');
   const [totalValue, setTotalValue] = useState('');
   const [notes, setNotes] = useState('');
-  const [lines, setLines] = useState<Line[]>([
-    { variantId: '', quantity: '1', unitCost: '0', ncm: '', cfop: '1102', description: '' },
-  ]);
+  const [lines, setLines] = useState<Line[]>([emptyLine()]);
   // Geração de contas a pagar a partir desta entrada.
   const [genPayable, setGenPayable] = useState(false);
   const [payInstallments, setPayInstallments] = useState(1);
@@ -114,6 +139,8 @@ export function StockEntradaPage() {
   const [duplicateInfo, setDuplicateInfo] = useState<DuplicateReceiptInfo | null>(null);
   const [nfeWarnings, setNfeWarnings] = useState<string[]>([]);
   const [nfeFetchMsg, setNfeFetchMsg] = useState<string | null>(null);
+  const [productSearchLine, setProductSearchLine] = useState<number | null>(null);
+  const [creatingLine, setCreatingLine] = useState<number | null>(null);
 
   const receipts = useQuery({
     queryKey: ['goods-receipts'],
@@ -132,22 +159,33 @@ export function StockEntradaPage() {
         Array<{
           name: string;
           ncm: string | null;
+          conversion: string | null;
           variants: Array<{ id: string; sku: string }>;
         }>
       >('/products'),
   });
 
-  const variantOptions = useMemo(
-    () =>
-      products.data?.flatMap((p) =>
-        p.variants.map((v) => ({
-          id: v.id,
-          label: `${v.sku} — ${p.name}`,
-          ncm: p.ncm ?? '',
-        })),
-      ) ?? [],
-    [products.data],
-  );
+  const conversionByVariant = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const p of products.data ?? []) {
+      for (const v of p.variants) {
+        map.set(v.id, p.conversion ?? null);
+      }
+    }
+    return map;
+  }, [products.data]);
+
+  const ncmByVariant = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of products.data ?? []) {
+      for (const v of p.variants) {
+        map.set(v.id, p.ncm ?? '');
+      }
+    }
+    return map;
+  }, [products.data]);
+
+  const hasUnresolvedLines = lines.some((l) => l.pendingResolution && !l.variantId);
 
   const recentReceipts = useMemo(() => (receipts.data ?? []).slice(0, 50), [receipts.data]);
 
@@ -163,7 +201,7 @@ export function StockEntradaPage() {
     setNatureOperation('Compra para comercialização');
     setTotalValue('');
     setNotes('');
-    setLines([{ variantId: '', quantity: '1', unitCost: '0', ncm: '', cfop: '1102', description: '' }]);
+    setLines([emptyLine()]);
     setGenPayable(false);
     setPayInstallments(1);
     setPayIntervalDays(30);
@@ -196,16 +234,25 @@ export function StockEntradaPage() {
       p.items.length > 0
         ? p.items.map((item) => {
             const match = matchByLine.get(item.lineNumber);
+            const supplierCode = match?.supplierProductCode ?? item.supplierCode ?? '';
+            const unresolved = !match?.variantId && !!supplierCode;
             return {
+              lineNumber: item.lineNumber,
               variantId: match?.variantId ?? '',
+              variantLabel: match?.label ?? '',
+              supplierProductCode: supplierCode,
+              invoiceUnit: item.unit ?? '',
+              invoiceQuantity: String(item.quantity),
               quantity: String(item.quantity),
               unitCost: String(item.unitCost),
               ncm: item.ncm ?? '',
               cfop: item.cfop ?? '1102',
               description: item.description,
+              fromNfe: true,
+              pendingResolution: unresolved,
             };
           })
-        : [{ variantId: '', quantity: '1', unitCost: '0', ncm: '', cfop: '1102', description: '' }],
+        : [emptyLine()],
     );
   }
 
@@ -260,14 +307,20 @@ export function StockEntradaPage() {
           notes: notes || null,
           items: lines
             .filter((l) => l.variantId)
-            .map((l) => ({
-              variantId: l.variantId,
-              quantity: parseFloat(l.quantity.replace(',', '.')) || 0,
-              unitCost: parseFloat(l.unitCost.replace(',', '.')) || 0,
-              ncm: l.ncm || null,
-              cfop: l.cfop || null,
-              description: l.description || null,
-            })),
+            .map((l) => {
+              const rawQty = parseFloat((l.invoiceQuantity || l.quantity).replace(',', '.')) || 0;
+              return {
+                variantId: l.variantId,
+                quantity: rawQty,
+                invoiceQuantity: rawQty,
+                unitCost: parseFloat(l.unitCost.replace(',', '.')) || 0,
+                ncm: l.ncm || null,
+                cfop: l.cfop || null,
+                description: l.description || null,
+                supplierProductCode: l.supplierProductCode.trim() || null,
+                invoiceUnit: l.invoiceUnit.trim() || null,
+              };
+            }),
           payable: genPayable
             ? {
                 enabled: true,
@@ -341,10 +394,57 @@ export function StockEntradaPage() {
     setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...p } : l)));
   }
 
-  function onPickVariant(i: number, id: string) {
-    const v = variantOptions.find((x) => x.id === id);
-    setLine(i, { variantId: id, ncm: v?.ncm ?? lines[i]?.ncm });
+  function pickProductForLine(i: number, row: ProductSearchRow) {
+    setLine(i, {
+      variantId: row.variantId,
+      variantLabel: `${row.sku} — ${row.productName}`,
+      pendingResolution: false,
+      ncm: lines[i]?.ncm || ncmByVariant.get(row.variantId) || '',
+    });
   }
+
+  const createProductFromLine = useMutation({
+    mutationFn: (lineIndex: number) => {
+      const l = lines[lineIndex];
+      if (!l) throw new Error('Linha inválida');
+      return api<{
+        variants: Array<{ id: string; sku: string; product?: { name: string } }>;
+        name: string;
+      }>('/products/from-inbound-line', {
+        method: 'POST',
+        json: {
+          name: l.description.trim() || l.supplierProductCode.trim() || 'Produto NF-e',
+          description: l.description.trim() || null,
+          ncm: l.ncm.trim() || null,
+          taxUnit: l.invoiceUnit.trim() || null,
+          unitCost: parseFloat(l.unitCost.replace(',', '.')) || 0,
+          supplierId: supplierId || null,
+          supplierProductCode: l.supplierProductCode.trim() || null,
+        },
+      });
+    },
+    onSuccess: (product, lineIndex) => {
+      const v = product.variants[0];
+      if (v) {
+        pickProductForLine(lineIndex, {
+          productId: '',
+          productName: product.name,
+          variantId: v.id,
+          sku: v.sku,
+          barcode: null,
+          retailPrice: '0',
+          costAverage: '0',
+          stockTotal: '0',
+        });
+      }
+      qc.invalidateQueries({ queryKey: ['products'] });
+      setCreatingLine(null);
+    },
+    onError: (e: Error) => {
+      setCreatingLine(null);
+      setErr(e.message);
+    },
+  });
 
   return (
     <div>
@@ -736,62 +836,178 @@ export function StockEntradaPage() {
                     histórico se houver alteração).
                   </p>
                   <div className="table-wrap">
-                    <table className="data-table">
+                    <table className="data-table entrada-items-table">
                       <thead>
                         <tr>
-                          <th>Produto (SKU)</th>
-                          <th>Descrição</th>
+                          <th>Cód. fornecedor</th>
+                          <th>Produto (interno)</th>
+                          <th>Descrição NF</th>
+                          <th>Un. NF</th>
                           <th>NCM</th>
                           <th>CFOP</th>
-                          <th>Qtd</th>
+                          <th>Qtd NF</th>
                           <th>Custo unit.</th>
                           <th></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {lines.map((l, i) => (
-                          <tr key={i}>
-                            <td>
-                              <select value={l.variantId} onChange={(e) => onPickVariant(i, e.target.value)}>
-                                <option value="">—</option>
-                                {variantOptions.map((v) => (
-                                  <option key={v.id} value={v.id}>
-                                    {v.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            <td>
-                              <input
-                                value={l.description}
-                                onChange={(e) => setLine(i, { description: e.target.value })}
-                                placeholder="Descrição no documento"
-                              />
-                            </td>
-                            <td>
-                              <input value={l.ncm} onChange={(e) => setLine(i, { ncm: e.target.value })} />
-                            </td>
-                            <td>
-                              <input value={l.cfop} onChange={(e) => setLine(i, { cfop: e.target.value })} />
-                            </td>
-                            <td>
-                              <input value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} />
-                            </td>
-                            <td>
-                              <input value={l.unitCost} onChange={(e) => setLine(i, { unitCost: e.target.value })} />
-                            </td>
-                            <td>
-                              <button
-                                type="button"
-                                className="btn btn-secondary"
-                                disabled={lines.length <= 1}
-                                onClick={() => setLines((p) => p.filter((_, j) => j !== i))}
-                              >
-                                ✕
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {lines.map((l, i) => {
+                          const convHint =
+                            l.variantId && l.invoiceUnit
+                              ? formatConversionHint(
+                                  parseFloat(l.invoiceQuantity.replace(',', '.')) || 0,
+                                  l.invoiceUnit,
+                                  conversionByVariant.get(l.variantId) ?? null,
+                                )
+                              : null;
+                          return (
+                            <Fragment key={i}>
+                              <tr key={i}>
+                                <td>
+                                  <input
+                                    value={l.supplierProductCode}
+                                    onChange={(e) =>
+                                      setLine(i, { supplierProductCode: e.target.value })
+                                    }
+                                    placeholder="cProd NF-e"
+                                    title="Código do produto no fornecedor — usado para identificar automaticamente nas próximas entradas"
+                                  />
+                                </td>
+                                <td>
+                                  <div className="entrada-product-pick">
+                                    <span
+                                      className={
+                                        l.variantLabel
+                                          ? 'entrada-product-pick__label'
+                                          : 'entrada-product-pick__label entrada-product-pick__label--empty'
+                                      }
+                                    >
+                                      {l.variantLabel || '— não vinculado —'}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary btn-sm"
+                                      onClick={() => setProductSearchLine(i)}
+                                    >
+                                      Pesquisar
+                                    </button>
+                                    {l.variantId && (
+                                      <button
+                                        type="button"
+                                        className="btn btn-ghost btn-sm"
+                                        title="Remover vínculo"
+                                        onClick={() =>
+                                          setLine(i, {
+                                            variantId: '',
+                                            variantLabel: '',
+                                            pendingResolution: l.fromNfe && !!l.supplierProductCode,
+                                          })
+                                        }
+                                      >
+                                        ✕
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                                <td>
+                                  <input
+                                    value={l.description}
+                                    onChange={(e) => setLine(i, { description: e.target.value })}
+                                    placeholder="Descrição no documento"
+                                  />
+                                </td>
+                                <td>
+                                  <input
+                                    value={l.invoiceUnit}
+                                    onChange={(e) => setLine(i, { invoiceUnit: e.target.value.toUpperCase() })}
+                                    placeholder="UN"
+                                    style={{ width: '4rem' }}
+                                  />
+                                </td>
+                                <td>
+                                  <input value={l.ncm} onChange={(e) => setLine(i, { ncm: e.target.value })} />
+                                </td>
+                                <td>
+                                  <input value={l.cfop} onChange={(e) => setLine(i, { cfop: e.target.value })} />
+                                </td>
+                                <td>
+                                  <input
+                                    value={l.invoiceQuantity}
+                                    onChange={(e) =>
+                                      setLine(i, {
+                                        invoiceQuantity: e.target.value,
+                                        quantity: e.target.value,
+                                      })
+                                    }
+                                  />
+                                  {convHint && (
+                                    <span className="entrada-conversion-hint" title={convHint}>
+                                      → estoque
+                                    </span>
+                                  )}
+                                </td>
+                                <td>
+                                  <input
+                                    value={l.unitCost}
+                                    onChange={(e) => setLine(i, { unitCost: e.target.value })}
+                                  />
+                                </td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    disabled={lines.length <= 1}
+                                    onClick={() => setLines((p) => p.filter((_, j) => j !== i))}
+                                  >
+                                    ✕
+                                  </button>
+                                </td>
+                              </tr>
+                              {l.pendingResolution && !l.variantId && (
+                                <tr key={`${i}-resolve`} className="entrada-unresolved-row">
+                                  <td colSpan={9}>
+                                    <div className="alert alert-warn entrada-unresolved-banner">
+                                      <strong>Produto sem vínculo com o fornecedor.</strong>{' '}
+                                      Deseja vincular a um produto existente ou incluir um novo com os dados
+                                      da nota?
+                                      <div className="entrada-unresolved-actions">
+                                        <button
+                                          type="button"
+                                          className="btn btn-secondary btn-sm"
+                                          onClick={() => setProductSearchLine(i)}
+                                        >
+                                          Pesquisar produto existente
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn btn-primary btn-sm"
+                                          disabled={createProductFromLine.isPending && creatingLine === i}
+                                          onClick={() => {
+                                            setCreatingLine(i);
+                                            createProductFromLine.mutate(i);
+                                          }}
+                                        >
+                                          {createProductFromLine.isPending && creatingLine === i
+                                            ? 'Criando…'
+                                            : 'Incluir novo produto'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                              {convHint && l.variantId && (
+                                <tr key={`${i}-conv`} className="entrada-conversion-row">
+                                  <td colSpan={9}>
+                                    <span className="muted" style={{ fontSize: '0.82rem' }}>
+                                      Conversão: {convHint}
+                                    </span>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -799,19 +1015,7 @@ export function StockEntradaPage() {
                     type="button"
                     className="btn btn-secondary"
                     style={{ marginTop: '0.5rem' }}
-                    onClick={() =>
-                      setLines((p) => [
-                        ...p,
-                        {
-                          variantId: '',
-                          quantity: '1',
-                          unitCost: '0',
-                          ncm: '',
-                          cfop: '1102',
-                          description: '',
-                        },
-                      ])
-                    }
+                    onClick={() => setLines((p) => [...p, emptyLine()])}
                   >
                     + Item
                   </button>
@@ -924,7 +1128,12 @@ export function StockEntradaPage() {
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={!locationId || !lines.some((x) => x.variantId) || submit.isPending}
+                disabled={
+                  !locationId ||
+                  !lines.some((x) => x.variantId) ||
+                  hasUnresolvedLines ||
+                  submit.isPending
+                }
                 onClick={() => submit.mutate()}
               >
                 Confirmar recebimento / lançar estoque
@@ -933,6 +1142,14 @@ export function StockEntradaPage() {
           </div>
         </div>
       )}
+
+      <ProductSearchModal
+        open={productSearchLine != null}
+        onClose={() => setProductSearchLine(null)}
+        onPick={(row) => {
+          if (productSearchLine != null) pickProductForLine(productSearchLine, row);
+        }}
+      />
     </div>
   );
 }

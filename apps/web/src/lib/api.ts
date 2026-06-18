@@ -136,7 +136,14 @@ async function refreshAccessToken(): Promise<boolean> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken: rt }),
       });
-      if (!res.ok) return false;
+      if (!res.ok) {
+        const text = await res.text();
+        if (res.status === 403 && isLicenseDenied(res.status, text)) {
+          clearAuthStorage();
+          window.dispatchEvent(new CustomEvent(GV_UNAUTHORIZED_EVENT));
+        }
+        return false;
+      }
       const data = (await res.json()) as { accessToken?: string };
       if (!data.accessToken) return false;
       setToken(data.accessToken);
@@ -215,6 +222,22 @@ export function formatLoginFailureMessage(httpStatus: number, bodyText: string):
   const up = upstreamUnavailableHint(httpStatus);
   if (up) return up;
   return `Falha no login (HTTP ${httpStatus}).`;
+}
+
+function isLicenseDenied(status: number, raw: string): boolean {
+  if (status !== 403 && status !== 401) return false;
+  const lower = raw.toLowerCase();
+  return (
+    lower.includes('licença') ||
+    lower.includes('licenca') ||
+    lower.includes('license')
+  );
+}
+
+function handleAuthFailure(status: number, statusText: string, text: string): never {
+  clearAuthStorage();
+  window.dispatchEvent(new CustomEvent(GV_UNAUTHORIZED_EVENT));
+  throw new Error(formatApiErrorBody(status, statusText, text));
 }
 
 function formatApiErrorBody(status: number, statusText: string, raw: string): string {
@@ -335,10 +358,8 @@ export async function api<T>(
 
   if (!res.ok) {
     const text = await res.text();
-    if (res.status === 401) {
-      clearAuthStorage();
-      window.dispatchEvent(new CustomEvent(GV_UNAUTHORIZED_EVENT));
-      throw new Error(formatApiErrorBody(401, res.statusText, text));
+    if (res.status === 401 || (res.status === 403 && isLicenseDenied(res.status, text))) {
+      handleAuthFailure(res.status, res.statusText, text);
     }
     let payload: unknown;
     try {
@@ -393,10 +414,8 @@ export async function apiUpload<T>(path: string, file: File, fieldName = 'file')
 
   if (!res.ok) {
     const text = await res.text();
-    if (res.status === 401) {
-      clearAuthStorage();
-      window.dispatchEvent(new CustomEvent(GV_UNAUTHORIZED_EVENT));
-      throw new Error(formatApiErrorBody(401, res.statusText, text));
+    if (res.status === 401 || (res.status === 403 && isLicenseDenied(res.status, text))) {
+      handleAuthFailure(res.status, res.statusText, text);
     }
     throw new Error(formatApiErrorBody(res.status, res.statusText, text));
   }

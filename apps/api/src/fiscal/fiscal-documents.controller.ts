@@ -29,4 +29,21 @@ export class FiscalDocumentsController {
     const kind = body.kind ?? FiscalDocumentKind.NFC_E;
     return this.docs.queue(user.tenantSlug, body.saleId, kind);
   }
+
+  /** Cancela documento fiscal localmente (requer permissão + senha, exceto administrador). */
+  @Post(':id/cancel')
+  @Roles('admin', 'manager', 'seller')
+  cancel(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: { permissionPassword?: string },
+  ) {
+    return this.docs.cancelById(
+      user.tenantSlug,
+      id,
+      user.sub,
+      user.roles,
+      body?.permissionPassword,
+    );
+  }
 }

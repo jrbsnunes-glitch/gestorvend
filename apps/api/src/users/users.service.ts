@@ -5,7 +5,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { UserPermissionCode } from '../generated/tenant-client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { PermissionGrantInput, UserPermissionsService } from './user-permissions.service';
 
 /**
  * Perfis expostos ao usuário final no UI.
@@ -33,7 +35,10 @@ export type UserSummary = {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    private readonly permissions: UserPermissionsService,
+  ) {}
 
   /**
    * Converte o conjunto de roles persistidas num único perfil "amigável".
@@ -276,5 +281,28 @@ export class UsersService {
         'Operação bloqueada: este é o último gerente ativo do sistema. Cadastre outro gerente antes de continuar.',
       );
     }
+  }
+
+  async getPermissions(tenantSlug: string, userId: string) {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const u = await db.user.findUnique({
+      where: { id: userId },
+      include: { roles: true },
+    });
+    if (!u) throw new NotFoundException('Usuário não encontrado.');
+    return this.permissions.listForUser(
+      tenantSlug,
+      userId,
+      u.roles.map((r) => r.name),
+    );
+  }
+
+  async updatePermissions(
+    tenantSlug: string,
+    userId: string,
+    grants: PermissionGrantInput[],
+  ) {
+    const permissions = await this.permissions.updateForUser(tenantSlug, userId, grants);
+    return { permissions };
   }
 }

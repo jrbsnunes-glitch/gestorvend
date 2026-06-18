@@ -25,6 +25,7 @@ import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { validateNfeAccessKey } from '../fiscal/utils/nfe-access-key';
+import { resolveStockFromInvoice } from '../common/product-conversion.util';
 
 type ReceiptItemDto = {
   variantId: string;
@@ -33,6 +34,10 @@ type ReceiptItemDto = {
   ncm?: string | null;
   cfop?: string | null;
   description?: string | null;
+  supplierProductCode?: string | null;
+  invoiceUnit?: string | null;
+  /** Quantidade bruta da NF-e (antes da conversão). Se omitida, usa `quantity`. */
+  invoiceQuantity?: number | null;
 };
 
 /**
@@ -180,21 +185,52 @@ export class GoodsReceiptController {
           postedAt: new Date(),
           userId: user.sub,
           items: {
-            create: body.items.map((it) => ({
-              variantId: it.variantId,
-              quantity: String(it.quantity),
-              unitCost: String(it.unitCost),
-              ncm: it.ncm ?? null,
-              cfop: it.cfop ?? null,
-              description: it.description ?? null,
-            })),
+            create: await Promise.all(
+              body.items.map(async (it) => {
+                const variant = await tx.productVariant.findUniqueOrThrow({
+                  where: { id: it.variantId },
+                  include: { product: { select: { conversion: true } } },
+                });
+                const rawQty = it.invoiceQuantity != null ? Number(it.invoiceQuantity) : Number(it.quantity);
+                const rawCost = Number(it.unitCost);
+                const resolved = resolveStockFromInvoice(
+                  rawQty,
+                  it.invoiceUnit,
+                  rawCost,
+                  variant.product.conversion,
+                );
+                return {
+                  variantId: it.variantId,
+                  quantity: String(resolved.quantity),
+                  unitCost: String(resolved.unitCost),
+                  ncm: it.ncm ?? null,
+                  cfop: it.cfop ?? null,
+                  description: it.description ?? null,
+                  supplierProductCode: it.supplierProductCode?.trim() || null,
+                  invoiceUnit: it.invoiceUnit?.trim().toUpperCase() || null,
+                };
+              }),
+            ),
           },
         },
         include: { items: true },
       });
 
       for (const it of body.items) {
-        const qtyNum = Number(it.quantity);
+        const variant = await tx.productVariant.findUniqueOrThrow({
+          where: { id: it.variantId },
+          include: { product: { select: { conversion: true } } },
+        });
+        const rawQty = it.invoiceQuantity != null ? Number(it.invoiceQuantity) : Number(it.quantity);
+        const rawCost = Number(it.unitCost);
+        const resolved = resolveStockFromInvoice(
+          rawQty,
+          it.invoiceUnit,
+          rawCost,
+          variant.product.conversion,
+        );
+        const qtyNum = resolved.quantity;
+        const unitCost = resolved.unitCost;
         const bal = await tx.stockBalance.findUnique({
           where: {
             variantId_locationId: { variantId: it.variantId, locationId: body.locationId },
@@ -221,20 +257,19 @@ export class GoodsReceiptController {
             variantId: it.variantId,
             locationId: body.locationId,
             quantity: String(Math.abs(qtyNum)),
-            unitCost: String(it.unitCost),
+            unitCost: String(unitCost),
             reference: `Entrada NF ${body.documentNumber ?? receipt.id.slice(0, 8)}`,
             userId: user.sub,
             goodsReceiptId: receipt.id,
           },
         });
 
-        const variant = await tx.productVariant.findUniqueOrThrow({ where: { id: it.variantId } });
-        const oldCost = Number(variant.costAverage);
-        const unitCost = Number(it.unitCost);
+        const variantRow = await tx.productVariant.findUniqueOrThrow({ where: { id: it.variantId } });
+        const oldCost = Number(variantRow.costAverage);
         const denom = next;
         const newAverage =
           denom > 0 ? (oldCost * Math.max(current, 0) + unitCost * qtyNum) / denom : unitCost;
-        const oldCostDec = new Prisma.Decimal(variant.costAverage);
+        const oldCostDec = new Prisma.Decimal(variantRow.costAverage);
         const newAvgDec = new Prisma.Decimal(String(newAverage));
         if (!oldCostDec.equals(newAvgDec)) {
           await tx.productVariantPriceHistory.create({
@@ -252,6 +287,24 @@ export class GoodsReceiptController {
           where: { id: it.variantId },
           data: { costAverage: String(newAverage) },
         });
+
+        const linkCode = it.supplierProductCode?.trim();
+        if (body.supplierId && linkCode) {
+          await tx.supplierProductLink.upsert({
+            where: {
+              supplierId_supplierProductCode: {
+                supplierId: body.supplierId,
+                supplierProductCode: linkCode,
+              },
+            },
+            create: {
+              supplierId: body.supplierId,
+              variantId: it.variantId,
+              supplierProductCode: linkCode,
+            },
+            update: { variantId: it.variantId },
+          });
+        }
       }
 
       // Geração opcional de contas a pagar a partir da entrada.

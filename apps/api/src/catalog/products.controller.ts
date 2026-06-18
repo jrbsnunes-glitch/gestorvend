@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -17,6 +18,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { validateProductConversion } from '../common/product-conversion.util';
 
 @Controller('products')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -212,6 +214,90 @@ export class ProductsController {
     };
   }
 
+  @Get(':id/supplier-links')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  async listSupplierLinks(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    await db.product.findUniqueOrThrow({ where: { id }, select: { id: true } });
+    const variants = await db.productVariant.findMany({
+      where: { productId: id },
+      select: { id: true, sku: true },
+    });
+    if (!variants.length) return [];
+    return db.supplierProductLink.findMany({
+      where: { variantId: { in: variants.map((v) => v.id) } },
+      include: {
+        supplier: { select: { id: true, legalName: true } },
+        variant: { select: { id: true, sku: true } },
+      },
+      orderBy: [{ supplier: { legalName: 'asc' } }, { supplierProductCode: 'asc' }],
+    });
+  }
+
+  @Put(':id/supplier-links')
+  @Roles('admin', 'manager')
+  async syncSupplierLinks(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      links: Array<{
+        supplierId: string;
+        variantId: string;
+        supplierProductCode: string;
+      }>;
+    },
+  ) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    await db.product.findUniqueOrThrow({ where: { id }, select: { id: true } });
+    const variants = await db.productVariant.findMany({
+      where: { productId: id },
+      select: { id: true },
+    });
+    const variantIds = new Set(variants.map((v) => v.id));
+    const normalized: Array<{
+      supplierId: string;
+      variantId: string;
+      supplierProductCode: string;
+    }> = [];
+    const seen = new Set<string>();
+
+    for (const row of body.links ?? []) {
+      const supplierId = row.supplierId?.trim();
+      const variantId = row.variantId?.trim();
+      const code = row.supplierProductCode?.trim().slice(0, 60);
+      if (!supplierId || !variantId || !code) continue;
+      if (!variantIds.has(variantId)) {
+        throw new BadRequestException('Variação não pertence a este produto.');
+      }
+      const key = `${supplierId}:${code}`;
+      if (seen.has(key)) {
+        throw new BadRequestException(
+          `Código duplicado para o mesmo fornecedor: ${code}`,
+        );
+      }
+      seen.add(key);
+      normalized.push({ supplierId, variantId, supplierProductCode: code });
+    }
+
+    return db.$transaction(async (tx) => {
+      await tx.supplierProductLink.deleteMany({
+        where: { variantId: { in: [...variantIds] } },
+      });
+      for (const link of normalized) {
+        await tx.supplierProductLink.create({ data: link });
+      }
+      return tx.supplierProductLink.findMany({
+        where: { variantId: { in: [...variantIds] } },
+        include: {
+          supplier: { select: { id: true, legalName: true } },
+          variant: { select: { id: true, sku: true } },
+        },
+        orderBy: [{ supplier: { legalName: 'asc' } }, { supplierProductCode: 'asc' }],
+      });
+    });
+  }
+
   @Get(':id/price-history')
   @Roles('admin', 'manager', 'seller', 'finance')
   async priceHistory(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
@@ -266,6 +352,7 @@ export class ProductsController {
       exTipi?: string | null;
       fiscalOrigin?: string | null;
       taxUnit?: string | null;
+      conversion?: string | null;
       variants: Array<{
         sku: string;
         barcode?: string | null;
@@ -274,9 +361,17 @@ export class ProductsController {
         costAverage?: number | string;
         minStock?: number | string;
       }>;
+      /** Vínculos cProd → SKU (aplicados à 1ª variante criada). */
+      supplierLinks?: Array<{
+        supplierId: string;
+        supplierProductCode: string;
+      }>;
     },
   ) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const conversionErr = validateProductConversion(body.conversion);
+    if (conversionErr) throw new BadRequestException(conversionErr);
+
     // O código de barras "principal" do produto também é replicado para a
     // primeira variante quando ela não tem código próprio — mantém a busca
     // por EAN funcional no PDV.
@@ -305,6 +400,7 @@ export class ProductsController {
           exTipi: body.exTipi?.trim() ? body.exTipi.trim().slice(0, 10) : null,
           fiscalOrigin: body.fiscalOrigin?.trim() ? body.fiscalOrigin.trim().slice(0, 2) : null,
           taxUnit: body.taxUnit?.trim() ? body.taxUnit.trim().slice(0, 10).toUpperCase() : null,
+          conversion: body.conversion?.trim() ? body.conversion.trim().slice(0, 32).toUpperCase() : null,
           variants: {
             create: body.variants.map((v, idx) => ({
               sku: v.sku,
@@ -316,8 +412,26 @@ export class ProductsController {
             })),
           },
         },
+        include: { variants: true },
       });
       await this.syncProductInventoryControlMin(tx, prod.id);
+
+      const variantId = prod.variants[0]?.id;
+      if (variantId && body.supplierLinks?.length) {
+        const seen = new Set<string>();
+        for (const link of body.supplierLinks) {
+          const supplierId = link.supplierId?.trim();
+          const code = link.supplierProductCode?.trim().slice(0, 60);
+          if (!supplierId || !code) continue;
+          const key = `${supplierId}:${code}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          await tx.supplierProductLink.create({
+            data: { supplierId, variantId, supplierProductCode: code },
+          });
+        }
+      }
+
       return prod.id;
     });
 
@@ -325,6 +439,80 @@ export class ProductsController {
       where: { id: createdId },
       include: { variants: true, category: true, fiscalSituation: true },
     });
+  }
+
+  /** Cria produto a partir de linha de NF-e de entrada (sem vínculo com fornecedor). */
+  @Post('from-inbound-line')
+  @Roles('admin', 'manager')
+  async createFromInboundLine(
+    @CurrentUser() user: JwtPayload,
+    @Body()
+    body: {
+      name: string;
+      description?: string | null;
+      ncm?: string | null;
+      defaultBarcode?: string | null;
+      taxUnit?: string | null;
+      unitCost?: number | string;
+      supplierId?: string | null;
+      supplierProductCode?: string | null;
+    },
+  ) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const name = body.name?.trim();
+    if (!name) throw new BadRequestException('Informe o nome do produto.');
+
+    const defaultBarcode = body.defaultBarcode?.trim()
+      ? body.defaultBarcode.trim().slice(0, 32)
+      : null;
+    const cost = body.unitCost != null ? String(body.unitCost) : '0';
+    const sku = `SKU-${Date.now()}`;
+
+    const created = await db.$transaction(async (tx) => {
+      const prod = await tx.product.create({
+        data: {
+          name,
+          description: body.description?.trim() || null,
+          defaultBarcode,
+          ncm: body.ncm?.trim() || null,
+          taxUnit: body.taxUnit?.trim() ? body.taxUnit.trim().slice(0, 10).toUpperCase() : null,
+          variants: {
+            create: {
+              sku,
+              barcode: defaultBarcode,
+              retailPrice: cost,
+              costAverage: cost,
+              minStock: '1',
+            },
+          },
+        },
+        include: { variants: true },
+      });
+
+      const variantId = prod.variants[0]?.id;
+      const linkCode = body.supplierProductCode?.trim();
+      if (variantId && body.supplierId && linkCode) {
+        await tx.supplierProductLink.upsert({
+          where: {
+            supplierId_supplierProductCode: {
+              supplierId: body.supplierId,
+              supplierProductCode: linkCode,
+            },
+          },
+          create: {
+            supplierId: body.supplierId,
+            variantId,
+            supplierProductCode: linkCode,
+          },
+          update: { variantId },
+        });
+      }
+
+      await this.syncProductInventoryControlMin(tx, prod.id);
+      return prod;
+    });
+
+    return created;
   }
 
   @Patch(':id')
@@ -344,6 +532,13 @@ export class ProductsController {
   ) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const variantPrices = Array.isArray(body.variantPrices) ? body.variantPrices : [];
+
+    if (body.conversion !== undefined) {
+      const conversionErr = validateProductConversion(
+        body.conversion ? String(body.conversion) : null,
+      );
+      if (conversionErr) throw new BadRequestException(conversionErr);
+    }
 
     if (body.fiscalSituationId !== undefined && body.fiscalSituationId) {
       const fs = await db.fiscalSituation.findFirst({
@@ -378,6 +573,11 @@ export class ProductsController {
           }),
           ...(body.taxUnit !== undefined && {
             taxUnit: body.taxUnit ? String(body.taxUnit).trim().slice(0, 10).toUpperCase() : null,
+          }),
+          ...(body.conversion !== undefined && {
+            conversion: body.conversion
+              ? String(body.conversion).trim().slice(0, 32).toUpperCase()
+              : null,
           }),
           ...(body.isActive != null && { isActive: Boolean(body.isActive) }),
           ...(body.categoryId !== undefined && {

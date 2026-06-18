@@ -1,8 +1,8 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
-import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { PaymentMethod } from '../generated/tenant-client';
 import { SalesService } from './sales.service';
@@ -27,6 +27,7 @@ export class SalesController {
       customerId?: string | null;
       notes?: string | null;
       discount?: number;
+      permissionPassword?: string;
       items: Array<{
         variantId: string;
         quantity: number;
@@ -43,6 +44,8 @@ export class SalesController {
     return this.sales.create({
       tenantSlug: user.tenantSlug,
       userId: user.sub,
+      userRoles: user.roles,
+      permissionPassword: body.permissionPassword,
       customerId: body.customerId,
       notes: body.notes,
       discount: body.discount,
@@ -75,8 +78,18 @@ export class SalesController {
   }
 
   @Post(':id/cancel')
-  @Roles('admin', 'manager')
-  cancel(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
-    return this.sales.cancel(user.tenantSlug, id, user.sub);
+  @Roles('admin', 'manager', 'seller')
+  cancel(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: { permissionPassword?: string },
+  ) {
+    return this.sales.cancel(
+      user.tenantSlug,
+      id,
+      user.sub,
+      user.roles,
+      body?.permissionPassword,
+    );
   }
 }

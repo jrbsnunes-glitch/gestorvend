@@ -9,13 +9,18 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
+import { PermissionPasswordModal } from '../components/PermissionPasswordModal';
 import { api } from '../lib/api';
 import {
   companyDisplayName,
   companyUsesCustomLogo,
   useCompanyBranding,
 } from '../lib/company-branding';
-import { isManager, profileLabel, type UserProfile } from '../lib/auth';
+import { isAdmin, isManager, profileLabel, type UserProfile } from '../lib/auth';
+import {
+  hasUserPermission,
+  type UserPermissionsResponse,
+} from '../lib/user-permissions';
 import { formatBRL, formatDate } from '../lib/format';
 import {
   expectedFinalForReconKey,
@@ -193,6 +198,7 @@ function fiscalDocumentStatusPt(status: string): string {
     AUTHORIZED: 'autorizado',
     REJECTED: 'rejeitado',
     ERROR: 'erro',
+    CANCELLED: 'cancelado',
   };
   return m[status] ?? status;
 }
@@ -816,8 +822,51 @@ function PosScreen({
     selectedItemId: string;
   } | null>(null);
   const canManagePastSales = isManager();
+  const [permModal, setPermModal] = useState<
+    | null
+    | { kind: 'discount_finish' }
+    | { kind: 'cancel_sale'; saleId: string; saleNumber: number }
+    | { kind: 'fiscal_cancel'; docId: string; saleNumber: number }
+  >(null);
+  const [permModalError, setPermModalError] = useState<string | null>(null);
 
   /* --- queries --- */
+
+  const permissionsQ = useQuery({
+    queryKey: ['users', 'me', 'permissions'],
+    queryFn: () => api<UserPermissionsResponse>('/users/me/permissions'),
+    staleTime: 30_000,
+  });
+
+  const canApplyDiscount =
+    isAdmin() || hasUserPermission(permissionsQ.data, 'SALE_DISCOUNT');
+  const canCancelSale =
+    isAdmin() || hasUserPermission(permissionsQ.data, 'SALE_CANCEL');
+  const canCancelFiscalDoc =
+    isAdmin() || hasUserPermission(permissionsQ.data, 'FISCAL_DOC_CANCEL');
+
+  function applyDiscount(value: number) {
+    const v = Math.max(0, value);
+    if (v > 0 && !canApplyDiscount) {
+      setToast({
+        kind: 'err',
+        text: 'Sem permissão para desconto. Solicite ao administrador.',
+      });
+      return;
+    }
+    setDiscount(v);
+  }
+
+  function requestFinalizeSale() {
+    if (discount > 0 && !isAdmin() && canApplyDiscount) {
+      setPermModalError(null);
+      setPermModal({ kind: 'discount_finish' });
+      return;
+    }
+    createSale.mutate(undefined);
+  }
+
+  /* --- queries (continuação) --- */
 
   const companyQ = useQuery({
     queryKey: ['company'],
@@ -917,12 +966,13 @@ function PosScreen({
   /* --- mutações --- */
 
   const createSale = useMutation({
-    mutationFn: () =>
+    mutationFn: (permissionPassword?: string) =>
       api<{ id: string; number: number }>('/sales', {
         method: 'POST',
         json: {
           customerId: customer?.id ?? null,
           discount,
+          permissionPassword: permissionPassword || undefined,
           items: lines.map((l) => ({
             variantId: l.variantId,
             quantity: l.quantity,
@@ -937,6 +987,8 @@ function PosScreen({
       }),
     onSuccess: (sale) => {
       sessionStorage.removeItem(GV_POS_CHECKOUT_FAILURE_KEY);
+      setPermModal(null);
+      setPermModalError(null);
       qc.invalidateQueries({ queryKey: ['cash', 'pdv-readiness'] });
       qc.invalidateQueries({ queryKey: ['sales'] });
       qc.invalidateQueries({ queryKey: ['reports', 'sales-summary'] });
@@ -965,14 +1017,42 @@ function PosScreen({
   });
 
   const cancelSale = useMutation({
-    mutationFn: (id: string) => api(`/sales/${id}/cancel`, { method: 'POST' }),
+    mutationFn: ({ id, permissionPassword }: { id: string; permissionPassword: string }) =>
+      api(`/sales/${id}/cancel`, {
+        method: 'POST',
+        json: { permissionPassword },
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sales'] });
       qc.invalidateQueries({ queryKey: ['reports', 'sales-summary'] });
       qc.invalidateQueries({ queryKey: ['cash'] });
+      setPermModal(null);
+      setPermModalError(null);
       setToast({ kind: 'ok', text: 'Venda cancelada. Estoque estornado.' });
     },
-    onError: (e: Error) => setToast({ kind: 'err', text: e.message }),
+    onError: (e: Error) => {
+      setPermModalError(e.message);
+      setToast({ kind: 'err', text: e.message });
+    },
+  });
+
+  const cancelFiscalDocMut = useMutation({
+    mutationFn: ({ docId, permissionPassword }: { docId: string; permissionPassword: string }) =>
+      api(`/fiscal/documents/${encodeURIComponent(docId)}/cancel`, {
+        method: 'POST',
+        json: { permissionPassword },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sales'] });
+      qc.invalidateQueries({ queryKey: ['sales', 'today'] });
+      setPermModal(null);
+      setPermModalError(null);
+      setToast({ kind: 'ok', text: 'Documento fiscal cancelado.' });
+    },
+    onError: (e: Error) => {
+      setPermModalError(e.message);
+      setToast({ kind: 'err', text: e.message });
+    },
   });
 
   const removeSaleLineMut = useMutation({
@@ -1216,7 +1296,7 @@ function PosScreen({
       } else if (ev.key === 'F8') {
         ev.preventDefault();
         const v = prompt('Desconto em R$ no total da venda', String(discount));
-        if (v != null) setDiscount(Math.max(0, parseDecimal(v)));
+        if (v != null) applyDiscount(parseDecimal(v));
       } else if (ev.key === 'Escape' && lines.length > 0) {
         if (confirm('Cancelar venda atual e limpar carrinho?')) resetSale();
       }
@@ -1485,7 +1565,13 @@ function PosScreen({
                         step="0.01"
                         value={discount || ''}
                         placeholder="0,00"
-                        onChange={(e) => setDiscount(Math.max(0, parseDecimal(e.target.value)))}
+                        onChange={(e) => applyDiscount(parseDecimal(e.target.value))}
+                        disabled={!canApplyDiscount}
+                        title={
+                          canApplyDiscount
+                            ? undefined
+                            : 'Sem permissão para desconto — solicite ao administrador'
+                        }
                       />
                     </div>
                   </div>
@@ -1952,9 +2038,9 @@ function PosScreen({
                                     : 'Enfileirar NFC-e (fila)'}
                               </button>
                             )}
-                          {s.status === 'COMPLETED' && canManagePastSales && (
+                          {s.status === 'COMPLETED' && canCancelSale && (
                             <>
-                              {rows.length >= 2 && (
+                              {rows.length >= 2 && canManagePastSales && (
                                 <button
                                   type="button"
                                   className="pos-btn pos-btn-ghost pos-history-action-warn"
@@ -1982,12 +2068,54 @@ function PosScreen({
                                         `e eventuais títulos de crediário vinculados a este cupom serão removidos.`,
                                     )
                                   ) {
-                                    cancelSale.mutate(s.id);
+                                    if (isAdmin()) {
+                                      cancelSale.mutate({ id: s.id, permissionPassword: '' });
+                                    } else {
+                                      setPermModalError(null);
+                                      setPermModal({
+                                        kind: 'cancel_sale',
+                                        saleId: s.id,
+                                        saleNumber: s.number,
+                                      });
+                                    }
                                   }
                                 }}
                               >
                                 Cancelar venda inteira
                               </button>
+                              {s.fiscalDocument &&
+                                s.fiscalDocument.status !== 'CANCELLED' &&
+                                canCancelFiscalDoc && (
+                                  <button
+                                    type="button"
+                                    className="pos-btn pos-btn-ghost pos-history-action-danger"
+                                    disabled={cancelFiscalDocMut.isPending}
+                                    onClick={() => {
+                                      if (
+                                        confirm(
+                                          `Cancelar o documento fiscal da venda #${s.number}?\n\n` +
+                                            `O registro local será marcado como cancelado.`,
+                                        )
+                                      ) {
+                                        if (isAdmin()) {
+                                          cancelFiscalDocMut.mutate({
+                                            docId: s.fiscalDocument!.id,
+                                            permissionPassword: '',
+                                          });
+                                        } else {
+                                          setPermModalError(null);
+                                          setPermModal({
+                                            kind: 'fiscal_cancel',
+                                            docId: s.fiscalDocument!.id,
+                                            saleNumber: s.number,
+                                          });
+                                        }
+                                      }
+                                    }}
+                                  >
+                                    Cancelar nota fiscal
+                                  </button>
+                                )}
                             </>
                           )}
                         </div>
@@ -2096,9 +2224,49 @@ function PosScreen({
           onAddPayment={(p) => setPayments((prev) => [...prev, p])}
           onRemovePayment={(id) => setPayments((prev) => prev.filter((x) => x.id !== id))}
           onCancel={() => setPaymentMenuOpen(false)}
-          onConfirm={() => createSale.mutate()}
+          onConfirm={() => requestFinalizeSale()}
         />
       )}
+
+      <PermissionPasswordModal
+        open={permModal != null}
+        title={
+          permModal?.kind === 'discount_finish'
+            ? 'Autorizar desconto'
+            : permModal?.kind === 'cancel_sale'
+              ? 'Autorizar cancelamento de venda'
+              : 'Autorizar cancelamento fiscal'
+        }
+        description={
+          permModal?.kind === 'discount_finish'
+            ? `Informe a senha de autorização para concluir a venda com desconto de ${formatBRL(discount)}.`
+            : permModal?.kind === 'cancel_sale'
+              ? `Informe a senha de autorização para cancelar a venda #${permModal.saleNumber}.`
+              : permModal?.kind === 'fiscal_cancel'
+                ? `Informe a senha de autorização para cancelar a nota fiscal da venda #${permModal.saleNumber}.`
+                : ''
+        }
+        busy={createSale.isPending || cancelSale.isPending || cancelFiscalDocMut.isPending}
+        error={permModalError}
+        onClose={() => {
+          setPermModal(null);
+          setPermModalError(null);
+        }}
+        onConfirm={(password) => {
+          if (!permModal) return;
+          if (permModal.kind === 'discount_finish') {
+            createSale.mutate(password, {
+              onError: (e: Error) => setPermModalError(e.message),
+            });
+            return;
+          }
+          if (permModal.kind === 'cancel_sale') {
+            cancelSale.mutate({ id: permModal.saleId, permissionPassword: password });
+            return;
+          }
+          cancelFiscalDocMut.mutate({ docId: permModal.docId, permissionPassword: password });
+        }}
+      />
 
       <PosPrintPrefsModal
         open={printPrefsOpen}
