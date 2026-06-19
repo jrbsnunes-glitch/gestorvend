@@ -81,6 +81,31 @@ function statusColor(s: Client['licenseStatus'], days: number | null): { bg: str
   return { bg: '#dcfce7', fg: '#166534' };
 }
 
+type EditForm = {
+  companyName: string;
+  planCode: Client['planCode'];
+  licenseStatus: Client['licenseStatus'];
+  licenseValidFrom: string;
+  licenseExpiresAt: string;
+  monthlyFee: string;
+};
+
+function toDateInput(s: string | null): string {
+  if (!s) return '';
+  return new Date(s).toISOString().slice(0, 10);
+}
+
+function clientToEditForm(c: Client): EditForm {
+  return {
+    companyName: c.companyName,
+    planCode: c.planCode,
+    licenseStatus: c.licenseStatus,
+    licenseValidFrom: toDateInput(c.licenseValidFrom),
+    licenseExpiresAt: toDateInput(c.licenseExpiresAt),
+    monthlyFee: c.monthlyFee ?? '',
+  };
+}
+
 const EMPTY_FORM: CreateForm = {
   cnpj: '',
   companyName: '',
@@ -121,6 +146,9 @@ export function PortalClientsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
+  const [editing, setEditing] = useState<Client | null>(null);
+  const [editForm, setEditForm] = useState<EditForm | null>(null);
+  const [editErr, setEditErr] = useState<string | null>(null);
   const [renewing, setRenewing] = useState<Client | null>(null);
   const [renewDays, setRenewDays] = useState(30);
   const [err, setErr] = useState<string | null>(null);
@@ -172,6 +200,30 @@ export function PortalClientsPage() {
       setErr(null);
     },
     onError: (e: Error) => setErr(e.message),
+  });
+
+  const updateClient = useMutation({
+    mutationFn: (payload: { cnpj: string; form: EditForm }) =>
+      portalApi<Client>(`/portal/clients/${onlyDigitsCnpj(payload.cnpj)}/license`, {
+        method: 'PATCH',
+        json: {
+          companyName: payload.form.companyName.trim(),
+          planCode: payload.form.planCode,
+          licenseStatus: payload.form.licenseStatus,
+          licenseValidFrom: payload.form.licenseValidFrom || null,
+          licenseExpiresAt: payload.form.licenseExpiresAt || null,
+          monthlyFee: payload.form.monthlyFee.trim()
+            ? parseFloat(payload.form.monthlyFee.replace(',', '.'))
+            : null,
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['portal', 'clients'] });
+      setEditing(null);
+      setEditForm(null);
+      setEditErr(null);
+    },
+    onError: (e: Error) => setEditErr(e.message),
   });
 
   const renew = useMutation({
@@ -444,6 +496,18 @@ export function PortalClientsPage() {
                       ) : null}
                     </td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ fontSize: '0.78rem' }}
+                        onClick={() => {
+                          setEditErr(null);
+                          setEditing(c);
+                          setEditForm(clientToEditForm(c));
+                        }}
+                      >
+                        Editar
+                      </button>
                       {prov === 'READY' && (
                         <button
                           type="button"
@@ -680,6 +744,125 @@ export function PortalClientsPage() {
                 onClick={() => create.mutate()}
               >
                 Criar licença
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editing && editForm && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            setEditing(null);
+            setEditForm(null);
+            setEditErr(null);
+          }}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(560px, 96vw)' }}>
+            <h2>Editar cliente / licença</h2>
+            {editErr && <div className="alert alert-error">{editErr}</div>}
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+              CNPJ <strong>{editing.cnpj}</strong> · slug <strong>{editing.slug}</strong> · banco{' '}
+              <strong>{editing.databaseName}</strong>
+            </p>
+            <div className="form-row">
+              <div className="field" style={{ flex: 1 }}>
+                <label htmlFor="pe-name">Razão social *</label>
+                <input
+                  id="pe-name"
+                  value={editForm.companyName}
+                  onChange={(e) => setEditForm({ ...editForm, companyName: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="field">
+                <label htmlFor="pe-plan">Plano</label>
+                <select
+                  id="pe-plan"
+                  value={editForm.planCode}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, planCode: e.target.value as Client['planCode'] })
+                  }
+                >
+                  <option value="STANDARD">Padrão</option>
+                  <option value="WHATSAPP">WhatsApp</option>
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="pe-status">Status da licença</label>
+                <select
+                  id="pe-status"
+                  value={editForm.licenseStatus}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      licenseStatus: e.target.value as Client['licenseStatus'],
+                    })
+                  }
+                >
+                  {(['trial', 'active', 'suspended', 'expired'] as Client['licenseStatus'][]).map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABEL[s]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="pe-monthly">Mensalidade (R$)</label>
+                <input
+                  id="pe-monthly"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={editForm.monthlyFee}
+                  onChange={(e) => setEditForm({ ...editForm, monthlyFee: e.target.value })}
+                  placeholder="0,00"
+                />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="field">
+                <label htmlFor="pe-from">Início da validade</label>
+                <input
+                  id="pe-from"
+                  type="date"
+                  value={editForm.licenseValidFrom}
+                  onChange={(e) => setEditForm({ ...editForm, licenseValidFrom: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="pe-exp">Expira em</label>
+                <input
+                  id="pe-exp"
+                  type="date"
+                  value={editForm.licenseExpiresAt}
+                  onChange={(e) => setEditForm({ ...editForm, licenseExpiresAt: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setEditing(null);
+                  setEditForm(null);
+                  setEditErr(null);
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!editForm.companyName.trim() || updateClient.isPending}
+                onClick={() => updateClient.mutate({ cnpj: editing.cnpj, form: editForm })}
+              >
+                {updateClient.isPending ? 'Salvando…' : 'Salvar alterações'}
               </button>
             </div>
           </div>

@@ -290,6 +290,7 @@ export class PortalClientsController {
       licenseValidFrom?: string | null;
       licenseExpiresAt?: string | null;
       companyName?: string;
+      monthlyFee?: number | string | null;
       /** Atalho: adicionar N dias na licença a partir de hoje. */
       renewDays?: number;
     },
@@ -311,6 +312,12 @@ export class PortalClientsController {
     }
     if (body.licenseExpiresAt !== undefined) {
       data.licenseExpiresAt = parseDate(body.licenseExpiresAt);
+    }
+    if (body.monthlyFee !== undefined) {
+      data.monthlyFee =
+        body.monthlyFee === null || body.monthlyFee === ''
+          ? null
+          : parseMonthlyFee(body.monthlyFee);
     }
     if (typeof body.renewDays === 'number' && body.renewDays > 0) {
       const base = new Date();
