@@ -54,6 +54,8 @@ model Tenant {
   provisioningUpdatedAt  DateTime?
   /// E-mail do primeiro admin informado na criação (retry de provisionamento reutiliza se o body vier vazio).
   provisionAdminEmail    String?
+  /// Valor da mensalidade contratada (controle comercial no portal).
+  monthlyFee             Decimal?      @db.Decimal(14, 2)
   createdAt              DateTime      @default(now())
   updatedAt              DateTime      @updatedAt
 }

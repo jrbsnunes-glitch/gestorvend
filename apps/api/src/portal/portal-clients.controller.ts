@@ -48,6 +48,15 @@ function parseDate(s: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function parseMonthlyFee(raw: unknown): string | null {
+  if (raw == null || raw === '') return null;
+  const n = Number(String(raw).replace(',', '.'));
+  if (!Number.isFinite(n) || n < 0) {
+    throw new BadRequestException('Informe um valor de mensalidade válido (≥ 0).');
+  }
+  return n.toFixed(2);
+}
+
 @Controller('portal/clients')
 @UseGuards(PortalAuthGuard)
 export class PortalClientsController {
@@ -88,6 +97,7 @@ export class PortalClientsController {
       provisioningError: t.provisioningError,
       provisioningUpdatedAt: t.provisioningUpdatedAt,
       provisionAdminEmail: t.provisionAdminEmail,
+      monthlyFee: t.monthlyFee != null ? String(t.monthlyFee) : null,
       createdAt: t.createdAt,
     }));
   }
@@ -193,6 +203,7 @@ export class PortalClientsController {
       firstAdminEmail?: string;
       /** Senha do primeiro admin (padrão interna Admin123!). */
       firstAdminPassword?: string;
+      monthlyFee?: number | string | null;
     },
   ) {
     const cnpj = onlyDigits(body.cnpj);
@@ -257,6 +268,7 @@ export class PortalClientsController {
         licenseExpiresAt: parseDate(body.licenseExpiresAt),
         provisioningStatus: TenantProvisioningStatus.PENDING,
         provisionAdminEmail: adminEmail.toLowerCase(),
+        monthlyFee: parseMonthlyFee(body.monthlyFee),
       },
     });
     this.provisioning.scheduleProvision(created.id, {

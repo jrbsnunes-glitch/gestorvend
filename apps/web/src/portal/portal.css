@@ -110,6 +110,67 @@
   font-size: 0.88rem;
 }
 
+.portal-clients-toolbar {
+  margin-bottom: 1rem;
+  padding: 1rem 1.1rem;
+}
+
+.portal-clients-search__label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 0.45rem;
+}
+
+.portal-clients-search__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.portal-clients-search__row input {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.portal-clients-search__meta {
+  margin: 0.65rem 0 0;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+.portal-clients-footer {
+  margin-top: 1.25rem;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.65rem 1.25rem;
+  border-left: 4px solid #6366f1;
+}
+
+.portal-clients-footer__label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.portal-clients-footer__value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+
+.portal-clients-footer__hint {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
 /* Login */
 .portal-login-page {
   min-height: 100vh;

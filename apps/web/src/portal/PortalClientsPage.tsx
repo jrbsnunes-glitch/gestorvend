@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { formatBRL } from '../lib/format';
 import { portalApi } from './portal-api';
 
 type Client = {
@@ -18,6 +19,7 @@ type Client = {
   provisioningError: string | null;
   provisioningUpdatedAt: string | null;
   provisionAdminEmail: string | null;
+  monthlyFee: string | null;
   createdAt: string;
 };
 
@@ -31,6 +33,7 @@ type CreateForm = {
   licenseExpiresAt: string;
   firstAdminEmail: string;
   firstAdminPassword: string;
+  monthlyFee: string;
 };
 
 const STATUS_LABEL: Record<Client['licenseStatus'], string> = {
@@ -88,10 +91,34 @@ const EMPTY_FORM: CreateForm = {
   licenseExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
   firstAdminEmail: '',
   firstAdminPassword: '',
+  monthlyFee: '',
 };
+
+function matchesClientSearch(c: Client, term: string): boolean {
+  const q = term.trim().toLowerCase();
+  if (!q) return true;
+  const digits = q.replace(/\D+/g, '');
+  const haystack = [
+    c.companyName,
+    c.slug,
+    c.cnpj,
+    c.databaseName,
+    c.provisionAdminEmail ?? '',
+    PLAN_LABEL[c.planCode],
+    STATUS_LABEL[c.licenseStatus],
+    PROVISIONING_LABEL[c.provisioningStatus ?? 'READY'],
+  ]
+    .join(' ')
+    .toLowerCase();
+  if (haystack.includes(q)) return true;
+  if (digits.length >= 3 && c.cnpj.includes(digits)) return true;
+  return false;
+}
 
 export function PortalClientsPage() {
   const qc = useQueryClient();
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
   const [renewing, setRenewing] = useState<Client | null>(null);
@@ -133,6 +160,9 @@ export function PortalClientsPage() {
           licenseExpiresAt: form.licenseExpiresAt || null,
           firstAdminEmail: form.firstAdminEmail.trim() || undefined,
           firstAdminPassword: form.firstAdminPassword.trim() || undefined,
+          monthlyFee: form.monthlyFee.trim()
+            ? parseFloat(form.monthlyFee.replace(',', '.'))
+            : null,
         },
       }),
     onSuccess: () => {
@@ -225,6 +255,27 @@ export function PortalClientsPage() {
     onError: (e: Error) => alert(e.message),
   });
 
+  const filteredClients = useMemo(() => {
+    const rows = list.data ?? [];
+    if (!searchQuery.trim()) return rows;
+    return rows.filter((c) => matchesClientSearch(c, searchQuery));
+  }, [list.data, searchQuery]);
+
+  const totalMonthlyFee = useMemo(
+    () =>
+      (list.data ?? []).reduce((sum, c) => sum + (parseFloat(c.monthlyFee ?? '') || 0), 0),
+    [list.data],
+  );
+
+  function runSearch() {
+    setSearchQuery(searchInput.trim());
+  }
+
+  function clearSearch() {
+    setSearchInput('');
+    setSearchQuery('');
+  }
+
   return (
     <div className="portal-page">
       <div className="portal-page-head">
@@ -247,6 +298,44 @@ export function PortalClientsPage() {
 
       {list.isError && <div className="alert alert-error">{(list.error as Error).message}</div>}
 
+      <div className="portal-clients-toolbar card">
+        <div className="portal-clients-search">
+          <label htmlFor="portal-clients-q" className="portal-clients-search__label">
+            Pesquisar clientes
+          </label>
+          <div className="portal-clients-search__row">
+            <input
+              id="portal-clients-q"
+              type="search"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  runSearch();
+                }
+              }}
+              placeholder="Razão social, CNPJ, slug, e-mail admin, plano ou status…"
+            />
+            <button type="button" className="btn btn-primary" onClick={runSearch}>
+              Pesquisar
+            </button>
+            {searchQuery && (
+              <button type="button" className="btn btn-secondary" onClick={clearSearch}>
+                Limpar
+              </button>
+            )}
+          </div>
+        </div>
+        <p className="portal-clients-search__meta">
+          {list.isLoading
+            ? 'Carregando clientes…'
+            : searchQuery
+              ? `${filteredClients.length} de ${list.data?.length ?? 0} cliente(s) encontrado(s)`
+              : `${list.data?.length ?? 0} cliente(s) cadastrado(s)`}
+        </p>
+      </div>
+
       <div className="card" style={{ padding: 0 }}>
         <div className="table-wrap">
           <table className="data-table">
@@ -255,6 +344,7 @@ export function PortalClientsPage() {
                 <th>Razão social</th>
                 <th>CNPJ</th>
                 <th>Plano</th>
+                <th style={{ textAlign: 'right' }}>Mensalidade</th>
                 <th>Status</th>
                 <th>Validade</th>
                 <th style={{ textAlign: 'right' }}>Restante</th>
@@ -265,19 +355,26 @@ export function PortalClientsPage() {
             <tbody>
               {list.isLoading && (
                 <tr>
-                  <td colSpan={8} className="empty">
+                  <td colSpan={9} className="empty">
                     Carregando…
                   </td>
                 </tr>
               )}
               {!list.isLoading && !list.data?.length && (
                 <tr>
-                  <td colSpan={8} className="empty">
+                  <td colSpan={9} className="empty">
                     Nenhum cliente cadastrado.
                   </td>
                 </tr>
               )}
-              {list.data?.map((c) => {
+              {!list.isLoading && list.data?.length && !filteredClients.length && (
+                <tr>
+                  <td colSpan={9} className="empty">
+                    Nenhum cliente corresponde a &quot;{searchQuery}&quot;.
+                  </td>
+                </tr>
+              )}
+              {filteredClients.map((c) => {
                 const sc = statusColor(c.licenseStatus, c.remainingDays);
                 const prov = c.provisioningStatus ?? 'READY';
                 const pc = provisioningStyle(prov);
@@ -301,6 +398,9 @@ export function PortalClientsPage() {
                       <span className="badge" style={{ background: '#eef2ff', color: '#4338ca' }}>
                         {PLAN_LABEL[c.planCode]}
                       </span>
+                    </td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {c.monthlyFee != null ? formatBRL(c.monthlyFee) : '—'}
                     </td>
                     <td>
                       <span
@@ -506,6 +606,20 @@ export function PortalClientsPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="field">
+                <label htmlFor="pc-monthly">Mensalidade (R$)</label>
+                <input
+                  id="pc-monthly"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={form.monthlyFee}
+                  onChange={(e) => setForm({ ...form, monthlyFee: e.target.value })}
+                  placeholder="0,00"
+                />
               </div>
             </div>
             <div className="form-row">
@@ -740,6 +854,15 @@ export function PortalClientsPage() {
           </div>
         </div>
       )}
+
+      <footer className="portal-clients-footer card">
+        <div className="portal-clients-footer__label">Total de mensalidades cadastradas</div>
+        <div className="portal-clients-footer__value">{formatBRL(totalMonthlyFee)}</div>
+        <p className="portal-clients-footer__hint">
+          Soma dos valores informados em todas as licenças. Atualiza automaticamente ao incluir um
+          novo cliente.
+        </p>
+      </footer>
     </div>
   );
 }
