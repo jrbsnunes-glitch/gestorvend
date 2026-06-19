@@ -13,6 +13,7 @@ import { formatBRL } from '../lib/format';
 import {
   expectedFinalForReconKey,
   formatCashExpectedHint,
+  presentedTotalFromSession,
   sumReconciliationTotals,
   type CashMovementBreakdown,
 } from '../lib/cash-reconciliation';
@@ -622,7 +623,12 @@ export function CashPage() {
                       <br />
                       <span style={{ color: '#b91c1c' }}>−{formatBRL(s.movementsOut)}</span>
                     </td>
-                    <td className="cash-ss-num">{s.closingBalance ? formatBRL(s.closingBalance) : '—'}</td>
+                    <td className="cash-ss-num">
+                      {(() => {
+                        const total = presentedTotalFromSession(s.closingByMethod, s.closingBalance);
+                        return total != null ? formatBRL(total) : '—';
+                      })()}
+                    </td>
                     <td className="col-actions cash-ss-num">
                       <button
                         type="button"
@@ -1324,6 +1330,106 @@ function ManagerCashReconciliation({
 
   const hasCommittedExpenseLines = expenseCompleteDraftLines.length > 0;
 
+  function buildDeclaredAmountsPayload():
+    | {
+        closingByMethod: Record<string, number>;
+        reconciliationExpenseDetails?: unknown | null;
+      }
+    | null {
+    const closingByMethod: Record<string, number> = {};
+
+    let expenseDetailPayload: Array<{
+      amount: number;
+      notes: string | null;
+      referentialAccountId: string;
+      cashMovementId?: string;
+    }> | null = null;
+
+    const wantsExpenseBranch = mergedKeys.includes('EXPENSE');
+
+    if (wantsExpenseBranch) {
+      const candidateRows = expenseLineDrafts.filter((r) => {
+        const amt = r.amount.trim();
+        const cc = r.referentialAccountId.trim();
+        const nt = r.notes.trim();
+        return amt !== '' || cc !== '' || nt !== '';
+      });
+      const completeRows = candidateRows.filter((r) => {
+        const n = parseFloat(r.amount.trim().replace(',', '.'));
+        return Number.isFinite(n) && n > 0 && r.referentialAccountId.trim() !== '';
+      });
+      const invalidPartial = candidateRows.length > completeRows.length;
+      if (invalidPartial) {
+        setErr(
+          'Em despesas, cada linha iniciada deve ter valor maior que zero e centro de custo, ou limpe/remova campos incompletos.',
+        );
+        return null;
+      }
+      if (completeRows.length > 0) {
+        expenseDetailPayload = completeRows.map((r) => {
+          const amt = parseFloat(r.amount.trim().replace(',', '.'));
+          const rounded = Math.round((Number.isFinite(amt) ? amt : 0) * 100) / 100;
+          const nt = r.notes.trim();
+          return {
+            amount: rounded,
+            notes: nt !== '' ? nt : null,
+            referentialAccountId: r.referentialAccountId.trim(),
+            ...(r.cashMovementId?.trim() ? { cashMovementId: r.cashMovementId.trim() } : {}),
+          };
+        });
+      }
+    }
+
+    let expenseTotalFromLines: number | null = null;
+    if (expenseDetailPayload?.length) {
+      expenseTotalFromLines = expenseDetailPayload.reduce((a, b) => a + b.amount, 0);
+      expenseTotalFromLines = Math.round(expenseTotalFromLines * 100) / 100;
+    }
+
+    for (const key of mergedKeys) {
+      if (key === 'EXPENSE' && expenseTotalFromLines != null) {
+        closingByMethod[key] = expenseTotalFromLines;
+        continue;
+      }
+      if (key === 'EXPENSE' && expenseTotalFromLines == null) {
+        const raw = (draft[key] ?? '').trim();
+        if (raw === '') {
+          setErr('Informe o total em Despesas ou grave ao menos uma linha detalhada com valor e centro.');
+          return null;
+        }
+        const n = parseFloat(raw.replace(',', '.'));
+        if (!Number.isFinite(n) || n < 0) {
+          setErr('Valor inválido em Despesas.');
+          return null;
+        }
+        closingByMethod[key] = Math.round(n * 100) / 100;
+        continue;
+      }
+      const raw = (draft[key] ?? '').trim();
+      if (raw === '') continue;
+      const n = parseFloat(raw.replace(',', '.'));
+      if (!Number.isFinite(n) || n < 0) {
+        setErr(`Valor inválido em ${PAYMENT_LABELS[key] ?? key}.`);
+        return null;
+      }
+      closingByMethod[key] = Math.round(n * 100) / 100;
+    }
+    if (Object.keys(closingByMethod).length === 0) {
+      setErr('Informe ao menos um valor nos apresentados (ou mantenha linhas já preenchidas).');
+      return null;
+    }
+    let reconciliationExpenseDetails: unknown | null | undefined = undefined;
+    if (wantsExpenseBranch) {
+      if (expenseDetailPayload?.length) {
+        reconciliationExpenseDetails = expenseDetailPayload;
+      } else {
+        reconciliationExpenseDetails = null;
+      }
+    }
+    setErr(null);
+    return { closingByMethod, reconciliationExpenseDetails };
+  }
+
   /** Declarado oficial no servidor ou após salvar — resincroniza o rascunho e limpa inclusões só locais. */
   useEffect(() => {
     const decl = session.closingByMethod;
@@ -1881,102 +1987,9 @@ function ManagerCashReconciliation({
           className="btn btn-secondary"
           disabled={patchDeclared.isPending || mergedKeys.length === 0}
           onClick={() => {
-            const closingByMethod: Record<string, number> = {};
-
-            /** Linhas válidas quando houver modo detalhe de despesa. */
-            let expenseDetailPayload: Array<{
-              amount: number;
-              notes: string | null;
-              referentialAccountId: string;
-              cashMovementId?: string;
-            }> | null = null;
-
-            const wantsExpenseBranch = mergedKeys.includes('EXPENSE');
-
-            if (wantsExpenseBranch) {
-              const candidateRows = expenseLineDrafts.filter((r) => {
-                const amt = r.amount.trim();
-                const cc = r.referentialAccountId.trim();
-                const nt = r.notes.trim();
-                return amt !== '' || cc !== '' || nt !== '';
-              });
-              const completeRows = candidateRows.filter((r) => {
-                const n = parseFloat(r.amount.trim().replace(',', '.'));
-                return Number.isFinite(n) && n > 0 && r.referentialAccountId.trim() !== '';
-              });
-              const invalidPartial = candidateRows.length > completeRows.length;
-              if (invalidPartial) {
-                setErr(
-                  'Em despesas, cada linha iniciada deve ter valor maior que zero e centro de custo, ou limpe/remova campos incompletos.',
-                );
-                return;
-              }
-              if (completeRows.length > 0) {
-                expenseDetailPayload = completeRows.map((r) => {
-                  const amt = parseFloat(r.amount.trim().replace(',', '.'));
-                  const rounded = Math.round((Number.isFinite(amt) ? amt : 0) * 100) / 100;
-                  const nt = r.notes.trim();
-                  return {
-                    amount: rounded,
-                    notes: nt !== '' ? nt : null,
-                    referentialAccountId: r.referentialAccountId.trim(),
-                    ...(r.cashMovementId?.trim() ? { cashMovementId: r.cashMovementId.trim() } : {}),
-                  };
-                });
-              }
-            }
-
-            let expenseTotalFromLines: number | null = null;
-            if (expenseDetailPayload?.length) {
-              expenseTotalFromLines = expenseDetailPayload.reduce((a, b) => a + b.amount, 0);
-              expenseTotalFromLines = Math.round(expenseTotalFromLines * 100) / 100;
-            }
-
-            for (const key of mergedKeys) {
-              if (key === 'EXPENSE' && expenseTotalFromLines != null) {
-                closingByMethod[key] = expenseTotalFromLines;
-                continue;
-              }
-              if (key === 'EXPENSE' && expenseTotalFromLines == null) {
-                const raw = (draft[key] ?? '').trim();
-                if (raw === '') {
-                  setErr('Informe o total em Despesas ou grave ao menos uma linha detalhada com valor e centro.');
-                  return;
-                }
-                const n = parseFloat(raw.replace(',', '.'));
-                if (!Number.isFinite(n) || n < 0) {
-                  setErr('Valor inválido em Despesas.');
-                  return;
-                }
-                closingByMethod[key] = Math.round(n * 100) / 100;
-                continue;
-              }
-              const raw = (draft[key] ?? '').trim();
-              if (raw === '') continue;
-              const n = parseFloat(raw.replace(',', '.'));
-              if (!Number.isFinite(n) || n < 0) {
-                setErr(`Valor inválido em ${PAYMENT_LABELS[key] ?? key}.`);
-                return;
-              }
-              closingByMethod[key] = Math.round(n * 100) / 100;
-            }
-            if (Object.keys(closingByMethod).length === 0) {
-              setErr('Informe ao menos um valor nos apresentados (ou mantenha linhas já preenchidas).');
-              return;
-            }
-            let reconciliationExpenseDetails: unknown | null | undefined = undefined;
-            if (wantsExpenseBranch) {
-              if (expenseDetailPayload?.length) {
-                reconciliationExpenseDetails = expenseDetailPayload;
-              } else {
-                reconciliationExpenseDetails = null;
-              }
-            }
-            setErr(null);
-            patchDeclared.mutate({
-              closingByMethod,
-              reconciliationExpenseDetails,
-            });
+            const payload = buildDeclaredAmountsPayload();
+            if (!payload) return;
+            patchDeclared.mutate(payload);
           }}
         >
           {patchDeclared.isPending ? 'Salvando…' : 'Salvar apresentados'}
@@ -2009,8 +2022,8 @@ function ManagerCashReconciliation({
           type="button"
           className="btn btn-primary"
           style={{ marginTop: '0.6rem' }}
-          disabled={reconcile.isPending}
-          onClick={() => {
+          disabled={reconcile.isPending || patchDeclared.isPending}
+          onClick={async () => {
             if (
               !confirm(
                 'Confirmar que este caixa foi conferido e encerrado pela conferência do gerente?',
@@ -2019,10 +2032,17 @@ function ManagerCashReconciliation({
               return;
             }
             setErr(null);
-            reconcile.mutate();
+            try {
+              const payload = buildDeclaredAmountsPayload();
+              if (!payload) return;
+              await patchDeclared.mutateAsync(payload);
+              await reconcile.mutateAsync();
+            } catch (e) {
+              setErr(e instanceof Error ? e.message : 'Erro ao conferir caixa.');
+            }
           }}
         >
-          {reconcile.isPending ? 'Registrando…' : 'Marcar como conferido e fechado'}
+          {reconcile.isPending || patchDeclared.isPending ? 'Registrando…' : 'Marcar como conferido e fechado'}
         </button>
       </div>
     </div>
@@ -2117,13 +2137,12 @@ function SessionDetailDrawer({
                 <KpiCard label="Itens vendidos" value={String(sum.itemsCount)} />
                 <KpiCard label="Vendas canceladas" value={String(sum.cancelledCount)} small />
                 <KpiCard label="Saldo inicial" value={formatBRL(s.openingBalance)} />
-                {s.closingBalance && (
-                  <KpiCard
-                    label="Apresentado (meios)"
-                    value={formatBRL(s.closingBalance)}
-                    highlight
-                  />
-                )}
+                {(() => {
+                  const total = presentedTotalFromSession(s.closingByMethod, s.closingBalance);
+                  return total != null ? (
+                    <KpiCard label="Apresentado (meios)" value={formatBRL(total)} highlight />
+                  ) : null;
+                })()}
               </div>
 
               <PaymentReconciliation
@@ -2407,9 +2426,9 @@ function PaymentReconciliation({
         <strong style={{ fontSize: '0.92rem' }}>Conciliação por forma de pagamento</strong>
         <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
           {session.reconciledAt
-            ? 'Conferência registrada — valores conferidos pelo gerente'
+            ? 'Conferência registrada — apresentados conferidos pelo gerente'
             : declared
-              ? 'Esperado × Declarado pelo operador'
+              ? 'Esperado × Apresentado no fechamento'
               : 'Esperado (caixa ainda não fechado)'}
         </span>
       </div>
@@ -2418,7 +2437,7 @@ function PaymentReconciliation({
           <tr>
             <th>Forma</th>
             <th style={{ textAlign: 'right' }}>Esperado</th>
-            <th style={{ textAlign: 'right' }}>Declarado</th>
+            <th style={{ textAlign: 'right' }}>Apresentado</th>
             <th style={{ textAlign: 'right' }}>Diferença</th>
           </tr>
         </thead>

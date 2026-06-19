@@ -147,6 +147,73 @@ function normalizeClosingByMethodInput(
   return Object.keys(acc).length > 0 ? acc : null;
 }
 
+type ReconciliationExpenseDetailOut = {
+  amount: number;
+  notes: string | null;
+  referentialAccountId: string;
+  cashMovementId?: string;
+  referentialAccount?: { id: string; code: string; description: string } | null;
+};
+
+async function enrichReconciliationExpenseDetails(
+  db: PrismaClient,
+  raw: unknown,
+  accountMap?: Map<string, { id: string; code: string; description: string }>,
+): Promise<ReconciliationExpenseDetailOut[] | null> {
+  if (!Array.isArray(raw) || raw.length === 0 || !raw.every(isPlainObjectRecord)) {
+    return null;
+  }
+  const linesUnknown = raw.filter(isPlainObjectRecord) as Record<string, unknown>[];
+  let map = accountMap;
+  if (!map) {
+    const ids = [
+      ...new Set(
+        linesUnknown
+          .map((x) =>
+            typeof x.referentialAccountId === 'string' ? x.referentialAccountId.trim() : '',
+          )
+          .filter(Boolean),
+      ),
+    ];
+    const accs = ids.length
+      ? await db.referentialAccount.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, code: true, description: true },
+        })
+      : [];
+    map = new Map(accs.map((a) => [a.id, a]));
+  }
+  return linesUnknown.map((line) => {
+    const ridRaw = line.referentialAccountId;
+    const rid =
+      typeof ridRaw === 'string'
+        ? ridRaw.trim()
+        : ridRaw != null
+          ? String(ridRaw).trim()
+          : '';
+    const amtRaw = line.amount;
+    const amt =
+      typeof amtRaw === 'number'
+        ? amtRaw
+        : parseFloat(String(amtRaw ?? '').replace(',', '.'));
+    const amount = Number.isFinite(amt) ? Math.round(amt * 100) / 100 : 0;
+    const notesRaw = line.notes;
+    const movRaw = line.cashMovementId;
+    const cashMovementId =
+      typeof movRaw === 'string' && movRaw.trim() !== '' ? movRaw.trim() : undefined;
+    return {
+      amount,
+      notes:
+        notesRaw != null && String(notesRaw).trim() !== ''
+          ? String(notesRaw).trim()
+          : null,
+      referentialAccountId: rid,
+      ...(cashMovementId ? { cashMovementId } : {}),
+      referentialAccount: rid ? map!.get(rid) ?? null : null,
+    };
+  });
+}
+
 async function normalizeReconciliationExpenseDetailsInput(
   db: PrismaClient,
   raw: unknown,
@@ -510,7 +577,7 @@ export class CashController {
           }
         }
 
-        const { byMethod: expectedByMethodBase } = buildSessionExpectedByMethod(
+        const { byMethod: expectedByMethodBase, movementBreakdown } = buildSessionExpectedByMethod(
           sales,
           s.movements,
         );
@@ -523,20 +590,9 @@ export class CashController {
           else movOut += v;
         }
 
-        // Calcula diferenças quando o operador declarou closingByMethod.
-        const declared = (s.closingByMethod ?? null) as
-          | Record<string, number | string>
-          | null;
-        const declaredNormalized: Record<string, number> | null = declared
-          ? Object.fromEntries(
-              Object.entries(declared)
-                .map(([k, v]) => [
-                  k,
-                  typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.')),
-                ])
-                .filter(([, v]) => Number.isFinite(v as number)) as Array<[string, number]>,
-            )
-          : null;
+        const declaredNormalized = normalizeClosingByMethodInput(
+          (s.closingByMethod ?? null) as Record<string, number | string> | null,
+        );
 
         const opening = Number(s.openingBalance);
 
@@ -548,6 +604,13 @@ export class CashController {
             opening,
           );
         }
+
+        const presentedTotal =
+          declaredNormalized != null
+            ? computeClosingBalanceFromDeclared(declaredNormalized)
+            : s.closingBalance != null
+              ? roundMoney(Number(s.closingBalance))
+              : null;
 
         // Diferença por método.
         const diffByMethod: Record<string, number> | null = declaredNormalized
@@ -572,10 +635,13 @@ export class CashController {
           closedAt: s.closedAt,
           openingBalance: s.openingBalance,
           closingBalance: s.closingBalance,
+          presentedTotal,
           closingNotes: s.closingNotes,
+          reconciledAt: s.reconciledAt,
           user: s.user,
           movementsIn: movIn,
           movementsOut: movOut,
+          movementBreakdown,
           completedCount,
           cancelledCount,
           itemsCount,
@@ -585,12 +651,52 @@ export class CashController {
           expectedByMethod,
           declaredByMethod: declaredNormalized,
           diffByMethod,
+          reconciliationExpenseDetails: null as ReconciliationExpenseDetailOut[] | null,
+          _rawReconciliationExpenseDetails: s.reconciliationExpenseDetails,
         };
       }),
     );
 
+    const expenseAccountIds = [
+      ...new Set(
+        detailed.flatMap((row) => {
+          const raw = row._rawReconciliationExpenseDetails;
+          if (!Array.isArray(raw)) return [] as string[];
+          const ids: string[] = [];
+          for (const item of raw) {
+            if (!isPlainObjectRecord(item)) continue;
+            const ref = item.referentialAccountId;
+            if (typeof ref === 'string' && ref.trim()) ids.push(ref.trim());
+          }
+          return ids;
+        }),
+      ),
+    ];
+    const expenseAccounts = expenseAccountIds.length
+      ? await db.referentialAccount.findMany({
+          where: { id: { in: expenseAccountIds } },
+          select: { id: true, code: true, description: true },
+        })
+      : [];
+    const expenseAccountMap = new Map(expenseAccounts.map((a) => [a.id, a]));
+
+    const sessionsOut = await Promise.all(
+      detailed.map(async (row) => {
+        const { _rawReconciliationExpenseDetails, ...rest } = row;
+        const reconciliationExpenseDetails =
+          row.reconciledAt && _rawReconciliationExpenseDetails
+            ? await enrichReconciliationExpenseDetails(
+                db,
+                _rawReconciliationExpenseDetails,
+                expenseAccountMap,
+              )
+            : null;
+        return { ...rest, reconciliationExpenseDetails };
+      }),
+    );
+
     // Totais consolidados.
-    const totals = detailed.reduce(
+    const totals = sessionsOut.reduce(
       (acc, s) => {
         acc.completedCount += s.completedCount;
         acc.cancelledCount += s.cancelledCount;
@@ -599,9 +705,12 @@ export class CashController {
         acc.totalCancelled += s.totalCancelled;
         acc.totalDiscounts += s.totalDiscounts;
         acc.openingBalance += Number(s.openingBalance);
-        acc.closingBalance += s.closingBalance ? Number(s.closingBalance) : 0;
+        if (s.presentedTotal != null) acc.presentedTotal += s.presentedTotal;
         acc.movementsIn += s.movementsIn;
         acc.movementsOut += s.movementsOut;
+        acc.movementBreakdown.suprimentos += s.movementBreakdown.suprimentos;
+        acc.movementBreakdown.sangrias += s.movementBreakdown.sangrias;
+        acc.movementBreakdown.despesas += s.movementBreakdown.despesas;
         for (const [k, v] of Object.entries(s.expectedByMethod)) {
           acc.expectedByMethod[k] = (acc.expectedByMethod[k] ?? 0) + (v as number);
         }
@@ -620,32 +729,42 @@ export class CashController {
         totalCancelled: 0,
         totalDiscounts: 0,
         openingBalance: 0,
-        closingBalance: 0,
+        presentedTotal: 0,
         movementsIn: 0,
         movementsOut: 0,
+        movementBreakdown: { suprimentos: 0, sangrias: 0, despesas: 0 },
         expectedByMethod: {} as Record<string, number>,
         declaredByMethod: {} as Record<string, number>,
       },
     );
 
+    totals.movementBreakdown.suprimentos = roundMoney(totals.movementBreakdown.suprimentos);
+    totals.movementBreakdown.sangrias = roundMoney(totals.movementBreakdown.sangrias);
+    totals.movementBreakdown.despesas = roundMoney(totals.movementBreakdown.despesas);
+    totals.presentedTotal = roundMoney(totals.presentedTotal);
+
     let reportFrom = from;
     let reportTo = to;
-    if (useControlFilter && detailed.length > 0) {
-      reportFrom = detailed.reduce(
+    if (useControlFilter && sessionsOut.length > 0) {
+      reportFrom = sessionsOut.reduce(
         (min, s) => (s.openedAt < min ? s.openedAt : min),
-        detailed[0].openedAt,
+        sessionsOut[0].openedAt,
       );
-      reportTo = detailed.reduce((max, s) => {
+      reportTo = sessionsOut.reduce((max, s) => {
         const end = s.closedAt ?? new Date();
         return end > max ? end : max;
-      }, detailed[0].closedAt ?? new Date());
+      }, sessionsOut[0].closedAt ?? new Date());
     }
 
     return {
       from: reportFrom,
       to: reportTo,
-      sessions: detailed,
-      totals,
+      sessions: sessionsOut,
+      totals: {
+        ...totals,
+        /** Alias legado — soma dos apresentados por rubrica (pós-conferência quando gravado). */
+        closingBalance: totals.presentedTotal,
+      },
     };
   }
 
@@ -962,60 +1081,10 @@ export class CashController {
     );
 
     /** Enriquece linhas gravadas na conferência com código/descrição do plano referencial (só resposta GET). */
-    let reconciliationExpenseDetailsOut = session.reconciliationExpenseDetails;
-    const rawReconExpense = session.reconciliationExpenseDetails;
-    if (
-      Array.isArray(rawReconExpense) &&
-      rawReconExpense.length > 0 &&
-      rawReconExpense.every(isPlainObjectRecord)
-    ) {
-      const linesUnknown = rawReconExpense.filter(isPlainObjectRecord) as Record<string, unknown>[];
-      const ids = [
-        ...new Set(
-          linesUnknown
-            .map((x) =>
-              typeof x.referentialAccountId === 'string' ? x.referentialAccountId.trim() : '',
-            )
-            .filter(Boolean),
-        ),
-      ];
-      const accs = ids.length
-        ? await db.referentialAccount.findMany({
-            where: { id: { in: ids } },
-            select: { id: true, code: true, description: true },
-          })
-        : [];
-      const map = new Map(accs.map((a) => [a.id, a]));
-      reconciliationExpenseDetailsOut = linesUnknown.map((line) => {
-        const ridRaw = line.referentialAccountId;
-        const rid =
-          typeof ridRaw === 'string'
-            ? ridRaw.trim()
-            : ridRaw != null
-              ? String(ridRaw).trim()
-              : '';
-        const amtRaw = line.amount;
-        const amt =
-          typeof amtRaw === 'number'
-            ? amtRaw
-            : parseFloat(String(amtRaw ?? '').replace(',', '.'));
-        const amount = Number.isFinite(amt) ? Math.round(amt * 100) / 100 : 0;
-        const notesRaw = line.notes;
-        const movRaw = line.cashMovementId;
-        const cashMovementId =
-          typeof movRaw === 'string' && movRaw.trim() !== '' ? movRaw.trim() : undefined;
-        return {
-          amount,
-          notes:
-            notesRaw != null && String(notesRaw).trim() !== ''
-              ? String(notesRaw).trim()
-              : null,
-          referentialAccountId: rid,
-          ...(cashMovementId ? { cashMovementId } : {}),
-          referentialAccount: rid ? map.get(rid) ?? null : null,
-        };
-      });
-    }
+    const reconciliationExpenseDetailsOut = await enrichReconciliationExpenseDetails(
+      db,
+      session.reconciliationExpenseDetails,
+    );
 
     const sessionResponse = {
       ...session,

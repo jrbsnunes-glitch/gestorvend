@@ -35,6 +35,24 @@ export function sumDeclaredForClosingBalance(
   return Math.round(sum * 100) / 100;
 }
 
+/** Total apresentado (meios): prioriza rubricas gravadas na conferência. */
+export function presentedTotalFromSession(
+  closingByMethod: Record<string, number | string> | null | undefined,
+  closingBalance: string | number | null | undefined,
+): number | null {
+  if (closingByMethod && typeof closingByMethod === 'object' && Object.keys(closingByMethod).length > 0) {
+    return sumDeclaredForClosingBalance(closingByMethod);
+  }
+  if (closingBalance != null && closingBalance !== '') {
+    const n =
+      typeof closingBalance === 'number'
+        ? closingBalance
+        : parseFloat(String(closingBalance).replace(',', '.'));
+    if (Number.isFinite(n)) return Math.round(n * 100) / 100;
+  }
+  return null;
+}
+
 export function formatCashExpectedHint(
   opening: number,
   breakdown?: CashMovementBreakdown | null,

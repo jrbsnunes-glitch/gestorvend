@@ -4,8 +4,21 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
-import { isExcludedFromClosingTotal, sumDeclaredForClosingBalance } from '../lib/cash-reconciliation';
+import { isExcludedFromClosingTotal, presentedTotalFromSession, sumDeclaredForClosingBalance } from '../lib/cash-reconciliation';
 import './cash-print.css';
+
+type ReconciliationExpenseLine = {
+  amount: number;
+  notes: string | null;
+  referentialAccountId: string;
+  referentialAccount?: { id: string; code: string; description: string } | null;
+};
+
+type CashMovementBreakdown = {
+  suprimentos: number;
+  sangrias: number;
+  despesas: number;
+};
 
 type ReportSession = {
   id: string;
@@ -13,12 +26,15 @@ type ReportSession = {
   status: 'OPEN' | 'CLOSED';
   openedAt: string;
   closedAt: string | null;
+  reconciledAt: string | null;
   openingBalance: string;
   closingBalance: string | null;
+  presentedTotal: number | null;
   closingNotes: string | null;
   user: { id: string; name: string; email: string } | null;
   movementsIn: number;
   movementsOut: number;
+  movementBreakdown: CashMovementBreakdown;
   completedCount: number;
   cancelledCount: number;
   itemsCount: number;
@@ -29,6 +45,7 @@ type ReportSession = {
   expectedByMethod: Record<string, number>;
   declaredByMethod: Record<string, number> | null;
   diffByMethod: Record<string, number> | null;
+  reconciliationExpenseDetails: ReconciliationExpenseLine[] | null;
 };
 
 type ReportData = {
@@ -43,9 +60,11 @@ type ReportData = {
     totalCancelled: number;
     totalDiscounts: number;
     openingBalance: number;
+    presentedTotal: number;
     closingBalance: number;
     movementsIn: number;
     movementsOut: number;
+    movementBreakdown: CashMovementBreakdown;
     expectedByMethod: Record<string, number>;
     declaredByMethod: Record<string, number>;
   };
@@ -211,7 +230,7 @@ export function CashPrintPage() {
       Object.keys(s.declaredByMethod ?? {}).forEach((k) => set.add(k));
     }
     // Ordena por relevância padrão dos métodos
-    const order = ['CASH', 'CARD', 'PIX', 'CREDIT', 'OTHER'];
+    const order = ['CASH', 'CARD', 'PIX', 'CREDIT', 'OTHER', 'EXPENSE'];
     return [...set].sort((a, b) => {
       const ai = order.indexOf(a);
       const bi = order.indexOf(b);
@@ -309,16 +328,17 @@ export function CashPrintPage() {
                   muted
                 />
                 <KpiPrint
-                  label="Suprimentos / Sangrias"
-                  value={`+${formatBRL(data.totals.movementsIn)} / −${formatBRL(data.totals.movementsOut)}`}
+                  label="Suprimentos / Sangrias / Despesas"
+                  value={`+${formatBRL(data.totals.movementBreakdown?.suprimentos ?? data.totals.movementsIn)} / −${formatBRL(data.totals.movementBreakdown?.sangrias ?? data.totals.movementsOut)} / −${formatBRL(data.totals.movementBreakdown?.despesas ?? 0)}`}
                   muted
                 />
                 <KpiPrint label="Fundos iniciais" value={formatBRL(data.totals.openingBalance)} />
                 <KpiPrint
                   label="Apresentado (meios)"
                   value={formatBRL(
-                    data.totals.closingBalance ||
-                      sumDeclaredForClosingBalance(data.totals.declaredByMethod),
+                    data.totals.presentedTotal ??
+                      (data.totals.closingBalance ||
+                        sumDeclaredForClosingBalance(data.totals.declaredByMethod)),
                   )}
                 />
               </div>
@@ -462,6 +482,13 @@ function fmtDiff(diff: number | null): string {
   return (diff > 0 ? '+' : '') + formatBRL(diff);
 }
 
+function sessionPresentedLabel(session: ReportSession): string {
+  const total =
+    session.presentedTotal ??
+    presentedTotalFromSession(session.declaredByMethod, session.closingBalance);
+  return total != null ? formatBRL(total) : '—';
+}
+
 function SessionBlock({
   session,
   methods,
@@ -474,6 +501,15 @@ function SessionBlock({
   itemsDetailLoading?: boolean;
 }) {
   const itemsDetailMode = soldItems !== undefined;
+  const breakdown = session.movementBreakdown ?? {
+    suprimentos: session.movementsIn,
+    sangrias: session.movementsOut,
+    despesas: 0,
+  };
+  const expenseLines =
+    session.reconciledAt && session.reconciliationExpenseDetails?.length
+      ? session.reconciliationExpenseDetails
+      : null;
 
   return (
     <article className="print-session">
@@ -489,6 +525,11 @@ function SessionBlock({
             >
               {session.status === 'OPEN' ? '● Aberto' : 'Fechado'}
             </span>
+            {session.reconciledAt ? (
+              <span className="print-pill is-closed" style={{ marginLeft: '0.35rem' }}>
+                Conferido
+              </span>
+            ) : null}
           </h3>
           <p className="print-session-meta">
             Aberto em <strong>{fmtDateTime(session.openedAt)}</strong>
@@ -505,7 +546,7 @@ function SessionBlock({
             <dt>Fundo inicial</dt>
             <dd>{formatBRL(session.openingBalance)}</dd>
             <dt>Apresentado (meios)</dt>
-            <dd>{session.closingBalance ? formatBRL(session.closingBalance) : '—'}</dd>
+            <dd>{sessionPresentedLabel(session)}</dd>
             <dt>Itens vendidos</dt>
             <dd>{session.itemsCount}</dd>
           </dl>
@@ -533,12 +574,18 @@ function SessionBlock({
             </div>
             <div className="is-muted">
               <span>Suprimentos</span>
-              <strong>+{formatBRL(session.movementsIn)}</strong>
+              <strong>+{formatBRL(breakdown.suprimentos)}</strong>
             </div>
             <div className="is-muted">
               <span>Sangrias</span>
-              <strong>−{formatBRL(session.movementsOut)}</strong>
+              <strong>−{formatBRL(breakdown.sangrias)}</strong>
             </div>
+            {breakdown.despesas > 0 || (session.declaredByMethod?.EXPENSE ?? 0) > 0 ? (
+              <div className="is-muted">
+                <span>Despesas</span>
+                <strong>−{formatBRL(breakdown.despesas || Number(session.declaredByMethod?.EXPENSE ?? 0))}</strong>
+              </div>
+            ) : null}
           </div>
 
           <ReconTable
@@ -546,6 +593,34 @@ function SessionBlock({
             expected={session.expectedByMethod}
             declared={session.declaredByMethod}
           />
+
+          {expenseLines ? (
+            <div style={{ marginTop: '0.65rem' }}>
+              <strong style={{ fontSize: '0.82rem' }}>Despesas conferidas (detalhe)</strong>
+              <table className="print-table print-table-compact" style={{ marginTop: '0.35rem' }}>
+                <thead>
+                  <tr>
+                    <th>Centro de custo</th>
+                    <th>Observação</th>
+                    <th className="num">Valor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expenseLines.map((line, ix) => (
+                    <tr key={`${line.referentialAccountId}-${ix}`}>
+                      <td>
+                        {line.referentialAccount
+                          ? `${line.referentialAccount.code} — ${line.referentialAccount.description}`
+                          : line.referentialAccountId}
+                      </td>
+                      <td>{line.notes ?? '—'}</td>
+                      <td className="num">{formatBRL(line.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </>
       ) : null}
 
