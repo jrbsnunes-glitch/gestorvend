@@ -30,6 +30,7 @@ import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { referentialCodeMatchesFlow } from '../common/referential-account-flow';
 import { assertLastSaleAllowsPdvEntry } from './pdv-entry.guard';
 import {
+  buildSalesByMethod,
   buildSessionExpectedByMethod,
   computeClosingBalanceFromDeclared,
   computeReconciliationDifference,
@@ -577,6 +578,8 @@ export class CashController {
           }
         }
 
+        const salesByMethod = buildSalesByMethod(sales);
+
         const { byMethod: expectedByMethodBase, movementBreakdown } = buildSessionExpectedByMethod(
           sales,
           s.movements,
@@ -648,6 +651,7 @@ export class CashController {
           totalCompleted,
           totalCancelled,
           totalDiscounts,
+          salesByMethod,
           expectedByMethod,
           declaredByMethod: declaredNormalized,
           diffByMethod,
@@ -711,6 +715,9 @@ export class CashController {
         acc.movementBreakdown.suprimentos += s.movementBreakdown.suprimentos;
         acc.movementBreakdown.sangrias += s.movementBreakdown.sangrias;
         acc.movementBreakdown.despesas += s.movementBreakdown.despesas;
+        for (const [k, v] of Object.entries(s.salesByMethod)) {
+          acc.salesByMethod[k] = (acc.salesByMethod[k] ?? 0) + (v as number);
+        }
         for (const [k, v] of Object.entries(s.expectedByMethod)) {
           acc.expectedByMethod[k] = (acc.expectedByMethod[k] ?? 0) + (v as number);
         }
@@ -733,6 +740,7 @@ export class CashController {
         movementsIn: 0,
         movementsOut: 0,
         movementBreakdown: { suprimentos: 0, sangrias: 0, despesas: 0 },
+        salesByMethod: {} as Record<string, number>,
         expectedByMethod: {} as Record<string, number>,
         declaredByMethod: {} as Record<string, number>,
       },
@@ -1075,6 +1083,8 @@ export class CashController {
       }
     }
 
+    const salesByMethod = buildSalesByMethod(sales);
+
     const { byMethod, movementBreakdown } = buildSessionExpectedByMethod(
       sales,
       session.movements,
@@ -1101,6 +1111,7 @@ export class CashController {
         totalCancelled,
         itemsCount,
         totalDiscounts,
+        salesByMethod,
         byMethod,
         movementBreakdown,
       },

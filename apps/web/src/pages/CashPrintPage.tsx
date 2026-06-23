@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
-import { isExcludedFromClosingTotal, presentedTotalFromSession, sumDeclaredForClosingBalance } from '../lib/cash-reconciliation';
+import { isExcludedFromClosingTotal, presentedTotalFromSession, sumDeclaredForClosingBalance, sumPaymentMethodsTotal } from '../lib/cash-reconciliation';
 import './cash-print.css';
 
 type ReconciliationExpenseLine = {
@@ -42,6 +42,8 @@ type ReportSession = {
   totalCancelled: number;
   /** Soma dos descontos em vendas concluídas (por linha + desconto no total do cupom). */
   totalDiscounts: number;
+  /** Pagamentos registrados no momento da venda (vendas concluídas). */
+  salesByMethod: Record<string, number>;
   expectedByMethod: Record<string, number>;
   declaredByMethod: Record<string, number> | null;
   diffByMethod: Record<string, number> | null;
@@ -65,6 +67,7 @@ type ReportData = {
     movementsIn: number;
     movementsOut: number;
     movementBreakdown: CashMovementBreakdown;
+    salesByMethod: Record<string, number>;
     expectedByMethod: Record<string, number>;
     declaredByMethod: Record<string, number>;
   };
@@ -223,9 +226,11 @@ export function CashPrintPage() {
 
   const allMethods = useMemo(() => {
     const set = new Set<string>();
+    Object.keys(report.data?.totals.salesByMethod ?? {}).forEach((k) => set.add(k));
     Object.keys(report.data?.totals.expectedByMethod ?? {}).forEach((k) => set.add(k));
     Object.keys(report.data?.totals.declaredByMethod ?? {}).forEach((k) => set.add(k));
     for (const s of report.data?.sessions ?? []) {
+      Object.keys(s.salesByMethod).forEach((k) => set.add(k));
       Object.keys(s.expectedByMethod).forEach((k) => set.add(k));
       Object.keys(s.declaredByMethod ?? {}).forEach((k) => set.add(k));
     }
@@ -332,6 +337,11 @@ export function CashPrintPage() {
                   value={`+${formatBRL(data.totals.movementBreakdown?.suprimentos ?? data.totals.movementsIn)} / −${formatBRL(data.totals.movementBreakdown?.sangrias ?? data.totals.movementsOut)} / −${formatBRL(data.totals.movementBreakdown?.despesas ?? 0)}`}
                   muted
                 />
+                <KpiPrint
+                  label="Registrado nas vendas (meios)"
+                  value={formatBRL(sumPaymentMethodsTotal(data.totals.salesByMethod))}
+                  muted
+                />
                 <KpiPrint label="Fundos iniciais" value={formatBRL(data.totals.openingBalance)} />
                 <KpiPrint
                   label="Apresentado (meios)"
@@ -346,9 +356,15 @@ export function CashPrintPage() {
 
             {/* Conciliação consolidada */}
             <section className="print-section">
-              <h2>Esperado × Apresentado · Consolidado por forma de pagamento</h2>
+              <h2>Registrado (vendas) × Apresentado × Esperado (caixa)</h2>
+              <p className="print-sub" style={{ marginTop: '-0.35rem', marginBottom: '0.65rem' }}>
+                <strong>Registrado</strong> = pagamentos lançados nas vendas concluídas ·{' '}
+                <strong>Apresentado</strong> = valores conferidos no caixa ·{' '}
+                <strong>Esperado</strong> = vendas + fundo + suprimentos − sangrias/despesas
+              </p>
               <ReconTable
                 methods={allMethods}
+                sales={data.totals.salesByMethod}
                 expected={data.totals.expectedByMethod}
                 declared={data.totals.declaredByMethod}
                 emphasizeTotals
@@ -407,23 +423,26 @@ function KpiPrint({
 
 function ReconTable({
   methods,
+  sales,
   expected,
   declared,
   emphasizeTotals,
 }: {
   methods: string[];
+  sales: Record<string, number>;
   expected: Record<string, number>;
   declared: Record<string, number> | null;
   emphasizeTotals?: boolean;
 }) {
   const rows = methods
     .map((k) => {
+      const saleVal = sales[k] ?? 0;
       const ex = expected[k] ?? 0;
       const dec = declared ? declared[k] ?? 0 : null;
       const diff = dec == null ? null : dec - ex;
-      return { k, ex, dec, diff };
+      return { k, saleVal, ex, dec, diff };
     })
-    .filter((r) => r.ex > 0 || (r.dec != null && r.dec > 0));
+    .filter((r) => r.saleVal > 0 || r.ex > 0 || (r.dec != null && r.dec > 0));
 
   if (rows.length === 0) {
     return <p className="print-empty">Sem movimentações por forma de pagamento.</p>;
@@ -432,6 +451,7 @@ function ReconTable({
   const totalRows = emphasizeTotals
     ? rows.filter((r) => !isExcludedFromClosingTotal(r.k))
     : rows;
+  const totalSales = totalRows.reduce((s, r) => s + r.saleVal, 0);
   const totalExpected = totalRows.reduce((s, r) => s + r.ex, 0);
   const totalDeclared = totalRows.reduce((s, r) => s + (r.dec ?? 0), 0);
   const totalDiff = declared ? totalDeclared - totalExpected : null;
@@ -441,8 +461,9 @@ function ReconTable({
       <thead>
         <tr>
           <th>Forma de pagamento</th>
-          <th className="num">Esperado</th>
+          <th className="num">Registrado (vendas)</th>
           <th className="num">Apresentado</th>
+          <th className="num">Esperado (caixa)</th>
           <th className="num">Diferença</th>
         </tr>
       </thead>
@@ -450,8 +471,9 @@ function ReconTable({
         {rows.map((r) => (
           <tr key={r.k}>
             <td>{PAYMENT_LABELS[r.k] ?? r.k}</td>
-            <td className="num">{formatBRL(r.ex)}</td>
+            <td className="num">{r.saleVal > 0 ? formatBRL(r.saleVal) : '—'}</td>
             <td className="num">{r.dec == null ? '—' : formatBRL(r.dec)}</td>
+            <td className="num">{formatBRL(r.ex)}</td>
             <td className={'num ' + diffClass(r.diff)}>{fmtDiff(r.diff)}</td>
           </tr>
         ))}
@@ -460,8 +482,9 @@ function ReconTable({
         <tfoot>
           <tr>
             <th>Total (meios)</th>
-            <th className="num">{formatBRL(totalExpected)}</th>
+            <th className="num">{formatBRL(totalSales)}</th>
             <th className="num">{declared ? formatBRL(totalDeclared) : '—'}</th>
+            <th className="num">{formatBRL(totalExpected)}</th>
             <th className={'num ' + diffClass(totalDiff)}>{fmtDiff(totalDiff)}</th>
           </tr>
         </tfoot>
@@ -590,6 +613,7 @@ function SessionBlock({
 
           <ReconTable
             methods={methods}
+            sales={session.salesByMethod}
             expected={session.expectedByMethod}
             declared={session.declaredByMethod}
           />

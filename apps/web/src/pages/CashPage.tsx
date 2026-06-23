@@ -1180,8 +1180,24 @@ type CashReconRow = {
   diff: number | null;
 };
 
-/** Formas usadas no fechamento / conferência (pagamentos + total de despesas de caixa). */
-const RECON_MANAGEABLE_METHOD_KEYS = ['CASH', 'CARD', 'PIX', 'CREDIT', 'OTHER', 'EXPENSE'] as const;
+/** Formas de pagamento na conferência (despesas têm bloco próprio abaixo). */
+const RECON_PAYMENT_METHOD_KEYS = ['CASH', 'CARD', 'PIX', 'CREDIT', 'OTHER'] as const;
+const RECON_MANAGEABLE_METHOD_KEYS = [...RECON_PAYMENT_METHOD_KEYS, 'EXPENSE'] as const;
+
+function createEmptyExpenseLine(): {
+  uid: string;
+  amount: string;
+  notes: string;
+  referentialAccountId: string;
+  cashMovementId?: string;
+} {
+  return {
+    uid: crypto.randomUUID(),
+    amount: '',
+    notes: '',
+    referentialAccountId: '',
+  };
+}
 
 function sortReconMethodKeys(keys: string[]): string[] {
   const order = [...RECON_MANAGEABLE_METHOD_KEYS];
@@ -1255,7 +1271,6 @@ function ManagerCashReconciliation({
   useEffect(() => {
     setAddedMethodKeys([]);
     setPickToAdd('');
-    setExpenseDetailExpanded(true);
   }, [session.id]);
 
   const visible = useMemo(() => buildCashReconciliationRows(session, expected), [session, expected]);
@@ -1292,8 +1307,6 @@ function ManagerCashReconciliation({
   };
 
   const [expenseLineDrafts, setExpenseLineDrafts] = useState<ExpenseLineDraft[]>([]);
-  /** Após gravar ou manualmente (`Ocultar`), o painel de linhas pode ficar recolhido. */
-  const [expenseDetailExpanded, setExpenseDetailExpanded] = useState(true);
 
   const reconciliationExpenseSig = useMemo(
     () => JSON.stringify(session.reconciliationExpenseDetails ?? null),
@@ -1311,13 +1324,12 @@ function ManagerCashReconciliation({
     return Math.round(sum * 100) / 100;
   }, [expenseLineDrafts]);
 
-  /** Há pelo menos uma linha preenchida o suficiente para exigir as demais (detalhar despesa). */
-  const expenseLineStartsDetail = expenseLineDrafts.some(
-    (r) =>
-      r.amount.trim() !== '' || r.referentialAccountId.trim() !== '' || r.notes.trim() !== '',
+  const paymentMethodKeys = useMemo(
+    () => mergedKeys.filter((k) => k !== 'EXPENSE'),
+    [mergedKeys],
   );
 
-  /** Linhas de despesa com valor válido + centro — usadas no salvamento e no resumo recolhido. */
+  /** Linhas de despesa com valor válido + centro — usadas no salvamento. */
   const expenseCompleteDraftLines = useMemo(
     () =>
       expenseLineDrafts.filter((r) => {
@@ -1329,6 +1341,10 @@ function ManagerCashReconciliation({
   );
 
   const hasCommittedExpenseLines = expenseCompleteDraftLines.length > 0;
+
+  function addExpenseLine() {
+    setExpenseLineDrafts((rows) => [...rows, createEmptyExpenseLine()]);
+  }
 
   function buildDeclaredAmountsPayload():
     | {
@@ -1345,9 +1361,7 @@ function ManagerCashReconciliation({
       cashMovementId?: string;
     }> | null = null;
 
-    const wantsExpenseBranch = mergedKeys.includes('EXPENSE');
-
-    if (wantsExpenseBranch) {
+    if (expenseLineDrafts.length > 0) {
       const candidateRows = expenseLineDrafts.filter((r) => {
         const amt = r.amount.trim();
         const cc = r.referentialAccountId.trim();
@@ -1358,11 +1372,8 @@ function ManagerCashReconciliation({
         const n = parseFloat(r.amount.trim().replace(',', '.'));
         return Number.isFinite(n) && n > 0 && r.referentialAccountId.trim() !== '';
       });
-      const invalidPartial = candidateRows.length > completeRows.length;
-      if (invalidPartial) {
-        setErr(
-          'Em despesas, cada linha iniciada deve ter valor maior que zero e centro de custo, ou limpe/remova campos incompletos.',
-        );
+      if (candidateRows.length > completeRows.length) {
+        setErr('Preencha valor e centro de custo em cada despesa, ou remova a linha.');
         return null;
       }
       if (completeRows.length > 0) {
@@ -1387,24 +1398,7 @@ function ManagerCashReconciliation({
     }
 
     for (const key of mergedKeys) {
-      if (key === 'EXPENSE' && expenseTotalFromLines != null) {
-        closingByMethod[key] = expenseTotalFromLines;
-        continue;
-      }
-      if (key === 'EXPENSE' && expenseTotalFromLines == null) {
-        const raw = (draft[key] ?? '').trim();
-        if (raw === '') {
-          setErr('Informe o total em Despesas ou grave ao menos uma linha detalhada com valor e centro.');
-          return null;
-        }
-        const n = parseFloat(raw.replace(',', '.'));
-        if (!Number.isFinite(n) || n < 0) {
-          setErr('Valor inválido em Despesas.');
-          return null;
-        }
-        closingByMethod[key] = Math.round(n * 100) / 100;
-        continue;
-      }
+      if (key === 'EXPENSE') continue;
       const raw = (draft[key] ?? '').trim();
       if (raw === '') continue;
       const n = parseFloat(raw.replace(',', '.'));
@@ -1414,18 +1408,15 @@ function ManagerCashReconciliation({
       }
       closingByMethod[key] = Math.round(n * 100) / 100;
     }
+    if (expenseTotalFromLines != null) {
+      closingByMethod.EXPENSE = expenseTotalFromLines;
+    }
     if (Object.keys(closingByMethod).length === 0) {
       setErr('Informe ao menos um valor nos apresentados (ou mantenha linhas já preenchidas).');
       return null;
     }
-    let reconciliationExpenseDetails: unknown | null | undefined = undefined;
-    if (wantsExpenseBranch) {
-      if (expenseDetailPayload?.length) {
-        reconciliationExpenseDetails = expenseDetailPayload;
-      } else {
-        reconciliationExpenseDetails = null;
-      }
-    }
+    const reconciliationExpenseDetails: unknown | null =
+      expenseDetailPayload?.length ? expenseDetailPayload : null;
     setErr(null);
     return { closingByMethod, reconciliationExpenseDetails };
   }
@@ -1464,10 +1455,22 @@ function ManagerCashReconciliation({
           ...(row.cashMovementId ? { cashMovementId: String(row.cashMovementId) } : {}),
         })),
       );
+      return;
+    }
+    const expRaw = session.closingByMethod?.EXPENSE;
+    if (expRaw != null && String(expRaw).trim() !== '') {
+      setExpenseLineDrafts([
+        {
+          uid: crypto.randomUUID(),
+          amount: String(typeof expRaw === 'number' ? expRaw : expRaw).replace('.', ','),
+          notes: '',
+          referentialAccountId: '',
+        },
+      ]);
     } else {
       setExpenseLineDrafts([]);
     }
-  }, [session.id, reconciliationExpenseSig]);
+  }, [session.id, reconciliationExpenseSig, declJson]);
 
   /** Linhas extras incluídas pelo gerente (antes de gravar ou após servidor sem esse campo). */
   useEffect(() => {
@@ -1503,7 +1506,6 @@ function ManagerCashReconciliation({
     },
     onSuccess: () => {
       setErr(null);
-      setExpenseDetailExpanded(false);
       void qc.invalidateQueries({ queryKey: ['financial-overview'] });
       onUpdated();
     },
@@ -1534,7 +1536,7 @@ function ManagerCashReconciliation({
   });
 
   const availableToAdd = useMemo(
-    () => RECON_MANAGEABLE_METHOD_KEYS.filter((k) => !mergedKeys.includes(k)),
+    () => RECON_PAYMENT_METHOD_KEYS.filter((k) => !mergedKeys.includes(k)),
     [mergedKeys],
   );
 
@@ -1593,11 +1595,8 @@ function ManagerCashReconciliation({
     <div className="card" style={{ marginBottom: '1rem', padding: '0.9rem 1rem' }}>
       <strong style={{ fontSize: '0.92rem' }}>Conferência do gerente</strong>
       <p style={{ margin: '0.35rem 0 0.75rem', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
-        Edite valores já informados,{' '}
-        <strong>inclua novas linhas</strong> (cartão, Pix, crediário). Em{' '}
-        <strong>Despesas</strong> você pode usar um total único ou <strong>detalhar várias linhas</strong>{' '}
-        (valor, observação e centro de custo). Linhas detalhadas geram movimentos de caixa classificados e entram no{' '}
-        <strong>Balanço</strong> e no relatório por centro de custo ao salvar.
+        Informe o que foi contado em cada forma de pagamento. Despesas são opcionais e ficam separadas do
+        total apresentado.
       </p>
       {err && (
         <div className="alert alert-error" style={{ marginBottom: '0.65rem' }}>
@@ -1605,338 +1604,220 @@ function ManagerCashReconciliation({
         </div>
       )}
       <div style={{ display: 'grid', gap: '0.5rem', marginBottom: '0.65rem' }}>
-        {mergedKeys.map((key) => {
+        {paymentMethodKeys.map((key) => {
           const exp = expectedFinalForReconKey(key, expected, opening);
           const isManualExtra = addedMethodKeys.includes(key);
-          const isExpenseRow = key === 'EXPENSE';
           return (
-            <Fragment key={key}>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: isManualExtra ? 'minmax(0,1fr) auto 118px' : 'minmax(0,1fr) 118px',
-                  gap: '0.5rem',
-                  alignItems: 'center',
-                  fontSize: '0.85rem',
-                }}
-              >
-                <div>
-                  <span style={{ fontWeight: 600 }}>{PAYMENT_LABELS[key] ?? key}</span>
-                  <span
-                    style={{
-                      display: 'block',
-                      fontSize: '0.75rem',
-                      color: 'var(--color-text-muted)',
-                    }}
-                  >
-                    Esperado (referência){' '}
-                    <strong>{formatBRL(exp)}</strong>
-                    {key === 'CASH' ? (
-                      <>
-                        {' '}
-                        · {formatCashExpectedHint(opening, movementBreakdown)}
-                      </>
-                    ) : key === 'EXPENSE' ? (
-                      ' · analítico (não soma no apresentado total)'
-                    ) : null}
-                  </span>
-                  {isExpenseRow && expenseLineStartsDetail ? (
-                    <span
-                      style={{
-                        display: 'block',
-                        fontSize: '0.74rem',
-                        color: '#a16207',
-                        marginTop: '0.2rem',
-                      }}
-                    >
-                      Detalhes preenchidos: total apresentado em despesas ={' '}
-                      <strong>{formatBRL(hasCommittedExpenseLines ? expenseDetailedSumPositive : 0)}</strong>
-                      {!hasCommittedExpenseLines ? ' · conclua valor e centro em cada linha para gravar.' : null}
-                    </span>
-                  ) : null}
-                </div>
-                {isManualExtra ? (
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    title="Remover linha só desta conferência (ainda não salva no servidor ou incluída agora)."
-                    disabled={patchDeclared.isPending}
-                    style={{ padding: '0.2rem 0.45rem', fontSize: '0.76rem', color: '#b91c1c' }}
-                    onClick={() => {
-                      setAddedMethodKeys((a) => a.filter((x) => x !== key));
-                      setDraft((d) => {
-                        const n = { ...d };
-                        delete n[key];
-                        return n;
-                      });
-                      if (key === 'EXPENSE') {
-                        setExpenseLineDrafts([]);
-                      }
-                    }}
-                  >
-                    Remover
-                  </button>
-                ) : null}
-                {isExpenseRow && hasCommittedExpenseLines ? (
-                  <div
-                    style={{
-                      padding: '0.4rem 0.5rem',
-                      textAlign: 'right',
-                      borderRadius: 6,
-                      border: '1px solid var(--color-border-strong)',
-                      background: 'var(--color-surface-elevated)',
-                      fontSize: '0.85rem',
-                      fontVariantNumeric: 'tabular-nums',
-                    }}
-                    title="Total igual à soma das linhas detalhadas"
-                  >
-                    {formatBRL(expenseDetailedSumPositive)}
-                  </div>
-                ) : (
-                  <input
-                    aria-label={`Apresentado ${PAYMENT_LABELS[key] ?? key}`}
-                    inputMode="decimal"
-                    value={draft[key] ?? ''}
-                    onChange={(e) => setDraft((prev) => ({ ...prev, [key]: e.target.value }))}
-                    readOnly={isExpenseRow && hasCommittedExpenseLines}
-                    placeholder="0"
-                    style={{
-                      padding: '0.4rem 0.5rem',
-                      textAlign: 'right',
-                      borderRadius: 6,
-                      border: '1px solid var(--color-border-strong)',
-                      fontSize: '0.9rem',
-                      opacity: isExpenseRow && hasCommittedExpenseLines ? 0.65 : 1,
-                    }}
-                  />
-                )}
-              </div>
-              {isExpenseRow ? (
-                <div
+            <div
+              key={key}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: isManualExtra ? 'minmax(0,1fr) auto 118px' : 'minmax(0,1fr) 118px',
+                gap: '0.5rem',
+                alignItems: 'center',
+                fontSize: '0.85rem',
+              }}
+            >
+              <div>
+                <span style={{ fontWeight: 600 }}>{PAYMENT_LABELS[key] ?? key}</span>
+                <span
                   style={{
-                    marginLeft: '0.35rem',
-                    padding: '0.65rem',
-                    borderLeft: '2px solid var(--color-border-strong)',
-                    borderRadius: 6,
-                    background: 'rgba(148,163,184,0.06)',
+                    display: 'block',
+                    fontSize: '0.75rem',
+                    color: 'var(--color-text-muted)',
                   }}
                 >
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '0.45rem',
-                    }}
-                  >
-                    <strong style={{ fontSize: '0.8rem' }}>Detalhamento opcional das despesas</strong>
-                    {expenseDetailExpanded ? (
-                      <button
-                        type="button"
-                        className="btn btn-ghost"
-                        disabled={patchDeclared.isPending}
-                        style={{ padding: '0.2rem 0.55rem', fontSize: '0.76rem' }}
-                        onClick={() => setExpenseDetailExpanded(false)}
-                      >
-                        Ocultar detalhes
-                      </button>
-                    ) : null}
-                  </div>
-                  {!expenseDetailExpanded ? (
-                    <div style={{ marginTop: '0.55rem' }}>
-                      <p
-                        style={{
-                          margin: '0 0 0.45rem',
-                          fontSize: '0.8rem',
-                          color: 'var(--color-text-secondary)',
-                          lineHeight: 1.35,
-                        }}
-                      >
-                        {expenseCompleteDraftLines.length > 0 ? (
-                          <>
-                            <strong>{expenseCompleteDraftLines.length}</strong> linha(s) válida(s) · total{' '}
-                            <strong>{formatBRL(expenseDetailedSumPositive)}</strong>
-                          </>
-                        ) : expenseLineDrafts.length > 0 ? (
-                          <>
-                            {expenseLineDrafts.length} linha(s) em rascunho — abra novamente para concluir
-                            cadastro ou ajustes.
-                          </>
-                        ) : (
-                          <>
-                            Nenhuma linha detalhada; o total só no campo ao lado vale enquanto não adicionar
-                            linhas.
-                          </>
-                        )}
-                      </p>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        disabled={patchDeclared.isPending || !!session.reconciledAt}
-                        style={{ padding: '0.35rem 0.65rem', fontSize: '0.78rem' }}
-                        onClick={() => setExpenseDetailExpanded(true)}
-                      >
-                        Expandir detalhes das despesas
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <p style={{ margin: '0.4rem 0 0.55rem', fontSize: '0.76rem', color: 'var(--color-text-muted)' }}>
-                        Para cada despesa conferida inclua valor e centro de custo (planos grupo 4/5). Observação é
-                        livre. Linhas só parcialmente preenchidas não são gravadas até estarem válidas ou removidas.
-                      </p>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginBottom: '0.55rem' }}>
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          disabled={patchDeclared.isPending || !!session.reconciledAt}
-                          style={{ padding: '0.3rem 0.55rem', fontSize: '0.76rem' }}
-                          onClick={() =>
-                            setExpenseLineDrafts((rows) => [
-                              ...rows,
-                              {
-                                uid: crypto.randomUUID(),
-                                amount: '',
-                                notes: '',
-                                referentialAccountId: '',
-                              },
-                            ])
-                          }
-                        >
-                          Adicionar linha
-                        </button>
-                        {expenseLineDrafts.length > 0 ? (
-                          <button
-                            type="button"
-                            className="btn btn-ghost"
-                            disabled={patchDeclared.isPending || !!session.reconciledAt}
-                            style={{ padding: '0.3rem 0.55rem', fontSize: '0.76rem' }}
-                            onClick={() => setExpenseLineDrafts([])}
-                          >
-                            Limpar todas as linhas
-                          </button>
-                        ) : null}
-                      </div>
-                      <div style={{ display: 'grid', gap: '0.65rem' }}>
-                        {expenseLineDrafts.map((row, idx) => (
-                          <div
-                            key={row.uid}
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: 'minmax(0, 92px) minmax(0, 1fr)',
-                              gap: '0.5rem',
-                              alignItems: 'start',
-                              borderTop: idx ? '1px dashed var(--color-border-strong)' : 'none',
-                              paddingTop: idx ? '0.55rem' : 0,
-                            }}
-                          >
-                            <div style={{ display: 'grid', gap: '0.35rem' }}>
-                              <label
-                                htmlFor={`exp-line-amt-${row.uid}`}
-                                style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}
-                              >
-                                Valor
-                              </label>
-                              <input
-                                id={`exp-line-amt-${row.uid}`}
-                                inputMode="decimal"
-                                value={row.amount}
-                                onChange={(e) =>
-                                  setExpenseLineDrafts((prev) =>
-                                    prev.map((r) =>
-                                      r.uid === row.uid ? { ...r, amount: e.target.value } : r,
-                                    ),
-                                  )
-                                }
-                                placeholder="0"
-                                disabled={patchDeclared.isPending || !!session.reconciledAt}
-                                style={{
-                                  padding: '0.35rem',
-                                  borderRadius: 6,
-                                  border: '1px solid var(--color-border-strong)',
-                                  fontSize: '0.85rem',
-                                  textAlign: 'right',
-                                  width: '100%',
-                                }}
-                              />
-                            </div>
-                            <div style={{ display: 'grid', gap: '0.35rem', minWidth: 0 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-                                  Centro de custo · observação
-                                </span>
-                                <button
-                                  type="button"
-                                  className="btn btn-ghost"
-                                  style={{ padding: '0.15rem 0.4rem', fontSize: '0.72rem', color: '#b91c1c' }}
-                                  disabled={patchDeclared.isPending || !!session.reconciledAt}
-                                  onClick={() =>
-                                    setExpenseLineDrafts((prev) => prev.filter((r) => r.uid !== row.uid))
-                                  }
-                                >
-                                  Remover linha
-                                </button>
-                              </div>
-                              <CostCenterSelect
-                                id={`exp-line-cc-${row.uid}`}
-                                flow="EXPENSE"
-                                label=""
-                                emptyLabel="Selecionar…"
-                                allowEmpty={true}
-                                value={row.referentialAccountId}
-                                onChange={(id) =>
-                                  setExpenseLineDrafts((prev) =>
-                                    prev.map((r) =>
-                                      r.uid === row.uid ? { ...r, referentialAccountId: id } : r,
-                                    ),
-                                  )
-                                }
-                                disabled={patchDeclared.isPending || !!session.reconciledAt}
-                              />
-                              <textarea
-                                value={row.notes}
-                                onChange={(e) =>
-                                  setExpenseLineDrafts((prev) =>
-                                    prev.map((r) =>
-                                      r.uid === row.uid ? { ...r, notes: e.target.value } : r,
-                                    ),
-                                  )
-                                }
-                                placeholder="Observação (opcional)"
-                                disabled={patchDeclared.isPending || !!session.reconciledAt}
-                                rows={2}
-                                style={{
-                                  padding: '0.35rem',
-                                  borderRadius: 6,
-                                  border: '1px solid var(--color-border-strong)',
-                                  fontSize: '0.8rem',
-                                  width: '100%',
-                                  resize: 'vertical',
-                                }}
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      {expenseLineDrafts.length === 0 ? (
-                        <p style={{ margin: '0.35rem 0 0', fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>
-                          Sem linhas: use apenas o campo <strong>Apresentado</strong> ao lado ou adicione linhas aqui.
-                        </p>
-                      ) : null}
-                    </>
-                  )}
-                </div>
+                  Esperado (referência) <strong>{formatBRL(exp)}</strong>
+                  {key === 'CASH' ? <> · {formatCashExpectedHint(opening, movementBreakdown)}</> : null}
+                </span>
+              </div>
+              {isManualExtra ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  title="Remover linha só desta conferência."
+                  disabled={patchDeclared.isPending}
+                  style={{ padding: '0.2rem 0.45rem', fontSize: '0.76rem', color: '#b91c1c' }}
+                  onClick={() => {
+                    setAddedMethodKeys((a) => a.filter((x) => x !== key));
+                    setDraft((d) => {
+                      const n = { ...d };
+                      delete n[key];
+                      return n;
+                    });
+                  }}
+                >
+                  Remover
+                </button>
               ) : null}
-            </Fragment>
+              <input
+                aria-label={`Apresentado ${PAYMENT_LABELS[key] ?? key}`}
+                inputMode="decimal"
+                value={draft[key] ?? ''}
+                onChange={(e) => setDraft((prev) => ({ ...prev, [key]: e.target.value }))}
+                placeholder="0"
+                style={{
+                  padding: '0.4rem 0.5rem',
+                  textAlign: 'right',
+                  borderRadius: 6,
+                  border: '1px solid var(--color-border-strong)',
+                  fontSize: '0.9rem',
+                }}
+              />
+            </div>
           );
         })}
       </div>
+
+      <div
+        style={{
+          marginBottom: '0.75rem',
+          padding: '0.75rem',
+          borderRadius: 8,
+          border: '1px solid var(--color-border-strong)',
+          background: 'rgba(148,163,184,0.05)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.5rem',
+            marginBottom: expenseLineDrafts.length > 0 ? '0.55rem' : 0,
+          }}
+        >
+          <div>
+            <strong style={{ fontSize: '0.85rem' }}>Despesas do caixa</strong>
+            <span
+              style={{
+                display: 'block',
+                fontSize: '0.74rem',
+                color: 'var(--color-text-muted)',
+                marginTop: '0.15rem',
+              }}
+            >
+              Opcional · valor + centro de custo · não soma no apresentado
+            </span>
+          </div>
+          {hasCommittedExpenseLines ? (
+            <strong style={{ fontSize: '0.9rem', fontVariantNumeric: 'tabular-nums' }}>
+              Total {formatBRL(expenseDetailedSumPositive)}
+            </strong>
+          ) : null}
+        </div>
+
+        {expenseLineDrafts.length > 0 ? (
+          <div style={{ display: 'grid', gap: '0.45rem' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(72px, 88px) minmax(0, 1fr) minmax(0, 1fr) auto',
+                gap: '0.4rem',
+                fontSize: '0.72rem',
+                color: 'var(--color-text-muted)',
+                paddingBottom: '0.15rem',
+              }}
+            >
+              <span>Valor</span>
+              <span>Centro de custo</span>
+              <span>Observação</span>
+              <span aria-hidden="true" style={{ width: 28 }} />
+            </div>
+            {expenseLineDrafts.map((row) => (
+              <div
+                key={row.uid}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(72px, 88px) minmax(0, 1fr) minmax(0, 1fr) auto',
+                  gap: '0.4rem',
+                  alignItems: 'center',
+                }}
+              >
+                <input
+                  inputMode="decimal"
+                  value={row.amount}
+                  onChange={(e) =>
+                    setExpenseLineDrafts((prev) =>
+                      prev.map((r) => (r.uid === row.uid ? { ...r, amount: e.target.value } : r)),
+                    )
+                  }
+                  placeholder="0"
+                  disabled={patchDeclared.isPending}
+                  style={{
+                    padding: '0.38rem 0.45rem',
+                    borderRadius: 6,
+                    border: '1px solid var(--color-border-strong)',
+                    fontSize: '0.85rem',
+                    textAlign: 'right',
+                    width: '100%',
+                  }}
+                />
+                <CostCenterSelect
+                  id={`exp-line-cc-${row.uid}`}
+                  flow="EXPENSE"
+                  label=""
+                  emptyLabel="Selecionar…"
+                  allowEmpty={true}
+                  value={row.referentialAccountId}
+                  onChange={(id) =>
+                    setExpenseLineDrafts((prev) =>
+                      prev.map((r) => (r.uid === row.uid ? { ...r, referentialAccountId: id } : r)),
+                    )
+                  }
+                  disabled={patchDeclared.isPending}
+                />
+                <input
+                  value={row.notes}
+                  onChange={(e) =>
+                    setExpenseLineDrafts((prev) =>
+                      prev.map((r) => (r.uid === row.uid ? { ...r, notes: e.target.value } : r)),
+                    )
+                  }
+                  placeholder="Opcional"
+                  disabled={patchDeclared.isPending}
+                  style={{
+                    padding: '0.38rem 0.45rem',
+                    borderRadius: 6,
+                    border: '1px solid var(--color-border-strong)',
+                    fontSize: '0.85rem',
+                    width: '100%',
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  title="Remover despesa"
+                  disabled={patchDeclared.isPending}
+                  style={{ padding: '0.2rem 0.45rem', fontSize: '1rem', color: '#b91c1c', lineHeight: 1 }}
+                  onClick={() =>
+                    setExpenseLineDrafts((prev) => prev.filter((r) => r.uid !== row.uid))
+                  }
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={patchDeclared.isPending}
+          style={{ marginTop: expenseLineDrafts.length > 0 ? '0.55rem' : 0, padding: '0.35rem 0.65rem', fontSize: '0.82rem' }}
+          onClick={addExpenseLine}
+        >
+          + Adicionar despesa
+        </button>
+      </div>
+
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', marginBottom: '0.45rem' }}>
         {availableToAdd.length > 0 ? (
           <>
             <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }} htmlFor="mgr-add-pay-method">
-              Incluir
+              Incluir forma
             </label>
             <select
               id="mgr-add-pay-method"
@@ -1949,11 +1830,10 @@ function ManagerCashReconciliation({
                 fontSize: '0.85rem',
               }}
             >
-              <option value="">Forma ou despesa…</option>
+              <option value="">Selecionar…</option>
               {availableToAdd.map((k) => (
                 <option key={k} value={k}>
                   {PAYMENT_LABELS[k] ?? k}
-                  {k === 'EXPENSE' ? ' — total ou detalhamento por linhas' : ''}
                 </option>
               ))}
             </select>
@@ -1972,12 +1852,12 @@ function ManagerCashReconciliation({
                 setPickToAdd('');
               }}
             >
-              Adicionar linha
+              Adicionar
             </button>
           </>
         ) : (
           <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-            Todas as formas previstas já estão na lista — edite nos campos acima ou limpe/remova valores ao salvar.
+            Todas as formas previstas já estão na lista.
           </span>
         )}
       </div>
@@ -1985,7 +1865,7 @@ function ManagerCashReconciliation({
         <button
           type="button"
           className="btn btn-secondary"
-          disabled={patchDeclared.isPending || mergedKeys.length === 0}
+          disabled={patchDeclared.isPending}
           onClick={() => {
             const payload = buildDeclaredAmountsPayload();
             if (!payload) return;

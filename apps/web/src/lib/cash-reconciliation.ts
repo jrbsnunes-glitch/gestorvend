@@ -35,6 +35,20 @@ export function sumDeclaredForClosingBalance(
   return Math.round(sum * 100) / 100;
 }
 
+export function sumPaymentMethodsTotal(
+  byMethod: Record<string, number | string> | null | undefined,
+): number {
+  if (!byMethod || typeof byMethod !== 'object') return 0;
+  let sum = 0;
+  for (const [key, raw] of Object.entries(byMethod)) {
+    if (isExcludedFromClosingTotal(key)) continue;
+    const n =
+      typeof raw === 'number' ? raw : parseFloat(String(raw ?? '').replace(',', '.'));
+    if (Number.isFinite(n)) sum += Math.round(n * 100) / 100;
+  }
+  return Math.round(sum * 100) / 100;
+}
+
 /** Total apresentado (meios): prioriza rubricas gravadas na conferência. */
 export function presentedTotalFromSession(
   closingByMethod: Record<string, number | string> | null | undefined,

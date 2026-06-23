@@ -83,18 +83,27 @@ export function applyCashMovementsToExpected(
   };
 }
 
+function mapToRoundedRecord(map: Map<string, number>): Record<string, number> {
+  const byMethod: Record<string, number> = {};
+  for (const [k, v] of map.entries()) {
+    const rounded = roundMoney(v);
+    if (Math.abs(rounded) >= 0.005) byMethod[k] = rounded;
+  }
+  return byMethod;
+}
+
+/** Pagamentos registrados nas vendas concluídas, por forma (sem fundo, sangria ou suprimento). */
+export function buildSalesByMethod(sales: CashSaleForExpected[]): Record<string, number> {
+  return mapToRoundedRecord(aggregateCompletedSalePayments(sales));
+}
+
 export function buildSessionExpectedByMethod(
   sales: CashSaleForExpected[],
   movements: CashMovementForExpected[],
 ): { byMethod: Record<string, number>; movementBreakdown: CashMovementBreakdown } {
   const map = aggregateCompletedSalePayments(sales);
   const movementBreakdown = applyCashMovementsToExpected(map, movements);
-  const byMethod: Record<string, number> = {};
-  for (const [k, v] of map.entries()) {
-    const rounded = roundMoney(v);
-    if (Math.abs(rounded) >= 0.005) byMethod[k] = rounded;
-  }
-  return { byMethod, movementBreakdown };
+  return { byMethod: mapToRoundedRecord(map), movementBreakdown };
 }
 
 export function expectedFinalForMethodKey(
