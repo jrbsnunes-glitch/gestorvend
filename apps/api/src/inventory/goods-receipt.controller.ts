@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
@@ -79,10 +80,15 @@ export class GoodsReceiptController {
 
   @Get()
   @Roles('admin', 'manager', 'seller', 'finance')
-  async list(@CurrentUser() user: JwtPayload) {
+  async list(@CurrentUser() user: JwtPayload, @Query('supplierId') supplierId?: string) {
     try {
       const db = await this.tenantPrisma.getClient(user.tenantSlug);
+      const where: Prisma.GoodsReceiptWhereInput = {};
+      if (supplierId != null && String(supplierId).trim() !== '') {
+        where.supplierId = String(supplierId).trim();
+      }
       return await db.goodsReceipt.findMany({
+        where,
         // Ordenação cronológica: entradas mais antigas no topo.
         orderBy: { createdAt: 'asc' },
         take: 200,

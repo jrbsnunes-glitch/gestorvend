@@ -14,8 +14,13 @@ export class SalesController {
 
   @Get()
   @Roles('admin', 'manager', 'seller', 'finance')
-  list(@CurrentUser() user: JwtPayload, @Query('from') from?: string, @Query('to') to?: string) {
-    return this.sales.list(user.tenantSlug, from, to);
+  list(
+    @CurrentUser() user: JwtPayload,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('customerId') customerId?: string,
+  ) {
+    return this.sales.list(user.tenantSlug, from, to, customerId);
   }
 
   @Post()

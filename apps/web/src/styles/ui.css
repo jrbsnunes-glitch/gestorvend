@@ -447,6 +447,56 @@
   margin-bottom: 1rem;
 }
 
+.bal-rep-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.bal-rep-toolbar__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.bal-rep-toolbar__filters .field {
+  margin-bottom: 0;
+  min-width: 0;
+}
+
+.bal-rep-toolbar__filters .field--dates input {
+  width: 100%;
+  min-width: 9.5rem;
+  box-sizing: border-box;
+}
+
+.bal-rep-toolbar__filters .field--cost-center {
+  flex: 1 1 16rem;
+  max-width: 22rem;
+}
+
+.bal-rep-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.bal-rep-dual-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 1rem;
+  margin-top: 1.25rem;
+  align-items: stretch;
+}
+
+.bal-rep-dual-cards .card {
+  margin: 0;
+  min-width: 0;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -944,6 +994,31 @@
 .dash-list-amt {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.dash-due-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.dash-due-badge--overdue {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+}
+
+.dash-due-badge--today {
+  background: rgba(234, 179, 8, 0.18);
+  color: #a16207;
+}
+
+.dash-due-badge--soon {
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
 }
 
 .stat-card {

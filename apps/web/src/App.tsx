@@ -24,9 +24,12 @@ import { FinancialOverviewReportsPage } from './pages/FinancialOverviewReportsPa
 import { GeneralRegistersShell } from './pages/GeneralRegistersShell';
 import { ReferentialChartPage } from './pages/ReferentialChartPage';
 import { FinancePrintPage } from './pages/FinancePrintPage';
+import { PartyFiscalPage } from './pages/PartyFiscalPage';
 import { Login } from './pages/Login';
 import { ProductReportMovementPrintPage } from './pages/ProductReportMovementPrintPage';
 import { ProductReportTurnoverPrintPage } from './pages/ProductReportTurnoverPrintPage';
+import { ProductReportStockPrintPage } from './pages/ProductReportStockPrintPage';
+import { ProfitabilityReportPage } from './pages/ProfitabilityReportPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { SaleReceiptPrintPage } from './pages/SaleReceiptPrintPage';
 import { SalesPage } from './pages/SalesPage';
@@ -142,8 +145,12 @@ function AppInner() {
         <Route path="estoque/movimentos/impressao" element={<StockMovPrintPage />} />
         <Route path="produtos/relatorio/movimentacao" element={<ProductReportMovementPrintPage />} />
         <Route path="produtos/relatorio/giro" element={<ProductReportTurnoverPrintPage />} />
+        <Route path="produtos/relatorio/estoque-financeiro" element={<ProductReportStockPrintPage />} />
+        <Route path="produtos/relatorio/estoque-fisico" element={<ProductReportStockPrintPage />} />
+        <Route path="produtos/relatorio/estoque-minimo" element={<ProductReportStockPrintPage />} />
         <Route path="financeiro/impressao" element={<FinancePrintPage />} />
         <Route path="balanco/impressao" element={<FinancialOverviewPrintPage />} />
+        <Route path="balanco/rentabilidade" element={<ProfitabilityReportPage />} />
 
         <Route
           element={
@@ -176,6 +183,7 @@ function AppInner() {
           </Route>
           <Route path="caixa" element={<CashPage />} />
           <Route path="financeiro" element={<FinancePage />} />
+          <Route path="notas-fiscais" element={<PartyFiscalPage />} />
           <Route path="balanco" element={<FinancialOverviewPage />} />
           <Route path="balanco/relatorios" element={<FinancialOverviewReportsPage />} />
           <Route path="balanco/plano-contas" element={<ReferentialChartPage />} />

@@ -415,13 +415,16 @@ export class SalesService {
     return sale;
   }
 
-  async list(tenantSlug: string, from?: string, to?: string) {
+  async list(tenantSlug: string, from?: string, to?: string, customerId?: string) {
     const db = await this.tenantPrisma.getClient(tenantSlug);
     const where: Prisma.SaleWhereInput = {};
     if (from || to) {
       where.createdAt = {};
       if (from) where.createdAt.gte = new Date(from);
       if (to) where.createdAt.lte = new Date(to);
+    }
+    if (customerId != null && String(customerId).trim() !== '') {
+      where.customerId = String(customerId).trim();
     }
     const hasDateFilter = Boolean(from || to);
     return db.sale.findMany({

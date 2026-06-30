@@ -87,3 +87,59 @@ export function buildProductTurnoverReportQuery(p: {
   }
   return params.toString();
 }
+
+export type ProductStockReportKind = 'financial' | 'physical' | 'minimum';
+
+/** Monta query string para relatórios de estoque (financeiro, físico, mínimo). */
+export function buildProductStockReportQuery(p: {
+  from: string;
+  to: string;
+  locationId?: string;
+  categoryId?: string;
+  minStockCadFrom?: string;
+  minStockCadTo?: string;
+}): string {
+  const params = new URLSearchParams({ from: p.from, to: p.to });
+  if (p.locationId?.trim()) params.set('locationId', p.locationId.trim());
+  if (p.categoryId?.trim()) params.set('categoryId', p.categoryId.trim());
+  const cFrom = String(p.minStockCadFrom ?? '').trim();
+  const cTo = String(p.minStockCadTo ?? '').trim();
+  if (cFrom && cTo) {
+    params.set('minStockCadFrom', cFrom.replace(',', '.'));
+    params.set('minStockCadTo', cTo.replace(',', '.'));
+  }
+  return params.toString();
+}
+
+export function productStockReportApiPath(kind: ProductStockReportKind): string {
+  switch (kind) {
+    case 'financial':
+      return '/reports/product-financial-stock';
+    case 'physical':
+      return '/reports/product-physical-stock';
+    case 'minimum':
+      return '/reports/product-minimum-stock';
+  }
+}
+
+export function productStockReportTitle(kind: ProductStockReportKind): string {
+  switch (kind) {
+    case 'financial':
+      return 'Estoque financeiro';
+    case 'physical':
+      return 'Estoque físico';
+    case 'minimum':
+      return 'Estoque mínimo';
+  }
+}
+
+export function productStockReportRoute(kind: ProductStockReportKind): string {
+  switch (kind) {
+    case 'financial':
+      return '/produtos/relatorio/estoque-financeiro';
+    case 'physical':
+      return '/produtos/relatorio/estoque-fisico';
+    case 'minimum':
+      return '/produtos/relatorio/estoque-minimo';
+  }
+}

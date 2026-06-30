@@ -148,6 +148,60 @@ function buildRecurringDueDates(
   return out;
 }
 
+/** Divide valor total em N parcelas iguais (ajuste de centavos na última). */
+function splitAmountEvenly(total: number, count: number): number[] {
+  const totalCents = moneyCents(total);
+  const baseCents = Math.floor(totalCents / count);
+  const remainder = totalCents - baseCents * count;
+  return Array.from({ length: count }, (_, i) => (baseCents + (i < remainder ? 1 : 0)) / 100);
+}
+
+type BillSeriesPlan = {
+  count: number;
+  dues: Date[];
+  amounts: number[];
+  dbRecurrence: Recurrence;
+};
+
+/**
+ * Sem recorrência + N parcelas: divide o valor total em N títulos mensais.
+ * Com recorrência: repete o valor informado N vezes na periodicidade escolhida.
+ */
+function planBillSeries(
+  amount: number,
+  firstDue: Date,
+  recurrence: RecurrenceInput,
+  recurrenceCount: number,
+): BillSeriesPlan {
+  const count = Math.max(1, Math.min(120, Number(recurrenceCount) | 0));
+  const splitTotal = recurrence === 'NONE' && count > 1;
+
+  if (count === 1) {
+    return {
+      count: 1,
+      dues: [firstDue],
+      amounts: [amount],
+      dbRecurrence: Recurrence[recurrence],
+    };
+  }
+
+  if (splitTotal) {
+    return {
+      count,
+      dues: buildRecurringDueDates(firstDue, 'MONTHLY', count),
+      amounts: splitAmountEvenly(amount, count),
+      dbRecurrence: Recurrence.NONE,
+    };
+  }
+
+  return {
+    count,
+    dues: buildRecurringDueDates(firstDue, recurrence, count),
+    amounts: Array.from({ length: count }, () => amount),
+    dbRecurrence: Recurrence[recurrence],
+  };
+}
+
 const BILL_STATUS_SET = new Set<string>(['OPEN', 'PAID', 'OVERDUE', 'CANCELLED']);
 
 /** Vários status (ex.: impressão "em aberto": OPEN + OVERDUE). */
@@ -289,57 +343,49 @@ export class FinanceController {
       throw new BadRequestException('Vencimento inválido.');
     }
     const recurrence: RecurrenceInput = body.recurrence ?? 'NONE';
-    const count = recurrence === 'NONE' ? 1 : Math.max(1, Number(body.recurrenceCount ?? 1) | 0);
+    const plan = planBillSeries(amount, firstDue, recurrence, body.recurrenceCount ?? 1);
 
-    if (count === 1) {
+    if (plan.count === 1) {
       return db.accountPayable.create({
         data: {
           supplierId: body.supplierId ?? null,
           description,
           category: body.category ?? null,
-          amount: amount.toFixed(2),
-          amountRemaining: amount.toFixed(2),
-          dueDate: firstDue,
+          amount: plan.amounts[0].toFixed(2),
+          amountRemaining: plan.amounts[0].toFixed(2),
+          dueDate: plan.dues[0],
           status: BillStatus.OPEN,
-          recurrence: Recurrence[recurrence],
+          recurrence: plan.dbRecurrence,
         },
       });
     }
 
-    const dues = buildRecurringDueDates(firstDue, recurrence, count);
     return db.$transaction(async (tx) => {
-      const parent = await tx.accountPayable.create({
-        data: {
-          supplierId: body.supplierId ?? null,
-          description: `${description} (1/${count})`,
-          category: body.category ?? null,
-          amount: amount.toFixed(2),
-          amountRemaining: amount.toFixed(2),
-          dueDate: dues[0],
-          status: BillStatus.OPEN,
-          recurrence: Recurrence[recurrence],
-          recurrenceIndex: 1,
-          recurrenceCount: count,
-        },
-      });
-      for (let i = 1; i < dues.length; i++) {
-        await tx.accountPayable.create({
+      let parentId: string | null = null;
+      let parent: Awaited<ReturnType<typeof tx.accountPayable.create>> | null = null;
+      for (let i = 0; i < plan.count; i++) {
+        const amtStr = plan.amounts[i].toFixed(2);
+        const created = await tx.accountPayable.create({
           data: {
             supplierId: body.supplierId ?? null,
-            description: `${description} (${i + 1}/${count})`,
+            description: `${description} (${i + 1}/${plan.count})`,
             category: body.category ?? null,
-            amount: amount.toFixed(2),
-            amountRemaining: amount.toFixed(2),
-            dueDate: dues[i],
+            amount: amtStr,
+            amountRemaining: amtStr,
+            dueDate: plan.dues[i],
             status: BillStatus.OPEN,
-            recurrence: Recurrence[recurrence],
+            recurrence: plan.dbRecurrence,
             recurrenceIndex: i + 1,
-            recurrenceCount: count,
-            parentRecurringId: parent.id,
+            recurrenceCount: plan.count,
+            parentRecurringId: parentId,
           },
         });
+        if (i === 0) {
+          parentId = created.id;
+          parent = created;
+        }
       }
-      return parent;
+      return parent!;
     });
   }
 
@@ -558,54 +604,47 @@ export class FinanceController {
       throw new BadRequestException('Vencimento inválido.');
     }
     const recurrence: RecurrenceInput = body.recurrence ?? 'NONE';
-    const count = recurrence === 'NONE' ? 1 : Math.max(1, Number(body.recurrenceCount ?? 1) | 0);
+    const plan = planBillSeries(amount, firstDue, recurrence, body.recurrenceCount ?? 1);
 
-    if (count === 1) {
+    if (plan.count === 1) {
       return db.accountReceivable.create({
         data: {
           customerId: body.customerId ?? null,
           description,
-          amount: amount.toFixed(2),
-          amountRemaining: amount.toFixed(2),
-          dueDate: firstDue,
+          amount: plan.amounts[0].toFixed(2),
+          amountRemaining: plan.amounts[0].toFixed(2),
+          dueDate: plan.dues[0],
           status: BillStatus.OPEN,
-          recurrence: Recurrence[recurrence],
+          recurrence: plan.dbRecurrence,
         },
       });
     }
 
-    const dues = buildRecurringDueDates(firstDue, recurrence, count);
     return db.$transaction(async (tx) => {
-      const parent = await tx.accountReceivable.create({
-        data: {
-          customerId: body.customerId ?? null,
-          description: `${description} (1/${count})`,
-          amount: amount.toFixed(2),
-          amountRemaining: amount.toFixed(2),
-          dueDate: dues[0],
-          status: BillStatus.OPEN,
-          recurrence: Recurrence[recurrence],
-          recurrenceIndex: 1,
-          recurrenceCount: count,
-        },
-      });
-      for (let i = 1; i < dues.length; i++) {
-        await tx.accountReceivable.create({
+      let parentId: string | null = null;
+      let parent: Awaited<ReturnType<typeof tx.accountReceivable.create>> | null = null;
+      for (let i = 0; i < plan.count; i++) {
+        const amtStr = plan.amounts[i].toFixed(2);
+        const created = await tx.accountReceivable.create({
           data: {
             customerId: body.customerId ?? null,
-            description: `${description} (${i + 1}/${count})`,
-            amount: amount.toFixed(2),
-            amountRemaining: amount.toFixed(2),
-            dueDate: dues[i],
+            description: `${description} (${i + 1}/${plan.count})`,
+            amount: amtStr,
+            amountRemaining: amtStr,
+            dueDate: plan.dues[i],
             status: BillStatus.OPEN,
-            recurrence: Recurrence[recurrence],
+            recurrence: plan.dbRecurrence,
             recurrenceIndex: i + 1,
-            recurrenceCount: count,
-            parentRecurringId: parent.id,
+            recurrenceCount: plan.count,
+            parentRecurringId: parentId,
           },
         });
+        if (i === 0) {
+          parentId = created.id;
+          parent = created;
+        }
       }
-      return parent;
+      return parent!;
     });
   }
 

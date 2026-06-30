@@ -202,47 +202,51 @@ export function FinancialOverviewReportsPage() {
         <Link to="/balanco">Balanço financeiro</Link>.
       </p>
 
-      <div className="toolbar" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label htmlFor="bal-rep-from">De</label>
-          <input
-            id="bal-rep-from"
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-          />
+      <div className="bal-rep-toolbar no-print">
+        <div className="bal-rep-toolbar__filters">
+          <div className="field field--dates">
+            <label htmlFor="bal-rep-from">De</label>
+            <input
+              id="bal-rep-from"
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+            />
+          </div>
+          <div className="field field--dates">
+            <label htmlFor="bal-rep-to">Até</label>
+            <input id="bal-rep-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          </div>
+          <div className="field field--cost-center">
+            <label htmlFor="bal-rep-cc">Centro de custo (filtro do relatório)</label>
+            <select
+              id="bal-rep-cc"
+              value={costCenterId}
+              onChange={(e) => setCostCenterId(e.target.value)}
+            >
+              <option value="">Todos</option>
+              {(costCenters.data ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.code} — {c.description}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label htmlFor="bal-rep-to">Até</label>
-          <input id="bal-rep-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        <div className="bal-rep-toolbar__actions">
+          <button type="button" className="btn btn-secondary" onClick={() => summary.refetch()}>
+            Atualizar
+          </button>
+          <button type="button" className="btn btn-primary" onClick={() => setPrintModalOpen(true)}>
+            Impressões…
+          </button>
+          <Link to="/balanco" className="btn btn-secondary">
+            Voltar ao acumulado
+          </Link>
+          <Link to="/balanco/plano-contas" className="btn btn-secondary">
+            Plano de contas (referencial)
+          </Link>
         </div>
-        <div className="field" style={{ marginBottom: 0, minWidth: 300 }}>
-          <label htmlFor="bal-rep-cc">Centro de custo (filtro do relatório)</label>
-          <select
-            id="bal-rep-cc"
-            value={costCenterId}
-            onChange={(e) => setCostCenterId(e.target.value)}
-          >
-            <option value="">Todos</option>
-            {(costCenters.data ?? []).map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.code} — {c.description}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button type="button" className="btn btn-secondary" onClick={() => summary.refetch()}>
-          Atualizar
-        </button>
-        <button type="button" className="btn btn-primary" onClick={() => setPrintModalOpen(true)}>
-          Impressões…
-        </button>
-        <Link to="/balanco" className="btn btn-secondary">
-          Voltar ao acumulado
-        </Link>
-        <Link to="/balanco/plano-contas" className="btn btn-secondary">
-          Plano de contas (referencial)
-        </Link>
       </div>
 
       {summary.isError && (
@@ -565,24 +569,24 @@ export function FinancialOverviewReportsPage() {
             </p>
           </section>
 
-          <div className="form-row" style={{ marginTop: '1.25rem', gap: '1rem', alignItems: 'stretch' }}>
-            <section className="card" style={{ flex: 1, padding: '1rem', minWidth: 280 }}>
+          <div className="bal-rep-dual-cards">
+            <section className="card" style={{ padding: '1rem' }}>
               <h3 style={{ marginTop: 0 }}>Títulos a pagar</h3>
               <p>
                 Novos no período: {formatBRL(data.payables.newTitlesAmount)} ({data.payables.newTitlesCount})
               </p>
-              <p>
+              <p style={{ marginBottom: 0 }}>
                 Saldo em aberto (agora): {formatBRL(data.payables.openBalanceAmount)} (
                 {data.payables.openTitlesCount} título(s))
               </p>
             </section>
-            <section className="card" style={{ flex: 1, padding: '1rem', minWidth: 280 }}>
+            <section className="card" style={{ padding: '1rem' }}>
               <h3 style={{ marginTop: 0 }}>Títulos a receber</h3>
               <p>
                 Novos no período: {formatBRL(data.receivables.newTitlesAmount)} (
                 {data.receivables.newTitlesCount})
               </p>
-              <p>
+              <p style={{ marginBottom: 0 }}>
                 Saldo em aberto (agora): {formatBRL(data.receivables.openBalanceAmount)} (
                 {data.receivables.openTitlesCount} título(s))
               </p>

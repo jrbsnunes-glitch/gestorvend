@@ -910,6 +910,346 @@ export class ReportsController {
     };
   }
 
+  private readonly stockReportMaxVariants = 5000;
+
+  /** Saldo da variação na data de referência (replay de movimentos até `asOf`). */
+  private async stockQtyByVariantAtAsOf(
+    db: PrismaClient,
+    variantIds: string[],
+    asOf: Date,
+    locationId?: string,
+  ): Promise<Map<string, number>> {
+    const result = new Map<string, number>();
+    if (!variantIds.length) return result;
+
+    const where: Prisma.StockMovementWhereInput = {
+      variantId: { in: variantIds },
+      createdAt: { lte: asOf },
+    };
+    if (locationId) where.locationId = locationId;
+
+    const moves = await db.stockMovement.findMany({
+      where,
+      orderBy: [{ variantId: 'asc' }, { locationId: 'asc' }, { createdAt: 'asc' }, { controlNumber: 'asc' }],
+      select: { variantId: true, locationId: true, type: true, quantity: true },
+    });
+
+    if (locationId) {
+      const byVariant = new Map<string, StockMovementSnap[]>();
+      for (const m of moves) {
+        if (!byVariant.has(m.variantId)) byVariant.set(m.variantId, []);
+        byVariant.get(m.variantId)!.push(m);
+      }
+      for (const vid of variantIds) {
+        result.set(vid, replayQty(byVariant.get(vid) ?? []));
+      }
+      return result;
+    }
+
+    const byVariantLoc = new Map<string, StockMovementSnap[]>();
+    for (const m of moves) {
+      const key = `${m.variantId}\t${m.locationId}`;
+      if (!byVariantLoc.has(key)) byVariantLoc.set(key, []);
+      byVariantLoc.get(key)!.push(m);
+    }
+    for (const vid of variantIds) {
+      let total = 0;
+      for (const [key, seq] of byVariantLoc) {
+        if (key.startsWith(`${vid}\t`)) total += replayQty(seq);
+      }
+      result.set(vid, total);
+    }
+    return result;
+  }
+
+  private parseStockReportPeriod(fromRaw?: string, toRaw?: string): { from: string; to: string; asOf: Date } {
+    if (!fromRaw || !toRaw) throw new BadRequestException('Informe from e to (YYYY-MM-DD).');
+    const periodStart = parseReportDate(fromRaw, 'start');
+    const periodEnd = parseReportDate(toRaw, 'end');
+    if (periodEnd.getTime() < periodStart.getTime()) {
+      throw new BadRequestException('Período inválido: data final anterior à inicial.');
+    }
+    return { from: fromRaw, to: toRaw, asOf: periodEnd };
+  }
+
+  private parseOptionalCadInterval(
+    fromRaw?: string,
+    toRaw?: string,
+  ): { from: number; to: number } | null {
+    const fromTxt = String(fromRaw ?? '').trim();
+    const toTxt = String(toRaw ?? '').trim();
+    if (!fromTxt && !toTxt) return null;
+    if (!fromTxt || !toTxt) {
+      throw new BadRequestException('Informe ambos minStockCadFrom e minStockCadTo ou deixe os dois em branco.');
+    }
+    const cadMin = Number(fromTxt.replace(',', '.'));
+    const cadMax = Number(toTxt.replace(',', '.'));
+    if (Number.isNaN(cadMin) || Number.isNaN(cadMax)) {
+      throw new BadRequestException('Intervalo minStockCadFrom / minStockCadTo inválido (use números).');
+    }
+    if (cadMin > cadMax) {
+      throw new BadRequestException('minStockCadFrom não pode ser maior que minStockCadTo.');
+    }
+    return { from: cadMin, to: cadMax };
+  }
+
+  private async loadStockReportVariants(
+    db: PrismaClient,
+    cadInterval: { from: number; to: number } | null,
+    categoryId?: string,
+  ) {
+    await this.reconcileProductInventoryControlMins(db);
+
+    const productWhere: Prisma.ProductWhereInput = { isActive: true };
+    const cat = (categoryId ?? '').trim();
+    if (cat) productWhere.categoryId = cat;
+    if (cadInterval) {
+      productWhere.inventoryControlMin = { gte: cadInterval.from, lte: cadInterval.to };
+    }
+
+    const variants = await db.productVariant.findMany({
+      where: { product: productWhere },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            inventoryControlMin: true,
+            category: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: [{ product: { name: 'asc' } }, { sku: 'asc' }],
+      take: this.stockReportMaxVariants + 1,
+    });
+
+    if (variants.length > this.stockReportMaxVariants) {
+      throw new BadRequestException(
+        `Mais de ${this.stockReportMaxVariants} variações no conjunto. Restrinja controle, grupo ou cadastro.`,
+      );
+    }
+    return variants;
+  }
+
+  private stockReportFiltersMeta(
+    period: { from: string; to: string },
+    locationId?: string,
+    categoryId?: string,
+    categoryName?: string | null,
+    cadInterval?: { from: number; to: number } | null,
+  ) {
+    return {
+      period,
+      asOfDate: period.to,
+      locationId: locationId?.trim() || null,
+      categoryId: categoryId?.trim() || null,
+      categoryName: categoryName ?? null,
+      cadastroMinStockInterval: cadInterval ?? null,
+    };
+  }
+
+  /**
+   * Estoque financeiro: valor do estoque ao custo médio e lucro bruto potencial (preço varejo − custo) × quantidade.
+   * Posição na data final do período (`to`).
+   */
+  @Get('product-financial-stock')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  async productFinancialStock(
+    @CurrentUser() user: JwtPayload,
+    @Query('from') fromRaw?: string,
+    @Query('to') toRaw?: string,
+    @Query('locationId') locationId?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('minStockCadFrom') minStockCadFromRaw?: string,
+    @Query('minStockCadTo') minStockCadToRaw?: string,
+  ) {
+    const period = this.parseStockReportPeriod(fromRaw, toRaw);
+    const cadInterval = this.parseOptionalCadInterval(minStockCadFromRaw, minStockCadToRaw);
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const variants = await this.loadStockReportVariants(db, cadInterval, categoryId);
+    const variantIds = variants.map((v) => v.id);
+    const qtyMap = await this.stockQtyByVariantAtAsOf(db, variantIds, period.asOf, locationId?.trim() || undefined);
+
+    let totalQty = 0;
+    let totalStockValue = 0;
+    let totalProfit = 0;
+
+    const lines = variants.map((v) => {
+      const qty = qtyMap.get(v.id) ?? 0;
+      const unitCost = Number(v.costAverage);
+      const unitRetail = Number(v.retailPrice);
+      const stockValue = qty * unitCost;
+      const unitProfit = unitRetail - unitCost;
+      const profit = qty * unitProfit;
+      totalQty += qty;
+      totalStockValue += stockValue;
+      totalProfit += profit;
+      return {
+        variantId: v.id,
+        sku: v.sku,
+        productName: v.product.name,
+        categoryName: v.product.category?.name ?? null,
+        inventoryControlMin: Number(v.product.inventoryControlMin),
+        minStock: Number(v.minStock),
+        quantity: qty,
+        unitCost,
+        unitRetailPrice: unitRetail,
+        stockValue,
+        unitProfit,
+        profit,
+      };
+    });
+
+    const categoryName =
+      categoryId?.trim() && variants.length
+        ? (variants.find((x) => x.product.category?.id === categoryId.trim())?.product.category?.name ?? null)
+        : null;
+
+    return {
+      title: 'Estoque financeiro',
+      ...this.stockReportFiltersMeta(period, locationId, categoryId, categoryName, cadInterval),
+      note:
+        'Saldo na data final do período (replay de movimentações). Valor financeiro = quantidade × custo médio. ' +
+        'Lucro = quantidade × (preço varejo − custo) — margem bruta potencial sobre o estoque em mãos, sem considerar impostos ou despesas.',
+      lines,
+      totals: {
+        quantity: totalQty,
+        stockValue: totalStockValue,
+        profit: totalProfit,
+      },
+    };
+  }
+
+  /**
+   * Estoque físico: quantidades e valor de face (quantidade × preço varejo).
+   * Posição na data final do período (`to`).
+   */
+  @Get('product-physical-stock')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  async productPhysicalStock(
+    @CurrentUser() user: JwtPayload,
+    @Query('from') fromRaw?: string,
+    @Query('to') toRaw?: string,
+    @Query('locationId') locationId?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('minStockCadFrom') minStockCadFromRaw?: string,
+    @Query('minStockCadTo') minStockCadToRaw?: string,
+  ) {
+    const period = this.parseStockReportPeriod(fromRaw, toRaw);
+    const cadInterval = this.parseOptionalCadInterval(minStockCadFromRaw, minStockCadToRaw);
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const variants = await this.loadStockReportVariants(db, cadInterval, categoryId);
+    const variantIds = variants.map((v) => v.id);
+    const qtyMap = await this.stockQtyByVariantAtAsOf(db, variantIds, period.asOf, locationId?.trim() || undefined);
+
+    let totalQty = 0;
+    let totalSaleValue = 0;
+
+    const lines = variants.map((v) => {
+      const qty = qtyMap.get(v.id) ?? 0;
+      const unitRetail = Number(v.retailPrice);
+      const saleValue = qty * unitRetail;
+      totalQty += qty;
+      totalSaleValue += saleValue;
+      return {
+        variantId: v.id,
+        sku: v.sku,
+        productName: v.product.name,
+        categoryName: v.product.category?.name ?? null,
+        inventoryControlMin: Number(v.product.inventoryControlMin),
+        minStock: Number(v.minStock),
+        quantity: qty,
+        unitRetailPrice: unitRetail,
+        saleValue,
+      };
+    });
+
+    const categoryName =
+      categoryId?.trim() && variants.length
+        ? (variants.find((x) => x.product.category?.id === categoryId.trim())?.product.category?.name ?? null)
+        : null;
+
+    return {
+      title: 'Estoque físico',
+      ...this.stockReportFiltersMeta(period, locationId, categoryId, categoryName, cadInterval),
+      note:
+        'Saldo físico na data final do período. Valor total de face = quantidade × preço varejo cadastrado (sem promoções).',
+      lines,
+      totals: {
+        quantity: totalQty,
+        saleValue: totalSaleValue,
+      },
+    };
+  }
+
+  /**
+   * Estoque mínimo: variações com saldo na data final igual ou abaixo do mínimo cadastrado da SKU.
+   */
+  @Get('product-minimum-stock')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  async productMinimumStock(
+    @CurrentUser() user: JwtPayload,
+    @Query('from') fromRaw?: string,
+    @Query('to') toRaw?: string,
+    @Query('locationId') locationId?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('minStockCadFrom') minStockCadFromRaw?: string,
+    @Query('minStockCadTo') minStockCadToRaw?: string,
+  ) {
+    const period = this.parseStockReportPeriod(fromRaw, toRaw);
+    const cadInterval = this.parseOptionalCadInterval(minStockCadFromRaw, minStockCadToRaw);
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const variants = await this.loadStockReportVariants(db, cadInterval, categoryId);
+    const variantIds = variants.map((v) => v.id);
+    const qtyMap = await this.stockQtyByVariantAtAsOf(db, variantIds, period.asOf, locationId?.trim() || undefined);
+
+    const EPS = 1e-9;
+    const lines: Array<{
+      variantId: string;
+      sku: string;
+      productName: string;
+      categoryName: string | null;
+      inventoryControlMin: number;
+      minStock: number;
+      quantity: number;
+      deficit: number;
+    }> = [];
+
+    for (const v of variants) {
+      const qty = qtyMap.get(v.id) ?? 0;
+      const minS = Number(v.minStock);
+      if (qty > minS + EPS) continue;
+      lines.push({
+        variantId: v.id,
+        sku: v.sku,
+        productName: v.product.name,
+        categoryName: v.product.category?.name ?? null,
+        inventoryControlMin: Number(v.product.inventoryControlMin),
+        minStock: minS,
+        quantity: qty,
+        deficit: Math.max(0, minS - qty),
+      });
+    }
+
+    const categoryName =
+      categoryId?.trim() && variants.length
+        ? (variants.find((x) => x.product.category?.id === categoryId.trim())?.product.category?.name ?? null)
+        : null;
+
+    return {
+      title: 'Estoque mínimo',
+      ...this.stockReportFiltersMeta(period, locationId, categoryId, categoryName, cadInterval),
+      note:
+        'Lista variações com saldo na data final igual ou abaixo do estoque mínimo da SKU. ' +
+        'Déficit = mínimo − quantidade (zero quando empatado no mínimo).',
+      lines,
+      totals: {
+        linesCount: lines.length,
+        totalDeficit: lines.reduce((s, r) => s + r.deficit, 0),
+      },
+    };
+  }
+
   @Get('export/sales.csv')
   @Header('Content-Type', 'text/csv; charset=utf-8')
   @Roles('admin', 'manager', 'finance')

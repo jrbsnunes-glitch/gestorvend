@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useState, type CSSProperties } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { buildProductMovementReportQuery, buildProductTurnoverReportQuery } from '../lib/product-report-format';
+import { buildProductMovementReportQuery, buildProductTurnoverReportQuery, buildProductStockReportQuery, productStockReportRoute, type ProductStockReportKind } from '../lib/product-report-format';
 
 function monthStartISO(): string {
   const d = new Date();
@@ -24,10 +24,10 @@ function parseCadMinBound(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Painel modal: relatórios de movimentação (por intervalo de estoque mínimo cadastro) e giro. */
+/** Painel modal: relatórios de movimentação, giro e posição de estoque. */
 export function ProductReportsPanel() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'move' | 'turnover'>('move');
+  const [tab, setTab] = useState<'move' | 'turnover' | 'financial' | 'physical' | 'minimum'>('move');
 
   const [movCadFrom, setMovCadFrom] = useState('');
   const [movCadTo, setMovCadTo] = useState('');
@@ -53,9 +53,22 @@ export function ProductReportsPanel() {
   const [turnAlertsOnly, setTurnAlertsOnly] = useState(false);
   const [turnErr, setTurnErr] = useState<string | null>(null);
 
+  const [stkCadFrom, setStkCadFrom] = useState('');
+  const [stkCadTo, setStkCadTo] = useState('');
+  const [stkFrom, setStkFrom] = useState(monthStartISO());
+  const [stkTo, setStkTo] = useState(todayISO());
+  const [stkLocation, setStkLocation] = useState('');
+  const [stkCategory, setStkCategory] = useState('');
+  const [stkErr, setStkErr] = useState<string | null>(null);
+
   const locations = useQuery({
     queryKey: ['stock-locations'],
     queryFn: () => api<Array<{ id: string; code: string; name: string }>>('/stock-locations'),
+  });
+
+  const categories = useQuery({
+    queryKey: ['categories', 'product-reports'],
+    queryFn: () => api<Array<{ id: string; name: string }>>('/categories?q='),
   });
 
   const cadFromNum = parseCadMinBound(movCadFrom);
@@ -169,6 +182,41 @@ export function ProductReportsPanel() {
     navigate(`/produtos/relatorio/giro?${qs}`);
   }
 
+  function openStockReport(kind: ProductStockReportKind) {
+    setStkErr(null);
+    if (!stkFrom.trim() || !stkTo.trim()) {
+      setStkErr('Informe as datas inicial e final.');
+      return;
+    }
+    const hasFrom = stkCadFrom.trim() !== '';
+    const hasTo = stkCadTo.trim() !== '';
+    if (hasFrom !== hasTo) {
+      setStkErr('Informe ambos os campos de controle (de / até) ou deixe os dois em branco.');
+      return;
+    }
+    if (hasFrom && hasTo) {
+      const a = parseCadMinBound(stkCadFrom);
+      const b = parseCadMinBound(stkCadTo);
+      if (a === null || b === null) {
+        setStkErr('Intervalo de controle inválido.');
+        return;
+      }
+      if (a > b) {
+        setStkErr('Controle “de” não pode ser maior que “até”.');
+        return;
+      }
+    }
+    const qs = buildProductStockReportQuery({
+      from: stkFrom,
+      to: stkTo,
+      locationId: stkLocation || undefined,
+      categoryId: stkCategory || undefined,
+      minStockCadFrom: stkCadFrom || undefined,
+      minStockCadTo: stkCadTo || undefined,
+    });
+    navigate(`${productStockReportRoute(kind)}?${qs}`);
+  }
+
   const narrow: CSSProperties = { maxWidth: '420px', width: '100%' };
 
   return (
@@ -187,6 +235,27 @@ export function ProductReportsPanel() {
           onClick={() => setTab('turnover')}
         >
           Giro
+        </button>
+        <button
+          type="button"
+          className={tab === 'financial' ? 'btn btn-primary' : 'btn btn-secondary'}
+          onClick={() => setTab('financial')}
+        >
+          Est. financeiro
+        </button>
+        <button
+          type="button"
+          className={tab === 'physical' ? 'btn btn-primary' : 'btn btn-secondary'}
+          onClick={() => setTab('physical')}
+        >
+          Est. físico
+        </button>
+        <button
+          type="button"
+          className={tab === 'minimum' ? 'btn btn-primary' : 'btn btn-secondary'}
+          onClick={() => setTab('minimum')}
+        >
+          Est. mínimo
         </button>
       </div>
 
@@ -438,6 +507,92 @@ export function ProductReportsPanel() {
               Abrir relatório
             </button>
           </div>
+        </div>
+      )}
+
+      {(tab === 'financial' || tab === 'physical' || tab === 'minimum') && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', alignItems: 'flex-start' }}>
+          <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--color-text-muted)', maxWidth: '28rem', lineHeight: 1.35 }}>
+            {tab === 'financial' &&
+              'Valor do estoque ao custo médio e lucro bruto potencial (preço varejo − custo) × quantidade. Posição na data final.'}
+            {tab === 'physical' &&
+              'Quantidades em estoque e valor de face (quantidade × preço varejo). Total geral ao final do relatório.'}
+            {tab === 'minimum' &&
+              'Variações com saldo na data final igual ou abaixo do estoque mínimo cadastrado da SKU.'}
+          </p>
+          {stkErr && <div className="alert alert-error">{stkErr}</div>}
+          <div style={narrow}>
+            <p style={{ margin: '0 0 0.35rem', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+              Controle de estoque do produto (menor mínimo entre SKUs) — opcional
+            </p>
+            <div className="form-row" style={{ flexWrap: 'wrap', gap: '0.65rem', alignItems: 'flex-end' }}>
+              <div className="field" style={{ minWidth: '7rem' }}>
+                <label htmlFor="pr-stk-cfrom">De</label>
+                <input
+                  id="pr-stk-cfrom"
+                  inputMode="decimal"
+                  placeholder="opc."
+                  value={stkCadFrom}
+                  onChange={(e) => setStkCadFrom(e.target.value)}
+                />
+              </div>
+              <div className="field" style={{ minWidth: '7rem' }}>
+                <label htmlFor="pr-stk-cto">Até</label>
+                <input
+                  id="pr-stk-cto"
+                  inputMode="decimal"
+                  placeholder="opc."
+                  value={stkCadTo}
+                  onChange={(e) => setStkCadTo(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+          <div style={narrow}>
+            <div className="field" style={{ marginBottom: '0.65rem' }}>
+              <label htmlFor="pr-stk-cat">Grupo</label>
+              <select id="pr-stk-cat" value={stkCategory} onChange={(e) => setStkCategory(e.target.value)}>
+                <option value="">Todos</option>
+                {(categories.data ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field" style={{ marginBottom: '0.65rem' }}>
+              <label htmlFor="pr-stk-loc">Local de estoque</label>
+              <select id="pr-stk-loc" value={stkLocation} onChange={(e) => setStkLocation(e.target.value)}>
+                <option value="">Todos</option>
+                {(locations.data ?? []).map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.code}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p style={{ margin: '0 0 0.35rem', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>Período</p>
+            <div className="form-row" style={{ flexWrap: 'wrap', gap: '0.65rem', alignItems: 'flex-end' }}>
+              <div className="field" style={{ minWidth: '8.5rem' }}>
+                <label htmlFor="pr-stk-from">Data inicial</label>
+                <input id="pr-stk-from" type="date" value={stkFrom} onChange={(e) => setStkFrom(e.target.value)} />
+              </div>
+              <div className="field" style={{ minWidth: '8.5rem' }}>
+                <label htmlFor="pr-stk-to">Data final</label>
+                <input id="pr-stk-to" type="date" value={stkTo} onChange={(e) => setStkTo(e.target.value)} />
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={!stkFrom || !stkTo}
+            onClick={() =>
+              openStockReport(tab === 'financial' ? 'financial' : tab === 'physical' ? 'physical' : 'minimum')
+            }
+          >
+            Abrir relatório
+          </button>
         </div>
       )}
     </div>

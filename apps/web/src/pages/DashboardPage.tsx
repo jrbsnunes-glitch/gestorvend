@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { api } from '../lib/api';
@@ -49,12 +50,52 @@ type Overview = {
   }>;
 };
 
-function isDueDatePast(dueDate: string): boolean {
+function daysUntilDue(dueDate: string): number {
   const d = new Date(dueDate);
   const today = new Date();
   d.setHours(0, 0, 0, 0);
   today.setHours(0, 0, 0, 0);
-  return d < today;
+  return Math.round((d.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+function isDueDatePast(dueDate: string): boolean {
+  return daysUntilDue(dueDate) < 0;
+}
+
+function dueDaysBadge(status: string, dueDate: string): ReactNode {
+  const days = daysUntilDue(dueDate);
+  const overdue = status === 'OVERDUE' || days < 0;
+  if (overdue) {
+    const ago = Math.abs(days);
+    const label = ago === 0 ? 'Vence hoje' : ago === 1 ? 'Vencido há 1 dia' : `Vencido há ${ago} dias`;
+    return (
+      <span className="dash-due-badge dash-due-badge--overdue" title={`Vencimento: ${formatDate(dueDate)}`}>
+        {label}
+      </span>
+    );
+  }
+  if (days === 0) {
+    return (
+      <span className="dash-due-badge dash-due-badge--today" title={`Vencimento: ${formatDate(dueDate)}`}>
+        Vence hoje
+      </span>
+    );
+  }
+  if (days === 1) {
+    return (
+      <span className="dash-due-badge dash-due-badge--soon" title={`Vencimento: ${formatDate(dueDate)}`}>
+        Vence amanhã
+      </span>
+    );
+  }
+  if (days <= 7) {
+    return (
+      <span className="dash-due-badge dash-due-badge--soon" title={`Vencimento: ${formatDate(dueDate)}`}>
+        Vence em {days} dias
+      </span>
+    );
+  }
+  return null;
 }
 
 function dueLabelShort(status: string, dueDate: string): string {
@@ -233,14 +274,10 @@ export function DashboardPage() {
               {data.payablesSoon.map((p) => (
                 <li key={p.id}>
                   <div>
-                    <strong>
-                      {p.description}
-                      {p.status === 'OVERDUE' || isDueDatePast(p.dueDate) ? (
-                        <span style={{ color: '#b91c1c', fontWeight: 600, marginLeft: '0.35rem' }}>
-                          (vencido)
-                        </span>
-                      ) : null}
-                    </strong>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.35rem' }}>
+                      <strong>{p.description}</strong>
+                      {dueDaysBadge(p.status, p.dueDate)}
+                    </div>
                     <div className="dash-list-meta">
                       {p.supplier ?? '—'} · {dueLabelShort(p.status, p.dueDate)}
                       {p.amountRemaining < p.amount - 0.005 ? (
@@ -274,14 +311,10 @@ export function DashboardPage() {
               {data.receivablesSoon.map((r) => (
                 <li key={r.id}>
                   <div>
-                    <strong>
-                      {r.description}
-                      {r.status === 'OVERDUE' || isDueDatePast(r.dueDate) ? (
-                        <span style={{ color: '#b91c1c', fontWeight: 600, marginLeft: '0.35rem' }}>
-                          (vencido)
-                        </span>
-                      ) : null}
-                    </strong>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.35rem' }}>
+                      <strong>{r.description}</strong>
+                      {dueDaysBadge(r.status, r.dueDate)}
+                    </div>
                     <div className="dash-list-meta">
                       {r.customer ?? '—'} · {dueLabelShort(r.status, r.dueDate)}
                       {r.amountRemaining < r.amount - 0.005 ? (

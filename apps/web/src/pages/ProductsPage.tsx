@@ -226,6 +226,7 @@ export function ProductsPage() {
     setCostPrice('0');
     setMinStockInput('1');
     setSupplierLinks([]);
+    setIsActive(true);
     setErr(null);
   }
 
@@ -287,8 +288,8 @@ export function ProductsPage() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['products'] });
-      setCreateOpen(false);
       resetCreateForm();
+      requestAnimationFrame(() => document.getElementById('p-name')?.focus());
     },
     onError: (e: Error) => setErr(e.message),
   });

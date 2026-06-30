@@ -14,6 +14,7 @@ import {
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { endOfDay, parseQueryDate, startOfDay } from '../common/date-range.util';
 import { rowMatchesSelectedCostCenter } from '../common/referential-account-flow';
+import { buildProfitabilityReport } from './profitability.report';
 
 /** Piso de período acumulado quando não há datas na query (visão balanço principal). */
 const ACCUMULATED_FLOOR_YEAR = 2026;
@@ -983,6 +984,28 @@ export class FinancialOverviewController {
         openTitlesCount: openReceivables._count._all,
       },
     };
+  }
+
+  @Get('profitability')
+  @Roles('admin', 'manager', 'finance')
+  async profitability(
+    @CurrentUser() user: JwtPayload,
+    @Query('from') fromRaw?: string,
+    @Query('to') toRaw?: string,
+  ) {
+    if (!fromRaw || !toRaw) {
+      throw new BadRequestException('Informe "from" e "to" (YYYY-MM-DD) para o relatório de rentabilidade.');
+    }
+    const from = parseQueryDate(fromRaw, 'start');
+    const to = parseQueryDate(toRaw, 'end');
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      throw new BadRequestException('Datas inválidas em "from"/"to".');
+    }
+    if (from > to) {
+      throw new BadRequestException('A data inicial deve ser anterior à data final.');
+    }
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    return buildProfitabilityReport(db, from, to, fromRaw, toRaw);
   }
 
   @Get('referential-accounts')

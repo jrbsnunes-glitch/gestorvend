@@ -13,3 +13,9 @@ export function formatDate(iso: string | Date | undefined | null): string {
     timeStyle: 'short',
   }).format(d);
 }
+
+export function formatStockQty(value: string | number | undefined | null): string {
+  const n = typeof value === 'string' ? parseFloat(value.replace(',', '.')) : Number(value ?? 0);
+  if (Number.isNaN(n)) return '—';
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+}

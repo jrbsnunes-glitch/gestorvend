@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
+import { RecordSelectionFooter } from '../components/RecordSelectionFooter';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
@@ -21,6 +22,7 @@ type Customer = {
 export function CustomersPage() {
   const qc = useQueryClient();
   const [viewId, setViewId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
   const [deleteCustomer, setDeleteCustomer] = useState<Customer | null>(null);
   const [reportsOpen, setReportsOpen] = useState(false);
@@ -44,6 +46,11 @@ export function CustomersPage() {
   });
 
   const selected = list.data?.find((c) => c.id === viewId) ?? null;
+  const selectedRow = list.data?.find((c) => c.id === selectedId) ?? null;
+
+  function toggleSelect(c: Customer) {
+    setSelectedId((prev) => (prev === c.id ? null : c.id));
+  }
 
   const detail = useQuery({
     queryKey: ['customers', viewId, 'view'],
@@ -147,7 +154,7 @@ export function CustomersPage() {
   }
 
   return (
-    <div className="page print-area">
+    <div className={`page print-area${selectedId ? ' page-with-record-footer' : ''}`}>
       <h1 className="page-title">Clientes</h1>
       <p className="page-desc">Cadastro de clientes para vendas e contas a receber.</p>
 
@@ -179,6 +186,7 @@ export function CustomersPage() {
       <div className="toolbar no-print">
         <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
           {list.data?.length ?? 0} registro(s)
+          {selectedId ? ' · clique na linha para selecionar ou desmarcar' : ' · clique em uma linha para selecionar'}
         </span>
       </div>
 
@@ -215,7 +223,15 @@ export function CustomersPage() {
               </tr>
             )}
             {list.data?.map((c, idx) => (
-              <tr key={c.id}>
+              <tr
+                key={c.id}
+                className={selectedId === c.id ? 'tr-row-selected' : ''}
+                style={{ cursor: 'pointer' }}
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).closest('.row-record-actions')) return;
+                  toggleSelect(c);
+                }}
+              >
                 <td className="num">{idx + 1}</td>
                 <td>
                   <strong>{c.name}</strong>
@@ -250,6 +266,15 @@ export function CustomersPage() {
           </tbody>
         </table>
       </div>
+
+      {selectedRow && (
+        <RecordSelectionFooter
+          partyType="customer"
+          partyId={selectedRow.id}
+          partyLabel={selectedRow.name}
+          onClear={() => setSelectedId(null)}
+        />
+      )}
 
       {createOpen && (
         <div

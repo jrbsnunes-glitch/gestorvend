@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { CostCenterSelect } from '../components/CostCenterSelect';
 import { api } from '../lib/api';
@@ -80,7 +80,7 @@ const EMPTY_FORM: FormState = {
   dueDate: new Date().toISOString().slice(0, 10),
   partyId: '',
   recurrence: 'NONE',
-  recurrenceCount: 12,
+  recurrenceCount: 1,
 };
 
 const EMPTY_SETTLE: SettlementState = {
@@ -148,8 +148,15 @@ function monthRangeDefaults(): { from: string; to: string } {
 
 export function FinancePage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<Tab>('pagar');
+  const filterCustomerId = searchParams.get('customerId')?.trim() ?? '';
+  const filterSupplierId = searchParams.get('supplierId')?.trim() ?? '';
+  const filterPartyName = searchParams.get('partyName')?.trim() ?? '';
+  const urlTab = searchParams.get('tab');
+  const initialTab: Tab =
+    urlTab === 'receber' || filterCustomerId ? 'receber' : urlTab === 'pagar' || filterSupplierId ? 'pagar' : 'pagar';
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [openTab, setOpenTab] = useState<Tab | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [err, setErr] = useState<string | null>(null);
@@ -166,14 +173,20 @@ export function FinancePage() {
   const [printPartyId, setPrintPartyId] = useState('');
 
   const payables = useQuery({
-    queryKey: ['payables'],
-    queryFn: () => api<Payable[]>('/finance/payables'),
+    queryKey: ['payables', filterSupplierId],
+    queryFn: () => {
+      const q = filterSupplierId ? `?supplierId=${encodeURIComponent(filterSupplierId)}` : '';
+      return api<Payable[]>(`/finance/payables${q}`);
+    },
     enabled: tab === 'pagar',
   });
 
   const receivables = useQuery({
-    queryKey: ['receivables'],
-    queryFn: () => api<Receivable[]>('/finance/receivables'),
+    queryKey: ['receivables', filterCustomerId],
+    queryFn: () => {
+      const q = filterCustomerId ? `?customerId=${encodeURIComponent(filterCustomerId)}` : '';
+      return api<Receivable[]>(`/finance/receivables${q}`);
+    },
     enabled: tab === 'receber',
   });
 
@@ -220,7 +233,7 @@ export function FinancePage() {
           dueDate: new Date(form.dueDate).toISOString(),
           supplierId: form.partyId || null,
           recurrence: form.recurrence,
-          recurrenceCount: form.recurrence === 'NONE' ? 1 : form.recurrenceCount,
+          recurrenceCount: form.recurrenceCount,
         },
       }),
     onSuccess: () => {
@@ -240,7 +253,7 @@ export function FinancePage() {
           dueDate: new Date(form.dueDate).toISOString(),
           customerId: form.partyId || null,
           recurrence: form.recurrence,
-          recurrenceCount: form.recurrence === 'NONE' ? 1 : form.recurrenceCount,
+          recurrenceCount: form.recurrenceCount,
         },
       }),
     onSuccess: () => {
@@ -318,7 +331,10 @@ export function FinancePage() {
 
   function openModal(t: Tab) {
     setOpenTab(t);
-    setForm(EMPTY_FORM);
+    setForm({
+      ...EMPTY_FORM,
+      partyId: t === 'pagar' ? filterSupplierId : filterCustomerId,
+    });
     setErr(null);
   }
 
@@ -403,6 +419,55 @@ export function FinancePage() {
 
       <h1 className="page-title">Financeiro</h1>
       <p className="page-desc">Contas a pagar e a receber. Baixa com forma de pagamento e vínculo opcional ao caixa.</p>
+
+      {(filterCustomerId || filterSupplierId) && (
+        <div className="card no-print" style={{ marginBottom: '1rem', padding: '0.85rem 1rem' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.9rem' }}>
+              Filtrando por{' '}
+              <strong>
+                {filterPartyName ||
+                  (filterCustomerId
+                    ? customers.data?.find((c) => c.id === filterCustomerId)?.name
+                    : suppliers.data?.find((s) => s.id === filterSupplierId)?.legalName) ||
+                  'registro selecionado'}
+              </strong>
+            </span>
+            <Link
+              to={filterCustomerId ? '/clientes' : '/fornecedores'}
+              className="btn btn-ghost"
+              style={{ fontSize: '0.82rem', padding: '0.35rem 0.65rem' }}
+            >
+              ← Voltar ao cadastro
+            </Link>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ fontSize: '0.82rem', padding: '0.35rem 0.65rem' }}
+              onClick={() => {
+                const p = new URLSearchParams();
+                if (filterCustomerId) {
+                  p.set('customerId', filterCustomerId);
+                  if (filterPartyName) p.set('partyName', filterPartyName);
+                } else if (filterSupplierId) {
+                  p.set('supplierId', filterSupplierId);
+                  if (filterPartyName) p.set('partyName', filterPartyName);
+                }
+                navigate(`/notas-fiscais?${p.toString()}`);
+              }}
+            >
+              Notas Fiscais
+            </button>
+            <Link
+              to="/financeiro"
+              className="btn btn-ghost"
+              style={{ fontSize: '0.82rem', padding: '0.35rem 0.65rem', marginLeft: 'auto' }}
+            >
+              Limpar filtro
+            </Link>
+          </div>
+        </div>
+      )}
 
       <div className="toolbar" style={{ justifyContent: 'flex-start' }}>
         <button
@@ -699,7 +764,9 @@ export function FinancePage() {
             </div>
             <div className="form-row">
               <div className="field">
-                <label htmlFor="fp-amt">Valor *</label>
+                <label htmlFor="fp-amt">
+                  {form.recurrence === 'NONE' && form.recurrenceCount > 1 ? 'Valor total *' : 'Valor *'}
+                </label>
                 <input
                   id="fp-amt"
                   type="number"
@@ -711,7 +778,7 @@ export function FinancePage() {
               </div>
               <div className="field">
                 <label htmlFor="fp-due">
-                  {form.recurrence === 'NONE' ? 'Vencimento *' : 'Primeira parcela *'}
+                  {form.recurrenceCount > 1 ? '1ª parcela *' : 'Vencimento *'}
                 </label>
                 <input
                   id="fp-due"
@@ -720,7 +787,29 @@ export function FinancePage() {
                   onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
                 />
               </div>
+              <div className="field">
+                <label htmlFor="fp-rec-n">Qtd. de parcelas</label>
+                <input
+                  id="fp-rec-n"
+                  type="number"
+                  min={1}
+                  max={120}
+                  value={form.recurrenceCount}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      recurrenceCount: Math.max(1, Math.min(120, Number(e.target.value) || 1)),
+                    })
+                  }
+                />
+              </div>
             </div>
+            {form.recurrenceCount > 1 && form.recurrence === 'NONE' && (
+              <p style={{ margin: '0 0 0.35rem', color: 'var(--color-text-muted)', fontSize: '0.78rem' }}>
+                O valor total será dividido em <strong>{form.recurrenceCount}</strong> parcelas iguais, com
+                vencimento mensal a partir da 1ª data.
+              </p>
+            )}
 
             <fieldset
               style={{
@@ -733,43 +822,25 @@ export function FinancePage() {
               <legend style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', padding: '0 0.4rem' }}>
                 Conta fixa (recorrente)
               </legend>
-              <div className="form-row">
-                <div className="field">
-                  <label htmlFor="fp-rec">Periodicidade</label>
-                  <select
-                    id="fp-rec"
-                    value={form.recurrence}
-                    onChange={(e) => setForm({ ...form, recurrence: e.target.value as Recurrence })}
-                  >
-                    {(['NONE', 'WEEKLY', 'MONTHLY', 'YEARLY'] as Recurrence[]).map((r) => (
-                      <option key={r} value={r}>
-                        {RECURRENCE_LABEL[r]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label htmlFor="fp-rec-n">Qtd. de parcelas</label>
-                  <input
-                    id="fp-rec-n"
-                    type="number"
-                    min={1}
-                    max={120}
-                    value={form.recurrenceCount}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        recurrenceCount: Math.max(1, Math.min(120, Number(e.target.value) || 1)),
-                      })
-                    }
-                    disabled={form.recurrence === 'NONE'}
-                  />
-                </div>
+              <div className="field">
+                <label htmlFor="fp-rec">Periodicidade</label>
+                <select
+                  id="fp-rec"
+                  value={form.recurrence}
+                  onChange={(e) => setForm({ ...form, recurrence: e.target.value as Recurrence })}
+                >
+                  {(['NONE', 'WEEKLY', 'MONTHLY', 'YEARLY'] as Recurrence[]).map((r) => (
+                    <option key={r} value={r}>
+                      {RECURRENCE_LABEL[r]}
+                    </option>
+                  ))}
+                </select>
               </div>
-              {form.recurrence !== 'NONE' && (
+              {form.recurrence !== 'NONE' && form.recurrenceCount > 1 && (
                 <p style={{ margin: '0.2rem 0 0', color: 'var(--color-text-muted)', fontSize: '0.78rem' }}>
-                  Serão geradas <strong>{form.recurrenceCount}</strong> parcelas{' '}
-                  {RECURRENCE_LABEL[form.recurrence].toLowerCase()} a partir da data informada.
+                  Serão geradas <strong>{form.recurrenceCount}</strong> parcelas de{' '}
+                  <strong>{form.amount ? formatBRL(parseFloat(form.amount.replace(',', '.')) || 0) : '—'}</strong>{' '}
+                  {RECURRENCE_LABEL[form.recurrence].toLowerCase()} a partir da 1ª data.
                 </p>
               )}
             </fieldset>
