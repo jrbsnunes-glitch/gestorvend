@@ -683,10 +683,9 @@ export function StockEntradaPage() {
                 <strong>histórico de preços</strong> do produto (origem “Entrada NF”).
               </p>
 
-              <div className="modal-wide-split entrada-receipt-split">
-                <div className="entrada-receipt-col">
-                  <details className="submenu-details" open>
-                    <summary className="submenu-summary">Dados da entrada / NF-e (espelho)</summary>
+              <div className="entrada-receipt-header-grid">
+                <details className="submenu-details entrada-receipt-header-grid__doc" open>
+                  <summary className="submenu-summary">Dados da entrada / NF-e (espelho)</summary>
                     <div className="submenu-body">
                       <div className="field">
                         <label htmlFor="ent-mod">Tipo de entrada</label>
@@ -783,48 +782,44 @@ export function StockEntradaPage() {
                     </div>
                   </details>
 
-                  <details className="submenu-details" open>
-                    <summary className="submenu-summary">Destinatário (seu estabelecimento)</summary>
-                    <div className="submenu-body">
-                      <p className="muted" style={{ marginBottom: '0.75rem' }}>
-                        Após buscar a NF-e pela chave, confira emitente e itens. O{' '}
-                        <strong>local de estoque</strong> recebe a mercadoria ao confirmar.
-                      </p>
-                      <div className="field">
-                        <label htmlFor="ent-loc">Local de recebimento *</label>
-                        <select id="ent-loc" value={locationId} onChange={(e) => setLocationId(e.target.value)} required>
-                          <option value="">— Selecione —</option>
-                          {locations.data?.map((l) => (
-                            <option key={l.id} value={l.id}>
-                              {l.code} — {l.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                <details className="submenu-details entrada-receipt-header-grid__emit" open>
+                  <summary className="submenu-summary">Emitente (fornecedor)</summary>
+                  <div className="submenu-body">
+                    <div className="field">
+                      <span className="field-label-text">Pesquisar ou incluir fornecedor (opcional)</span>
+                      <SupplierSearchCombo
+                        id="ent-forn"
+                        value={supplierId}
+                        onChange={(id, picked) => {
+                          setSupplierId(id);
+                          if (picked) setSupplierNameHint(picked);
+                          if (!id) setSupplierNameHint('');
+                        }}
+                        hintName={supplierNameHint}
+                      />
                     </div>
-                  </details>
-                </div>
+                  </div>
+                </details>
 
-                <div className="entrada-receipt-col">
-                  <details className="submenu-details" open>
-                    <summary className="submenu-summary">Emitente (fornecedor)</summary>
-                    <div className="submenu-body">
-                      <div className="field">
-                        <span className="field-label-text">Pesquisar ou incluir fornecedor (opcional)</span>
-                        <SupplierSearchCombo
-                          id="ent-forn"
-                          value={supplierId}
-                          onChange={(id, picked) => {
-                            setSupplierId(id);
-                            if (picked) setSupplierNameHint(picked);
-                            if (!id) setSupplierNameHint('');
-                          }}
-                          hintName={supplierNameHint}
-                        />
-                      </div>
+                <details className="submenu-details entrada-receipt-header-grid__dest" open>
+                  <summary className="submenu-summary">Destinatário (seu estabelecimento)</summary>
+                  <div className="submenu-body">
+                    <p className="muted entrada-receipt-dest-hint">
+                      Local onde a mercadoria será lançada ao confirmar.
+                    </p>
+                    <div className="field">
+                      <label htmlFor="ent-loc">Local de recebimento *</label>
+                      <select id="ent-loc" value={locationId} onChange={(e) => setLocationId(e.target.value)} required>
+                        <option value="">— Selecione —</option>
+                        {locations.data?.map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.code} — {l.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  </details>
-                </div>
+                  </div>
+                </details>
               </div>
 
               <details className="submenu-details entrada-receipt-section-full" open>
@@ -1022,7 +1017,8 @@ export function StockEntradaPage() {
                 </div>
               </details>
 
-              <details className="submenu-details entrada-receipt-section-full" open>
+              <div className="entrada-receipt-footer-split">
+              <details className="submenu-details" open>
                 <summary className="submenu-summary">Totais / observações</summary>
                 <div className="submenu-body">
                   <div className="form-row">
@@ -1044,7 +1040,7 @@ export function StockEntradaPage() {
                 </div>
               </details>
 
-              <details className="submenu-details entrada-receipt-section-full" open>
+              <details className="submenu-details" open>
                 <summary className="submenu-summary">Contas a pagar (opcional)</summary>
                 <div className="submenu-body">
                   <label
@@ -1112,6 +1108,7 @@ export function StockEntradaPage() {
                   )}
                 </div>
               </details>
+              </div>
             </div>
 
             <div className="modal-actions">
