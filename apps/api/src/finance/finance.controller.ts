@@ -362,10 +362,10 @@ export class FinanceController {
 
     return db.$transaction(async (tx) => {
       let parentId: string | null = null;
-      let parent: Awaited<ReturnType<typeof tx.accountPayable.create>> | null = null;
+      let parent: { id: string } | null = null;
       for (let i = 0; i < plan.count; i++) {
         const amtStr = plan.amounts[i].toFixed(2);
-        const created = await tx.accountPayable.create({
+        const created: { id: string } = await tx.accountPayable.create({
           data: {
             supplierId: body.supplierId ?? null,
             description: `${description} (${i + 1}/${plan.count})`,
@@ -622,10 +622,10 @@ export class FinanceController {
 
     return db.$transaction(async (tx) => {
       let parentId: string | null = null;
-      let parent: Awaited<ReturnType<typeof tx.accountReceivable.create>> | null = null;
+      let parent: { id: string } | null = null;
       for (let i = 0; i < plan.count; i++) {
         const amtStr = plan.amounts[i].toFixed(2);
-        const created = await tx.accountReceivable.create({
+        const created: { id: string } = await tx.accountReceivable.create({
           data: {
             customerId: body.customerId ?? null,
             description: `${description} (${i + 1}/${plan.count})`,
