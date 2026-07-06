@@ -90,9 +90,16 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
               key={item.to}
               to={item.to}
               end={item.end ?? false}
-              className={({ isActive }) =>
-                'sidebar-link' + (isActive ? ' sidebar-link-active' : '')
-              }
+              className={({ isActive }) => {
+                let cls = 'sidebar-link';
+                if (item.to === '/vendas') {
+                  cls += ' sidebar-link-vendas';
+                  if (isActive) cls += ' sidebar-link-vendas--current';
+                } else if (isActive) {
+                  cls += ' sidebar-link-active';
+                }
+                return cls;
+              }}
             >
               {item.label}
             </NavLink>
