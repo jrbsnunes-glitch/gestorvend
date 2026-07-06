@@ -160,14 +160,7 @@ export function StockSaidasPage() {
       </div>
 
       {includeOpen && (
-        <div
-          className="modal-backdrop no-print"
-          role="presentation"
-          onClick={() => {
-            setIncludeOpen(false);
-            setErr(null);
-          }}
-        >
+        <div className="modal-backdrop no-print" role="presentation">
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
             <h2>Nova saída de estoque</h2>
             <p className="page-desc" style={{ marginBottom: '1rem' }}>

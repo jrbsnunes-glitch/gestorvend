@@ -269,14 +269,7 @@ export function SuppliersPage() {
       )}
 
       {createOpen && (
-        <div
-          className="modal-backdrop no-print"
-          role="presentation"
-          onClick={() => {
-            setCreateOpen(false);
-            setErr(null);
-          }}
-        >
+        <div className="modal-backdrop no-print" role="presentation">
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Novo fornecedor</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -338,7 +331,7 @@ export function SuppliersPage() {
       )}
 
       {editSupplier && editOpen && (
-        <div className="modal-backdrop no-print" role="presentation" onClick={() => setEditOpen(false)}>
+        <div className="modal-backdrop no-print" role="presentation">
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Alterar fornecedor</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -437,7 +430,7 @@ export function SuppliersPage() {
       )}
 
       {deleteSupplier && deleteOpen && (
-        <div className="modal-backdrop no-print" role="presentation" onClick={() => setDeleteOpen(false)}>
+        <div className="modal-backdrop no-print" role="presentation">
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Excluir fornecedor</h2>
             <p>

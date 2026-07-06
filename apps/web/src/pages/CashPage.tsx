@@ -1089,7 +1089,7 @@ export function CashPage() {
       )}
 
       {movOpenForId && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setMovOpenForId(null)}>
+        <div className="modal-backdrop" role="presentation">
           <div
             className="modal"
             role="dialog"

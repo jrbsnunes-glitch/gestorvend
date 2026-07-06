@@ -609,7 +609,7 @@ export function PortalClientsPage() {
       </div>
 
       {createOpen && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setCreateOpen(false)}>
+        <div className="modal-backdrop" role="presentation">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(560px, 96vw)' }}>
             <h2>Nova licença / cliente</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -751,15 +751,7 @@ export function PortalClientsPage() {
       )}
 
       {editing && editForm && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onClick={() => {
-            setEditing(null);
-            setEditForm(null);
-            setEditErr(null);
-          }}
-        >
+        <div className="modal-backdrop" role="presentation">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(560px, 96vw)' }}>
             <h2>Editar cliente / licença</h2>
             {editErr && <div className="alert alert-error">{editErr}</div>}
@@ -870,7 +862,7 @@ export function PortalClientsPage() {
       )}
 
       {adminReseeding && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setAdminReseeding(null)}>
+        <div className="modal-backdrop" role="presentation">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(480px, 96vw)' }}>
             <h2>Atualizar login do administrador</h2>
             <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem' }}>
@@ -929,7 +921,7 @@ export function PortalClientsPage() {
       )}
 
       {reprovisioning && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setReprovisioning(null)}>
+        <div className="modal-backdrop" role="presentation">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(480px, 96vw)' }}>
             <h2>Provisionar banco do tenant</h2>
             <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem' }}>
@@ -989,7 +981,7 @@ export function PortalClientsPage() {
       )}
 
       {renewing && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setRenewing(null)}>
+        <div className="modal-backdrop" role="presentation">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(420px, 96vw)' }}>
             <h2>Revalidar licença</h2>
             <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem' }}>

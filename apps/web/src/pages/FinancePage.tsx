@@ -728,7 +728,7 @@ export function FinancePage() {
       )}
 
       {openTab && (
-        <div className="modal-backdrop" role="presentation" onClick={closeModal}>
+        <div className="modal-backdrop" role="presentation">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(560px, 96vw)' }}>
             <h2>{openTab === 'pagar' ? 'Nova conta a pagar' : 'Nova conta a receber'}</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -871,7 +871,7 @@ export function FinancePage() {
       )}
 
       {settleBill && (
-        <div className="modal-backdrop" role="presentation" onClick={closeSettle}>
+        <div className="modal-backdrop" role="presentation">
           <div
             className="modal"
             onClick={(e) => e.stopPropagation()}

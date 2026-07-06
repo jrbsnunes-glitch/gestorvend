@@ -480,7 +480,7 @@ export function FiscalSituationsPage() {
       )}
 
       {editingRow && editOpen && (
-        <div className="modal-backdrop no-print" role="presentation" onClick={() => setEditOpen(false)}>
+        <div className="modal-backdrop no-print" role="presentation">
           <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Situação fiscal — editar</h2>
             {err && <div className="alert alert-error">{err}</div>}

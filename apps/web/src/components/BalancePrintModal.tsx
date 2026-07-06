@@ -64,7 +64,7 @@ export function BalancePrintModal({
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="modal-backdrop" role="presentation">
       <div
         className="modal"
         role="dialog"

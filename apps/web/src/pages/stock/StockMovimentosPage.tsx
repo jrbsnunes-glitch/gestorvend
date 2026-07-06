@@ -283,7 +283,7 @@ export function StockMovimentosPage() {
       )}
 
       {movOpen && (
-        <div className="modal-backdrop no-print" role="presentation" onClick={() => setMovOpen(false)}>
+        <div className="modal-backdrop no-print" role="presentation">
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Registrar movimento</h2>
             {movErr && <div className="alert alert-error">{movErr}</div>}

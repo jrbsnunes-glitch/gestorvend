@@ -656,14 +656,7 @@ export function StockEntradaPage() {
       )}
 
       {includeOpen && (
-        <div
-          className="modal-backdrop modal-backdrop--wide no-print"
-          role="presentation"
-          onClick={() => {
-            setIncludeOpen(false);
-            setErr(null);
-          }}
-        >
+        <div className="modal-backdrop modal-backdrop--wide no-print" role="presentation">
           <div
             className="modal modal--wide entrada-receipt-modal"
             role="dialog"
@@ -1182,7 +1175,7 @@ function EditReceiptModal({
   const [notes, setNotes] = useState(receipt.notes ?? '');
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onCancel}>
+    <div className="modal-backdrop" role="presentation">
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(620px, 96vw)' }}>
         <h2>Editar entrada #{receipt.controlNumber}</h2>
         <p style={{ margin: '0 0 0.75rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>

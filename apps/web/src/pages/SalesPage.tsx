@@ -1645,7 +1645,6 @@ function PosScreen({
         <div
           className="modal-backdrop"
           role="presentation"
-          onClick={closeCustomerDialog}
         >
           <div
             className="modal pos-customer-modal"
@@ -1746,11 +1745,7 @@ function PosScreen({
 
       {/* ---------- DIALOG: fechar caixa ---------- */}
       {closeOpen && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onClick={() => setCloseOpen(false)}
-        >
+        <div className="modal-backdrop" role="presentation">
           <div
             className="modal"
             role="dialog"
@@ -2134,9 +2129,6 @@ function PosScreen({
           className="modal-backdrop"
           role="presentation"
           style={{ zIndex: 70 }}
-          onClick={() =>
-            removeSaleLineMut.isPending ? undefined : setSaleLineRemoveDraft(null)
-          }
         >
           <div
             className="modal"
@@ -2304,11 +2296,7 @@ function PosPrintPrefsModal({
   if (!open) return null;
 
   return (
-    <div
-      className="modal-backdrop"
-      role="presentation"
-      onClick={() => onClose()}
-    >
+    <div className="modal-backdrop" role="presentation">
       <div
         className="modal"
         role="dialog"

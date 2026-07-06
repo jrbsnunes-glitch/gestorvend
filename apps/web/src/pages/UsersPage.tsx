@@ -448,15 +448,7 @@ export function UsersPage() {
 
       {/* --- Modal: criar/editar --- */}
       {(createOpen || editing) && (
-        <div
-          className="modal-backdrop"
-          onClick={() => {
-            setCreateOpen(false);
-            setEditing(null);
-            resetForm();
-          }}
-          role="presentation"
-        >
+        <div className="modal-backdrop" role="presentation">
           <div
             className="modal"
             role="dialog"
@@ -690,11 +682,7 @@ export function UsersPage() {
 
       {/* --- Modal: trocar senha --- */}
       {passwordTarget && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onClick={() => setPasswordTarget(null)}
-        >
+        <div className="modal-backdrop" role="presentation">
           <div
             className="modal"
             role="dialog"
@@ -753,11 +741,7 @@ export function UsersPage() {
 
       {/* --- Modal: remover --- */}
       {removing && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onClick={() => setRemoving(null)}
-        >
+        <div className="modal-backdrop" role="presentation">
           <div
             className="modal"
             role="dialog"

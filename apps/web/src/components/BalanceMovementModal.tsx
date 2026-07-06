@@ -78,7 +78,7 @@ export function BalanceMovementModal({ open, onClose }: Props) {
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop no-print" role="presentation" onClick={onClose}>
+    <div className="modal-backdrop no-print" role="presentation">
       <div
         className="modal"
         role="dialog"

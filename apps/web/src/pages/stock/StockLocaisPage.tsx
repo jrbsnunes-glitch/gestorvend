@@ -187,14 +187,7 @@ export function StockLocaisPage() {
       </div>
 
       {createOpen && (
-        <div
-          className="modal-backdrop no-print"
-          role="presentation"
-          onClick={() => {
-            setCreateOpen(false);
-            setErr(null);
-          }}
-        >
+        <div className="modal-backdrop no-print" role="presentation">
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Novo local de estoque</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -258,7 +251,7 @@ export function StockLocaisPage() {
       )}
 
       {editLocation && editOpen && (
-        <div className="modal-backdrop no-print" role="presentation" onClick={() => setEditOpen(false)}>
+        <div className="modal-backdrop no-print" role="presentation">
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Alterar local</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -300,7 +293,7 @@ export function StockLocaisPage() {
       )}
 
       {deleteLocation && deleteConfirm && (
-        <div className="modal-backdrop no-print" role="presentation" onClick={() => setDeleteConfirm(false)}>
+        <div className="modal-backdrop no-print" role="presentation">
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Excluir local</h2>
             <p>
