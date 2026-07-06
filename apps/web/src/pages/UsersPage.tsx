@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { api } from '../lib/api';
 import { getIdentity, isManager, profileLabel, type UserProfile } from '../lib/auth';
 import {
@@ -448,7 +449,13 @@ export function UsersPage() {
 
       {/* --- Modal: criar/editar --- */}
       {(createOpen || editing) && (
-        <div className="modal-backdrop" role="presentation">
+        <FormModalBackdrop
+          onClose={() => {
+            setCreateOpen(false);
+            setEditing(null);
+            resetForm();
+          }}
+        >
           <div
             className="modal"
             role="dialog"
@@ -677,12 +684,12 @@ export function UsersPage() {
               )}
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {/* --- Modal: trocar senha --- */}
       {passwordTarget && (
-        <div className="modal-backdrop" role="presentation">
+        <FormModalBackdrop onClose={() => setPasswordTarget(null)}>
           <div
             className="modal"
             role="dialog"
@@ -736,12 +743,12 @@ export function UsersPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {/* --- Modal: remover --- */}
       {removing && (
-        <div className="modal-backdrop" role="presentation">
+        <FormModalBackdrop onClose={() => setRemoving(null)}>
           <div
             className="modal"
             role="dialog"
@@ -776,7 +783,7 @@ export function UsersPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
     </div>
   );

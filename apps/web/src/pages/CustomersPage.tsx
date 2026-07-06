@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
+import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { RecordSelectionFooter } from '../components/RecordSelectionFooter';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
@@ -277,7 +278,13 @@ export function CustomersPage() {
       )}
 
       {createOpen && (
-        <div className="modal-backdrop no-print" role="presentation">
+        <FormModalBackdrop
+          className="no-print"
+          onClose={() => {
+            setCreateOpen(false);
+            setErr(null);
+          }}
+        >
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Novo cliente</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -336,11 +343,11 @@ export function CustomersPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {editCustomer && editOpen && (
-        <div className="modal-backdrop no-print" role="presentation">
+        <FormModalBackdrop className="no-print" onClose={() => setEditOpen(false)}>
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Alterar cliente</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -399,7 +406,7 @@ export function CustomersPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {viewId && viewOpen && viewData && (
@@ -446,7 +453,7 @@ export function CustomersPage() {
       )}
 
       {deleteCustomer && deleteOpen && (
-        <div className="modal-backdrop no-print" role="presentation">
+        <FormModalBackdrop className="no-print" onClose={() => setDeleteOpen(false)}>
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Excluir cliente</h2>
             <p>
@@ -467,7 +474,7 @@ export function CustomersPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
     </div>
   );

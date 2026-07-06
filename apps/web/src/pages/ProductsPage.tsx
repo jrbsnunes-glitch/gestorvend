@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
+import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import {
@@ -605,7 +606,13 @@ export function ProductsPage() {
       </div>
 
       {createOpen && (
-        <div className="modal-backdrop modal-backdrop--wide no-print" role="presentation">
+        <FormModalBackdrop
+          className="modal-backdrop--wide no-print"
+          onClose={() => {
+            setCreateOpen(false);
+            setErr(null);
+          }}
+        >
           <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Novo produto</h2>
             <p style={{ margin: '0 0 1rem', fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>
@@ -849,11 +856,14 @@ export function ProductsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {editProduct && editOpen && (
-        <div className="modal-backdrop modal-backdrop--wide no-print" role="presentation">
+        <FormModalBackdrop
+          className="modal-backdrop--wide no-print"
+          onClose={() => setEditOpen(false)}
+        >
           <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Alterar produto</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -1136,7 +1146,7 @@ export function ProductsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {viewProductId && viewOpen && viewProduct && (
@@ -1239,7 +1249,7 @@ export function ProductsPage() {
       )}
 
       {deleteProduct && deleteOpen && (
-        <div className="modal-backdrop no-print" role="presentation">
+        <FormModalBackdrop className="no-print" onClose={() => setDeleteOpen(false)}>
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Excluir produto</h2>
             <p>
@@ -1260,7 +1270,7 @@ export function ProductsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
     </div>
   );

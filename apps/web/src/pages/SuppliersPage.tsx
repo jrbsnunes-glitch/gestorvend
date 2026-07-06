@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
+import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { RecordSelectionFooter } from '../components/RecordSelectionFooter';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
@@ -269,7 +270,7 @@ export function SuppliersPage() {
       )}
 
       {createOpen && (
-        <div className="modal-backdrop no-print" role="presentation">
+        <FormModalBackdrop className="no-print" onClose={() => setCreateOpen(false)}>
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Novo fornecedor</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -327,11 +328,11 @@ export function SuppliersPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {editSupplier && editOpen && (
-        <div className="modal-backdrop no-print" role="presentation">
+        <FormModalBackdrop className="no-print" onClose={() => setEditOpen(false)}>
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Alterar fornecedor</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -384,7 +385,7 @@ export function SuppliersPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {viewId && viewOpen && viewData && (
@@ -430,7 +431,7 @@ export function SuppliersPage() {
       )}
 
       {deleteSupplier && deleteOpen && (
-        <div className="modal-backdrop no-print" role="presentation">
+        <FormModalBackdrop className="no-print" onClose={() => setDeleteOpen(false)}>
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Excluir fornecedor</h2>
             <p>
@@ -451,7 +452,7 @@ export function SuppliersPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
     </div>
   );

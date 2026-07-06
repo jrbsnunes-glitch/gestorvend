@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useMemo, useState } from 'react';
 import { CrudToolbar } from '../../components/CrudToolbar';
+import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
 import { SupplierSearchCombo } from '../../components/ProductCatalogCombos';
 import { ProductSearchModal, type ProductSearchRow } from '../../components/ProductSearchModal';
@@ -656,7 +657,13 @@ export function StockEntradaPage() {
       )}
 
       {includeOpen && (
-        <div className="modal-backdrop modal-backdrop--wide no-print" role="presentation">
+        <FormModalBackdrop
+          className="modal-backdrop--wide no-print"
+          onClose={() => {
+            setIncludeOpen(false);
+            setErr(null);
+          }}
+        >
           <div
             className="modal modal--wide entrada-receipt-modal"
             role="dialog"
@@ -1130,7 +1137,7 @@ export function StockEntradaPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       <ProductSearchModal
@@ -1175,7 +1182,7 @@ function EditReceiptModal({
   const [notes, setNotes] = useState(receipt.notes ?? '');
 
   return (
-    <div className="modal-backdrop" role="presentation">
+    <FormModalBackdrop onClose={onCancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(620px, 96vw)' }}>
         <h2>Editar entrada #{receipt.controlNumber}</h2>
         <p style={{ margin: '0 0 0.75rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
@@ -1240,6 +1247,6 @@ function EditReceiptModal({
           </button>
         </div>
       </div>
-    </div>
+    </FormModalBackdrop>
   );
 }

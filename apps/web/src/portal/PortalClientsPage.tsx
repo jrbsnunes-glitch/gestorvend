@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { formatBRL } from '../lib/format';
 import { portalApi } from './portal-api';
 
@@ -609,7 +610,7 @@ export function PortalClientsPage() {
       </div>
 
       {createOpen && (
-        <div className="modal-backdrop" role="presentation">
+        <FormModalBackdrop onClose={() => setCreateOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(560px, 96vw)' }}>
             <h2>Nova licença / cliente</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -747,11 +748,17 @@ export function PortalClientsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {editing && editForm && (
-        <div className="modal-backdrop" role="presentation">
+        <FormModalBackdrop
+          onClose={() => {
+            setEditing(null);
+            setEditForm(null);
+            setEditErr(null);
+          }}
+        >
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(560px, 96vw)' }}>
             <h2>Editar cliente / licença</h2>
             {editErr && <div className="alert alert-error">{editErr}</div>}
@@ -858,11 +865,11 @@ export function PortalClientsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {adminReseeding && (
-        <div className="modal-backdrop" role="presentation">
+        <FormModalBackdrop onClose={() => setAdminReseeding(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(480px, 96vw)' }}>
             <h2>Atualizar login do administrador</h2>
             <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem' }}>
@@ -917,11 +924,11 @@ export function PortalClientsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {reprovisioning && (
-        <div className="modal-backdrop" role="presentation">
+        <FormModalBackdrop onClose={() => setReprovisioning(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(480px, 96vw)' }}>
             <h2>Provisionar banco do tenant</h2>
             <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem' }}>
@@ -977,11 +984,11 @@ export function PortalClientsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {renewing && (
-        <div className="modal-backdrop" role="presentation">
+        <FormModalBackdrop onClose={() => setRenewing(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(420px, 96vw)' }}>
             <h2>Revalidar licença</h2>
             <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem' }}>
@@ -1027,9 +1034,8 @@ export function PortalClientsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
-
       <footer className="portal-clients-footer card">
         <div className="portal-clients-footer__label">Total de mensalidades cadastradas</div>
         <div className="portal-clients-footer__value">{formatBRL(totalMonthlyFee)}</div>

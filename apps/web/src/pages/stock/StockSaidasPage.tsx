@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { CrudToolbar } from '../../components/CrudToolbar';
+import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
 import { api } from '../../lib/api';
 
@@ -160,7 +161,13 @@ export function StockSaidasPage() {
       </div>
 
       {includeOpen && (
-        <div className="modal-backdrop no-print" role="presentation">
+        <FormModalBackdrop
+          className="no-print"
+          onClose={() => {
+            setIncludeOpen(false);
+            setErr(null);
+          }}
+        >
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
             <h2>Nova saída de estoque</h2>
             <p className="page-desc" style={{ marginBottom: '1rem' }}>
@@ -230,7 +237,7 @@ export function StockSaidasPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
+import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { CostCenterSelect } from '../components/CostCenterSelect';
 import { api } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
@@ -728,7 +729,7 @@ export function FinancePage() {
       )}
 
       {openTab && (
-        <div className="modal-backdrop" role="presentation">
+        <FormModalBackdrop onClose={closeModal}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(560px, 96vw)' }}>
             <h2>{openTab === 'pagar' ? 'Nova conta a pagar' : 'Nova conta a receber'}</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -867,11 +868,11 @@ export function FinancePage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {settleBill && (
-        <div className="modal-backdrop" role="presentation">
+        <FormModalBackdrop onClose={closeSettle}>
           <div
             className="modal"
             onClick={(e) => e.stopPropagation()}
@@ -1006,7 +1007,7 @@ export function FinancePage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {printOpen && (

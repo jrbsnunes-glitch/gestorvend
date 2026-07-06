@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { CrudToolbar, RowRecordActions } from '../../components/CrudToolbar';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
 import { api } from '../../lib/api';
@@ -187,7 +188,13 @@ export function StockLocaisPage() {
       </div>
 
       {createOpen && (
-        <div className="modal-backdrop no-print" role="presentation">
+        <FormModalBackdrop
+          className="no-print"
+          onClose={() => {
+            setCreateOpen(false);
+            setErr(null);
+          }}
+        >
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Novo local de estoque</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -225,7 +232,7 @@ export function StockLocaisPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {viewLocation && viewOpen && (
@@ -251,7 +258,7 @@ export function StockLocaisPage() {
       )}
 
       {editLocation && editOpen && (
-        <div className="modal-backdrop no-print" role="presentation">
+        <FormModalBackdrop className="no-print" onClose={() => setEditOpen(false)}>
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Alterar local</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -289,11 +296,11 @@ export function StockLocaisPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {deleteLocation && deleteConfirm && (
-        <div className="modal-backdrop no-print" role="presentation">
+        <FormModalBackdrop className="no-print" onClose={() => setDeleteConfirm(false)}>
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Excluir local</h2>
             <p>
@@ -315,7 +322,7 @@ export function StockLocaisPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
     </div>
   );

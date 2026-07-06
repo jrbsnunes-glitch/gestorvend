@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
+import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { PermissionPasswordModal } from '../components/PermissionPasswordModal';
 import { api } from '../lib/api';
 import {
@@ -1642,10 +1643,7 @@ function PosScreen({
 
       {/* ---------- DIALOG: cliente ---------- */}
       {customerOpen && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-        >
+        <FormModalBackdrop onClose={closeCustomerDialog}>
           <div
             className="modal pos-customer-modal"
             role="dialog"
@@ -1740,12 +1738,12 @@ function PosScreen({
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {/* ---------- DIALOG: fechar caixa ---------- */}
       {closeOpen && (
-        <div className="modal-backdrop" role="presentation">
+        <FormModalBackdrop onClose={() => setCloseOpen(false)}>
           <div
             className="modal"
             role="dialog"
@@ -1873,7 +1871,7 @@ function PosScreen({
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {/* ---------- DRAWER: histórico ---------- */}
@@ -2125,9 +2123,8 @@ function PosScreen({
       )}
 
       {saleLineRemoveDraft && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
+        <FormModalBackdrop
+          onClose={() => setSaleLineRemoveDraft(null)}
           style={{ zIndex: 70 }}
         >
           <div
@@ -2199,7 +2196,7 @@ function PosScreen({
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {paymentMenuOpen && (
@@ -2296,7 +2293,7 @@ function PosPrintPrefsModal({
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop" role="presentation">
+    <FormModalBackdrop onClose={onClose}>
       <div
         className="modal"
         role="dialog"
@@ -2368,7 +2365,7 @@ function PosPrintPrefsModal({
           </button>
         </div>
       </div>
-    </div>
+    </FormModalBackdrop>
   );
 }
 

@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { api } from '../lib/api';
 import { isManager } from '../lib/auth';
 import { formatBRL } from '../lib/format';
@@ -1089,7 +1090,7 @@ export function CashPage() {
       )}
 
       {movOpenForId && (
-        <div className="modal-backdrop" role="presentation">
+        <FormModalBackdrop onClose={() => setMovOpenForId(null)}>
           <div
             className="modal"
             role="dialog"
@@ -1167,7 +1168,7 @@ export function CashPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
     </div>
   );

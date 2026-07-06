@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CrudToolbar, RowRecordActions } from '../../components/CrudToolbar';
+import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
 import { api } from '../../lib/api';
 
@@ -283,7 +284,7 @@ export function StockMovimentosPage() {
       )}
 
       {movOpen && (
-        <div className="modal-backdrop no-print" role="presentation">
+        <FormModalBackdrop className="no-print" onClose={() => setMovOpen(false)}>
           <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Registrar movimento</h2>
             {movErr && <div className="alert alert-error">{movErr}</div>}
@@ -361,7 +362,7 @@ export function StockMovimentosPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {printOpen && (

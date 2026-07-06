@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { useModalEscapeKey } from '../lib/useModalEscapeKey';
 import { CostCenterSelect } from './CostCenterSelect';
 import { api } from '../lib/api';
 
@@ -42,6 +43,8 @@ export function BalanceMovementModal({ open, onClose }: Props) {
     if (movType === 'IN') setMovOutKind('WITHDRAWAL');
     setReferentialAccountId('');
   }, [movType]);
+
+  useModalEscapeKey(onClose, open);
 
   const movement = useMutation({
     mutationFn: () => {

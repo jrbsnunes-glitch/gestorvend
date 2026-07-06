@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type Dispatch, type SetStateAction } from 'react';
 
+import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { CrudToolbar } from '../components/CrudToolbar';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
@@ -480,7 +481,13 @@ export function FiscalSituationsPage() {
       )}
 
       {editingRow && editOpen && (
-        <div className="modal-backdrop no-print" role="presentation">
+        <FormModalBackdrop
+          className="no-print"
+          onClose={() => {
+            setEditOpen(false);
+            setErr(null);
+          }}
+        >
           <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Situação fiscal — editar</h2>
             {err && <div className="alert alert-error">{err}</div>}
@@ -507,7 +514,7 @@ export function FiscalSituationsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       <div className="card print-legal-reminder no-print" style={{ marginTop: '1.25rem', padding: '0.95rem', fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>

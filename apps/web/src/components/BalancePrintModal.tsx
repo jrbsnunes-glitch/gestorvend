@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useModalEscapeKey } from '../lib/useModalEscapeKey';
 
 type ReportKind = 'balance' | 'profitability';
 
@@ -38,6 +39,8 @@ export function BalancePrintModal({
     setCostCenterId(initialCostCenterId);
     setReportKind('balance');
   }, [open, initialFrom, initialTo, initialCostCenterId]);
+
+  useModalEscapeKey(onClose, open);
 
   if (!open) return null;
 

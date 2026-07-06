@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useModalEscapeKey } from '../lib/useModalEscapeKey';
 
 type Props = {
   open: boolean;
@@ -30,6 +31,8 @@ export function PermissionPasswordModal({
       return () => window.clearTimeout(t);
     }
   }, [open]);
+
+  useModalEscapeKey(onClose, open);
 
   if (!open) return null;
 

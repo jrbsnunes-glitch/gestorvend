@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useDeferredValue, useState } from 'react';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
+import { useModalEscapeKey } from '../lib/useModalEscapeKey';
 
 export type ProductSearchRow = {
   productId: string;
@@ -32,10 +33,12 @@ export function ProductSearchModal({ open, title = 'Pesquisar produto', onClose,
     staleTime: 5_000,
   });
 
+  useModalEscapeKey(onClose, open);
+
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="modal-backdrop" role="presentation">
       <div
         className="modal modal--wide"
         role="dialog"
