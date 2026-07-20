@@ -24,6 +24,7 @@
     "prisma:migrate:tenant:dev": "prisma migrate dev --schema=prisma/tenant/schema.prisma",
     "tenant:provision": "ts-node -r tsconfig-paths/register scripts/provision-tenant.ts",
     "tenant:migrate-all": "ts-node -r tsconfig-paths/register scripts/migrate-all-tenants.ts",
+    "tenant:reset-admin": "ts-node -r tsconfig-paths/register scripts/reset-tenant-admin.ts",
     "sync-generated": "node scripts/sync-generated-to-dist.cjs",
     "seed": "ts-node -r tsconfig-paths/register scripts/seed.ts",
     "seed:tenant-minimal": "ts-node -r tsconfig-paths/register scripts/seed-tenant-minimal.ts",
