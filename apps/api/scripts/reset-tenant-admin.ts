@@ -13,6 +13,7 @@
  * Variáveis: CENTRAL_DATABASE_URL, TENANT_DATABASE_URL (modelo; só troca o nome do DB).
  *
  * O arquivo gerado fica em data/tenant-configs/<slug>.json (ou --output).
+ * Senha gerada: equivalente a `openssl rand -hex 16` (32 caracteres hex).
  * Contém senha em texto — restrinja permissões (chmod 600) e não commite no Git.
  */
 import { execSync } from 'child_process';
@@ -75,15 +76,9 @@ function onlyDigits(s: string): string {
   return String(s ?? '').replace(/\D/g, '');
 }
 
-function generateStrongPassword(length = 20): string {
-  const chars =
-    'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*-_';
-  const bytes = randomBytes(length);
-  let out = '';
-  for (let i = 0; i < length; i++) {
-    out += chars[bytes[i]! % chars.length];
-  }
-  return out;
+/** Mesmo formato de `openssl rand -hex 16` (16 bytes → 32 chars hex). */
+function generateStrongPassword(): string {
+  return randomBytes(16).toString('hex');
 }
 
 function defaultAdminEmail(slug: string): string {
@@ -196,7 +191,7 @@ async function processTenant(
   let adminPassword: string | undefined;
 
   if (!opts.exportOnly) {
-    adminPassword = opts.password?.trim() || generateStrongPassword(20);
+    adminPassword = opts.password?.trim() || generateStrongPassword();
     if (opts.migrate) {
       runMigrate(tenantUrl, schemaPath);
     }
