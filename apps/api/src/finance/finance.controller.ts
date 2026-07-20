@@ -25,6 +25,7 @@ import {
 } from '../generated/tenant-client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { SettleBillBodyDto } from './dto/settle-bill-body.dto';
+import { UpdateSettlementBodyDto } from './dto/update-settlement-body.dto';
 import {
   referentialCodeAllowedForPayableCostCenter,
   referentialCodeMatchesFlow,
@@ -54,6 +55,12 @@ function sameLocalCalendarDay(a: Date, b: Date): boolean {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
   );
+}
+
+function todayLocalStart(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
 function moneyCents(n: number): number {
@@ -249,6 +256,79 @@ const receivableInclude = {
   cashSession: { include: { user: { select: { id: true, name: true, email: true } } } },
 } as const;
 
+const settlementDetailInclude = {
+  cashSession: { include: { user: { select: { id: true, name: true, email: true } } } },
+  referentialAccount: { select: { id: true, code: true, description: true } },
+} as const;
+
+const payableDetailInclude = {
+  ...payableInclude,
+  settlements: {
+    orderBy: { paidAt: 'asc' as const },
+    include: settlementDetailInclude,
+  },
+} as const;
+
+const receivableDetailInclude = {
+  ...receivableInclude,
+  settlements: {
+    orderBy: { receivedAt: 'asc' as const },
+    include: settlementDetailInclude,
+  },
+} as const;
+
+type SettlementNoteRow = {
+  amount: unknown;
+  paidAt?: Date;
+  receivedAt?: Date;
+  notes?: string | null;
+};
+
+function resolveBillStatusAfterSettlement(
+  dueDate: Date,
+  remainingCents: number,
+  faceCents: number,
+): BillStatus {
+  if (remainingCents <= 0 && faceCents > 0) {
+    return BillStatus.PAID;
+  }
+  const today = todayLocalStart();
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0);
+  return due < today ? BillStatus.OVERDUE : BillStatus.OPEN;
+}
+
+function rebuildPaymentNotesFromSettlements(
+  settlements: SettlementNoteRow[],
+  kind: 'payable' | 'receivable',
+  fullyPaid: boolean,
+): string | null {
+  if (!settlements.length) return null;
+  if (settlements.length === 1 && fullyPaid) {
+    return settlements[0].notes?.trim() ?? null;
+  }
+  return settlements
+    .map((s) => {
+      const at = (kind === 'payable' ? s.paidAt! : s.receivedAt!).toLocaleString('pt-BR', {
+        dateStyle: 'short',
+        timeStyle: 'short',
+      });
+      const note = s.notes?.trim();
+      return `[Parcial ${at}] ${fmtBRL(prismaMoney(s.amount))}${note ? ` — ${note}` : ''}`;
+    })
+    .join('\n')
+    .slice(0, 4000);
+}
+
+function parseSettledAt(raw: string | undefined): Date | undefined {
+  if (raw == null || String(raw).trim() === '') return undefined;
+  const d = new Date(String(raw).trim());
+  if (Number.isNaN(d.getTime())) {
+    throw new BadRequestException('Data/hora do pagamento inválida.');
+  }
+  return d;
+}
+
 @Controller('finance')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class FinanceController {
@@ -308,7 +388,7 @@ export class FinanceController {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const row = await db.accountPayable.findUnique({
       where: { id },
-      include: payableInclude,
+      include: payableDetailInclude,
     });
     if (!row) throw new NotFoundException('Conta a pagar não encontrada.');
     return row;
@@ -570,7 +650,7 @@ export class FinanceController {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const row = await db.accountReceivable.findUnique({
       where: { id },
-      include: receivableInclude,
+      include: receivableDetailInclude,
     });
     if (!row) throw new NotFoundException('Conta a receber não encontrada.');
     return row;
@@ -772,6 +852,204 @@ export class FinanceController {
         },
         include: receivableInclude,
       });
+    });
+  }
+
+  private async recalculatePayableFromSettlements(
+    tx: Prisma.TransactionClient,
+    payableId: string,
+  ) {
+    const row = await tx.accountPayable.findUnique({ where: { id: payableId } });
+    if (!row) throw new NotFoundException('Conta a pagar não encontrada.');
+    if (row.status === BillStatus.CANCELLED) {
+      throw new BadRequestException('Título cancelado não pode ser alterado.');
+    }
+
+    const settlements = await tx.payableSettlement.findMany({
+      where: { payableId },
+      orderBy: { paidAt: 'asc' },
+    });
+    const face = prismaMoney(row.amount);
+    const faceCents = moneyCents(face);
+    let totalCents = 0;
+    for (const s of settlements) {
+      totalCents += moneyCents(prismaMoney(s.amount));
+    }
+    if (totalCents > faceCents) {
+      throw new BadRequestException(
+        `Total dos pagamentos (${fmtBRL(totalCents / 100)}) excede o valor do título (${fmtBRL(face)}).`,
+      );
+    }
+
+    const remainingCents = faceCents - totalCents;
+    const last = settlements[settlements.length - 1];
+    const fullyPaid = remainingCents === 0 && totalCents > 0;
+    const status = resolveBillStatusAfterSettlement(row.dueDate, remainingCents, faceCents);
+    const paymentNotes = rebuildPaymentNotesFromSettlements(settlements, 'payable', fullyPaid);
+
+    return tx.accountPayable.update({
+      where: { id: payableId },
+      data: {
+        status,
+        amountRemaining: (remainingCents / 100).toFixed(2),
+        settledAmount: totalCents > 0 ? (totalCents / 100).toFixed(2) : null,
+        paymentMethod: last?.method ?? null,
+        paidAt: fullyPaid ? (last?.paidAt ?? null) : null,
+        cashSessionId: fullyPaid && settlements.length === 1 ? (last?.cashSessionId ?? null) : null,
+        paymentNotes,
+      },
+      include: payableDetailInclude,
+    });
+  }
+
+  private async recalculateReceivableFromSettlements(
+    tx: Prisma.TransactionClient,
+    receivableId: string,
+  ) {
+    const row = await tx.accountReceivable.findUnique({ where: { id: receivableId } });
+    if (!row) throw new NotFoundException('Conta a receber não encontrada.');
+    if (row.status === BillStatus.CANCELLED) {
+      throw new BadRequestException('Título cancelado não pode ser alterado.');
+    }
+
+    const settlements = await tx.receivableSettlement.findMany({
+      where: { receivableId },
+      orderBy: { receivedAt: 'asc' },
+    });
+    const face = prismaMoney(row.amount);
+    const faceCents = moneyCents(face);
+    let totalCents = 0;
+    for (const s of settlements) {
+      totalCents += moneyCents(prismaMoney(s.amount));
+    }
+    if (totalCents > faceCents) {
+      throw new BadRequestException(
+        `Total dos recebimentos (${fmtBRL(totalCents / 100)}) excede o valor do título (${fmtBRL(face)}).`,
+      );
+    }
+
+    const remainingCents = faceCents - totalCents;
+    const last = settlements[settlements.length - 1];
+    const fullyPaid = remainingCents === 0 && totalCents > 0;
+    const status = resolveBillStatusAfterSettlement(row.dueDate, remainingCents, faceCents);
+    const paymentNotes = rebuildPaymentNotesFromSettlements(settlements, 'receivable', fullyPaid);
+
+    return tx.accountReceivable.update({
+      where: { id: receivableId },
+      data: {
+        status,
+        amountRemaining: (remainingCents / 100).toFixed(2),
+        settledAmount: totalCents > 0 ? (totalCents / 100).toFixed(2) : null,
+        paymentMethod: last?.method ?? null,
+        receivedAt: fullyPaid ? (last?.receivedAt ?? null) : null,
+        cashSessionId: fullyPaid && settlements.length === 1 ? (last?.cashSessionId ?? null) : null,
+        paymentNotes,
+      },
+      include: receivableDetailInclude,
+    });
+  }
+
+  @Patch('payable-settlements/:id')
+  @Roles('admin', 'manager', 'finance')
+  async updatePayableSettlement(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: UpdateSettlementBodyDto,
+  ) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    return db.$transaction(async (tx) => {
+      const settlement = await tx.payableSettlement.findUnique({
+        where: { id },
+        include: { payable: true },
+      });
+      if (!settlement) throw new NotFoundException('Pagamento não encontrado.');
+      if (settlement.payable.status === BillStatus.CANCELLED) {
+        throw new BadRequestException('Título cancelado não pode ser alterado.');
+      }
+
+      const data: Prisma.PayableSettlementUpdateInput = {};
+      if (body.amount != null) {
+        if (!Number.isFinite(body.amount) || body.amount <= 0) {
+          throw new BadRequestException('Valor do pagamento inválido.');
+        }
+        data.amount = body.amount.toFixed(2);
+      }
+      if (body.method != null && String(body.method).trim() !== '') {
+        data.method = parsePaymentMethod(String(body.method));
+      }
+      if (body.notes !== undefined) {
+        data.notes =
+          body.notes != null && String(body.notes).trim() !== ''
+            ? String(body.notes).trim().slice(0, 4000)
+            : null;
+      }
+      if (body.referentialAccountId !== undefined) {
+        const refId = await resolveReferentialCostCenterId(
+          tx,
+          body.referentialAccountId,
+          'OUT',
+        );
+        data.referentialAccount = refId
+          ? { connect: { id: refId } }
+          : { disconnect: true };
+      }
+      const settledAt = parseSettledAt(body.settledAt);
+      if (settledAt) data.paidAt = settledAt;
+
+      await tx.payableSettlement.update({ where: { id }, data });
+      return this.recalculatePayableFromSettlements(tx, settlement.payableId);
+    });
+  }
+
+  @Patch('receivable-settlements/:id')
+  @Roles('admin', 'manager', 'finance')
+  async updateReceivableSettlement(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: UpdateSettlementBodyDto,
+  ) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    return db.$transaction(async (tx) => {
+      const settlement = await tx.receivableSettlement.findUnique({
+        where: { id },
+        include: { receivable: true },
+      });
+      if (!settlement) throw new NotFoundException('Recebimento não encontrado.');
+      if (settlement.receivable.status === BillStatus.CANCELLED) {
+        throw new BadRequestException('Título cancelado não pode ser alterado.');
+      }
+
+      const data: Prisma.ReceivableSettlementUpdateInput = {};
+      if (body.amount != null) {
+        if (!Number.isFinite(body.amount) || body.amount <= 0) {
+          throw new BadRequestException('Valor do recebimento inválido.');
+        }
+        data.amount = body.amount.toFixed(2);
+      }
+      if (body.method != null && String(body.method).trim() !== '') {
+        data.method = parsePaymentMethod(String(body.method));
+      }
+      if (body.notes !== undefined) {
+        data.notes =
+          body.notes != null && String(body.notes).trim() !== ''
+            ? String(body.notes).trim().slice(0, 4000)
+            : null;
+      }
+      if (body.referentialAccountId !== undefined) {
+        const refId = await resolveReferentialCostCenterId(
+          tx,
+          body.referentialAccountId,
+          'IN',
+        );
+        data.referentialAccount = refId
+          ? { connect: { id: refId } }
+          : { disconnect: true };
+      }
+      const settledAt = parseSettledAt(body.settledAt);
+      if (settledAt) data.receivedAt = settledAt;
+
+      await tx.receivableSettlement.update({ where: { id }, data });
+      return this.recalculateReceivableFromSettlements(tx, settlement.receivableId);
     });
   }
 }

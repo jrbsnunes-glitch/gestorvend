@@ -37,7 +37,7 @@ async function main() {
 
   await seedTenantMinimal(tenantUrl, {
     adminEmail: 'admin@demo.local',
-    adminPassword: 'Admin123!',
+    adminPassword: 'admin123!',
     adminDisplayName: 'Administrador',
   });
   const user = await tenant.user.findUniqueOrThrow({
@@ -46,7 +46,7 @@ async function main() {
   });
 
   // eslint-disable-next-line no-console
-  console.log('Seed OK. Tenant slug: demo | login: admin@demo.local | senha: Admin123!');
+  console.log('Seed OK. Tenant slug: demo | login: admin@demo.local | senha: admin123!');
   // eslint-disable-next-line no-console
   console.log('User id:', user.id);
 

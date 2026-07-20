@@ -2,18 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
+import { BillPaymentsButton } from '../components/BillSettlementsModal';
 import { api } from '../lib/api';
+import { hasInformedPayment, PAYMENT_LABELS, saldoAbertoBill } from '../lib/finance-bills';
 import { formatBRL, formatDate } from '../lib/format';
 import './cash-print.css';
-
-const PAYMENT_LABELS: Record<string, string> = {
-  CASH: 'Dinheiro',
-  CARD: 'Cartão',
-  PIX: 'Pix',
-  CREDIT: 'Crediário',
-  OTHER: 'Outro',
-  EXPENSE: 'Despesa',
-};
 
 type CashSess = {
   id: string;
@@ -52,9 +45,7 @@ type Receivable = {
 };
 
 function saldoAberto(row: Payable | Receivable): string {
-  const r = row.amountRemaining;
-  if (r != null && String(r).trim() !== '') return String(r);
-  return row.amount;
+  return saldoAbertoBill(row);
 }
 
 /** Total já pago/recebido (baixas parciais acumuladas). */
@@ -238,6 +229,16 @@ export function FinancePrintPage() {
             </>
           )}
         </dl>
+        {hasInformedPayment(p) && (
+          <div className="no-print" style={{ marginTop: '1rem' }}>
+            <BillPaymentsButton
+              kind="pagar"
+              billId={p.id}
+              description={p.description}
+              label="Detalhar / editar pagamentos"
+            />
+          </div>
+        )}
       </section>
     );
   }
@@ -290,6 +291,16 @@ export function FinancePrintPage() {
             </>
           )}
         </dl>
+        {hasInformedPayment(r) && (
+          <div className="no-print" style={{ marginTop: '1rem' }}>
+            <BillPaymentsButton
+              kind="receber"
+              billId={r.id}
+              description={r.description}
+              label="Detalhar / editar recebimentos"
+            />
+          </div>
+        )}
       </section>
     );
   }
@@ -337,12 +348,13 @@ export function FinancePrintPage() {
                   <th>Forma</th>
                 </>
               )}
+              <th className="no-print">Ações</th>
             </tr>
           </thead>
           <tbody>
             {!listPayables.data.length ? (
               <tr>
-                <td colSpan={modo === 'pagas' ? 10 : 8} className="empty">
+                <td colSpan={modo === 'pagas' ? 11 : 9} className="empty">
                   Nenhum registro.
                 </td>
               </tr>
@@ -370,6 +382,13 @@ export function FinancePrintPage() {
                       <td>{p.paymentMethod ? PAYMENT_LABELS[p.paymentMethod] ?? p.paymentMethod : '—'}</td>
                     </>
                   )}
+                  <td className="no-print" style={{ textAlign: 'right' }}>
+                    {hasInformedPayment(p) ? (
+                      <BillPaymentsButton kind="pagar" billId={p.id} description={p.description} />
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                 </tr>
                 );
               })
@@ -396,12 +415,13 @@ export function FinancePrintPage() {
                   <th>Forma</th>
                 </>
               )}
+              <th className="no-print">Ações</th>
             </tr>
           </thead>
           <tbody>
             {!listReceivables.data.length ? (
               <tr>
-                <td colSpan={modo === 'pagas' ? 10 : 8} className="empty">
+                <td colSpan={modo === 'pagas' ? 11 : 9} className="empty">
                   Nenhum registro.
                 </td>
               </tr>
@@ -429,6 +449,13 @@ export function FinancePrintPage() {
                       <td>{r.paymentMethod ? PAYMENT_LABELS[r.paymentMethod] ?? r.paymentMethod : '—'}</td>
                     </>
                   )}
+                  <td className="no-print" style={{ textAlign: 'right' }}>
+                    {hasInformedPayment(r) ? (
+                      <BillPaymentsButton kind="receber" billId={r.id} description={r.description} />
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                 </tr>
                 );
               })

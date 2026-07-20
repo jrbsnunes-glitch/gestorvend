@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
+import { BillPaymentsButton } from '../components/BillSettlementsModal';
 import { api } from '../lib/api';
 import { companyDisplayName, useCompanyBranding } from '../lib/company-branding';
 import { formatBRL, formatDate } from '../lib/format';
@@ -287,6 +288,11 @@ export function DashboardPage() {
                         </span>
                       ) : null}
                     </div>
+                    {p.amountRemaining < p.amount - 0.005 ? (
+                      <div className="no-print" style={{ marginTop: '0.35rem' }}>
+                        <BillPaymentsButton kind="pagar" billId={p.id} description={p.description} />
+                      </div>
+                    ) : null}
                   </div>
                   <strong className="dash-list-amt">{formatBRL(p.amountRemaining)}</strong>
                 </li>
@@ -324,6 +330,11 @@ export function DashboardPage() {
                         </span>
                       ) : null}
                     </div>
+                    {r.amountRemaining < r.amount - 0.005 ? (
+                      <div className="no-print" style={{ marginTop: '0.35rem' }}>
+                        <BillPaymentsButton kind="receber" billId={r.id} description={r.description} />
+                      </div>
+                    ) : null}
                   </div>
                   <strong className="dash-list-amt" style={{ color: '#15803d' }}>
                     {formatBRL(r.amountRemaining)}

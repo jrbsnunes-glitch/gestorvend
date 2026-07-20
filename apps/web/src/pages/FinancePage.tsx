@@ -4,7 +4,9 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { CostCenterSelect } from '../components/CostCenterSelect';
+import { BillPaymentsButton } from '../components/BillSettlementsModal';
 import { api } from '../lib/api';
+import { hasInformedPayment, PAYMENT_LABELS, saldoAbertoBill } from '../lib/finance-bills';
 import { formatBRL, formatDate } from '../lib/format';
 
 type CashSessionRow = {
@@ -97,15 +99,6 @@ const RECURRENCE_LABEL: Record<Recurrence, string> = {
   WEEKLY: 'Semanal',
   MONTHLY: 'Mensal',
   YEARLY: 'Anual',
-};
-
-const PAYMENT_LABELS: Record<string, string> = {
-  CASH: 'Dinheiro',
-  CARD: 'Cartão',
-  PIX: 'Pix',
-  CREDIT: 'Crediário',
-  OTHER: 'Outro',
-  EXPENSE: 'Despesa',
 };
 
 function statusPt(s: string): string {
@@ -346,9 +339,7 @@ export function FinancePage() {
   }
 
   function saldoAberto(row: Payable | Receivable): string {
-    const r = row.amountRemaining;
-    if (r != null && String(r).trim() !== '') return String(r);
-    return row.amount;
+    return saldoAbertoBill(row);
   }
 
   function openSettle(row: Payable | Receivable) {
@@ -592,18 +583,27 @@ export function FinancePage() {
                         '—'
                       )}
                     </td>
-                    <td style={{ textAlign: 'right' }}>
-                      {(p.status === 'OPEN' || p.status === 'OVERDUE') && (
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          style={{ fontSize: '0.82rem' }}
-                          disabled={payOne.isPending}
-                          onClick={() => openSettle(p)}
-                        >
-                          Baixar
-                        </button>
-                      )}
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                        {hasInformedPayment(p) && (
+                          <BillPaymentsButton
+                            kind="pagar"
+                            billId={p.id}
+                            description={p.description}
+                          />
+                        )}
+                        {(p.status === 'OPEN' || p.status === 'OVERDUE') && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ fontSize: '0.82rem' }}
+                            disabled={payOne.isPending}
+                            onClick={() => openSettle(p)}
+                          >
+                            Baixar
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -707,18 +707,27 @@ export function FinancePage() {
                         '—'
                       )}
                     </td>
-                    <td style={{ textAlign: 'right' }}>
-                      {(r.status === 'OPEN' || r.status === 'OVERDUE') && (
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          style={{ fontSize: '0.82rem' }}
-                          disabled={receiveOne.isPending}
-                          onClick={() => openSettle(r)}
-                        >
-                          Receber
-                        </button>
-                      )}
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                        {hasInformedPayment(r) && (
+                          <BillPaymentsButton
+                            kind="receber"
+                            billId={r.id}
+                            description={r.description}
+                          />
+                        )}
+                        {(r.status === 'OPEN' || r.status === 'OVERDUE') && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ fontSize: '0.82rem' }}
+                            disabled={receiveOne.isPending}
+                            onClick={() => openSettle(r)}
+                          >
+                            Receber
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
