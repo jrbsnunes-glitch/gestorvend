@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { CompanyLogo } from './CompanyLogo';
+import { ConnectionStatusBanner } from './ConnectionStatusBanner';
 import { api } from '../lib/api';
 import { companyDisplayName, companyUsesCustomLogo } from '../lib/company-branding';
 import { getIdentity, isAdmin, profileFromRoles, profileLabel } from '../lib/auth';
@@ -125,6 +126,7 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
         </div>
       </aside>
       <div className="main-area">
+        <ConnectionStatusBanner />
         <main className="main-content">
           <Outlet />
         </main>

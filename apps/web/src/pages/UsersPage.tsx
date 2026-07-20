@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
+import { ListPagination } from '../components/ListPagination';
 import { api } from '../lib/api';
+import { useListPagination } from '../hooks/useListPagination';
 import { getIdentity, isManager, profileLabel, type UserProfile } from '../lib/auth';
 import {
   type UserPermissionRow,
@@ -82,6 +84,8 @@ export function UsersPage() {
         profileLabel(u.profile).toLowerCase().includes(term),
     );
   }, [list.data, search]);
+
+  const pagination = useListPagination(filtered);
 
   function resetForm() {
     setForm(EMPTY_FORM);
@@ -340,11 +344,11 @@ export function UsersPage() {
                   </td>
                 </tr>
               )}
-              {filtered.map((u, idx) => {
+              {pagination.pageItems.map((u, idx) => {
                 const isSelf = identity?.sub === u.id;
                 return (
                   <tr key={u.id}>
-                    <td className="num">{idx + 1}</td>
+                    <td className="num">{(pagination.page - 1) * pagination.pageSize + idx + 1}</td>
                     <td>
                       <strong>{u.name}</strong>
                       {isSelf && (
@@ -455,6 +459,17 @@ export function UsersPage() {
           </table>
         )}
       </div>
+
+      {!list.isLoading && !list.isError && (
+        <ListPagination
+          page={pagination.page}
+          totalPages={pagination.totalPages}
+          totalItems={pagination.totalItems}
+          pageSize={pagination.pageSize}
+          onPageChange={pagination.setPage}
+          itemLabel="usuário(s)"
+        />
+      )}
 
       {/* --- Modal: criar/editar --- */}
       {(createOpen || editing) && (

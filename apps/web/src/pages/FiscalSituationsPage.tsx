@@ -3,9 +3,11 @@ import { useState, type Dispatch, type SetStateAction } from 'react';
 
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { CrudToolbar } from '../components/CrudToolbar';
+import { ListPagination } from '../components/ListPagination';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
+import { useListPagination } from '../hooks/useListPagination';
 
 type FiscalSituation = {
   id: string;
@@ -206,6 +208,8 @@ export function FiscalSituationsPage() {
     queryFn: () => api<FiscalSituation[]>('/fiscal-situations'),
   });
 
+  const pagination = useListPagination(list.data ?? []);
+
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>(emptyDraft);
   const [err, setErr] = useState<string | null>(null);
@@ -391,7 +395,7 @@ export function FiscalSituationsPage() {
                 </td>
               </tr>
             )}
-            {(list.data ?? []).map((row) => (
+            {pagination.pageItems.map((row) => (
               <tr key={row.id}>
                 <td>
                   <code>{row.code}</code>
@@ -431,6 +435,15 @@ export function FiscalSituationsPage() {
           </tbody>
         </table>
       </div>
+
+      <ListPagination
+        page={pagination.page}
+        totalPages={pagination.totalPages}
+        totalItems={pagination.totalItems}
+        pageSize={pagination.pageSize}
+        onPageChange={pagination.setPage}
+        itemLabel="situação(ões)"
+      />
 
       {viewRow && viewOpen && (
         <div className="modal-backdrop no-print" role="presentation" onClick={() => setViewOpen(false)}>

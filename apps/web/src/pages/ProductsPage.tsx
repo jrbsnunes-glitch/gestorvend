@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
+import { ListPagination } from '../components/ListPagination';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import {
@@ -19,6 +20,7 @@ import {
 import { ProductReportsPanel } from '../components/ProductReportsPanel';
 import { api } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
+import { useListPagination } from '../hooks/useListPagination';
 
 type ProductSearchRow = {
   productId: string;
@@ -124,6 +126,7 @@ export function ProductsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchInput, setSearchInput] = useState('');
+  const [searchActionErr, setSearchActionErr] = useState<string | null>(null);
   const searchQ = useDeferredValue(searchInput.trim());
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -202,12 +205,24 @@ export function ProductsPage() {
   });
 
   const rows = useMemo(() => {
-    return (list.data ?? []).flatMap((p) =>
-      p.variants.length
-        ? p.variants.map((v) => ({ product: p, variant: v }))
-        : [{ product: p, variant: null as Variant | null }],
-    );
+    const sortedProducts = [...(list.data ?? [])].sort((a, b) => {
+      const ctrlA = parseFloat(String(a.inventoryControlMin ?? '1').replace(',', '.')) || 1;
+      const ctrlB = parseFloat(String(b.inventoryControlMin ?? '1').replace(',', '.')) || 1;
+      if (ctrlA !== ctrlB) return ctrlA - ctrlB;
+      return a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' });
+    });
+
+    return sortedProducts.flatMap((p) => {
+      const variants = [...p.variants].sort((a, b) =>
+        a.sku.localeCompare(b.sku, 'pt-BR', { sensitivity: 'base' }),
+      );
+      return variants.length
+        ? variants.map((v) => ({ product: p, variant: v }))
+        : [{ product: p, variant: null as Variant | null }];
+    });
   }, [list.data]);
+
+  const pagination = useListPagination(rows);
 
   function resetCreateForm() {
     setName('');
@@ -362,6 +377,21 @@ export function ProductsPage() {
     setEditOpen(true);
   }
 
+  async function openEditFromSearch(productId: string) {
+    setSearchActionErr(null);
+    try {
+      const cached = list.data?.find((p) => p.id === productId);
+      const product = cached ?? (await api<Product>(`/products/${productId}`));
+      setSearchOpen(false);
+      setSearchInput('');
+      openEdit(product);
+    } catch (e) {
+      setSearchActionErr(
+        e instanceof Error ? e.message : 'Não foi possível abrir o produto para edição.',
+      );
+    }
+  }
+
   return (
     <div className="page print-area">
       <h1 className="page-title">Produtos</h1>
@@ -388,6 +418,7 @@ export function ProductsPage() {
             className="btn btn-secondary"
             onClick={() => {
               setSearchInput('');
+              setSearchActionErr(null);
               setSearchOpen(true);
             }}
           >
@@ -432,6 +463,7 @@ export function ProductsPage() {
             {productSearch.isError && (
               <div className="alert alert-error">{(productSearch.error as Error).message}</div>
             )}
+            {searchActionErr && <div className="alert alert-error">{searchActionErr}</div>}
             <div className="table-wrap" style={{ maxHeight: 'min(55vh, 420px)', overflow: 'auto' }}>
               <table className="data-table products-search-table">
                 <thead>
@@ -444,19 +476,20 @@ export function ProductsPage() {
                     <th className="num col-money th-nowrap products-search-table__money">Venda</th>
                     <th className="num col-money th-nowrap products-search-table__money">Custo</th>
                     <th className="num th-nowrap products-search-table__stk">Est. total</th>
+                    <th className="col-actions no-print">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {searchQ.length < 1 && (
                     <tr>
-                      <td colSpan={8} className="empty">
+                      <td colSpan={9} className="empty">
                         Digite para buscar.
                       </td>
                     </tr>
                   )}
                   {searchQ.length >= 1 && productSearch.isPending && (
                     <tr>
-                      <td colSpan={8} className="empty">
+                      <td colSpan={9} className="empty">
                         Buscando…
                       </td>
                     </tr>
@@ -466,7 +499,7 @@ export function ProductsPage() {
                     Array.isArray(productSearch.data) &&
                     productSearch.data.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="empty">
+                      <td colSpan={9} className="empty">
                         Nenhum resultado para «{searchQ}».
                       </td>
                     </tr>
@@ -504,6 +537,19 @@ export function ProductsPage() {
                       <td className="num col-money products-search-table__money">{formatBRL(row.retailPrice)}</td>
                       <td className="num col-money products-search-table__money">{formatBRL(row.costAverage)}</td>
                       <td className="num products-search-table__stk">{formatStockQty(row.stockTotal)}</td>
+                      <td className="col-actions no-print">
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          title="Editar produto"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void openEditFromSearch(row.productId);
+                          }}
+                        >
+                          Editar
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -521,6 +567,9 @@ export function ProductsPage() {
       <div className="toolbar no-print">
         <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
           {list.data?.length ?? 0} produto(s)
+          {pagination.totalItems > pagination.pageSize
+            ? ` · ${pagination.totalItems} linha(s) na grade`
+            : ''}
         </span>
       </div>
 
@@ -566,7 +615,7 @@ export function ProductsPage() {
                 </td>
               </tr>
             )}
-            {rows.map(({ product, variant }) => (
+            {pagination.pageItems.map(({ product, variant }) => (
               <tr key={`${product.id}-${variant?.id ?? 'x'}`}>
                 <td className="num col-inv-ctrl">{formatStockQty(product.inventoryControlMin ?? '1')}</td>
                 <td>
@@ -604,6 +653,15 @@ export function ProductsPage() {
           </tbody>
         </table>
       </div>
+
+      <ListPagination
+        page={pagination.page}
+        totalPages={pagination.totalPages}
+        totalItems={pagination.totalItems}
+        pageSize={pagination.pageSize}
+        onPageChange={pagination.setPage}
+        itemLabel="linha(s)"
+      />
 
       {createOpen && (
         <FormModalBackdrop
@@ -725,7 +783,7 @@ export function ProductsPage() {
                 </div>
                 <div className="product-form__col">
                   <p className="product-form__section-title">Fiscal</p>
-                  <details className="submenu-details" open>
+                  <details className="submenu-details">
                     <summary className="submenu-summary">Dados fiscais</summary>
                     <div className="submenu-body">
                   <div className="field">
@@ -799,6 +857,10 @@ export function ProductsPage() {
                       </select>
                     </div>
                   </div>
+                    </div>
+                  </details>
+                  <div className="product-form__subsection" aria-label="Unidade tributável e conversão NF-e">
+                    <p className="product-form__section-title">Unidade tributável e conversão (NF-e)</p>
                   <div className="field">
                     <span className="field-label-text">Unidade tributável</span>
                     <FiscalCodeSearchCombo
@@ -823,8 +885,7 @@ export function ProductsPage() {
                       o estoque receberá 12 unidades por caixa informada.
                     </span>
                   </div>
-                </div>
-              </details>
+                  </div>
                 </div>
               </div>
 
@@ -922,7 +983,7 @@ export function ProductsPage() {
                 </div>
                 <div className="product-form__col">
                   <p className="product-form__section-title">Fiscal</p>
-                  <details className="submenu-details" open>
+                  <details className="submenu-details">
                     <summary className="submenu-summary">Dados fiscais</summary>
                     <div className="submenu-body">
                   <div className="field">
@@ -996,6 +1057,10 @@ export function ProductsPage() {
                       </select>
                     </div>
                   </div>
+                    </div>
+                  </details>
+                  <div className="product-form__subsection" aria-label="Unidade tributável e conversão NF-e">
+                    <p className="product-form__section-title">Unidade tributável e conversão (NF-e)</p>
                   <div className="field">
                     <span className="field-label-text">Unidade tributável</span>
                     <FiscalCodeSearchCombo
@@ -1020,8 +1085,7 @@ export function ProductsPage() {
                       quantidade no estoque quando a unidade da nota coincidir.
                     </span>
                   </div>
-                </div>
-              </details>
+                  </div>
                 </div>
               </div>
 

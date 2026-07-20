@@ -2,10 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
+import { ListPagination } from '../components/ListPagination';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { RecordSelectionFooter } from '../components/RecordSelectionFooter';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
+import { useListPagination } from '../hooks/useListPagination';
 
 type Supplier = {
   id: string;
@@ -42,6 +44,8 @@ export function SuppliersPage() {
     queryKey: ['suppliers'],
     queryFn: () => api<Supplier[]>('/suppliers'),
   });
+
+  const pagination = useListPagination(list.data ?? []);
 
   const selected = list.data?.find((s) => s.id === viewId) ?? null;
   const selectedRow = list.data?.find((s) => s.id === selectedId) ?? null;
@@ -217,7 +221,7 @@ export function SuppliersPage() {
                 </td>
               </tr>
             )}
-            {list.data?.map((s, idx) => (
+            {pagination.pageItems.map((s, idx) => (
               <tr
                 key={s.id}
                 className={selectedId === s.id ? 'tr-row-selected' : ''}
@@ -227,7 +231,7 @@ export function SuppliersPage() {
                   toggleSelect(s);
                 }}
               >
-                <td className="num">{idx + 1}</td>
+                <td className="num">{(pagination.page - 1) * pagination.pageSize + idx + 1}</td>
                 <td>
                   <strong>{s.legalName}</strong>
                 </td>
@@ -259,6 +263,14 @@ export function SuppliersPage() {
           </tbody>
         </table>
       </div>
+
+      <ListPagination
+        page={pagination.page}
+        totalPages={pagination.totalPages}
+        totalItems={pagination.totalItems}
+        pageSize={pagination.pageSize}
+        onPageChange={pagination.setPage}
+      />
 
       {selectedRow && (
         <RecordSelectionFooter

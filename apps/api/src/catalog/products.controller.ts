@@ -125,8 +125,12 @@ export class ProductsController {
   async list(@CurrentUser() user: JwtPayload) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     return db.product.findMany({
-      include: { variants: true, category: true, fiscalSituation: true },
-      orderBy: { name: 'asc' },
+      include: {
+        variants: { orderBy: { sku: 'asc' } },
+        category: true,
+        fiscalSituation: true,
+      },
+      orderBy: [{ inventoryControlMin: 'asc' }, { name: 'asc' }],
     });
   }
 
@@ -148,7 +152,11 @@ export class ProductsController {
         ],
       },
       take: 80,
-      orderBy: [{ product: { name: 'asc' } }, { sku: 'asc' }],
+      orderBy: [
+        { product: { inventoryControlMin: 'asc' } },
+        { product: { name: 'asc' } },
+        { sku: 'asc' },
+      ],
       include: {
         product: {
           select: { id: true, name: true, description: true, inventoryControlMin: true },

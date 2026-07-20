@@ -176,6 +176,23 @@ function resolveApiUrl(path: string): string {
   return `/api${path}`;
 }
 
+/** Verifica se a API responde (sem autenticação). Usado pelo monitor de conexão. */
+export async function pingHealth(timeoutMs = 8_000): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(resolveApiUrl('/health'), {
+      method: 'GET',
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    window.clearTimeout(timer);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 function unauthorizedUserMessage(reason?: string): string {
   const r = reason?.trim();
   if (
