@@ -10,6 +10,7 @@ import {
 
 type SystemUser = {
   id: string;
+  username: string;
   email: string;
   name: string;
   isActive: boolean;
@@ -21,6 +22,7 @@ type SystemUser = {
 
 type FormState = {
   name: string;
+  username: string;
   email: string;
   profile: UserProfile;
   password: string;
@@ -36,6 +38,7 @@ type UserModalTab = 'dados' | 'permissoes';
 
 const EMPTY_FORM: FormState = {
   name: '',
+  username: '',
   email: '',
   profile: 'cashier',
   password: '',
@@ -74,6 +77,7 @@ export function UsersPage() {
     return data.filter(
       (u) =>
         u.name.toLowerCase().includes(term) ||
+        u.username.toLowerCase().includes(term) ||
         u.email.toLowerCase().includes(term) ||
         profileLabel(u.profile).toLowerCase().includes(term),
     );
@@ -151,6 +155,7 @@ export function UsersPage() {
     setPermErr(null);
     setForm({
       name: u.name,
+      username: u.username,
       email: u.email,
       profile: u.profile,
       password: '',
@@ -168,6 +173,7 @@ export function UsersPage() {
         method: 'POST',
         json: {
           name: form.name,
+          username: form.username.trim().toLowerCase(),
           email: form.email,
           profile: form.profile,
           password: form.password,
@@ -189,6 +195,7 @@ export function UsersPage() {
         method: 'PATCH',
         json: {
           name: form.name,
+          username: form.username.trim().toLowerCase(),
           email: form.email,
           profile: form.profile,
         },
@@ -318,7 +325,8 @@ export function UsersPage() {
                   Cont.
                 </th>
                 <th>Nome</th>
-                <th>E-mail</th>
+                <th>Usuário</th>
+                <th>E-mail (interno)</th>
                 <th>Perfil</th>
                 <th>Status</th>
                 <th style={{ textAlign: 'right' }}>Ações</th>
@@ -327,7 +335,7 @@ export function UsersPage() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                  <td colSpan={7} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     Nenhum usuário encontrado.
                   </td>
                 </tr>
@@ -356,6 +364,7 @@ export function UsersPage() {
                         </span>
                       )}
                     </td>
+                    <td style={{ fontFamily: 'ui-monospace, monospace', fontSize: '0.88rem' }}>{u.username}</td>
                     <td>{u.email}</td>
                     <td>
                       <span
@@ -507,16 +516,36 @@ export function UsersPage() {
                 autoFocus
               />
             </div>
-            <div className="field">
-              <label htmlFor="user-email">E-mail (login)</label>
-              <input
-                id="user-email"
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                autoComplete="off"
-              />
+            <div className="form-row">
+              <div className="field">
+                <label htmlFor="user-username">Usuário (login)</label>
+                <input
+                  id="user-username"
+                  type="text"
+                  value={form.username}
+                  onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+                  autoComplete="off"
+                  spellCheck={false}
+                  minLength={3}
+                  maxLength={32}
+                  placeholder="ex.: admin, joao.silva"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="user-email">E-mail (interno)</label>
+                <input
+                  id="user-email"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  autoComplete="off"
+                />
+              </div>
             </div>
+            <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginTop: 0 }}>
+              O usuário é usado na tela de login (com a abreviatura da empresa e a senha). O e-mail fica só
+              no cadastro interno.
+            </p>
 
             <div className="field">
               <span className="label">Perfil de acesso</span>
@@ -676,7 +705,13 @@ export function UsersPage() {
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={!form.name.trim() || create.isPending || update.isPending}
+                  disabled={
+                    !form.name.trim() ||
+                    !form.username.trim() ||
+                    !form.email.trim() ||
+                    create.isPending ||
+                    update.isPending
+                  }
                   onClick={() => (editing ? update.mutate() : create.mutate())}
                 >
                   {editing ? 'Salvar alterações' : 'Cadastrar usuário'}

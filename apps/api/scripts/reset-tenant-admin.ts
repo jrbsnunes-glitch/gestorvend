@@ -26,6 +26,7 @@ import {
   resolveTenantPrismaSchemaPath,
 } from '../src/provisioning/tenant-database-name';
 import { seedTenantMinimal } from '../src/provisioning/tenant-minimal-seed';
+import { usernameFromEmail } from '../src/users/username.util';
 
 type TenantRow = Awaited<ReturnType<CentralClient['tenant']['findFirst']>>;
 
@@ -38,6 +39,7 @@ type TenantConfigFile = {
   databaseName: string;
   tenantDatabaseUrl: string;
   adminEmail: string;
+  adminUsername: string;
   adminPassword?: string;
   licenseStatus: string;
   provisioningStatus: string;
@@ -48,7 +50,7 @@ type TenantConfigFile = {
   };
   login: {
     tenantSlug: string;
-    adminEmail: string;
+    username: string;
     note: string;
   };
 };
@@ -97,6 +99,7 @@ function buildConfig(
   tenant: NonNullable<TenantRow>,
   tenantUrl: string,
   adminEmail: string,
+  adminUsername: string,
   adminPassword: string | undefined,
   schemaPath: string,
 ): TenantConfigFile {
@@ -111,6 +114,7 @@ function buildConfig(
     databaseName: tenant.databaseName,
     tenantDatabaseUrl: tenantUrl,
     adminEmail,
+    adminUsername,
     ...(adminPassword ? { adminPassword } : {}),
     licenseStatus: tenant.licenseStatus,
     provisioningStatus: tenant.provisioningStatus,
@@ -121,8 +125,8 @@ function buildConfig(
     },
     login: {
       tenantSlug: tenant.slug,
-      adminEmail,
-      note: 'Use o slug como tenant no login da aplica web.',
+      username: adminUsername,
+      note: 'Login: abreviatura (slug) + usuário + senha.',
     },
   };
 }
@@ -187,6 +191,7 @@ async function processTenant(
     tenant.provisionAdminEmail ||
     defaultAdminEmail(tenant.slug)
   ).toLowerCase();
+  const adminUsername = usernameFromEmail(adminEmail);
 
   let adminPassword: string | undefined;
 
@@ -197,6 +202,7 @@ async function processTenant(
     }
     await seedTenantMinimal(tenantUrl, {
       adminEmail,
+      adminUsername,
       adminPassword,
       adminDisplayName: 'Administrador',
     });
@@ -205,13 +211,20 @@ async function processTenant(
       data: { provisionAdminEmail: adminEmail },
     });
     // eslint-disable-next-line no-console
-    console.log(`Senha do admin redefinida: ${adminEmail}`);
+    console.log(`Senha do admin redefinida: usuário ${adminUsername} (${adminEmail})`);
   } else {
     // eslint-disable-next-line no-console
     console.log(`Exportação apenas (sem alterar senha): ${tenant.slug}`);
   }
 
-  const config = buildConfig(tenant, tenantUrl, adminEmail, adminPassword, schemaPath);
+  const config = buildConfig(
+    tenant,
+    tenantUrl,
+    adminEmail,
+    adminUsername,
+    adminPassword,
+    schemaPath,
+  );
   const outPath = resolveOutputPath(tenant.slug, opts.output);
   writeConfigFile(outPath, config);
   // eslint-disable-next-line no-console
@@ -245,7 +258,8 @@ async function main() {
       const entries = tenants.map((t) => {
         const tenantUrl = buildTenantDatabaseUrl(template, t.databaseName);
         const adminEmail = t.provisionAdminEmail || defaultAdminEmail(t.slug);
-        return buildConfig(t, tenantUrl, adminEmail, undefined, schemaPath);
+        const adminUsername = usernameFromEmail(adminEmail);
+        return buildConfig(t, tenantUrl, adminEmail, adminUsername, undefined, schemaPath);
       });
       mkdirSync(dirname(manifestPath), { recursive: true });
       writeFileSync(

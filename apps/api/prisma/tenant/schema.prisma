@@ -135,6 +135,8 @@ model Role {
 
 model User {
   id             String           @id @default(uuid())
+  /// Login na tela do app (slug + username + senha). Separado do e-mail interno.
+  username       String           @unique
   email          String           @unique
   passwordHash   String
   name           String

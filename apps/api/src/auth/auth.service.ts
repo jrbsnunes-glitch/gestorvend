@@ -22,9 +22,10 @@ export class AuthService {
   async login(dto: LoginDto) {
     await this.tenantService.assertLicenseActive(dto.tenantSlug);
 
+    const username = dto.username.trim().toLowerCase();
     const prisma = await this.tenantPrisma.getClient(dto.tenantSlug);
     const user = await prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase() },
+      where: { username },
       include: { roles: true },
     });
     if (!user || !user.isActive) {
@@ -65,7 +66,13 @@ export class AuthService {
     return {
       accessToken,
       refreshToken,
-      user: { id: user.id, email: user.email, name: user.name, roles },
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        name: user.name,
+        roles,
+      },
     };
   }
 

@@ -5,9 +5,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { UserPermissionCode } from '../generated/tenant-client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { PermissionGrantInput, UserPermissionsService } from './user-permissions.service';
+import { assertValidUsername } from './username.util';
 
 /**
  * Perfis expostos ao usuário final no UI.
@@ -24,6 +24,7 @@ const PROFILE_TO_ROLE: Record<UserProfile, string> = {
 
 export type UserSummary = {
   id: string;
+  username: string;
   email: string;
   name: string;
   isActive: boolean;
@@ -53,6 +54,7 @@ export class UsersService {
 
   private toSummary(user: {
     id: string;
+    username: string;
     email: string;
     name: string;
     isActive: boolean;
@@ -62,6 +64,7 @@ export class UsersService {
   }): UserSummary {
     return {
       id: user.id,
+      username: user.username,
       email: user.email,
       name: user.name,
       isActive: user.isActive,
@@ -75,6 +78,14 @@ export class UsersService {
   private validateProfile(value: unknown): UserProfile {
     if (value === 'manager' || value === 'cashier') return value;
     throw new BadRequestException('Perfil inválido. Use "manager" ou "cashier".');
+  }
+
+  private validateUsername(value: unknown): string {
+    try {
+      return assertValidUsername(value);
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
   }
 
   private validateEmail(value: unknown): string {
@@ -134,19 +145,25 @@ export class UsersService {
     tenantSlug: string,
     body: {
       name?: unknown;
+      username?: unknown;
       email?: unknown;
       password?: unknown;
       profile?: unknown;
     },
   ): Promise<UserSummary> {
     const name = this.validateName(body.name);
+    const username = this.validateUsername(body.username);
     const email = this.validateEmail(body.email);
     const password = this.validatePassword(body.password);
     const profile = this.validateProfile(body.profile);
 
     const db = await this.tenantPrisma.getClient(tenantSlug);
-    const existing = await db.user.findUnique({ where: { email } });
-    if (existing) {
+    const existingUser = await db.user.findUnique({ where: { username } });
+    if (existingUser) {
+      throw new BadRequestException('Já existe um usuário com este login.');
+    }
+    const existingEmail = await db.user.findUnique({ where: { email } });
+    if (existingEmail) {
       throw new BadRequestException('Já existe um usuário com este e-mail.');
     }
 
@@ -156,6 +173,7 @@ export class UsersService {
     const created = await db.user.create({
       data: {
         name,
+        username,
         email,
         passwordHash,
         roles: { connect: { id: role.id } },
@@ -171,6 +189,7 @@ export class UsersService {
     id: string,
     body: {
       name?: unknown;
+      username?: unknown;
       email?: unknown;
       profile?: unknown;
       password?: unknown;
@@ -186,6 +205,14 @@ export class UsersService {
 
     const data: Record<string, unknown> = {};
     if (body.name !== undefined) data.name = this.validateName(body.name);
+    if (body.username !== undefined) {
+      const username = this.validateUsername(body.username);
+      if (username !== target.username) {
+        const dup = await db.user.findUnique({ where: { username } });
+        if (dup) throw new BadRequestException('Já existe um usuário com este login.');
+        data.username = username;
+      }
+    }
     if (body.email !== undefined) {
       const email = this.validateEmail(body.email);
       if (email !== target.email) {
@@ -215,13 +242,10 @@ export class UsersService {
       const profile = this.validateProfile(body.profile);
       const currentProfile = this.toProfile(target.roles);
       if (profile !== currentProfile) {
-        // Se rebaixando manager → cashier, valida último gerente
         if (currentProfile === 'manager' && profile === 'cashier') {
           await this.ensureNotLastManager(db, target.id, target.roles);
         }
         const role = await this.resolveRole(db, profile);
-        // Substitui o conjunto de roles pelo único papel correspondente.
-        // (mantém simples e evita conflitos com roles legadas como `admin`)
         data.roles = { set: [{ id: role.id }] };
       }
     }
@@ -239,7 +263,6 @@ export class UsersService {
     actorUserId: string,
     id: string,
   ): Promise<UserSummary> {
-    // Política: soft-delete (desativação) para preservar histórico (vendas, caixas).
     const db = await this.tenantPrisma.getClient(tenantSlug);
     const target = await db.user.findUnique({
       where: { id },

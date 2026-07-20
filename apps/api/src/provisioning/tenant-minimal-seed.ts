@@ -1,10 +1,13 @@
 import * as bcrypt from 'bcrypt';
 import { Prisma, PrismaClient } from '../generated/tenant-client';
+import { assertValidUsername, usernameFromEmail } from '../users/username.util';
 
 export type TenantMinimalSeedOptions = {
   adminEmail: string;
   adminPassword: string;
   adminDisplayName?: string;
+  /** Login na tela (slug + username + senha). Se omitido, deriva do e-mail. */
+  adminUsername?: string;
 };
 
 /**
@@ -28,20 +31,44 @@ export async function seedTenantMinimal(
     const adminRole = await tenant.role.findUniqueOrThrow({ where: { name: 'admin' } });
     const hash = await bcrypt.hash(opts.adminPassword, 10);
     const email = opts.adminEmail.trim().toLowerCase();
-    await tenant.user.upsert({
-      where: { email },
-      create: {
-        email,
-        passwordHash: hash,
-        name: opts.adminDisplayName?.trim() || 'Administrador',
-        roles: { connect: { id: adminRole.id } },
-      },
-      update: {
-        passwordHash: hash,
-        name: opts.adminDisplayName?.trim() || 'Administrador',
-        roles: { set: [{ id: adminRole.id }] },
-      },
-    });
+    const username = opts.adminUsername?.trim()
+      ? assertValidUsername(opts.adminUsername)
+      : usernameFromEmail(email);
+
+    const existingByEmail = await tenant.user.findUnique({ where: { email } });
+    const existingByUsername = await tenant.user.findUnique({ where: { username } });
+
+    if (existingByEmail) {
+      await tenant.user.update({
+        where: { id: existingByEmail.id },
+        data: {
+          username,
+          passwordHash: hash,
+          name: opts.adminDisplayName?.trim() || 'Administrador',
+          roles: { set: [{ id: adminRole.id }] },
+        },
+      });
+    } else if (existingByUsername) {
+      await tenant.user.update({
+        where: { id: existingByUsername.id },
+        data: {
+          email,
+          passwordHash: hash,
+          name: opts.adminDisplayName?.trim() || 'Administrador',
+          roles: { set: [{ id: adminRole.id }] },
+        },
+      });
+    } else {
+      await tenant.user.create({
+        data: {
+          username,
+          email,
+          passwordHash: hash,
+          name: opts.adminDisplayName?.trim() || 'Administrador',
+          roles: { connect: { id: adminRole.id } },
+        },
+      });
+    }
 
     await tenant.stockLocation.upsert({
       where: { code: 'MATRIZ' },

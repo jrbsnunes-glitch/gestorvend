@@ -22,6 +22,7 @@ import { seedTenantMinimal } from './tenant-minimal-seed';
 export type TenantProvisionSeed = {
   adminEmail: string;
   adminPassword: string;
+  adminUsername?: string;
 };
 
 @Injectable()
@@ -125,6 +126,7 @@ export class TenantProvisioningService {
       await seedTenantMinimal(tenantUrl, {
         adminEmail: seed.adminEmail,
         adminPassword: seed.adminPassword,
+        adminUsername: seed.adminUsername,
       });
       await this.central.tenant.update({
         where: { id: tenantId },

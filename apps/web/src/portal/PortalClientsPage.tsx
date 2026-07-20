@@ -20,6 +20,7 @@ type Client = {
   provisioningError: string | null;
   provisioningUpdatedAt: string | null;
   provisionAdminEmail: string | null;
+  provisionAdminUsername?: string | null;
   monthlyFee: string | null;
   createdAt: string;
 };
@@ -437,10 +438,10 @@ export function PortalClientsPage() {
                       <strong>{c.companyName}</strong>
                       <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                         slug: {c.slug} · db: {c.databaseName}
-                        {c.provisionAdminEmail ? (
+                        {c.provisionAdminUsername || c.provisionAdminEmail ? (
                           <>
                             <br />
-                            login admin: <strong>{c.provisionAdminEmail}</strong>
+                            login admin: <strong>{c.provisionAdminUsername || c.provisionAdminEmail}</strong>
                             <span style={{ fontWeight: 400 }}> (senha padrão do seed: Admin123!)</span>
                           </>
                         ) : null}
@@ -709,7 +710,7 @@ export function PortalClientsPage() {
             </div>
             <div className="form-row">
               <div className="field" style={{ flex: 1 }}>
-                <label htmlFor="pc-admin-email">E-mail do primeiro admin (opcional)</label>
+                <label htmlFor="pc-admin-email">E-mail interno do admin (opcional)</label>
                 <input
                   id="pc-admin-email"
                   type="email"
@@ -717,6 +718,9 @@ export function PortalClientsPage() {
                   onChange={(e) => setForm({ ...form, firstAdminEmail: e.target.value })}
                   placeholder="vazio = admin.<slug>@gestorvend.local"
                 />
+                <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                  Login na tela usa o usuário derivado deste e-mail (parte antes do @), ex.: admin.
+                </p>
               </div>
               <div className="field" style={{ flex: 1 }}>
                 <label htmlFor="pc-admin-pass">Senha do admin (opcional)</label>

@@ -3,7 +3,7 @@ import { formatFetchNetworkError, formatLoginFailureMessage, setRefreshToken, se
 import './login.css';
 
 export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [tenantSlug, setTenantSlug] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +19,11 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, tenantSlug }),
+        body: JSON.stringify({
+          username: username.trim().toLowerCase(),
+          password,
+          tenantSlug: tenantSlug.trim(),
+        }),
       });
       const bodyText = await res.text();
       if (!res.ok) {
@@ -52,9 +56,8 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
           </div>
         </div>
         <p className="login-hint">
-          Entre com a abreviatura da empresa, e-mail e senha do seu usuário administrador ou operador —
-          são definidos quando o cliente é provisionado no portal de licenciamento ou pelo administrador
-          técnico.
+          Entre com a abreviatura da empresa, o usuário e a senha — definidos no provisionamento
+          do cliente ou pelo administrador do sistema.
         </p>
         <form onSubmit={submit}>
           <div className="field">
@@ -72,14 +75,17 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
             />
           </div>
           <div className="field">
-            <label htmlFor="email">E-mail</label>
+            <label htmlFor="username">Usuário</label>
             <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              id="username"
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               required
               autoComplete="username"
+              minLength={3}
+              maxLength={32}
+              spellCheck={false}
             />
           </div>
           <div className="field">

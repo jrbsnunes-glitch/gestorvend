@@ -25,6 +25,7 @@ import { seedTenantMinimal } from '../provisioning/tenant-minimal-seed';
 import { TenantProvisioningService } from '../provisioning/tenant-provisioning.service';
 import { CentralPrismaService } from '../prisma/central-prisma.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { usernameFromEmail } from '../users/username.util';
 import { PortalAuthGuard } from './portal-auth.guard';
 import { TenantService } from '../tenant/tenant.service';
 
@@ -97,6 +98,9 @@ export class PortalClientsController {
       provisioningError: t.provisioningError,
       provisioningUpdatedAt: t.provisioningUpdatedAt,
       provisionAdminEmail: t.provisionAdminEmail,
+      provisionAdminUsername: t.provisionAdminEmail
+        ? usernameFromEmail(t.provisionAdminEmail)
+        : null,
       monthlyFee: t.monthlyFee != null ? String(t.monthlyFee) : null,
       createdAt: t.createdAt,
     }));
@@ -110,6 +114,7 @@ export class PortalClientsController {
     body: {
       firstAdminEmail?: string;
       firstAdminPassword?: string;
+      firstAdminUsername?: string;
     } = {},
   ) {
     const cnpj = onlyDigits(cnpjParam);
@@ -127,9 +132,13 @@ export class PortalClientsController {
       `admin.${tenant.slug.replace(/-/g, '_')}@gestorvend.local`;
     const adminPassword =
       (body.firstAdminPassword && body.firstAdminPassword.trim()) || 'Admin123!';
+    const adminUsername =
+      (body.firstAdminUsername && body.firstAdminUsername.trim()) ||
+      usernameFromEmail(adminEmail);
     this.provisioning.scheduleProvision(tenant.id, {
       adminEmail: adminEmail.toLowerCase(),
       adminPassword,
+      adminUsername,
     });
     return this.central.tenant.findUniqueOrThrow({ where: { id: tenant.id } });
   }
@@ -145,6 +154,7 @@ export class PortalClientsController {
     body: {
       firstAdminEmail?: string;
       firstAdminPassword?: string;
+      firstAdminUsername?: string;
     } = {},
   ) {
     const cnpj = onlyDigits(cnpjParam);
@@ -176,14 +186,21 @@ export class PortalClientsController {
     ).toLowerCase();
     const adminPassword =
       (body.firstAdminPassword && body.firstAdminPassword.trim()) || 'Admin123!';
+    const adminUsername =
+      (body.firstAdminUsername && body.firstAdminUsername.trim()) ||
+      usernameFromEmail(adminEmail);
 
-    await seedTenantMinimal(tenantUrl, { adminEmail, adminPassword });
+    await seedTenantMinimal(tenantUrl, { adminEmail, adminPassword, adminUsername });
     await this.central.tenant.update({
       where: { id: tenant.id },
       data: { provisionAdminEmail: adminEmail },
     });
     this.tenantPrisma.invalidateClient(tenant.slug);
-    return { ok: true as const, provisionAdminEmail: adminEmail };
+    return {
+      ok: true as const,
+      provisionAdminEmail: adminEmail,
+      provisionAdminUsername: adminUsername,
+    };
   }
 
   /** Cria um novo cliente + licença inicial e enfileira provisionamento do banco (assíncrono). */
@@ -199,8 +216,10 @@ export class PortalClientsController {
       licenseStatus?: LicenseStatus;
       licenseValidFrom?: string | null;
       licenseExpiresAt?: string | null;
-      /** E-mail do primeiro admin do tenant (padrão: admin.<slug>@gestorvend.local). */
+      /** E-mail interno do primeiro admin (padrão: admin.<slug>@gestorvend.local). */
       firstAdminEmail?: string;
+      /** Login na tela (slug + username + senha). Se omitido, deriva do e-mail. */
+      firstAdminUsername?: string;
       /** Senha do primeiro admin (padrão interna Admin123!). */
       firstAdminPassword?: string;
       monthlyFee?: number | string | null;
@@ -255,6 +274,9 @@ export class PortalClientsController {
       `admin.${uniqueSlug.replace(/-/g, '_')}@gestorvend.local`;
     const adminPassword =
       (body.firstAdminPassword && body.firstAdminPassword.trim()) || 'Admin123!';
+    const adminUsername =
+      (body.firstAdminUsername && body.firstAdminUsername.trim()) ||
+      usernameFromEmail(adminEmail);
 
     const created = await this.central.tenant.create({
       data: {
@@ -274,6 +296,7 @@ export class PortalClientsController {
     this.provisioning.scheduleProvision(created.id, {
       adminEmail: adminEmail.toLowerCase(),
       adminPassword,
+      adminUsername,
     });
     return created;
   }
