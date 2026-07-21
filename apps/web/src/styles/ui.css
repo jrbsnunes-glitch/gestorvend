@@ -185,53 +185,101 @@
   padding-right: 0.65rem;
 }
 
+.products-list-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
 .products-list-table th.col-inv-ctrl,
 .products-list-table td.col-inv-ctrl {
   box-sizing: border-box;
-  width: 6.25rem;
-  min-width: 5rem;
+  width: 3.5rem;
+  min-width: 3.5rem;
+  max-width: 3.5rem;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+}
+
+.products-list-table th.col-product-name,
+.products-list-table td.col-product-name {
+  width: auto;
+  min-width: 12rem;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.35;
+  vertical-align: middle;
 }
 
 .products-list-table th.col-min-sku-table,
 .products-list-table td.col-min-sku-table {
   box-sizing: border-box;
-  width: 5.75rem;
-  min-width: 4.75rem;
+  width: 3.75rem;
+  min-width: 3.75rem;
+  max-width: 3.75rem;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
 }
 
 .products-list-table th.col-ncm-ce,
 .products-list-table td.col-ncm-ce {
-  width: 6.75rem;
-  max-width: 8.5rem;
+  width: 5.5rem;
+  max-width: 5.5rem;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.82rem;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
 }
 
 .products-list-table th.col-money,
 .products-list-table td.col-money {
-  width: 7rem;
+  width: 5.75rem;
+  min-width: 5.75rem;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
 }
 
 .products-list-table th.col-sku,
 .products-list-table td.col-sku {
-  max-width: 12rem;
+  width: 7.5rem;
+  max-width: 7.5rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.82rem;
 }
 
 .products-list-table th.col-category,
 .products-list-table td.col-category {
-  width: 7.25rem;
-  max-width: 9rem;
+  width: 5.5rem;
+  max-width: 5.5rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.85rem;
 }
 
 .products-list-table th.col-status,
 .products-list-table td.col-status {
-  width: 5.5rem;
+  width: 4.25rem;
+  min-width: 4.25rem;
   white-space: nowrap;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+}
+
+.products-list-table th.col-status .badge,
+.products-list-table td.col-status .badge {
+  font-size: 0.72rem;
+  padding: 0.12rem 0.4rem;
+}
+
+.products-list-table th.col-actions,
+.products-list-table td.col-actions {
+  width: 11.5rem;
+  min-width: 11.5rem;
+  max-width: 11.5rem;
 }
 
 .products-list-table tbody td:not(.col-actions):not(.empty) {

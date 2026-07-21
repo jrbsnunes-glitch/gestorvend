@@ -232,7 +232,7 @@ export function ProductsPage() {
     });
   }, [list.data]);
 
-  const pagination = useListPagination(rows);
+  const pagination = useListPagination(rows, 20);
 
   function resetCreateForm() {
     setName('');
@@ -595,7 +595,7 @@ export function ProductsPage() {
               >
                 Código
               </th>
-              <th>Produto</th>
+              <th className="col-product-name">Produto</th>
               <th className="col-category">Categoria</th>
               <th className="col-sku" title="Código SKU">
                 SKU
@@ -628,7 +628,7 @@ export function ProductsPage() {
             {pagination.pageItems.map(({ product, variant }) => (
               <tr key={`${product.id}-${variant?.id ?? 'x'}`}>
                 <td className="num col-inv-ctrl">{formatProductCode(product.controlNumber)}</td>
-                <td>
+                <td className="col-product-name">
                   <strong>{product.name}</strong>
                 </td>
                 <td className="col-category">{product.category?.name ?? '—'}</td>
