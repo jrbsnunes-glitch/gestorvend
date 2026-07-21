@@ -6,6 +6,7 @@ import '../../components/crud-toolbar.css';
 const links = [
   { to: '/estoque/painel', label: 'Painel', end: true },
   { to: '/estoque/entrada', label: 'Entrada de produtos' },
+  { to: '/estoque/nfe-entrada', label: 'Caixa NF-e' },
   { to: '/estoque/saidas', label: 'Saídas' },
   { to: '/estoque/locais', label: 'Locais' },
   { to: '/estoque/transferencias', label: 'Transferências' },
@@ -18,6 +19,7 @@ const PRINT_TITLE_BY_PATH: Partial<Record<string, string>> = {
   '/estoque': 'Estoque',
   '/estoque/painel': 'Painel de estoque',
   '/estoque/entrada': 'Entrada de produtos',
+  '/estoque/nfe-entrada': 'Caixa de entrada NF-e',
   '/estoque/saidas': 'Saídas de estoque',
   '/estoque/locais': 'Locais de estoque',
   '/estoque/transferencias': 'Transferências',

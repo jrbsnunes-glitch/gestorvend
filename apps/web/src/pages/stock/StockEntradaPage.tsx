@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { CrudToolbar } from '../../components/CrudToolbar';
 import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
@@ -99,6 +100,8 @@ type InboundFetchResponse = {
   supplierId: string | null;
   supplierName: string | null;
   warnings: string[];
+  manifested?: boolean;
+  unmatchedCount?: number;
 };
 
 type DuplicateReceiptInfo = {
@@ -113,6 +116,8 @@ function modeLabel(mode: string): string {
 
 export function StockEntradaPage() {
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const chaveFromUrlHandled = useRef(false);
   const [includeOpen, setIncludeOpen] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
   const [viewing, setViewing] = useState<GoodsReceiptRow | null>(null);
@@ -186,7 +191,12 @@ export function StockEntradaPage() {
     return map;
   }, [products.data]);
 
-  const hasUnresolvedLines = lines.some((l) => l.pendingResolution && !l.variantId);
+  const hasUnresolvedLines = lines.some((l) => l.fromNfe && !l.variantId);
+  const unresolvedCount = lines.filter((l) => l.fromNfe && !l.variantId).length;
+  const allNfeLinesMatched =
+    mode !== 'WITH_NFE_KEY' ||
+    lines.filter((l) => l.fromNfe).length === 0 ||
+    !hasUnresolvedLines;
 
   const recentReceipts = useMemo(() => (receipts.data ?? []).slice(0, 50), [receipts.data]);
 
@@ -236,7 +246,7 @@ export function StockEntradaPage() {
         ? p.items.map((item) => {
             const match = matchByLine.get(item.lineNumber);
             const supplierCode = match?.supplierProductCode ?? item.supplierCode ?? '';
-            const unresolved = !match?.variantId && !!supplierCode;
+            const unresolved = !match?.variantId;
             return {
               lineNumber: item.lineNumber,
               variantId: match?.variantId ?? '',
@@ -258,17 +268,23 @@ export function StockEntradaPage() {
   }
 
   const fetchNfe = useMutation({
-    mutationFn: () =>
+    mutationFn: (accessKeyOverride?: string) =>
       api<InboundFetchResponse>('/fiscal/inbound/fetch-by-key', {
         method: 'POST',
-        json: { accessKey: nfeKey.replace(/\D/g, '') },
+        json: { accessKey: (accessKeyOverride ?? nfeKey).replace(/\D/g, '') },
       }),
     onSuccess: (data) => {
       setDuplicateInfo(null);
       setErr(null);
       applyInboundPreview(data);
       setNfeWarnings(data.warnings);
-      setNfeFetchMsg(data.cached ? 'NF-e carregada do cache local.' : 'NF-e baixada da SEFAZ.');
+      setNfeFetchMsg(
+        data.cached
+          ? 'NF-e carregada do cache local.'
+          : data.manifested
+            ? 'NF-e baixada da SEFAZ (Ciência da Operação registrada automaticamente para liberar o XML).'
+            : 'NF-e baixada da SEFAZ.',
+      );
     },
     onError: (e: Error) => {
       if (e instanceof ApiHttpError && e.status === 409 && e.payload && typeof e.payload === 'object') {
@@ -290,6 +306,19 @@ export function StockEntradaPage() {
       setErr(e.message);
     },
   });
+
+  // Abre o formulário e busca a NF-e quando chega ?chave= da Caixa de entrada.
+  useEffect(() => {
+    const chave = (searchParams.get('chave') ?? '').replace(/\D/g, '');
+    if (chave.length !== 44 || chaveFromUrlHandled.current) return;
+    chaveFromUrlHandled.current = true;
+    setMode('WITH_NFE_KEY');
+    setNfeKey(chave);
+    setIncludeOpen(true);
+    setSearchParams({}, { replace: true });
+    fetchNfe.mutate(chave);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const submit = useMutation({
     mutationFn: () =>
@@ -717,7 +746,7 @@ export function StockEntradaPage() {
                               type="button"
                               className="btn btn-secondary"
                               disabled={nfeKey.replace(/\D/g, '').length !== 44 || fetchNfe.isPending}
-                              onClick={() => fetchNfe.mutate()}
+                              onClick={() => fetchNfe.mutate(undefined)}
                             >
                               {fetchNfe.isPending ? 'Buscando…' : 'Buscar NF-e'}
                             </button>
@@ -1122,19 +1151,43 @@ export function StockEntradaPage() {
               >
                 Cancelar
               </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={
-                  !locationId ||
-                  !lines.some((x) => x.variantId) ||
-                  hasUnresolvedLines ||
-                  submit.isPending
-                }
-                onClick={() => submit.mutate()}
-              >
-                Confirmar recebimento / lançar estoque
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem' }}>
+                {hasUnresolvedLines && (
+                  <span style={{ fontSize: '0.78rem', color: '#b91c1c', maxWidth: '22rem', textAlign: 'right' }}>
+                    Resolva {unresolvedCount} item(ns) sem produto vinculado antes de lançar.
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={
+                    !locationId ||
+                    !lines.some((x) => x.variantId) ||
+                    !allNfeLinesMatched ||
+                    submit.isPending
+                  }
+                  title={
+                    hasUnresolvedLines
+                      ? 'Há itens da NF-e sem correspondência no cadastro'
+                      : allNfeLinesMatched
+                        ? 'Lançar estoque'
+                        : undefined
+                  }
+                  onClick={() => {
+                    if (hasUnresolvedLines) {
+                      setErr(
+                        `Há ${unresolvedCount} item(ns) da NF-e sem produto vinculado. Busque ou cadastre o produto em cada linha pendente.`,
+                      );
+                      return;
+                    }
+                    submit.mutate();
+                  }}
+                >
+                  {allNfeLinesMatched && mode === 'WITH_NFE_KEY' && lines.some((l) => l.fromNfe)
+                    ? 'Confirmar e lançar estoque'
+                    : 'Confirmar recebimento / lançar estoque'}
+                </button>
+              </div>
             </div>
           </div>
         </FormModalBackdrop>

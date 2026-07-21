@@ -40,6 +40,7 @@ import { StockLocaisPage } from './pages/stock/StockLocaisPage';
 import { StockMovimentosPage } from './pages/stock/StockMovimentosPage';
 import { StockMovPrintPage } from './pages/stock/StockMovPrintPage';
 import { PortalAdminApp } from './portal/PortalAdminApp';
+import { StockNfeInboxPage } from './pages/stock/StockNfeInboxPage';
 import { StockPainelPage } from './pages/stock/StockPainelPage';
 import { StockSaidasPage } from './pages/stock/StockSaidasPage';
 import { StockShell } from './pages/stock/StockShell';
@@ -174,6 +175,7 @@ function AppInner() {
             <Route index element={<Navigate to="painel" replace />} />
             <Route path="painel" element={<StockPainelPage />} />
             <Route path="entrada" element={<StockEntradaPage />} />
+            <Route path="nfe-entrada" element={<StockNfeInboxPage />} />
             <Route path="saidas" element={<StockSaidasPage />} />
             <Route path="locais" element={<StockLocaisPage />} />
             <Route path="transferencias" element={<StockTransferenciasPage />} />

@@ -71,6 +71,8 @@ model FiscalIssuerSettings {
   nfceCscId        String?                @db.VarChar(64)
   /// Token/segredo CSC NFC-e; se vazio, usar `FISCAL_NFCE_CSC`. Não expor em GET da API.
   nfceCsc          String?                @db.VarChar(512)
+  /// Último NSU consumido na Distribuição DF-e (polling de NF-e de entrada).
+  inboundUltNsu    String?                @db.VarChar(20)
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 }
@@ -458,18 +460,47 @@ model GoodsReceipt {
   inboundNfeDocument InboundNfeDocument?
 }
 
+/// Status do documento NF-e de entrada na fila / cache.
+enum InboundNfeStatus {
+  /// Apenas resumo (resNFe) — XML completo ainda não liberado.
+  RESUMO
+  /// XML completo (nfeProc) disponível.
+  COMPLETO
+  /// Aguardando revisão humana antes do lançamento.
+  PENDENTE_REVISAO
+  /// Já lançado em GoodsReceipt.
+  IMPORTADO
+}
+
 /// XML de NF-e de entrada baixado da SEFAZ (Distribuição DF-e).
 model InboundNfeDocument {
-  id             String        @id @default(uuid())
-  accessKey      String        @unique @db.VarChar(44)
-  xmlPath        String        @db.VarChar(512)
-  xmlSha256      String        @db.VarChar(64)
-  nsu            String?       @db.VarChar(20)
-  sefazCStat     String?       @db.VarChar(3)
-  sefazMotivo    String?       @db.VarChar(512)
-  fetchedAt      DateTime      @default(now())
-  goodsReceiptId String?       @unique
-  goodsReceipt   GoodsReceipt? @relation(fields: [goodsReceiptId], references: [id], onDelete: SetNull)
+  id                    String           @id @default(uuid())
+  accessKey             String           @unique @db.VarChar(44)
+  xmlPath               String           @db.VarChar(512)
+  xmlSha256             String           @db.VarChar(64)
+  nsu                   String?          @db.VarChar(20)
+  sefazCStat            String?          @db.VarChar(3)
+  sefazMotivo           String?          @db.VarChar(512)
+  status                InboundNfeStatus @default(COMPLETO)
+  /// tpEvento da manifestação registrada (ex.: 210210 = Ciência da Operação).
+  manifestacaoEvento    String?          @db.VarChar(10)
+  /// Protocolo retornado pela SEFAZ na recepção do evento.
+  manifestacaoProtocolo String?          @db.VarChar(60)
+  emitterCnpj           String?          @db.VarChar(14)
+  emitterName           String?          @db.VarChar(200)
+  documentNumber        String?          @db.VarChar(20)
+  issueDate             DateTime?
+  totalValue            Decimal?         @db.Decimal(14, 2)
+  /// Quantidade de itens do XML (quando completo).
+  itemCount             Int?
+  /// Quantidade de itens sem match automático.
+  unmatchedCount        Int?
+  fetchedAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  goodsReceiptId        String?          @unique
+  goodsReceipt          GoodsReceipt?    @relation(fields: [goodsReceiptId], references: [id], onDelete: SetNull)
+
+  @@index([status, fetchedAt])
 }
 
 model GoodsReceiptItem {

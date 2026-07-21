@@ -1,7 +1,5 @@
 import {
-  BadRequestException,
   Body,
-  ConflictException,
   Controller,
   Get,
   Param,
@@ -11,48 +9,18 @@ import {
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
-import {
-  BillStatus,
-  GoodsReceiptMode,
-  GoodsReceiptStatus,
-  Prisma,
-  StockMovementSource,
-  StockMovementType,
-} from '../generated/tenant-client';
+import { GoodsReceiptMode, Prisma } from '../generated/tenant-client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
-import { validateNfeAccessKey } from '../fiscal/utils/nfe-access-key';
-import { resolveStockFromInvoice } from '../common/product-conversion.util';
-
-type ReceiptItemDto = {
-  variantId: string;
-  quantity: number;
-  unitCost: number;
-  ncm?: string | null;
-  cfop?: string | null;
-  description?: string | null;
-  supplierProductCode?: string | null;
-  invoiceUnit?: string | null;
-  /** Quantidade bruta da NF-e (antes da conversão). Se omitida, usa `quantity`. */
-  invoiceQuantity?: number | null;
-};
-
-/**
- * Quando marcado, geramos N parcelas em A pagar vinculadas à entrada.
- * - `installments` (1..N) - número de parcelas iguais
- * - `intervalDays` (default 30) - dias entre parcelas
- * - `firstDueDate` opcional - se omitido, usamos `hoje + intervalDays`
- */
-type PayableOptionsDto = {
-  enabled: boolean;
-  installments?: number;
-  intervalDays?: number;
-  firstDueDate?: string | null;
-};
+import {
+  GoodsReceiptService,
+  type PayableOptionsDto,
+  type ReceiptItemDto,
+} from './goods-receipt.service';
 
 type PrismaKnown = { code: string };
 
@@ -76,7 +44,10 @@ function mapTenantDbError(e: unknown): never {
 @Controller('goods-receipts')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class GoodsReceiptController {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    private readonly goodsReceipts: GoodsReceiptService,
+  ) {}
 
   @Get()
   @Roles('admin', 'manager', 'seller', 'finance')
@@ -89,7 +60,6 @@ export class GoodsReceiptController {
       }
       return await db.goodsReceipt.findMany({
         where,
-        // Ordenação cronológica: entradas mais antigas no topo.
         orderBy: { createdAt: 'asc' },
         take: 200,
         include: {
@@ -119,7 +89,6 @@ export class GoodsReceiptController {
     }
   }
 
-  /// Espelho de lançamento de NF-e / entrada de mercadorias (com ou sem chave).
   @Post()
   @Roles('admin', 'manager')
   async post(
@@ -137,254 +106,15 @@ export class GoodsReceiptController {
       totalValue?: number | null;
       notes?: string | null;
       items: ReceiptItemDto[];
-      /** Quando enviado com `enabled: true`, gera contas a pagar vinculadas. */
       payable?: PayableOptionsDto | null;
     },
   ) {
-    if (!body.items?.length) {
-      throw new BadRequestException('Informe ao menos um item');
-    }
-    if (body.mode === GoodsReceiptMode.WITH_NFE_KEY) {
-      const validated = validateNfeAccessKey(body.nfeAccessKey ?? '');
-      if (!validated.ok) {
-        throw new BadRequestException(validated.reason);
-      }
-      body.nfeAccessKey = validated.key;
-    } else {
-      body.nfeAccessKey = null;
-    }
-
-    const db = await this.tenantPrisma.getClient(user.tenantSlug);
-
-    if (body.nfeAccessKey) {
-      const existing = await db.goodsReceipt.findFirst({
-        where: { nfeAccessKey: body.nfeAccessKey },
-        select: { id: true, controlNumber: true, documentNumber: true, createdAt: true },
-      });
-      if (existing) {
-        throw new ConflictException({
-          message: `Esta NF-e já foi importada na entrada #${existing.controlNumber}.`,
-          duplicate: {
-            accessKey: body.nfeAccessKey,
-            goodsReceiptId: existing.id,
-            controlNumber: existing.controlNumber,
-            documentNumber: existing.documentNumber,
-            createdAt: existing.createdAt.toISOString(),
-          },
-        });
-      }
-    }
-
-    return db.$transaction(async (tx) => {
-      const receipt = await tx.goodsReceipt.create({
-        data: {
-          mode: body.mode,
-          nfeAccessKey: body.nfeAccessKey,
-          supplierId: body.supplierId ?? null,
-          documentNumber: body.documentNumber ?? null,
-          series: body.series ?? null,
-          issueDate: body.issueDate ? new Date(body.issueDate) : null,
-          natureOperation: body.natureOperation ?? null,
-          totalValue: body.totalValue != null ? String(body.totalValue) : null,
-          notes: body.notes ?? null,
-          status: GoodsReceiptStatus.POSTED,
-          postedAt: new Date(),
-          userId: user.sub,
-          items: {
-            create: await Promise.all(
-              body.items.map(async (it) => {
-                const variant = await tx.productVariant.findUniqueOrThrow({
-                  where: { id: it.variantId },
-                  include: { product: { select: { conversion: true } } },
-                });
-                const rawQty = it.invoiceQuantity != null ? Number(it.invoiceQuantity) : Number(it.quantity);
-                const rawCost = Number(it.unitCost);
-                const resolved = resolveStockFromInvoice(
-                  rawQty,
-                  it.invoiceUnit,
-                  rawCost,
-                  variant.product.conversion,
-                );
-                return {
-                  variantId: it.variantId,
-                  quantity: String(resolved.quantity),
-                  unitCost: String(resolved.unitCost),
-                  ncm: it.ncm ?? null,
-                  cfop: it.cfop ?? null,
-                  description: it.description ?? null,
-                  supplierProductCode: it.supplierProductCode?.trim() || null,
-                  invoiceUnit: it.invoiceUnit?.trim().toUpperCase() || null,
-                };
-              }),
-            ),
-          },
-        },
-        include: { items: true },
-      });
-
-      for (const it of body.items) {
-        const variant = await tx.productVariant.findUniqueOrThrow({
-          where: { id: it.variantId },
-          include: { product: { select: { conversion: true } } },
-        });
-        const rawQty = it.invoiceQuantity != null ? Number(it.invoiceQuantity) : Number(it.quantity);
-        const rawCost = Number(it.unitCost);
-        const resolved = resolveStockFromInvoice(
-          rawQty,
-          it.invoiceUnit,
-          rawCost,
-          variant.product.conversion,
-        );
-        const qtyNum = resolved.quantity;
-        const unitCost = resolved.unitCost;
-        const bal = await tx.stockBalance.findUnique({
-          where: {
-            variantId_locationId: { variantId: it.variantId, locationId: body.locationId },
-          },
-        });
-        const current = bal ? Number(bal.quantity) : 0;
-        const next = current + qtyNum;
-        await tx.stockBalance.upsert({
-          where: {
-            variantId_locationId: { variantId: it.variantId, locationId: body.locationId },
-          },
-          create: {
-            variantId: it.variantId,
-            locationId: body.locationId,
-            quantity: String(next),
-          },
-          update: { quantity: String(next) },
-        });
-
-        await tx.stockMovement.create({
-          data: {
-            type: StockMovementType.IN,
-            source: StockMovementSource.GOODS_RECEIPT,
-            variantId: it.variantId,
-            locationId: body.locationId,
-            quantity: String(Math.abs(qtyNum)),
-            unitCost: String(unitCost),
-            reference: `Entrada NF ${body.documentNumber ?? receipt.id.slice(0, 8)}`,
-            userId: user.sub,
-            goodsReceiptId: receipt.id,
-          },
-        });
-
-        const variantRow = await tx.productVariant.findUniqueOrThrow({ where: { id: it.variantId } });
-        const oldCost = Number(variantRow.costAverage);
-        const denom = next;
-        const newAverage =
-          denom > 0 ? (oldCost * Math.max(current, 0) + unitCost * qtyNum) / denom : unitCost;
-        const oldCostDec = new Prisma.Decimal(variantRow.costAverage);
-        const newAvgDec = new Prisma.Decimal(String(newAverage));
-        if (!oldCostDec.equals(newAvgDec)) {
-          await tx.productVariantPriceHistory.create({
-            data: {
-              variantId: it.variantId,
-              field: 'COST',
-              previousValue: oldCostDec,
-              newValue: newAvgDec,
-              source: 'GOODS_RECEIPT',
-              goodsReceiptId: receipt.id,
-            },
-          });
-        }
-        await tx.productVariant.update({
-          where: { id: it.variantId },
-          data: { costAverage: String(newAverage) },
-        });
-
-        const linkCode = it.supplierProductCode?.trim();
-        if (body.supplierId && linkCode) {
-          await tx.supplierProductLink.upsert({
-            where: {
-              supplierId_supplierProductCode: {
-                supplierId: body.supplierId,
-                supplierProductCode: linkCode,
-              },
-            },
-            create: {
-              supplierId: body.supplierId,
-              variantId: it.variantId,
-              supplierProductCode: linkCode,
-            },
-            update: { variantId: it.variantId },
-          });
-        }
-      }
-
-      // Geração opcional de contas a pagar a partir da entrada.
-      if (body.payable?.enabled) {
-        const installments = Math.max(1, Math.min(60, Number(body.payable.installments ?? 1) | 0));
-        const intervalDays = Math.max(1, Math.min(180, Number(body.payable.intervalDays ?? 30) | 0));
-        const firstDue = body.payable.firstDueDate
-          ? new Date(body.payable.firstDueDate)
-          : new Date(Date.now() + intervalDays * 24 * 60 * 60 * 1000);
-
-        // Soma valores dos itens (preço unitário * quantidade) como fallback se totalValue não vier.
-        const total = body.totalValue != null
-          ? Number(body.totalValue)
-          : body.items.reduce((sum, it) => sum + Number(it.quantity) * Number(it.unitCost), 0);
-
-        const installmentAmount = total / installments;
-        const supplierName = body.supplierId
-          ? (await tx.supplier.findUnique({ where: { id: body.supplierId } }))?.legalName ?? ''
-          : '';
-        const docLabel = body.documentNumber
-          ? `NF ${body.documentNumber}`
-          : `Entrada #${receipt.controlNumber}`;
-
-        let parentId: string | null = null;
-        for (let i = 0; i < installments; i++) {
-          const due = new Date(firstDue.getTime());
-          due.setDate(due.getDate() + intervalDays * i);
-          const description =
-            installments > 1
-              ? `${docLabel} (${i + 1}/${installments})${supplierName ? ' - ' + supplierName : ''}`
-              : `${docLabel}${supplierName ? ' - ' + supplierName : ''}`;
-          const instStr = installmentAmount.toFixed(2);
-          const created: { id: string } = await tx.accountPayable.create({
-            data: {
-              supplierId: body.supplierId ?? null,
-              description,
-              amount: instStr,
-              amountRemaining: instStr,
-              dueDate: due,
-              status: BillStatus.OPEN,
-              goodsReceiptId: receipt.id,
-              recurrenceIndex: installments > 1 ? i + 1 : null,
-              recurrenceCount: installments > 1 ? installments : null,
-              parentRecurringId: parentId,
-            },
-          });
-          if (i === 0) parentId = created.id;
-        }
-      }
-
-      return tx.goodsReceipt.findUniqueOrThrow({
-        where: { id: receipt.id },
-        include: {
-          supplier: true,
-          items: { include: { variant: { include: { product: true } } } },
-          payables: true,
-        },
-      });
-    }).then(async (result) => {
-      if (body.nfeAccessKey) {
-        await db.inboundNfeDocument.updateMany({
-          where: { accessKey: body.nfeAccessKey, goodsReceiptId: null },
-          data: { goodsReceiptId: result.id },
-        });
-      }
-      return result;
+    return this.goodsReceipts.create(user.tenantSlug, {
+      ...body,
+      userId: user.sub,
     });
   }
 
-  /**
-   * Edição parcial — apenas campos de cabeçalho (notas, fornecedor, documento,
-   * série, data de emissão, natureza). Os itens já lançados não são editáveis
-   * para preservar custo médio e estoque.
-   */
   @Patch(':id')
   @Roles('admin', 'manager')
   async update(
