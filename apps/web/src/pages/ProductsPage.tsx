@@ -18,9 +18,12 @@ import {
   type SupplierLinkDraft,
 } from '../components/ProductSupplierLinksSection';
 import { ProductReportsPanel } from '../components/ProductReportsPanel';
+import { RecordViewModal, type RecordViewSection } from '../components/RecordViewModal';
+import { ProductSearchModal, type ProductSearchRow as SearchPickRow } from '../components/ProductSearchModal';
 import { api } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
 import { useListPagination } from '../hooks/useListPagination';
+import { parseProductConversion, normalizeProductConversion } from '../lib/product-conversion';
 
 /** Unidade tributária padrão em produtos novos (código em TaxUnitCode). */
 const DEFAULT_PRODUCT_TAX_UNIT = 'UN';
@@ -68,6 +71,13 @@ type Product = {
   fiscalOrigin: string | null;
   taxUnit: string | null;
   conversion: string | null;
+  stockComponentVariantId?: string | null;
+  stockComponentVariant?: {
+    id: string;
+    sku: string;
+    barcode: string | null;
+    product: { id: string; name: string; controlNumber: number };
+  } | null;
   isActive: boolean;
   category?: { id: string; name: string } | null;
   fiscalSituationId?: string | null;
@@ -152,6 +162,9 @@ export function ProductsPage() {
   const [fiscalOrigin, setFiscalOrigin] = useState('');
   const [taxUnit, setTaxUnit] = useState(DEFAULT_PRODUCT_TAX_UNIT);
   const [conversion, setConversion] = useState('');
+  const [stockComponentVariantId, setStockComponentVariantId] = useState<string | null>(null);
+  const [stockComponentLabel, setStockComponentLabel] = useState('');
+  const [componentSearchOpen, setComponentSearchOpen] = useState(false);
   const [fiscalSituationId, setFiscalSituationId] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [sku, setSku] = useState('');
@@ -295,6 +308,8 @@ export function ProductsPage() {
     setFiscalOrigin('');
     setTaxUnit(DEFAULT_PRODUCT_TAX_UNIT);
     setConversion('');
+    setStockComponentVariantId(null);
+    setStockComponentLabel('');
     setFiscalSituationId('');
     setSku('');
     setRetailPrice('0');
@@ -317,6 +332,12 @@ export function ProductsPage() {
     setFiscalOrigin(p.fiscalOrigin ?? '');
     setTaxUnit(p.taxUnit?.trim() || DEFAULT_PRODUCT_TAX_UNIT);
     setConversion(p.conversion ?? '');
+    setStockComponentVariantId(p.stockComponentVariantId ?? p.stockComponentVariant?.id ?? null);
+    setStockComponentLabel(
+      p.stockComponentVariant
+        ? `${p.stockComponentVariant.product.name} · ${p.stockComponentVariant.sku}`
+        : '',
+    );
     setFiscalSituationId(p.fiscalSituation?.id ?? p.fiscalSituationId ?? '');
     setIsActive(p.isActive);
     const vp: Record<string, { retail: string; cost: string; minStock: string }> = {};
@@ -345,7 +366,10 @@ export function ProductsPage() {
           exTipi: exTipi.trim() || null,
           fiscalOrigin: fiscalOrigin || null,
           taxUnit: taxUnit.trim() || DEFAULT_PRODUCT_TAX_UNIT,
-          conversion: conversion.trim() || null,
+          conversion: normalizeProductConversion(conversion.trim()) || null,
+          stockComponentVariantId: normalizeProductConversion(conversion.trim())
+            ? stockComponentVariantId
+            : null,
           categoryId: categoryId || null,
           fiscalSituationId: fiscalSituationId || null,
           variants: [
@@ -382,7 +406,10 @@ export function ProductsPage() {
           exTipi: exTipi.trim() || null,
           fiscalOrigin: fiscalOrigin || null,
           taxUnit: taxUnit.trim() || DEFAULT_PRODUCT_TAX_UNIT,
-          conversion: conversion.trim() || null,
+          conversion: normalizeProductConversion(conversion.trim()) || null,
+          stockComponentVariantId: normalizeProductConversion(conversion.trim())
+            ? stockComponentVariantId
+            : null,
           fiscalSituationId: fiscalSituationId || null,
           categoryId: categoryId || null,
           variantPrices: payload.product.variants.map((v) => {
@@ -424,6 +451,107 @@ export function ProductsPage() {
   });
 
   const viewProduct = detail.data ?? viewRow;
+
+  const productViewSections = useMemo((): RecordViewSection[] => {
+    if (!viewProduct) return [];
+    const sections: RecordViewSection[] = [
+      {
+        title: 'Dados do produto',
+        fields: [
+          { label: 'Código', value: formatProductCode(viewProduct.controlNumber) },
+          { label: 'Nome', value: viewProduct.name },
+          { label: 'Categoria', value: viewProduct.category?.name },
+          {
+            label: 'Descrição',
+            value: viewProduct.description?.trim() ? viewProduct.description : null,
+          },
+          {
+            label: 'NCM / CEST',
+            value: `${viewProduct.ncm ?? '—'} / ${viewProduct.cest ?? '—'}`,
+          },
+          { label: 'EX TIPI', value: viewProduct.exTipi },
+          {
+            label: 'Origem (ICMS)',
+            value:
+              viewProduct.fiscalOrigin != null && viewProduct.fiscalOrigin !== ''
+                ? FISCAL_ORIGIN_OPTIONS.find((o) => o.value === viewProduct.fiscalOrigin)?.label ??
+                  viewProduct.fiscalOrigin
+                : null,
+          },
+          { label: 'Unidade tributável', value: viewProduct.taxUnit },
+          { label: 'Conversão (NF-e)', value: viewProduct.conversion },
+          {
+            label: 'Produto composto',
+            value: viewProduct.stockComponentVariant
+              ? `${viewProduct.stockComponentVariant.product.name} · ${viewProduct.stockComponentVariant.sku}`
+              : viewProduct.conversion
+                ? 'Não vinculado (estoque neste produto)'
+                : null,
+          },
+          { label: 'Status', value: viewProduct.isActive ? 'Ativo' : 'Inativo' },
+          {
+            label: 'Mín. cadastro (relatórios)',
+            value: `${formatStockQty(viewProduct.inventoryControlMin ?? '1')} (menor mínimo entre SKUs cadastradas)`,
+          },
+        ],
+      },
+      {
+        title: 'Variações (SKU)',
+        empty: 'Nenhuma variação cadastrada.',
+        columns: [
+          'SKU',
+          { label: 'Mín.', num: true },
+          { label: 'Venda', num: true },
+          { label: 'Custo', num: true },
+          { label: 'Lucro', num: true },
+          'EAN',
+        ],
+        rows: (viewProduct.variants ?? []).map((v) => [
+          v.sku,
+          formatStockQty(v.minStock ?? '1'),
+          formatBRL(v.retailPrice),
+          formatBRL(v.costAverage ?? '0'),
+          profitBRL(String(v.retailPrice), String(v.costAverage ?? '0')),
+          v.barcode,
+        ]),
+      },
+    ];
+
+    if (priceHistory.isError) {
+      sections.push({
+        title: 'Histórico de preços',
+        content: (
+          <div className="alert alert-error">{(priceHistory.error as Error).message}</div>
+        ),
+      });
+    } else if (priceHistory.isLoading) {
+      sections.push({
+        title: 'Histórico de preços',
+        content: <p style={{ fontSize: '0.9rem' }}>Carregando histórico…</p>,
+      });
+    } else {
+      sections.push({
+        title: 'Histórico de preços',
+        empty: 'Nenhuma alteração registrada ainda.',
+        maxHeight: 240,
+        columns: ['Quando', 'SKU', 'Campo', 'De', 'Para', 'Origem'],
+        rows: (priceHistory.data ?? []).map((h) => [
+          formatDate(h.createdAt),
+          h.sku,
+          h.field === 'RETAIL' ? 'Venda' : h.field === 'COST' ? 'Custo' : h.field,
+          formatBRL(h.previousValue),
+          formatBRL(h.newValue),
+          h.source === 'GOODS_RECEIPT'
+            ? 'Entrada NF'
+            : h.source === 'MANUAL'
+              ? 'Cadastro'
+              : h.source,
+        ]),
+      });
+    }
+
+    return sections;
+  }, [viewProduct, priceHistory.data, priceHistory.isLoading, priceHistory.isError, priceHistory.error]);
 
   function openView(p: Product) {
     setViewProductId(p.id);
@@ -886,7 +1014,7 @@ export function ProductsPage() {
                     </div>
                   </details>
                   <div className="product-form__subsection" aria-label="Unidade tributável e conversão NF-e">
-                    <p className="product-form__section-title">Unidade tributável e conversão (NF-e)</p>
+                    <p className="product-form__section-title">Unidade, conversão e produto composto</p>
                   <div className="field">
                     <span className="field-label-text">Unidade tributável</span>
                     <FiscalCodeSearchCombo
@@ -895,7 +1023,7 @@ export function ProductsPage() {
                       label="Unidade tributável"
                       value={taxUnit}
                       onChange={setTaxUnit}
-                      hintLabel={taxUnit || DEFAULT_PRODUCT_TAX_UNIT}
+                      hintLabel={taxUnit || null}
                     />
                     <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                       Padrão <strong>UN</strong> (Unidade). Pesquise ou cadastre outra unidade se necessário.
@@ -906,13 +1034,96 @@ export function ProductsPage() {
                     <input
                       id="p-conversion"
                       value={conversion}
-                      onChange={(e) => setConversion(e.target.value.toUpperCase())}
-                      placeholder="Ex.: CX-12"
+                      onChange={(e) => {
+                        const next = e.target.value.toUpperCase();
+                        setConversion(next);
+                        if (!parseProductConversion(next)) {
+                          setStockComponentVariantId(null);
+                          setStockComponentLabel('');
+                        }
+                      }}
+                      onBlur={() => {
+                        const n = normalizeProductConversion(conversion);
+                        if (n) setConversion(n);
+                      }}
+                      placeholder="Ex.: CX-12, CX24, CX-6, PCT-10"
                     />
                     <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Formato <strong>UNIDADE-QUANTIDADE</strong>. Ex.: CX-12 — quando a NF-e vier com unidade CX,
-                      o estoque receberá 12 unidades por caixa informada.
+                      Digite <strong>como vem na NF-e</strong> (uCom). Exemplos: CX-12, CX24, CX-6, PCT-10.
+                      O sistema confere com a unidade da nota; o número indica quantas unidades de estoque
+                      equivalem a 1 da NF.
                     </span>
+                  </div>
+                  <div className="field">
+                    <span className="field-label-text">Produto composto</span>
+                    <ol
+                      style={{
+                        margin: '0 0 0.55rem',
+                        paddingLeft: '1.2rem',
+                        fontSize: '0.82rem',
+                        color: 'var(--color-text-secondary)',
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      <li>
+                        Cadastre antes o produto da <strong>unidade</strong>.
+                      </li>
+                      <li>
+                        Neste produto (caixa), digite a conversão <strong>igual à unidade da NF</strong> (ex.:
+                        CX24, CX-6, PCT-12).
+                      </li>
+                      <li>
+                        Clique em <strong>Vincular produto</strong> e escolha o produto.
+                      </li>
+                    </ol>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <input
+                        readOnly
+                        value={stockComponentLabel || 'Não — estoque neste próprio produto'}
+                        style={{ flex: '1 1 220px' }}
+                        aria-label="Produto unitário vinculado ao composto"
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          if (!parseProductConversion(conversion)) {
+                            setErr(
+                              'Informe a Conversão como na NF-e (ex.: CX-12, CX24, CX-6, PCT-12) antes de vincular o produto.',
+                            );
+                            document.getElementById('p-conversion')?.focus();
+                            return;
+                          }
+                          setErr(null);
+                          setComponentSearchOpen(true);
+                        }}
+                      >
+                        Vincular produto
+                      </button>
+                      {stockComponentVariantId && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => {
+                            setStockComponentVariantId(null);
+                            setStockComponentLabel('');
+                          }}
+                        >
+                          Limpar
+                        </button>
+                      )}
+                    </div>
+                    {!parseProductConversion(conversion) && (
+                      <span style={{ fontSize: '0.78rem', color: 'var(--color-danger, #b91c1c)' }}>
+                        Digite a conversão (como na nota) para liberar o vínculo do produto.
+                      </span>
+                    )}
+                    {parseProductConversion(conversion) && !stockComponentVariantId && (
+                      <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                        Conversão ok. Agora vincule o produto para a entrada/venda da caixa baixar o estoque
+                        unitário.
+                      </span>
+                    )}
                   </div>
                   </div>
                 </div>
@@ -1094,7 +1305,7 @@ export function ProductsPage() {
                     </div>
                   </details>
                   <div className="product-form__subsection" aria-label="Unidade tributável e conversão NF-e">
-                    <p className="product-form__section-title">Unidade tributável e conversão (NF-e)</p>
+                    <p className="product-form__section-title">Unidade, conversão e produto composto</p>
                   <div className="field">
                     <span className="field-label-text">Unidade tributável</span>
                     <FiscalCodeSearchCombo
@@ -1103,7 +1314,7 @@ export function ProductsPage() {
                       label="Unidade tributável"
                       value={taxUnit}
                       onChange={setTaxUnit}
-                      hintLabel={taxUnit || DEFAULT_PRODUCT_TAX_UNIT}
+                      hintLabel={taxUnit || null}
                     />
                     <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                       Padrão <strong>UN</strong> (Unidade). Pesquise ou cadastre outra unidade se necessário.
@@ -1114,13 +1325,96 @@ export function ProductsPage() {
                     <input
                       id="pe-conversion"
                       value={conversion}
-                      onChange={(e) => setConversion(e.target.value.toUpperCase())}
-                      placeholder="Ex.: CX-12"
+                      onChange={(e) => {
+                        const next = e.target.value.toUpperCase();
+                        setConversion(next);
+                        if (!parseProductConversion(next)) {
+                          setStockComponentVariantId(null);
+                          setStockComponentLabel('');
+                        }
+                      }}
+                      onBlur={() => {
+                        const n = normalizeProductConversion(conversion);
+                        if (n) setConversion(n);
+                      }}
+                      placeholder="Ex.: CX-12, CX24, CX-6, PCT-10"
                     />
                     <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Formato <strong>UNIDADE-QUANTIDADE</strong>. Ex.: CX-12 — na entrada por NF-e, multiplica a
-                      quantidade no estoque quando a unidade da nota coincidir.
+                      Digite <strong>como vem na NF-e</strong> (uCom). Exemplos: CX-12, CX24, CX-6, PCT-10.
+                      O sistema confere com a unidade da nota; o número indica quantas unidades de estoque
+                      equivalem a 1 da NF.
                     </span>
+                  </div>
+                  <div className="field">
+                    <span className="field-label-text">Produto composto</span>
+                    <ol
+                      style={{
+                        margin: '0 0 0.55rem',
+                        paddingLeft: '1.2rem',
+                        fontSize: '0.82rem',
+                        color: 'var(--color-text-secondary)',
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      <li>
+                        Cadastre antes o produto da <strong>unidade</strong>.
+                      </li>
+                      <li>
+                        Neste produto (caixa), digite a conversão <strong>igual à unidade da NF</strong> (ex.:
+                        CX24, CX-6, PCT-12).
+                      </li>
+                      <li>
+                        Clique em <strong>Vincular produto</strong> e escolha o produto.
+                      </li>
+                    </ol>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <input
+                        readOnly
+                        value={stockComponentLabel || 'Não — estoque neste próprio produto'}
+                        style={{ flex: '1 1 220px' }}
+                        aria-label="Produto unitário vinculado ao composto"
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          if (!parseProductConversion(conversion)) {
+                            setErr(
+                              'Informe a Conversão como na NF-e (ex.: CX-12, CX24, CX-6, PCT-12) antes de vincular o produto.',
+                            );
+                            document.getElementById('pe-conversion')?.focus();
+                            return;
+                          }
+                          setErr(null);
+                          setComponentSearchOpen(true);
+                        }}
+                      >
+                        Vincular produto
+                      </button>
+                      {stockComponentVariantId && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => {
+                            setStockComponentVariantId(null);
+                            setStockComponentLabel('');
+                          }}
+                        >
+                          Limpar
+                        </button>
+                      )}
+                    </div>
+                    {!parseProductConversion(conversion) && (
+                      <span style={{ fontSize: '0.78rem', color: 'var(--color-danger, #b91c1c)' }}>
+                        Digite a conversão (como na nota) para liberar o vínculo do produto.
+                      </span>
+                    )}
+                    {parseProductConversion(conversion) && !stockComponentVariantId && (
+                      <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                        Conversão ok. Agora vincule o produto para a entrada/venda da caixa baixar o estoque
+                        unitário.
+                      </span>
+                    )}
                   </div>
                   </div>
                 </div>
@@ -1250,158 +1544,15 @@ export function ProductsPage() {
         </FormModalBackdrop>
       )}
 
-      {viewProductId && viewOpen && viewProduct && (
-        <div className="modal-backdrop modal-backdrop--wide no-print" role="presentation" onClick={() => setViewOpen(false)}>
-          <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
-            <h2>Produto — visualização</h2>
-            {detail.isLoading && <p>Carregando…</p>}
-            {detail.isError && (
-              <div className="alert alert-error">{(detail.error as Error).message}</div>
-            )}
-            {!detail.isLoading && !detail.isError && (
-              <div className="product-view-sections">
-                <h3 className="product-view-sections__title">Dados do produto</h3>
-                <div className="table-wrap">
-                  <table className="data-table product-view-table product-view-table--fields">
-                    <thead>
-                      <tr>
-                        <th>Campo</th>
-                        <th>Valor</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>Código</td>
-                        <td>{formatProductCode(viewProduct.controlNumber)}</td>
-                      </tr>
-                      <tr>
-                        <td>Nome</td>
-                        <td>{viewProduct.name}</td>
-                      </tr>
-                      <tr>
-                        <td>Categoria</td>
-                        <td>{viewProduct.category?.name ?? '—'}</td>
-                      </tr>
-                      <tr>
-                        <td>Descrição</td>
-                        <td>{viewProduct.description?.trim() ? viewProduct.description : '—'}</td>
-                      </tr>
-                      <tr>
-                        <td>NCM / CEST</td>
-                        <td>
-                          {viewProduct.ncm ?? '—'} / {viewProduct.cest ?? '—'}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td>EX TIPI</td>
-                        <td>{viewProduct.exTipi ?? '—'}</td>
-                      </tr>
-                      <tr>
-                        <td>Origem (ICMS)</td>
-                        <td>
-                          {viewProduct.fiscalOrigin != null && viewProduct.fiscalOrigin !== ''
-                            ? FISCAL_ORIGIN_OPTIONS.find((o) => o.value === viewProduct.fiscalOrigin)?.label ??
-                              viewProduct.fiscalOrigin
-                            : '—'}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td>Unidade tributável</td>
-                        <td>{viewProduct.taxUnit ?? '—'}</td>
-                      </tr>
-                      <tr>
-                        <td>Status</td>
-                        <td>{viewProduct.isActive ? 'Ativo' : 'Inativo'}</td>
-                      </tr>
-                      <tr>
-                        <td>Mín. cadastro (relatórios)</td>
-                        <td>
-                          {formatStockQty(viewProduct.inventoryControlMin ?? '1')} (menor mínimo entre SKUs
-                          cadastradas)
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                <h3 className="product-view-sections__title">Variações (SKU)</h3>
-                {viewProduct.variants.length === 0 ? (
-                  <p className="product-view-sections__empty">Nenhuma variação cadastrada.</p>
-                ) : (
-                  <div className="table-wrap">
-                    <table className="data-table product-view-table">
-                      <thead>
-                        <tr>
-                          <th>SKU</th>
-                          <th className="num">Mín.</th>
-                          <th className="num">Venda</th>
-                          <th className="num">Custo</th>
-                          <th className="num">Lucro</th>
-                          <th>EAN</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {viewProduct.variants.map((v) => (
-                          <tr key={v.id}>
-                            <td>{v.sku}</td>
-                            <td className="num">{formatStockQty(v.minStock ?? '1')}</td>
-                            <td className="num">{formatBRL(v.retailPrice)}</td>
-                            <td className="num">{formatBRL(v.costAverage ?? '0')}</td>
-                            <td className="num">{profitBRL(String(v.retailPrice), String(v.costAverage ?? '0'))}</td>
-                            <td>{v.barcode ?? '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                <h3 className="product-view-sections__title">Histórico de preços</h3>
-                {priceHistory.isError && (
-                  <div className="alert alert-error">{(priceHistory.error as Error).message}</div>
-                )}
-                {priceHistory.isLoading && <p style={{ fontSize: '0.9rem' }}>Carregando histórico…</p>}
-                {!priceHistory.isLoading && !priceHistory.isError && (priceHistory.data?.length ?? 0) === 0 && (
-                  <p className="product-view-sections__empty">Nenhuma alteração registrada ainda.</p>
-                )}
-                {(priceHistory.data?.length ?? 0) > 0 && (
-                  <div className="table-wrap" style={{ maxHeight: '240px', overflow: 'auto' }}>
-                    <table className="data-table product-view-table">
-                      <thead>
-                        <tr>
-                          <th>Quando</th>
-                          <th>SKU</th>
-                          <th>Campo</th>
-                          <th>De</th>
-                          <th>Para</th>
-                          <th>Origem</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(priceHistory.data ?? []).map((h) => (
-                          <tr key={h.id}>
-                            <td>{formatDate(h.createdAt)}</td>
-                            <td>{h.sku}</td>
-                            <td>{h.field === 'RETAIL' ? 'Venda' : h.field === 'COST' ? 'Custo' : h.field}</td>
-                            <td>{formatBRL(h.previousValue)}</td>
-                            <td>{formatBRL(h.newValue)}</td>
-                            <td>{h.source === 'GOODS_RECEIPT' ? 'Entrada NF' : h.source === 'MANUAL' ? 'Cadastro' : h.source}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-            <div className="modal-actions">
-              <button type="button" className="btn btn-primary" onClick={() => setViewOpen(false)}>
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RecordViewModal
+        open={Boolean(viewProductId && viewOpen && viewProduct)}
+        title="Produto — visualização"
+        wide
+        onClose={() => setViewOpen(false)}
+        loading={detail.isLoading}
+        error={detail.isError ? (detail.error as Error).message : null}
+        sections={productViewSections}
+      />
 
       {deleteProduct && deleteOpen && (
         <FormModalBackdrop className="no-print" onClose={() => setDeleteOpen(false)}>
@@ -1427,6 +1578,17 @@ export function ProductsPage() {
           </div>
         </FormModalBackdrop>
       )}
+
+      <ProductSearchModal
+        open={componentSearchOpen}
+        title="Vincular produto"
+        onClose={() => setComponentSearchOpen(false)}
+        onPick={(row: SearchPickRow) => {
+          setStockComponentVariantId(row.variantId);
+          setStockComponentLabel(`${row.productName} · ${row.sku}`);
+          setComponentSearchOpen(false);
+        }}
+      />
     </div>
   );
 }

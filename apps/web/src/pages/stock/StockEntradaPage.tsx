@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { CrudToolbar } from '../../components/CrudToolbar';
 import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
+import { RecordViewModal } from '../../components/RecordViewModal';
 import { SupplierSearchCombo } from '../../components/ProductCatalogCombos';
 import { ProductSearchModal, type ProductSearchRow } from '../../components/ProductSearchModal';
 import { api, apiUpload, ApiHttpError } from '../../lib/api';
@@ -694,87 +695,63 @@ export function StockEntradaPage() {
         </div>
       </div>
 
-      {viewing && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setViewing(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(820px, 96vw)' }}>
-            <h2>
-              Entrada #{viewing.controlNumber}
-              <span
-                style={{
-                  marginLeft: '0.5rem',
-                  fontSize: '0.75rem',
-                  fontWeight: 500,
-                  color: 'var(--color-text-muted)',
-                }}
-              >
-                ({modeLabel(viewing.mode)})
-              </span>
-            </h2>
-            <dl style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem 1.25rem' }}>
-              <div>
-                <dt style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Data</dt>
-                <dd style={{ margin: 0 }}>{new Date(viewing.createdAt).toLocaleString('pt-BR')}</dd>
-              </div>
-              <div>
-                <dt style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Documento</dt>
-                <dd style={{ margin: 0 }}>
-                  {viewing.documentNumber ?? '—'}
-                  {viewing.series ? ` (série ${viewing.series})` : ''}
-                </dd>
-              </div>
-              <div>
-                <dt style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Fornecedor</dt>
-                <dd style={{ margin: 0 }}>{viewing.supplier?.legalName ?? '—'}</dd>
-              </div>
-              <div>
-                <dt style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Natureza</dt>
-                <dd style={{ margin: 0 }}>{viewing.natureOperation ?? '—'}</dd>
-              </div>
-              <div>
-                <dt style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Valor total</dt>
-                <dd style={{ margin: 0 }}>{viewing.totalValue ? `R$ ${viewing.totalValue}` : '—'}</dd>
-              </div>
-            </dl>
-            {viewing.notes && (
-              <p style={{ margin: '0.75rem 0 0', fontSize: '0.85rem' }}>
-                <strong>Observações:</strong> {viewing.notes}
-              </p>
-            )}
-            <h3 style={{ marginTop: '1rem', fontSize: '0.92rem' }}>Itens</h3>
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Produto (SKU)</th>
-                    <th>Descrição</th>
-                    <th style={{ textAlign: 'right' }}>Qtd</th>
-                    <th style={{ textAlign: 'right' }}>Custo unit.</th>
-                    <th style={{ textAlign: 'right' }}>Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {viewing.items.map((it) => (
-                    <tr key={it.id}>
-                      <td>{it.variant.sku} — {it.variant.product.name}</td>
-                      <td>{it.description ?? '—'}</td>
-                      <td style={{ textAlign: 'right' }}>{it.quantity}</td>
-                      <td style={{ textAlign: 'right' }}>R$ {it.unitCost}</td>
-                      <td style={{ textAlign: 'right' }}>
-                        R$ {(Number(it.quantity) * Number(it.unitCost)).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setViewing(null)}>
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RecordViewModal
+        open={Boolean(viewing)}
+        title={
+          viewing
+            ? `Entrada #${viewing.controlNumber} — visualização`
+            : 'Entrada — visualização'
+        }
+        wide
+        onClose={() => setViewing(null)}
+        sections={
+          viewing
+            ? [
+                {
+                  title: 'Dados da entrada',
+                  fields: [
+                    { label: 'Modo', value: modeLabel(viewing.mode) },
+                    {
+                      label: 'Data',
+                      value: new Date(viewing.createdAt).toLocaleString('pt-BR'),
+                    },
+                    {
+                      label: 'Documento',
+                      value: viewing.documentNumber
+                        ? `${viewing.documentNumber}${viewing.series ? ` (série ${viewing.series})` : ''}`
+                        : null,
+                    },
+                    { label: 'Fornecedor', value: viewing.supplier?.legalName },
+                    { label: 'Natureza', value: viewing.natureOperation },
+                    {
+                      label: 'Valor total',
+                      value: viewing.totalValue ? `R$ ${viewing.totalValue}` : null,
+                    },
+                    { label: 'Observações', value: viewing.notes },
+                  ],
+                },
+                {
+                  title: 'Itens',
+                  empty: 'Nenhum item nesta entrada.',
+                  columns: [
+                    'Produto (SKU)',
+                    'Descrição',
+                    { label: 'Qtd', num: true },
+                    { label: 'Custo unit.', num: true },
+                    { label: 'Total', num: true },
+                  ],
+                  rows: viewing.items.map((it) => [
+                    `${it.variant.sku} — ${it.variant.product.name}`,
+                    it.description,
+                    it.quantity,
+                    `R$ ${it.unitCost}`,
+                    `R$ ${(Number(it.quantity) * Number(it.unitCost)).toFixed(2)}`,
+                  ]),
+                },
+              ]
+            : []
+        }
+      />
 
       {editing && (
         <EditReceiptModal

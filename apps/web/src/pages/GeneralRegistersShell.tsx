@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 
 const links = [
   { to: '/cadastros/situacao-fiscal', label: 'Situação fiscal', end: true },
+  { to: '/cadastros/formas-pagamento', label: 'Formas de Pagamento' },
 ] as const;
 
 /** Menu lateral agrupador — cadastros transversais (fiscal mestre etc.). */
@@ -10,8 +11,7 @@ export function GeneralRegistersShell() {
     <div className="page">
       <h1 className="page-title">Cadastros gerais</h1>
       <p className="page-desc">
-        Parâmetros fiscais compartilhados por vários produtos — NCM orientador, CST, CFOP sugeridos e
-        alíquotas de referência CBS/IBS na transição (LC 214/2025).
+        Parâmetros fiscais e formas de pagamento usadas no PDV, no caixa e no módulo Cartões.
       </p>
       <nav className="stock-subnav no-print" aria-label="Submenu cadastros gerais">
         {links.map((l) => (

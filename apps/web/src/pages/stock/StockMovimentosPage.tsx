@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { CrudToolbar, RowRecordActions } from '../../components/CrudToolbar';
 import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
+import { RecordViewModal } from '../../components/RecordViewModal';
 import { api } from '../../lib/api';
 
 type Movement = {
@@ -245,43 +246,42 @@ export function StockMovimentosPage() {
       </div>
       </div>
 
-      {viewMovement && viewOpen && (
-        <div className="modal-backdrop no-print" role="presentation" onClick={() => setViewOpen(false)}>
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
-            <h2>Movimentação — visualização</h2>
-            <p style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>ID: {viewMovement.id}</p>
-            <p>
-              <strong>Data:</strong> {new Date(viewMovement.createdAt).toLocaleString('pt-BR')}
-            </p>
-            <p>
-              <strong>Tipo:</strong> {viewMovement.type} · <strong>Origem:</strong>{' '}
-              {sourceLabel(viewMovement.source)}
-            </p>
-            <p>
-              <strong>Produto:</strong> {viewMovement.variant.product.name} ({viewMovement.variant.sku})
-            </p>
-            <p>
-              <strong>Local:</strong> {viewMovement.location.code} — {viewMovement.location.name}
-            </p>
-            <p>
-              <strong>Quantidade:</strong> {viewMovement.quantity}
-            </p>
-            <p>
-              <strong>Referência:</strong> {viewMovement.reference ?? '—'}
-            </p>
-            {viewMovement.outboundReason ? (
-              <p>
-                <strong>Motivo (saída):</strong> {viewMovement.outboundReason}
-              </p>
-            ) : null}
-            <div className="modal-actions">
-              <button type="button" className="btn btn-primary" onClick={() => setViewOpen(false)}>
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RecordViewModal
+        open={Boolean(viewMovement && viewOpen)}
+        title="Movimentação — visualização"
+        onClose={() => setViewOpen(false)}
+        sections={
+          viewMovement
+            ? [
+                {
+                  title: 'Dados da movimentação',
+                  fields: [
+                    { label: 'ID', value: viewMovement.id },
+                    {
+                      label: 'Data',
+                      value: new Date(viewMovement.createdAt).toLocaleString('pt-BR'),
+                    },
+                    { label: 'Tipo', value: viewMovement.type },
+                    { label: 'Origem', value: sourceLabel(viewMovement.source) },
+                    {
+                      label: 'Produto',
+                      value: `${viewMovement.variant.product.name} (${viewMovement.variant.sku})`,
+                    },
+                    {
+                      label: 'Local',
+                      value: `${viewMovement.location.code} — ${viewMovement.location.name}`,
+                    },
+                    { label: 'Quantidade', value: viewMovement.quantity },
+                    { label: 'Referência', value: viewMovement.reference },
+                    ...(viewMovement.outboundReason
+                      ? [{ label: 'Motivo (saída)', value: viewMovement.outboundReason }]
+                      : []),
+                  ],
+                },
+              ]
+            : []
+        }
+      />
 
       {movOpen && (
         <FormModalBackdrop className="no-print" onClose={() => setMovOpen(false)}>

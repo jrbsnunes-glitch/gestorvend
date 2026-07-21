@@ -9,6 +9,11 @@ import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination, LIST_PAGE_SIZE } from '../components/ListPagination';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
+import {
+  RecordViewModal,
+  RecordViewSections,
+  type RecordViewSection,
+} from '../components/RecordViewModal';
 import { api } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
 
@@ -521,16 +526,27 @@ export function FiscalNotesPage() {
         itemLabel="nota(s)"
       />
 
-      {(viewId || openId) && (
+      {viewId && !openId && (
+        <RecordViewModal
+          open
+          wide
+          title="Nota fiscal — visualização"
+          onClose={() => setViewId(null)}
+          loading={detail.isLoading}
+          error={detail.isError ? (detail.error as Error).message : null}
+          sections={detail.data ? fiscalNoteViewSections(detail.data) : []}
+        />
+      )}
+
+      {openId && (
         <FormModalBackdrop
           className="modal-backdrop--wide"
           onClose={() => {
-            setViewId(null);
             setOpenId(null);
           }}
         >
           <div className="modal modal--wide" role="dialog">
-            <h2>{openId ? 'Cadastro da nota' : 'Visualizar nota'}</h2>
+            <h2>Cadastro da nota</h2>
             {detail.isLoading && <p>Carregando…</p>}
             {detail.isError && (
               <div className="alert alert-error">{(detail.error as Error).message}</div>
@@ -538,7 +554,7 @@ export function FiscalNotesPage() {
             {detail.data && (
               <FiscalNoteDetail
                 doc={detail.data}
-                editable={Boolean(openId)}
+                editable
                 onSendContingency={() => sendContingency.mutate(detail.data!.id)}
                 sending={sendContingency.isPending}
                 onCancel={() => {
@@ -559,20 +575,15 @@ export function FiscalNotesPage() {
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => {
-                  setViewId(null);
-                  setOpenId(null);
-                }}
+                onClick={() => setOpenId(null)}
               >
                 Fechar
               </button>
-              {openId && detail.data && (
+              {detail.data && (
                 <Link
                   className="btn btn-primary"
                   to={`/vendas`}
-                  onClick={() => {
-                    setOpenId(null);
-                  }}
+                  onClick={() => setOpenId(null)}
                 >
                   Ir para Vendas
                 </Link>
@@ -663,6 +674,69 @@ export function FiscalNotesPage() {
   );
 }
 
+function fiscalNoteViewSections(
+  doc: FiscalDocRow & {
+    sale: FiscalDocRow['sale'] & {
+      items?: Array<Record<string, unknown>>;
+      payments?: unknown[];
+    };
+  },
+): RecordViewSection[] {
+  const items = (doc.sale.items ?? []) as Array<{
+    quantity: string;
+    unitPrice: string;
+    totalLine: string;
+    variant?: { sku?: string; product?: { name?: string } };
+  }>;
+
+  const sections: RecordViewSection[] = [
+    {
+      title: 'Dados da nota',
+      fields: [
+        { label: 'Controle', value: doc.sale.number },
+        { label: 'Tipo', value: doc.kind === 'NFC_E' ? 'NFC-e' : 'NF-e' },
+        {
+          label: 'Situação',
+          value: <span className={statusClass(doc.status)}>{statusLabel(doc.status)}</span>,
+        },
+        { label: 'Cliente', value: doc.sale.customer?.name ?? 'Consumidor' },
+        { label: 'Data', value: formatDate(doc.sale.createdAt) },
+        { label: 'Total', value: formatBRL(Number(doc.sale.total)) },
+        { label: 'Chave', value: doc.accessKey },
+        { label: 'Protocolo', value: doc.protocol },
+        { label: 'XML', value: doc.xmlPath },
+      ],
+    },
+  ];
+
+  if (items.length > 0) {
+    sections.push({
+      title: 'Itens',
+      columns: [
+        'Produto',
+        { label: 'Qtd', num: true },
+        { label: 'Unit.', num: true },
+        { label: 'Total', num: true },
+      ],
+      rows: items.map((it) => [
+        <>
+          {it.variant?.product?.name ?? '—'}
+          {it.variant?.sku ? (
+            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+              {it.variant.sku}
+            </div>
+          ) : null}
+        </>,
+        Number(it.quantity).toLocaleString('pt-BR'),
+        formatBRL(Number(it.unitPrice)),
+        formatBRL(Number(it.totalLine)),
+      ]),
+    });
+  }
+
+  return sections;
+}
+
 function FiscalNoteDetail({
   doc,
   editable,
@@ -680,79 +754,9 @@ function FiscalNoteDetail({
   cancelling: boolean;
   onPrintSecondCopy: () => void;
 }) {
-  const items = (doc.sale.items ?? []) as Array<{
-    quantity: string;
-    unitPrice: string;
-    totalLine: string;
-    variant?: { sku?: string; product?: { name?: string } };
-  }>;
-
   return (
     <div>
-      <dl
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '8rem 1fr',
-          gap: '0.35rem 0.75rem',
-          fontSize: '0.9rem',
-          margin: '0 0 1rem',
-        }}
-      >
-        <dt>Controle</dt>
-        <dd style={{ margin: 0 }}>{doc.sale.number}</dd>
-        <dt>Tipo</dt>
-        <dd style={{ margin: 0 }}>{doc.kind === 'NFC_E' ? 'NFC-e' : 'NF-e'}</dd>
-        <dt>Situação</dt>
-        <dd style={{ margin: 0 }}>
-          <span className={statusClass(doc.status)}>{statusLabel(doc.status)}</span>
-        </dd>
-        <dt>Cliente</dt>
-        <dd style={{ margin: 0 }}>{doc.sale.customer?.name ?? 'Consumidor'}</dd>
-        <dt>Data</dt>
-        <dd style={{ margin: 0 }}>{formatDate(doc.sale.createdAt)}</dd>
-        <dt>Total</dt>
-        <dd style={{ margin: 0 }}>{formatBRL(Number(doc.sale.total))}</dd>
-        <dt>Chave</dt>
-        <dd style={{ margin: 0, wordBreak: 'break-all' }}>{doc.accessKey ?? '—'}</dd>
-        <dt>Protocolo</dt>
-        <dd style={{ margin: 0 }}>{doc.protocol ?? '—'}</dd>
-        <dt>XML</dt>
-        <dd style={{ margin: 0, wordBreak: 'break-all', fontSize: '0.8rem' }}>
-          {doc.xmlPath ?? '—'}
-        </dd>
-      </dl>
-
-      {items.length > 0 && (
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Produto</th>
-                <th className="num">Qtd</th>
-                <th className="num">Unit.</th>
-                <th className="num">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it, i) => (
-                <tr key={i}>
-                  <td>
-                    {it.variant?.product?.name ?? '—'}
-                    {it.variant?.sku ? (
-                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                        {it.variant.sku}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="num">{Number(it.quantity).toLocaleString('pt-BR')}</td>
-                  <td className="num">{formatBRL(Number(it.unitPrice))}</td>
-                  <td className="num">{formatBRL(Number(it.totalLine))}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <RecordViewSections sections={fiscalNoteViewSections(doc)} />
 
       {editable && (
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>

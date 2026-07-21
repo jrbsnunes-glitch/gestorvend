@@ -6,6 +6,7 @@ import { ListPagination } from '../components/ListPagination';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { CustomerGroupSearchCombo } from '../components/ProductCatalogCombos';
 import { RecordSelectionFooter } from '../components/RecordSelectionFooter';
+import { RecordViewModal } from '../components/RecordViewModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
@@ -412,48 +413,34 @@ export function CustomersPage() {
         </FormModalBackdrop>
       )}
 
-      {viewId && viewOpen && viewData && (
-        <div className="modal-backdrop no-print" role="presentation" onClick={() => setViewOpen(false)}>
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
-            <h2>Cliente — visualização</h2>
-            {detail.isLoading && <p>Carregando…</p>}
-            {detail.isError && (
-              <div className="alert alert-error">{(detail.error as Error).message}</div>
-            )}
-            {!detail.isLoading && !detail.isError && (
-              <>
-                <p>
-                  <strong>Nome:</strong> {viewData.name}
-                </p>
-                <p>
-                  <strong>Documento:</strong> {viewData.document ?? '—'}
-                </p>
-                <p>
-                  <strong>E-mail:</strong> {viewData.email ?? '—'}
-                </p>
-                <p>
-                  <strong>Telefone:</strong> {viewData.phone ?? '—'}
-                </p>
-                <p>
-                  <strong>Cidade / UF:</strong>{' '}
-                  {[viewData.city, viewData.state].filter(Boolean).join(' / ') || '—'}
-                </p>
-                <p>
-                  <strong>Limite:</strong> {formatBRL(viewData.creditLimit)}
-                </p>
-                <p>
-                  <strong>Segmento:</strong> {viewData.segment ?? '—'}
-                </p>
-              </>
-            )}
-            <div className="modal-actions">
-              <button type="button" className="btn btn-primary" onClick={() => setViewOpen(false)}>
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RecordViewModal
+        open={Boolean(viewId && viewOpen)}
+        title="Cliente — visualização"
+        onClose={() => setViewOpen(false)}
+        loading={detail.isLoading}
+        error={detail.isError ? (detail.error as Error).message : null}
+        sections={
+          viewData
+            ? [
+                {
+                  title: 'Dados do cliente',
+                  fields: [
+                    { label: 'Nome', value: viewData.name },
+                    { label: 'Documento', value: viewData.document },
+                    { label: 'E-mail', value: viewData.email },
+                    { label: 'Telefone', value: viewData.phone },
+                    {
+                      label: 'Cidade / UF',
+                      value: [viewData.city, viewData.state].filter(Boolean).join(' / ') || null,
+                    },
+                    { label: 'Limite', value: formatBRL(viewData.creditLimit) },
+                    { label: 'Segmento', value: viewData.segment },
+                  ],
+                },
+              ]
+            : []
+        }
+      />
 
       {deleteCustomer && deleteOpen && (
         <FormModalBackdrop className="no-print" onClose={() => setDeleteOpen(false)}>

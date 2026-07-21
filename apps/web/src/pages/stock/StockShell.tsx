@@ -23,7 +23,7 @@ const PRINT_TITLE_BY_PATH: Partial<Record<string, string>> = {
   '/estoque/saidas': 'Saídas de estoque',
   '/estoque/locais': 'Locais de estoque',
   '/estoque/transferencias': 'Transferências',
-  '/estoque/inventario': 'Inventário e acertos',
+  '/estoque/inventario': 'Inventário multi-produto',
   '/estoque/movimentos': 'Movimentações',
   '/estoque/fechamento': 'Fechamento diário',
 };

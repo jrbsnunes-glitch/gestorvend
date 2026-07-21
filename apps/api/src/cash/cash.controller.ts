@@ -1046,7 +1046,11 @@ export class CashController {
       },
       include: {
         customer: { select: { id: true, name: true } },
-        payments: true,
+        payments: {
+          include: {
+            paymentForm: { select: { id: true, name: true, kind: true, cardBrand: true } },
+          },
+        },
         items: {
           include: {
             variant: {
@@ -1085,6 +1089,44 @@ export class CashController {
 
     const salesByMethod = buildSalesByMethod(sales);
 
+    const salesByPaymentForm: Record<string, number> = {};
+    const cardPayments: Array<{
+      id: string;
+      saleId: string;
+      saleNumber: number;
+      amount: number;
+      installments: number;
+      cardBrand: string | null;
+      cardOperation: string | null;
+      paymentFormId: string | null;
+      paymentFormName: string | null;
+      authCode: string | null;
+      settlementStatus: string | null;
+    }> = [];
+    for (const sale of sales) {
+      if (sale.status !== SaleStatus.COMPLETED) continue;
+      for (const p of sale.payments) {
+        const formKey = p.paymentForm?.name ?? p.method;
+        salesByPaymentForm[formKey] =
+          (salesByPaymentForm[formKey] ?? 0) + Number(p.amount);
+        if (p.method === 'CARD') {
+          cardPayments.push({
+            id: p.id,
+            saleId: sale.id,
+            saleNumber: sale.number,
+            amount: Number(p.amount),
+            installments: p.installments,
+            cardBrand: p.cardBrand,
+            cardOperation: p.cardOperation,
+            paymentFormId: p.paymentFormId,
+            paymentFormName: p.paymentForm?.name ?? null,
+            authCode: p.authCode,
+            settlementStatus: p.settlementStatus,
+          });
+        }
+      }
+    }
+
     const { byMethod, movementBreakdown } = buildSessionExpectedByMethod(
       sales,
       session.movements,
@@ -1112,6 +1154,8 @@ export class CashController {
         itemsCount,
         totalDiscounts,
         salesByMethod,
+        salesByPaymentForm,
+        cardPayments,
         byMethod,
         movementBreakdown,
       },

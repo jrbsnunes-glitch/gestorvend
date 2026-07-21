@@ -5,6 +5,7 @@ import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination } from '../components/ListPagination';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { RecordSelectionFooter } from '../components/RecordSelectionFooter';
+import { RecordViewModal } from '../components/RecordViewModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
 import { useListPagination } from '../hooks/useListPagination';
@@ -400,47 +401,31 @@ export function SuppliersPage() {
         </FormModalBackdrop>
       )}
 
-      {viewId && viewOpen && viewData && (
-        <div className="modal-backdrop no-print" role="presentation" onClick={() => setViewOpen(false)}>
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
-            <h2>Fornecedor — visualização</h2>
-            {detail.isLoading && <p>Carregando…</p>}
-            {detail.isError && (
-              <div className="alert alert-error">{(detail.error as Error).message}</div>
-            )}
-            {!detail.isLoading && !detail.isError && (
-              <>
-                <p>
-                  <strong>Razão social:</strong> {viewData.legalName}
-                </p>
-                <p>
-                  <strong>Nome fantasia:</strong> {viewData.tradeName ?? '—'}
-                </p>
-                <p>
-                  <strong>Documento:</strong> {viewData.document ?? '—'}
-                </p>
-                <p>
-                  <strong>E-mail:</strong> {viewData.email ?? '—'}
-                </p>
-                <p>
-                  <strong>Telefone:</strong> {viewData.phone ?? '—'}
-                </p>
-                <p>
-                  <strong>Cidade:</strong> {viewData.city ?? '—'}
-                </p>
-                <p>
-                  <strong>Segmento:</strong> {viewData.segment ?? '—'}
-                </p>
-              </>
-            )}
-            <div className="modal-actions">
-              <button type="button" className="btn btn-primary" onClick={() => setViewOpen(false)}>
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RecordViewModal
+        open={Boolean(viewId && viewOpen)}
+        title="Fornecedor — visualização"
+        onClose={() => setViewOpen(false)}
+        loading={detail.isLoading}
+        error={detail.isError ? (detail.error as Error).message : null}
+        sections={
+          viewData
+            ? [
+                {
+                  title: 'Dados do fornecedor',
+                  fields: [
+                    { label: 'Razão social', value: viewData.legalName },
+                    { label: 'Nome fantasia', value: viewData.tradeName },
+                    { label: 'Documento', value: viewData.document },
+                    { label: 'E-mail', value: viewData.email },
+                    { label: 'Telefone', value: viewData.phone },
+                    { label: 'Cidade', value: viewData.city },
+                    { label: 'Segmento', value: viewData.segment },
+                  ],
+                },
+              ]
+            : []
+        }
+      />
 
       {deleteSupplier && deleteOpen && (
         <FormModalBackdrop className="no-print" onClose={() => setDeleteOpen(false)}>

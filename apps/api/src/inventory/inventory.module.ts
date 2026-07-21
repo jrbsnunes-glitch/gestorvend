@@ -3,6 +3,8 @@ import { GoodsReceiptController } from './goods-receipt.controller';
 import { GoodsReceiptService } from './goods-receipt.service';
 import { LocationsController } from './locations.controller';
 import { StockExitsController } from './stock-exits.controller';
+import { StockInventoryController } from './stock-inventory.controller';
+import { StockInventoryService } from './stock-inventory.service';
 import { StockMovementsController } from './stock-movements.controller';
 import { StockTransfersController } from './stock-transfers.controller';
 
@@ -13,8 +15,9 @@ import { StockTransfersController } from './stock-transfers.controller';
     GoodsReceiptController,
     StockExitsController,
     StockTransfersController,
+    StockInventoryController,
   ],
-  providers: [GoodsReceiptService],
+  providers: [GoodsReceiptService, StockInventoryService],
   exports: [GoodsReceiptService],
 })
 export class InventoryModule {}

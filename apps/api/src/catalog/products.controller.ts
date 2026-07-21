@@ -18,12 +18,67 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
-import { validateProductConversion } from '../common/product-conversion.util';
+import { validateProductConversion, parseProductConversion, normalizeProductConversion } from '../common/product-conversion.util';
+
+const productDetailInclude = {
+  variants: { orderBy: { sku: 'asc' as const } },
+  category: true,
+  fiscalSituation: true,
+  stockComponentVariant: {
+    select: {
+      id: true,
+      sku: true,
+      barcode: true,
+      product: { select: { id: true, name: true, controlNumber: true } },
+    },
+  },
+} as const;
 
 @Controller('products')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ProductsController {
   constructor(private readonly tenantPrisma: TenantPrismaService) {}
+
+  /**
+   * Valida vínculo caixa → SKU unitário. Exige conversão (como na NF) e impede
+   * apontar para o próprio produto ou para outro pack.
+   */
+  private async resolveStockComponentVariantId(
+    db: Awaited<ReturnType<TenantPrismaService['getClient']>>,
+    opts: {
+      productId?: string | null;
+      stockComponentVariantId: string | null | undefined;
+      conversion: string | null | undefined;
+    },
+  ): Promise<string | null> {
+    const id = opts.stockComponentVariantId?.trim() || null;
+    if (!id) return null;
+    if (!parseProductConversion(opts.conversion)) {
+      throw new BadRequestException(
+        'Informe a conversão como na NF-e (ex.: CX-12, CX24, CX-6, PCT-12) ao vincular o produto unitário.',
+      );
+    }
+    const component = await db.productVariant.findUnique({
+      where: { id },
+      include: {
+        product: { select: { id: true, name: true, stockComponentVariantId: true } },
+      },
+    });
+    if (!component) {
+      throw new BadRequestException('Produto unitário de estoque não encontrado.');
+    }
+    if (opts.productId && component.productId === opts.productId) {
+      throw new BadRequestException(
+        'O estoque unitário deve ser outro produto (ex.: a lata), não a própria caixa.',
+      );
+    }
+    if (component.product.stockComponentVariantId) {
+      throw new BadRequestException(
+        `O produto "${component.product.name}" também é composto. Vincule o SKU unitário (lata).`,
+      );
+    }
+    return id;
+  }
 
   /** Piso cadastral: variante sempre com reposição configurada como ≥ 1. */
   private parseCadastroVariantMinStock(raw: unknown): string {
@@ -182,11 +237,7 @@ export class ProductsController {
   async list(@CurrentUser() user: JwtPayload) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     return db.product.findMany({
-      include: {
-        variants: { orderBy: { sku: 'asc' } },
-        category: true,
-        fiscalSituation: true,
-      },
+      include: productDetailInclude,
       orderBy: [{ controlNumber: 'asc' }],
     });
   }
@@ -395,7 +446,7 @@ export class ProductsController {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     return db.product.findUniqueOrThrow({
       where: { id },
-      include: { variants: true, category: true, fiscalSituation: true },
+      include: productDetailInclude,
     });
   }
 
@@ -416,6 +467,8 @@ export class ProductsController {
       fiscalOrigin?: string | null;
       taxUnit?: string | null;
       conversion?: string | null;
+      /** SKU unitário (lata) quando este produto é caixa/pack composto. */
+      stockComponentVariantId?: string | null;
       variants: Array<{
         sku: string;
         barcode?: string | null;
@@ -434,6 +487,11 @@ export class ProductsController {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const conversionErr = validateProductConversion(body.conversion);
     if (conversionErr) throw new BadRequestException(conversionErr);
+
+    const stockComponentVariantId = await this.resolveStockComponentVariantId(db, {
+      stockComponentVariantId: body.stockComponentVariantId,
+      conversion: body.conversion,
+    });
 
     // O código de barras "principal" do produto também é replicado para a
     // primeira variante quando ela não tem código próprio — mantém a busca
@@ -463,7 +521,8 @@ export class ProductsController {
           exTipi: body.exTipi?.trim() ? body.exTipi.trim().slice(0, 10) : null,
           fiscalOrigin: body.fiscalOrigin?.trim() ? body.fiscalOrigin.trim().slice(0, 2) : null,
           taxUnit: this.normalizeProductTaxUnit(body.taxUnit),
-          conversion: body.conversion?.trim() ? body.conversion.trim().slice(0, 32).toUpperCase() : null,
+          conversion: normalizeProductConversion(body.conversion),
+          stockComponentVariantId,
           variants: {
             create: body.variants.map((v, idx) => ({
               sku: v.sku,
@@ -500,7 +559,7 @@ export class ProductsController {
 
     return db.product.findUniqueOrThrow({
       where: { id: createdId },
-      include: { variants: true, category: true, fiscalSituation: true },
+      include: productDetailInclude,
     });
   }
 
@@ -603,6 +662,46 @@ export class ProductsController {
       if (conversionErr) throw new BadRequestException(conversionErr);
     }
 
+    const current = await db.product.findUniqueOrThrow({
+      where: { id },
+      select: { conversion: true, stockComponentVariantId: true },
+    });
+    const nextConversion =
+      body.conversion !== undefined
+        ? body.conversion
+          ? normalizeProductConversion(String(body.conversion))
+          : null
+        : current.conversion;
+    let nextStockComponent: string | null | undefined = undefined;
+    if (body.conversion !== undefined && !nextConversion) {
+      // Sem conversão não há pack composto.
+      nextStockComponent =
+        body.stockComponentVariantId !== undefined
+          ? await this.resolveStockComponentVariantId(db, {
+              productId: id,
+              stockComponentVariantId: body.stockComponentVariantId
+                ? String(body.stockComponentVariantId)
+                : null,
+              conversion: nextConversion,
+            })
+          : null;
+    } else if (body.stockComponentVariantId !== undefined) {
+      nextStockComponent = await this.resolveStockComponentVariantId(db, {
+        productId: id,
+        stockComponentVariantId: body.stockComponentVariantId
+          ? String(body.stockComponentVariantId)
+          : null,
+        conversion: nextConversion,
+      });
+    } else if (body.conversion !== undefined && current.stockComponentVariantId) {
+      // Recalcula validação se a conversão mudou mantendo vínculo.
+      nextStockComponent = await this.resolveStockComponentVariantId(db, {
+        productId: id,
+        stockComponentVariantId: current.stockComponentVariantId,
+        conversion: nextConversion,
+      });
+    }
+
     if (body.fiscalSituationId !== undefined && body.fiscalSituationId) {
       const fs = await db.fiscalSituation.findFirst({
         where: { id: String(body.fiscalSituationId), isActive: true },
@@ -638,9 +737,10 @@ export class ProductsController {
             taxUnit: this.normalizeProductTaxUnit(body.taxUnit),
           }),
           ...(body.conversion !== undefined && {
-            conversion: body.conversion
-              ? String(body.conversion).trim().slice(0, 32).toUpperCase()
-              : null,
+            conversion: nextConversion,
+          }),
+          ...(nextStockComponent !== undefined && {
+            stockComponentVariantId: nextStockComponent,
           }),
           ...(body.isActive != null && { isActive: Boolean(body.isActive) }),
           ...(body.categoryId !== undefined && {
@@ -656,7 +756,7 @@ export class ProductsController {
 
       return tx.product.findUniqueOrThrow({
         where: { id },
-        include: { variants: true, category: true, fiscalSituation: true },
+        include: productDetailInclude,
       });
     });
   }

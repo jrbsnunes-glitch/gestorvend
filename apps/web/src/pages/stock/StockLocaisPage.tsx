@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { CrudToolbar, RowRecordActions } from '../../components/CrudToolbar';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
+import { RecordViewModal } from '../../components/RecordViewModal';
 import { api } from '../../lib/api';
 
 type Location = {
@@ -235,27 +236,25 @@ export function StockLocaisPage() {
         </FormModalBackdrop>
       )}
 
-      {viewLocation && viewOpen && (
-        <div className="modal-backdrop no-print" role="presentation" onClick={() => setViewOpen(false)}>
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
-            <h2>Local — visualização</h2>
-            <p>
-              <strong>Código:</strong> {viewLocation.code}
-            </p>
-            <p>
-              <strong>Nome:</strong> {viewLocation.name}
-            </p>
-            <p>
-              <strong>Padrão:</strong> {viewLocation.isDefault ? 'Sim' : 'Não'}
-            </p>
-            <div className="modal-actions">
-              <button type="button" className="btn btn-primary" onClick={() => setViewOpen(false)}>
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RecordViewModal
+        open={Boolean(viewLocation && viewOpen)}
+        title="Local — visualização"
+        onClose={() => setViewOpen(false)}
+        sections={
+          viewLocation
+            ? [
+                {
+                  title: 'Dados do local',
+                  fields: [
+                    { label: 'Código', value: viewLocation.code },
+                    { label: 'Nome', value: viewLocation.name },
+                    { label: 'Padrão', value: viewLocation.isDefault ? 'Sim' : 'Não' },
+                  ],
+                },
+              ]
+            : []
+        }
+      />
 
       {editLocation && editOpen && (
         <FormModalBackdrop className="no-print" onClose={() => setEditOpen(false)}>

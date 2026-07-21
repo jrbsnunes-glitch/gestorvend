@@ -19,6 +19,11 @@ import {
   type CashMovementBreakdown,
 } from '../lib/cash-reconciliation';
 import { CostCenterSelect } from '../components/CostCenterSelect';
+import {
+  cardBrandLabel,
+  cardOperationLabel,
+  type PaymentForm,
+} from '../lib/payment-forms';
 
 type ReconciliationExpenseDetailLine = {
   amount: number;
@@ -83,8 +88,27 @@ type SaleRow = {
   discount: string;
   createdAt: string;
   customer: { id: string; name: string } | null;
-  payments: Array<{ method: string; amount: string; installments: number }>;
+  payments: Array<{
+    method: string;
+    amount: string;
+    installments: number;
+    paymentForm?: { id: string; name: string } | null;
+  }>;
   items: SaleItemRow[];
+};
+
+type CardPaymentInSession = {
+  id: string;
+  saleId: string;
+  saleNumber: number;
+  amount: number;
+  installments: number;
+  cardBrand: string | null;
+  cardOperation: string | null;
+  paymentFormId: string | null;
+  paymentFormName: string | null;
+  authCode: string | null;
+  settlementStatus: string | null;
 };
 
 type SessionDetail = {
@@ -110,6 +134,8 @@ type SessionDetail = {
     /** Somatório de descontos em vendas concluídas (linhas + desconto no cupom). */
     totalDiscounts: number;
     byMethod: Record<string, number>;
+    salesByPaymentForm?: Record<string, number>;
+    cardPayments?: CardPaymentInSession[];
     movementBreakdown?: CashMovementBreakdown;
   };
 };
@@ -153,6 +179,161 @@ function listReconciliationDiffCell(value: number | null): ReactNode {
       {positivo ? '+' : ''}
       {formatBRL(value)}
     </span>
+  );
+}
+
+/** Lista cartões da sessão com edição (corrige captura errada na conferência). */
+function SessionCardPaymentsEditor({
+  cards,
+  onUpdated,
+}: {
+  cards: CardPaymentInSession[];
+  onUpdated: () => void;
+}) {
+  const qc = useQueryClient();
+  const [edit, setEdit] = useState<CardPaymentInSession | null>(null);
+  const [form, setForm] = useState({ paymentFormId: '', amount: '', installments: '1', authCode: '' });
+  const [err, setErr] = useState<string | null>(null);
+
+  const formsQ = useQuery({
+    queryKey: ['payment-forms', 'card'],
+    queryFn: () => api<PaymentForm[]>('/payment-forms?kind=CARD'),
+    enabled: Boolean(edit),
+  });
+
+  const patch = useMutation({
+    mutationFn: () =>
+      api(`/card-transactions/${edit!.id}`, {
+        method: 'PATCH',
+        json: {
+          paymentFormId: form.paymentFormId || undefined,
+          amount: form.amount,
+          installments: Number(form.installments) || 1,
+          authCode: form.authCode || null,
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cash'] });
+      qc.invalidateQueries({ queryKey: ['card-transactions'] });
+      setEdit(null);
+      setErr(null);
+      onUpdated();
+    },
+    onError: (e: Error) => setErr(e.message),
+  });
+
+  if (!cards.length) return null;
+
+  return (
+    <div className="card" style={{ marginBottom: '1rem' }}>
+      <strong style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+        Cartões nesta sessão
+      </strong>
+      <p style={{ margin: '0 0 0.5rem', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+        Se houver erro na captura, edite a forma/valor antes de marcar a conferência.
+      </p>
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Venda</th>
+            <th>Forma</th>
+            <th className="num">Valor</th>
+            <th className="col-actions">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cards.map((c) => (
+            <tr key={c.id}>
+              <td>#{c.saleNumber}</td>
+              <td>
+                {c.paymentFormName ?? 'Cartão'}
+                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                  {cardBrandLabel(c.cardBrand)} · {cardOperationLabel(c.cardOperation)}
+                </div>
+              </td>
+              <td className="num">{formatBRL(c.amount)}</td>
+              <td className="col-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-compact"
+                  onClick={() => {
+                    setEdit(c);
+                    setForm({
+                      paymentFormId: c.paymentFormId ?? '',
+                      amount: String(c.amount),
+                      installments: String(c.installments),
+                      authCode: c.authCode ?? '',
+                    });
+                    setErr(null);
+                  }}
+                >
+                  Editar
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {edit && (
+        <FormModalBackdrop onClose={() => setEdit(null)}>
+          <div className="modal" role="dialog">
+            <h2>Editar cartão — venda #{edit.saleNumber}</h2>
+            {err && <div className="alert alert-error">{err}</div>}
+            <div className="field">
+              <label>Forma</label>
+              <select
+                value={form.paymentFormId}
+                onChange={(e) => setForm((f) => ({ ...f, paymentFormId: e.target.value }))}
+              >
+                <option value="">—</option>
+                {(formsQ.data ?? []).map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-row">
+              <div className="field">
+                <label>Valor</label>
+                <input
+                  value={form.amount}
+                  onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                />
+              </div>
+              <div className="field">
+                <label>Parcelas</label>
+                <input
+                  value={form.installments}
+                  onChange={(e) => setForm((f) => ({ ...f, installments: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="field">
+              <label>NSU / autorização</label>
+              <input
+                value={form.authCode}
+                onChange={(e) => setForm((f) => ({ ...f, authCode: e.target.value }))}
+              />
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setEdit(null)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={patch.isPending}
+                onClick={() => patch.mutate()}
+              >
+                {patch.isPending ? 'Salvando…' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+    </div>
   );
 }
 
@@ -2030,6 +2211,37 @@ function SessionDetailDrawer({
                 session={s}
                 expected={sum.byMethod}
                 movementBreakdown={sum.movementBreakdown}
+              />
+
+              {sum.salesByPaymentForm && Object.keys(sum.salesByPaymentForm).length > 0 && (
+                <div className="card" style={{ marginBottom: '1rem' }}>
+                  <strong style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+                    Vendas por forma cadastrada
+                  </strong>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Forma</th>
+                        <th className="num">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(sum.salesByPaymentForm)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([name, amt]) => (
+                          <tr key={name}>
+                            <td>{name}</td>
+                            <td className="num">{formatBRL(amt)}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <SessionCardPaymentsEditor
+                cards={sum.cardPayments ?? []}
+                onUpdated={onRefresh}
               />
 
               <ManagerCashReconciliation

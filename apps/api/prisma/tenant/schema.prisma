@@ -159,6 +159,7 @@ model User {
   cashSessions        CashRegisterSession[]
   cashSessionsReconciled CashRegisterSession[] @relation("CashSessionReconciledBy")
   goodsReceipts  GoodsReceipt[]
+  stockInventories StockInventory[]
   activityLogs   UserActivityLog[]
   permissions    UserPermission[]
 }
@@ -328,6 +329,10 @@ model Product {
   taxUnit     String?          @db.VarChar(10)
   /// Conversão de unidade na entrada NF-e (ex.: CX-12 → 1 CX = 12 unidades no estoque)
   conversion  String?          @db.VarChar(32)
+  /// Produto composto (caixa/pack): estoque movimenta neste variant unitário (ex.: lata),
+  /// multiplicado pelo fator de `conversion` na entrada NF-e e na venda do pack.
+  stockComponentVariantId String?
+  stockComponentVariant   ProductVariant? @relation("ProductStockComponent", fields: [stockComponentVariantId], references: [id], onDelete: SetNull)
   isActive    Boolean          @default(true)
   /// Número sequencial único para identificação rápida (listagem, PDV, pesquisa por código).
   controlNumber Int              @unique @default(autoincrement())
@@ -336,12 +341,16 @@ model Product {
   variants    ProductVariant[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
+
+  @@index([stockComponentVariantId])
 }
 
 model ProductVariant {
   id                 String             @id @default(uuid())
   productId          String
   product            Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// Packs/caixas que usam este SKU como unidade de estoque.
+  stockComponentOf   Product[]          @relation("ProductStockComponent")
   sku                String             @unique
   barcode            String?
   retailPrice        Decimal            @db.Decimal(14, 4)
@@ -354,6 +363,7 @@ model ProductVariant {
   stockBalances      StockBalance[]
   movements          StockMovement[]
   goodsReceiptItems  GoodsReceiptItem[]
+  inventoryItems     StockInventoryItem[]
   priceHistory       ProductVariantPriceHistory[]
   supplierLinks      SupplierProductLink[]
 }
@@ -404,6 +414,7 @@ model StockLocation {
   children  StockLocation[]  @relation("LocationHierarchy")
   balances  StockBalance[]
   movements StockMovement[]
+  inventories StockInventory[]
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 }
@@ -557,7 +568,55 @@ model StockMovement {
   user             User?                @relation(fields: [userId], references: [id])
   goodsReceiptId   String?
   goodsReceipt     GoodsReceipt?        @relation(fields: [goodsReceiptId], references: [id])
+  stockInventoryId String?
+  stockInventory   StockInventory?      @relation(fields: [stockInventoryId], references: [id], onDelete: SetNull)
   createdAt        DateTime             @default(now())
+
+  @@index([stockInventoryId])
+}
+
+/// Inventário físico: 1 a N produtos no mesmo documento/local.
+enum StockInventoryStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
+model StockInventory {
+  id            String               @id @default(uuid())
+  controlNumber Int                  @unique @default(autoincrement())
+  locationId    String
+  location      StockLocation        @relation(fields: [locationId], references: [id])
+  status        StockInventoryStatus @default(DRAFT)
+  notes         String?
+  userId        String?
+  user          User?                @relation(fields: [userId], references: [id])
+  postedAt      DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  items         StockInventoryItem[]
+  movements     StockMovement[]
+
+  @@index([status, createdAt])
+  @@index([locationId])
+}
+
+model StockInventoryItem {
+  id          String         @id @default(uuid())
+  inventoryId String
+  inventory   StockInventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  variantId   String
+  variant     ProductVariant @relation(fields: [variantId], references: [id])
+  /// Saldo do sistema no momento da inclusão (referência).
+  systemQty   Decimal        @db.Decimal(18, 4)
+  /// Contagem física informada (obrigatória para postar).
+  countedQty  Decimal?       @db.Decimal(18, 4)
+  notes       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@unique([inventoryId, variantId])
+  @@index([variantId])
 }
 
 // --- Vendas / PDV ---
@@ -646,13 +705,91 @@ model SaleItem {
   totalLine   Decimal        @db.Decimal(14, 2)
 }
 
+/// Cadastro de formas de pagamento (PDV + cartões + conferência de caixa).
+enum PaymentFormKind {
+  CASH
+  CARD
+  PIX
+  CREDIT
+  OTHER
+}
+
+enum CardBrand {
+  VISA
+  MASTERCARD
+  ELO
+  AMEX
+  HIPERCARD
+  CABAL
+  DINERS
+  SOROCRED
+  ALELO
+  VR
+  TICKET
+  OTHER
+}
+
+/// Crédito ou débito quando a forma é cartão.
+enum CardOperation {
+  CREDIT
+  DEBIT
+}
+
+enum CardSettlementStatus {
+  OPEN
+  SETTLED
+}
+
+model PaymentForm {
+  id              String           @id @default(uuid())
+  name            String           @db.VarChar(120)
+  kind            PaymentFormKind
+  isActive        Boolean          @default(true)
+  sortOrder       Int              @default(0)
+  /// Detalhes só para kind = CARD
+  cardBrand       CardBrand?
+  cardOperation   CardOperation?
+  /// Taxa administrativa percentual (ex.: 2.49).
+  adminFeePercent Decimal          @default(0) @db.Decimal(7, 4)
+  /// Taxa fixa por transação (R$).
+  adminFeeFixed   Decimal          @default(0) @db.Decimal(14, 2)
+  /// Dias para previsão de baixa (D+N).
+  settlementDays  Int              @default(1)
+  maxInstallments Int              @default(1)
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  salePayments    SalePayment[]
+
+  @@index([kind, isActive])
+  @@index([sortOrder, name])
+}
+
 model SalePayment {
-  id        String        @id @default(uuid())
-  saleId    String
-  sale      Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  method    PaymentMethod
-  amount    Decimal       @db.Decimal(14, 2)
-  installments Int        @default(1)
+  id               String                @id @default(uuid())
+  saleId           String
+  sale             Sale                  @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  method           PaymentMethod
+  amount           Decimal               @db.Decimal(14, 2)
+  installments     Int                   @default(1)
+  paymentFormId    String?
+  paymentForm      PaymentForm?          @relation(fields: [paymentFormId], references: [id], onDelete: SetNull)
+  /// Snapshot da bandeira / operação no momento da venda (cartão).
+  cardBrand        CardBrand?
+  cardOperation    CardOperation?
+  adminFeeAmount   Decimal               @default(0) @db.Decimal(14, 2)
+  netAmount        Decimal?              @db.Decimal(14, 2)
+  settlementStatus CardSettlementStatus?
+  settledAt        DateTime?
+  expectedSettleAt DateTime?
+  authCode         String?               @db.VarChar(40)
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  @@index([method, createdAt])
+  @@index([settlementStatus, expectedSettleAt])
+  @@index([cardBrand])
+  @@index([paymentFormId])
 }
 
 // --- Caixa ---

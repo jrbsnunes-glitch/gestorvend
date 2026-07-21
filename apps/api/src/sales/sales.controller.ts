@@ -44,6 +44,8 @@ export class SalesController {
         method: PaymentMethod;
         amount: number;
         installments?: number;
+        paymentFormId?: string | null;
+        authCode?: string | null;
       }>;
     },
   ) {

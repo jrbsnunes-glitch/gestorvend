@@ -125,7 +125,11 @@ export class GoodsReceiptService {
                 body.items.map(async (it) => {
                   const variant = await tx.productVariant.findUniqueOrThrow({
                     where: { id: it.variantId },
-                    include: { product: { select: { conversion: true } } },
+                    include: {
+                      product: {
+                        select: { conversion: true, stockComponentVariantId: true },
+                      },
+                    },
                   });
                   const rawQty =
                     it.invoiceQuantity != null ? Number(it.invoiceQuantity) : Number(it.quantity);
@@ -167,7 +171,11 @@ export class GoodsReceiptService {
         for (const it of body.items) {
           const variant = await tx.productVariant.findUniqueOrThrow({
             where: { id: it.variantId },
-            include: { product: { select: { conversion: true } } },
+            include: {
+              product: {
+                select: { conversion: true, stockComponentVariantId: true },
+              },
+            },
           });
           const rawQty =
             it.invoiceQuantity != null ? Number(it.invoiceQuantity) : Number(it.quantity);
@@ -180,19 +188,28 @@ export class GoodsReceiptService {
           );
           const qtyNum = resolved.quantity;
           const unitCost = resolved.unitCost;
+          // Pack/caixa: estoque e custo médio no SKU unitário (lata), não na caixa.
+          const stockVariantId =
+            variant.product.stockComponentVariantId?.trim() || it.variantId;
           const bal = await tx.stockBalance.findUnique({
             where: {
-              variantId_locationId: { variantId: it.variantId, locationId: body.locationId },
+              variantId_locationId: {
+                variantId: stockVariantId,
+                locationId: body.locationId,
+              },
             },
           });
           const current = bal ? Number(bal.quantity) : 0;
           const next = current + qtyNum;
           await tx.stockBalance.upsert({
             where: {
-              variantId_locationId: { variantId: it.variantId, locationId: body.locationId },
+              variantId_locationId: {
+                variantId: stockVariantId,
+                locationId: body.locationId,
+              },
             },
             create: {
-              variantId: it.variantId,
+              variantId: stockVariantId,
               locationId: body.locationId,
               quantity: String(next),
             },
@@ -203,7 +220,7 @@ export class GoodsReceiptService {
             data: {
               type: StockMovementType.IN,
               source: StockMovementSource.GOODS_RECEIPT,
-              variantId: it.variantId,
+              variantId: stockVariantId,
               locationId: body.locationId,
               quantity: String(Math.abs(qtyNum)),
               unitCost: String(unitCost),
@@ -214,7 +231,7 @@ export class GoodsReceiptService {
           });
 
           const variantRow = await tx.productVariant.findUniqueOrThrow({
-            where: { id: it.variantId },
+            where: { id: stockVariantId },
           });
           const oldCost = Number(variantRow.costAverage);
           const denom = next;
@@ -225,7 +242,7 @@ export class GoodsReceiptService {
           if (!oldCostDec.equals(newAvgDec)) {
             await tx.productVariantPriceHistory.create({
               data: {
-                variantId: it.variantId,
+                variantId: stockVariantId,
                 field: 'COST',
                 previousValue: oldCostDec,
                 newValue: newAvgDec,
@@ -235,7 +252,7 @@ export class GoodsReceiptService {
             });
           }
           await tx.productVariant.update({
-            where: { id: it.variantId },
+            where: { id: stockVariantId },
             data: { costAverage: String(newAverage) },
           });
 

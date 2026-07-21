@@ -37,6 +37,13 @@ import {
   setPosAutoPrintMode,
   type PosAutoPrintMode,
 } from '../lib/sale-receipt-print';
+import {
+  calcAdminFee,
+  cardBrandLabel,
+  cardOperationLabel,
+  kindIcon,
+  type PaymentForm,
+} from '../lib/payment-forms';
 import './pos.css';
 
 const GV_POS_CHECKOUT_FAILURE_KEY = 'gv_pos_checkout_failure_v1';
@@ -156,6 +163,8 @@ type CartPayment = {
   method: PaymentKind;
   amount: number;
   installments: number;
+  paymentFormId?: string | null;
+  paymentFormName?: string | null;
 };
 
 /* ----------------------------------------------------------------------------
@@ -989,7 +998,9 @@ function PosScreen({
           payments: payments.map((p) => ({
             method: p.method,
             amount: p.amount,
-            installments: p.method === 'CREDIT' ? p.installments : 1,
+            installments:
+              p.method === 'CREDIT' || p.method === 'CARD' ? p.installments : 1,
+            paymentFormId: p.paymentFormId ?? null,
           })),
         },
       }),
@@ -1000,6 +1011,7 @@ function PosScreen({
       qc.invalidateQueries({ queryKey: ['cash', 'pdv-readiness'] });
       qc.invalidateQueries({ queryKey: ['sales'] });
       qc.invalidateQueries({ queryKey: ['reports', 'sales-summary'] });
+      qc.invalidateQueries({ queryKey: ['card-transactions'] });
       const concluded = total;
       resetSale();
       setPaymentMenuOpen(false);
@@ -2573,36 +2585,75 @@ function PaymentOverlay({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const [method, setMethod] = useState<PaymentKind>('CASH');
+  const formsQ = useQuery({
+    queryKey: ['payment-forms', 'active'],
+    queryFn: () => api<PaymentForm[]>('/payment-forms?active=1'),
+  });
+
+  const tiles = useMemo(() => {
+    const forms = formsQ.data ?? [];
+    if (forms.length > 0) {
+      return forms.map((f) => ({
+        id: f.id,
+        kind: f.kind as PaymentKind,
+        label: f.name,
+        icon: kindIcon(f.kind),
+        form: f,
+      }));
+    }
+    return PAY_METHODS.map((m) => ({
+      id: m.key,
+      kind: m.key,
+      label: m.label,
+      icon: m.icon,
+      form: null as PaymentForm | null,
+    }));
+  }, [formsQ.data]);
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = tiles.find((t) => t.id === (selectedId ?? tiles[0]?.id)) ?? tiles[0];
+  const method = selected?.kind ?? 'CASH';
   const [amountStr, setAmountStr] = useState('');
   const [installments, setInstallments] = useState('1');
   const amountInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!selectedId && tiles[0]) setSelectedId(tiles[0].id);
+  }, [tiles, selectedId]);
+
   const fullyPaid = Math.abs(remaining) <= 0.005;
   const canFinish = total > 0 && fullyPaid;
 
-  // Foca o campo de valor ao abrir e quando muda o método.
   useEffect(() => {
     amountInputRef.current?.focus();
     amountInputRef.current?.select();
-  }, [method]);
+  }, [selectedId]);
+
+  const showInstallments =
+    method === 'CREDIT' ||
+    (method === 'CARD' &&
+      selected?.form?.cardOperation === 'CREDIT' &&
+      (selected.form.maxInstallments ?? 1) > 1);
 
   function addPayment(opts?: { fullAmount?: boolean }) {
     const parsed = parseDecimal(amountStr);
     const value = opts?.fullAmount || parsed <= 0 ? remaining : parsed;
-    if (value <= 0) return;
+    if (value <= 0 || !selected) return;
+    const maxInst = selected.form?.maxInstallments ?? 48;
     onAddPayment({
       id: uid(),
       method,
       amount: Math.round(value * 100) / 100,
-      installments: parseInt(installments, 10) || 1,
+      installments: showInstallments
+        ? Math.min(Math.max(1, parseInt(installments, 10) || 1), maxInst)
+        : 1,
+      paymentFormId: selected.form?.id ?? null,
+      paymentFormName: selected.form?.name ?? selected.label,
     });
     setAmountStr('');
-    // Mantém o foco no campo para o próximo lançamento (vendas com troco/divisão).
     setTimeout(() => amountInputRef.current?.focus(), 0);
   }
 
-  // Atalhos da overlay: 1-5 = método, F2/Enter = confirmar, Esc = voltar
   useEffect(() => {
     function onKey(ev: globalThis.KeyboardEvent) {
       if (ev.key === 'Escape') {
@@ -2615,29 +2666,29 @@ function PaymentOverlay({
         if (canFinish && !isFinishing) onConfirm();
         return;
       }
-      // 1-5 para escolher método (só funciona fora de input numérico, mas
-      // como o campo aceita decimais, vamos bloquear se for "dígito de método")
       const target = ev.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
       const isInputFocused = tag === 'input' || tag === 'select' || tag === 'textarea';
-
       if (!isInputFocused) {
-        const map: Record<string, PaymentKind> = {
-          '1': 'CASH',
-          '2': 'CARD',
-          '3': 'PIX',
-          '4': 'CREDIT',
-          '5': 'OTHER',
-        };
-        if (map[ev.key]) {
+        const idx = Number(ev.key) - 1;
+        if (idx >= 0 && idx < tiles.length && idx < 9) {
           ev.preventDefault();
-          setMethod(map[ev.key]);
+          setSelectedId(tiles[idx]!.id);
         }
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [canFinish, isFinishing, onCancel, onConfirm]);
+  }, [canFinish, isFinishing, onCancel, onConfirm, tiles]);
+
+  const feePreview =
+    selected?.form?.kind === 'CARD' && remaining > 0
+      ? calcAdminFee(
+          parseDecimal(amountStr) > 0 ? parseDecimal(amountStr) : remaining,
+          selected.form.adminFeePercent,
+          selected.form.adminFeeFixed,
+        )
+      : 0;
 
   return (
     <div className="pos-payment-overlay" role="dialog" aria-modal="true">
@@ -2669,18 +2720,23 @@ function PaymentOverlay({
 
         <div className="pos-payment-body">
           <div className="pos-payment-methods-grid">
-            {PAY_METHODS.map((m, i) => (
+            {tiles.map((m, i) => (
               <button
-                key={m.key}
+                key={m.id}
                 type="button"
-                className={`pos-payment-tile ${method === m.key ? 'is-active' : ''}`}
-                onClick={() => setMethod(m.key)}
+                className={`pos-payment-tile ${selected?.id === m.id ? 'is-active' : ''}`}
+                onClick={() => setSelectedId(m.id)}
               >
-                <span className="pos-payment-tile-shortcut">{i + 1}</span>
+                {i < 9 ? <span className="pos-payment-tile-shortcut">{i + 1}</span> : null}
                 <span className="pos-payment-tile-icon" aria-hidden>
                   {m.icon}
                 </span>
                 <span className="pos-payment-tile-label">{m.label}</span>
+                {m.form?.kind === 'CARD' ? (
+                  <span style={{ fontSize: '0.65rem', opacity: 0.85 }}>
+                    {cardBrandLabel(m.form.cardBrand)} · {cardOperationLabel(m.form.cardOperation)}
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
@@ -2688,7 +2744,7 @@ function PaymentOverlay({
           <div className="pos-payment-controls">
             <div className="pos-payment-field">
               <label htmlFor="pay-overlay-amount">
-                Valor recebido em {PAY_METHODS.find((m) => m.key === method)?.label}
+                Valor em {selected?.label ?? 'pagamento'}
               </label>
               <input
                 ref={amountInputRef}
@@ -2704,14 +2760,20 @@ function PaymentOverlay({
                   }
                 }}
               />
+              {feePreview > 0 ? (
+                <small style={{ color: 'var(--color-text-muted)' }}>
+                  Taxa adm. estimada: {formatBRL(feePreview)}
+                </small>
+              ) : null}
             </div>
-            {method === 'CREDIT' && (
+            {showInstallments && (
               <div className="pos-payment-field" style={{ maxWidth: 130 }}>
                 <label htmlFor="pay-overlay-inst">Parcelas</label>
                 <input
                   id="pay-overlay-inst"
                   type="number"
                   min={1}
+                  max={selected?.form?.maxInstallments ?? 48}
                   value={installments}
                   onChange={(e) => setInstallments(e.target.value)}
                 />
@@ -2732,7 +2794,7 @@ function PaymentOverlay({
               style={{ alignSelf: 'flex-end', minHeight: 52 }}
               onClick={() => addPayment({ fullAmount: true })}
               disabled={remaining <= 0}
-              title="Lançar o valor restante neste método"
+              title="Lançar o valor restante nesta forma"
             >
               Restante
             </button>
@@ -2744,10 +2806,12 @@ function PaymentOverlay({
                 const meta = PAY_METHODS.find((m) => m.key === p.method);
                 return (
                   <div key={p.id} className="pos-payment-row">
-                    <span aria-hidden>{meta?.icon}</span>
+                    <span aria-hidden>{meta?.icon ?? '💳'}</span>
                     <span style={{ flex: 1, fontWeight: 600 }}>
-                      {meta?.label}
-                      {p.method === 'CREDIT' && p.installments > 1 && ` · ${p.installments}×`}
+                      {p.paymentFormName ?? meta?.label ?? p.method}
+                      {(p.method === 'CREDIT' || p.method === 'CARD') &&
+                        p.installments > 1 &&
+                        ` · ${p.installments}×`}
                     </span>
                     <strong style={{ fontVariantNumeric: 'tabular-nums' }}>
                       {formatBRL(p.amount)}
@@ -2769,18 +2833,15 @@ function PaymentOverlay({
           <div className="pos-payment-summary">
             <div className={fullyPaid ? 'is-paid' : 'is-missing'}>
               <span>{fullyPaid ? (change > 0 ? 'Troco' : 'Pago') : 'Faltam'}</span>
-              <strong>
-                {formatBRL(fullyPaid ? change : remaining)}
-              </strong>
+              <strong>{formatBRL(fullyPaid ? change : remaining)}</strong>
             </div>
           </div>
         </div>
 
         <div className="pos-payment-footer">
           <span className="pos-payment-tip">
-            Atalhos: <span className="pos-shortcut-key">1</span>–
-            <span className="pos-shortcut-key">5</span> método ·{' '}
-            <span className="pos-shortcut-key">Enter</span> adicionar valor ·{' '}
+            Atalhos: teclas numéricas escolhem a forma ·{' '}
+            <span className="pos-shortcut-key">Enter</span> adicionar ·{' '}
             <span className="pos-shortcut-key">F2</span> confirmar ·{' '}
             <span className="pos-shortcut-key">Esc</span> voltar
           </span>

@@ -5,6 +5,7 @@ import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { CrudToolbar } from '../components/CrudToolbar';
 import { ListPagination } from '../components/ListPagination';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
+import { RecordViewModal } from '../components/RecordViewModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
 import { useListPagination } from '../hooks/useListPagination';
@@ -415,7 +416,7 @@ export function FiscalSituationsPage() {
                 <td className="col-actions no-print">
                   <div className="row-record-actions" style={{ flexWrap: 'wrap' }}>
                     <button type="button" className="btn btn-secondary btn-compact" onClick={() => openView(row)}>
-                      Exibir
+                      Visualizar
                     </button>
                     <button type="button" className="btn btn-secondary btn-compact" onClick={() => openEdit(row)}>
                       Editar
@@ -445,53 +446,51 @@ export function FiscalSituationsPage() {
         itemLabel="situação(ões)"
       />
 
-      {viewRow && viewOpen && (
-        <div className="modal-backdrop no-print" role="presentation" onClick={() => setViewOpen(false)}>
-          <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
-            <h2>Situação fiscal — exibir</h2>
-            <div style={{ fontSize: '0.9rem', display: 'grid', gap: '0.45rem', maxHeight: '70vh', overflowY: 'auto' }}>
-              <p>
-                <strong>Código:</strong> <code>{viewRow.code}</code>
-              </p>
-              <p>
-                <strong>Nome:</strong> {viewRow.name}
-              </p>
-              <p>
-                <strong>Descrição:</strong> {viewRow.description ?? '—'}
-              </p>
-              <p>
-                <strong>EX TIPI:</strong> {viewRow.exTipi ?? '—'}
-              </p>
-              <p>
-                <strong>Origem:</strong> {viewRow.fiscalOrigin ?? '—'}
-              </p>
-              <p>
-                <strong>CST ICMS / CSOSN:</strong> {(viewRow.cstIcms ?? '—') + ' / ' + (viewRow.csosn ?? '—')}
-              </p>
-              <p>
-                <strong>CST PIS / COFINS:</strong> {(viewRow.cstPis ?? '—') + ' / ' + (viewRow.cstCofins ?? '—')}
-              </p>
-              <p>
-                <strong>CFOP interno / interestadual:</strong> {(viewRow.cfopInternal ?? '—') + ' / ' + (viewRow.cfopInterstate ?? '—')}
-              </p>
-              <p>
-                <strong>IBS / CBS % teste:</strong> {viewRow.ibsTestRate}% / {viewRow.cbsTestRate}%
-              </p>
-              <p>
-                <strong>Status:</strong> {viewRow.isActive ? 'Ativa' : 'Inativa'}
-              </p>
-              <p style={{ whiteSpace: 'pre-wrap' }}>
-                <strong>Notas regulatórias:</strong> {viewRow.regulationNotes ?? '—'}
-              </p>
-            </div>
-            <div className="modal-actions">
-              <button type="button" className="btn btn-primary" onClick={() => setViewOpen(false)}>
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RecordViewModal
+        open={Boolean(viewRow && viewOpen)}
+        title="Situação fiscal — visualização"
+        wide
+        onClose={() => setViewOpen(false)}
+        sections={
+          viewRow
+            ? [
+                {
+                  title: 'Dados da situação fiscal',
+                  fields: [
+                    { label: 'Código', value: <code>{viewRow.code}</code> },
+                    { label: 'Nome', value: viewRow.name },
+                    { label: 'Descrição', value: viewRow.description },
+                    { label: 'EX TIPI', value: viewRow.exTipi },
+                    { label: 'Origem', value: viewRow.fiscalOrigin },
+                    {
+                      label: 'CST ICMS / CSOSN',
+                      value: `${viewRow.cstIcms ?? '—'} / ${viewRow.csosn ?? '—'}`,
+                    },
+                    {
+                      label: 'CST PIS / COFINS',
+                      value: `${viewRow.cstPis ?? '—'} / ${viewRow.cstCofins ?? '—'}`,
+                    },
+                    {
+                      label: 'CFOP interno / interestadual',
+                      value: `${viewRow.cfopInternal ?? '—'} / ${viewRow.cfopInterstate ?? '—'}`,
+                    },
+                    {
+                      label: 'IBS / CBS % teste',
+                      value: `${viewRow.ibsTestRate}% / ${viewRow.cbsTestRate}%`,
+                    },
+                    { label: 'Status', value: viewRow.isActive ? 'Ativa' : 'Inativa' },
+                    {
+                      label: 'Notas regulatórias',
+                      value: viewRow.regulationNotes ? (
+                        <span style={{ whiteSpace: 'pre-wrap' }}>{viewRow.regulationNotes}</span>
+                      ) : null,
+                    },
+                  ],
+                },
+              ]
+            : []
+        }
+      />
 
       {editingRow && editOpen && (
         <FormModalBackdrop

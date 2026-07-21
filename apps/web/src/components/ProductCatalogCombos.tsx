@@ -567,9 +567,17 @@ export function FiscalCodeSearchCombo({
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Unidades: o valor selecionado fica no rodapé; o campo de busca não deve
+    // filtrar a lista pelo código atual (senão só aparece "UN" e parece “vazia”).
+    if (kind === 'tax-units') {
+      if (!open) {
+        setQ(value ? hintLabel || value : '');
+      }
+      return;
+    }
     if (hintLabel && value) setQ(hintLabel);
     else if (!value) setQ('');
-  }, [hintLabel, value]);
+  }, [hintLabel, value, kind, open]);
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -690,7 +698,11 @@ export function FiscalCodeSearchCombo({
           setQ(e.target.value);
           if (value) onChange('');
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          setOpen(true);
+          // Ao focar em unidades, abre a lista completa (filtrar digitando).
+          if (kind === 'tax-units') setQ('');
+        }}
       />
       {kind === 'cest' && open && (
         <div className="field catalog-combo-nested">
@@ -710,8 +722,15 @@ export function FiscalCodeSearchCombo({
           }
           role="listbox"
         >
+          {kind === 'tax-units' && !list.isLoading && (
+            <div className="catalog-combo-hint">Digite para filtrar ou escolha uma unidade abaixo.</div>
+          )}
           {list.isLoading && <div className="catalog-combo-empty">Carregando…</div>}
+          {list.isError && (
+            <div className="catalog-combo-error">{(list.error as Error).message}</div>
+          )}
           {!list.isLoading &&
+            !list.isError &&
             rows.map((r) => (
               <button
                 key={r.id}
@@ -727,8 +746,10 @@ export function FiscalCodeSearchCombo({
                 {rowLabel(r)}
               </button>
             ))}
-          {!list.isLoading && !rows.length && term.length > 0 && (
-            <div className="catalog-combo-empty">Nenhum registro.</div>
+          {!list.isLoading && !list.isError && !rows.length && (
+            <div className="catalog-combo-empty">
+              {term.length > 0 ? 'Nenhum registro.' : 'Nenhuma unidade cadastrada.'}
+            </div>
           )}
           {canCreate && (
             <button
