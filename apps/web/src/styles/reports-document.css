@@ -198,6 +198,10 @@
   display: none !important;
 }
 
+.print-only {
+  display: none !important;
+}
+
 @media print {
   @page {
     size: A4 portrait;
@@ -272,6 +276,14 @@
 
   .gv-report-print-only {
     display: block !important;
+  }
+
+  .screen-only {
+    display: none !important;
+  }
+
+  .print-only {
+    display: table-row-group !important;
   }
 
   .gv-report-sheet--embedded {

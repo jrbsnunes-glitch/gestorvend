@@ -237,6 +237,52 @@ export function ProductsPage() {
 
   const pagination = useListPagination(rows, 20);
 
+  type ListRow = { product: Product; variant: Variant | null };
+
+  function renderProductListRow({ product, variant }: ListRow, mode: 'screen' | 'print') {
+    return (
+      <tr key={`${mode}-${product.id}-${variant?.id ?? 'x'}`}>
+        <td className="num col-inv-ctrl">{formatProductCode(product.controlNumber)}</td>
+        <td className="col-product-name">
+          <strong>{product.name}</strong>
+        </td>
+        <td className="col-category">{product.category?.name ?? '—'}</td>
+        <td className="col-sku" title={variant?.sku ?? undefined}>
+          {variant?.sku ?? '—'}
+        </td>
+        <td className="num col-min-sku-table">{variant ? formatStockQty(variant.minStock ?? '1') : '—'}</td>
+        <td className="col-ncm-ce">
+          <span style={{ fontSize: '0.85rem' }}>
+            {product.ncm ?? '—'} / {product.cest ?? '—'}
+          </span>
+        </td>
+        <td className="num col-money">{variant ? formatBRL(variant.retailPrice) : '—'}</td>
+        <td className="num col-money">{variant ? formatBRL(variant.costAverage ?? '0') : '—'}</td>
+        <td className="col-status">
+          {mode === 'print' ? (
+            product.isActive ? 'Ativo' : 'Inativo'
+          ) : (
+            <span className={'badge ' + (product.isActive ? 'badge-success' : 'badge-muted')}>
+              {product.isActive ? 'Ativo' : 'Inativo'}
+            </span>
+          )}
+        </td>
+        {mode === 'screen' && (
+          <td className="col-actions">
+            <RowRecordActions
+              onEdit={() => openEdit(product)}
+              onView={() => openView(product)}
+              onDelete={() => {
+                setDeleteProduct(product);
+                setDeleteOpen(true);
+              }}
+            />
+          </td>
+        )}
+      </tr>
+    );
+  }
+
   function resetCreateForm() {
     setName('');
     setDescription('');
@@ -417,8 +463,7 @@ export function ProductsPage() {
         documentTitle="Produtos e variações"
         documentExtras={
           <p className="print-sub page-desc" style={{ marginBottom: 0 }}>
-            Lista operacional atual da tabela abaixo. Use os filtros e a ordenação antes de imprimir quando
-            necessário para auditorias internas.
+            Listagem completa ordenada por código do produto e SKU. Impressão inclui todas as variações cadastradas.
           </p>
         }
       />
@@ -609,10 +654,10 @@ export function ProductsPage() {
               <th className="num col-money th-nowrap">Varejo</th>
               <th className="num col-money th-nowrap">Custo méd.</th>
               <th className="col-status">Status</th>
-              <th className="col-actions">Ações</th>
+              <th className="col-actions no-print">Ações</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="screen-only">
             {list.isLoading && (
               <tr>
                 <td colSpan={10} className="empty">
@@ -627,41 +672,10 @@ export function ProductsPage() {
                 </td>
               </tr>
             )}
-            {pagination.pageItems.map(({ product, variant }) => (
-              <tr key={`${product.id}-${variant?.id ?? 'x'}`}>
-                <td className="num col-inv-ctrl">{formatProductCode(product.controlNumber)}</td>
-                <td className="col-product-name">
-                  <strong>{product.name}</strong>
-                </td>
-                <td className="col-category">{product.category?.name ?? '—'}</td>
-                <td className="col-sku" title={variant?.sku ?? undefined}>
-                  {variant?.sku ?? '—'}
-                </td>
-                <td className="num col-min-sku-table">{variant ? formatStockQty(variant.minStock ?? '1') : '—'}</td>
-                <td className="col-ncm-ce">
-                  <span style={{ fontSize: '0.85rem' }}>
-                    {product.ncm ?? '—'} / {product.cest ?? '—'}
-                  </span>
-                </td>
-                <td className="num col-money">{variant ? formatBRL(variant.retailPrice) : '—'}</td>
-                <td className="num col-money">{variant ? formatBRL(variant.costAverage ?? '0') : '—'}</td>
-                <td className="col-status">
-                  <span className={'badge ' + (product.isActive ? 'badge-success' : 'badge-muted')}>
-                    {product.isActive ? 'Ativo' : 'Inativo'}
-                  </span>
-                </td>
-                <td className="col-actions">
-                  <RowRecordActions
-                    onEdit={() => openEdit(product)}
-                    onView={() => openView(product)}
-                    onDelete={() => {
-                      setDeleteProduct(product);
-                      setDeleteOpen(true);
-                    }}
-                  />
-                </td>
-              </tr>
-            ))}
+            {pagination.pageItems.map((row) => renderProductListRow(row, 'screen'))}
+          </tbody>
+          <tbody className="print-only">
+            {rows.map((row) => renderProductListRow(row, 'print'))}
           </tbody>
         </table>
       </div>

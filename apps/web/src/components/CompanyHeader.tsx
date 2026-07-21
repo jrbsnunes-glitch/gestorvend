@@ -61,9 +61,15 @@ export function CompanyHeader({ company }: { company: CompanyHeaderData }) {
         />
       )}
       <div className="print-company-text">
-        <strong>{company.tradeName || company.legalName}</strong>
-        {company.legalName && company.legalName !== company.tradeName && (
-          <span className="print-company-legal">{company.legalName}</span>
+        {company.tradeName?.trim() ? (
+          <>
+            <strong>{company.tradeName.trim()}</strong>
+            {company.legalName?.trim() && company.legalName.trim() !== company.tradeName.trim() && (
+              <span className="print-company-legal">{company.legalName.trim()}</span>
+            )}
+          </>
+        ) : (
+          <strong>{company.legalName?.trim() || 'GestorVend'}</strong>
         )}
         <span className="print-company-line">
           CNPJ {company.cnpj || '—'}

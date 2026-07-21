@@ -906,13 +906,18 @@ export class ReportsController {
 
   private readonly stockReportMaxVariants = 5000;
 
-  /** Saldo da variação na data de referência (replay de movimentos até `asOf`). */
+  /** Saldo da variação na data de referência. Data atual ou futura: `StockBalance` (mesma base do PDV). Passado: replay de movimentos. */
   private async stockQtyByVariantAtAsOf(
     db: PrismaClient,
     variantIds: string[],
     asOf: Date,
     locationId?: string,
   ): Promise<Map<string, number>> {
+    const todayStart = startOfDay(new Date());
+    if (asOf.getTime() >= todayStart.getTime()) {
+      return this.stockQtyFromBalances(db, variantIds, locationId);
+    }
+
     const result = new Map<string, number>();
     if (!variantIds.length) return result;
 
@@ -952,6 +957,29 @@ export class ReportsController {
         if (key.startsWith(`${vid}\t`)) total += replayQty(seq);
       }
       result.set(vid, total);
+    }
+    return result;
+  }
+
+  /** Saldos operacionais (`StockBalance`) — alinhado ao PDV e à pesquisa de produtos. */
+  private async stockQtyFromBalances(
+    db: PrismaClient,
+    variantIds: string[],
+    locationId?: string,
+  ): Promise<Map<string, number>> {
+    const result = new Map<string, number>();
+    for (const vid of variantIds) result.set(vid, 0);
+    if (!variantIds.length) return result;
+
+    const where: Prisma.StockBalanceWhereInput = { variantId: { in: variantIds } };
+    if (locationId) where.locationId = locationId;
+
+    const balances = await db.stockBalance.findMany({
+      where,
+      select: { variantId: true, quantity: true },
+    });
+    for (const b of balances) {
+      result.set(b.variantId, (result.get(b.variantId) ?? 0) + Number(b.quantity));
     }
     return result;
   }
@@ -1115,8 +1143,9 @@ export class ReportsController {
       title: 'Estoque financeiro',
       ...this.stockReportFiltersMeta(period, locationId, categoryId, categoryName, cadInterval),
       note:
-        'Saldo na data final do período (replay de movimentações). Valor financeiro = quantidade × custo médio. ' +
-        'Lucro = quantidade × (preço varejo − custo) — margem bruta potencial sobre o estoque em mãos, sem considerar impostos ou despesas.',
+        'Saldo na data final do período. Para a data atual, usa o saldo operacional (mesma base do PDV); para datas passadas, reconstrói via movimentações. ' +
+        'Valor financeiro = quantidade × custo médio. Lucro potencial = quantidade × (preço varejo − custo). ' +
+        'Com quantidade zero, os totais ficam R$ 0 mesmo com preço de venda cadastrado.',
       lines,
       totals: {
         quantity: totalQty,

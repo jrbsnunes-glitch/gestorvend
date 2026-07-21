@@ -357,6 +357,7 @@ export function ProductReportStockPrintPage() {
                   <th>Categoria</th>
                   <th className="num">Código</th>
                   <th className="num">Qtd.</th>
+                  <th className="num">Preço venda</th>
                   <th className="num">Custo unit.</th>
                   <th className="num">Valor estoque</th>
                   <th className="num">Lucro pot.</th>
@@ -365,7 +366,7 @@ export function ProductReportStockPrintPage() {
               <tbody>
                 {!data.lines.length && (
                   <tr>
-                    <td colSpan={8} className="empty">
+                    <td colSpan={9} className="empty">
                       Nenhum produto no conjunto filtrado.
                     </td>
                   </tr>
@@ -377,6 +378,7 @@ export function ProductReportStockPrintPage() {
                     <td>{row.categoryName ?? '—'}</td>
                     <td className="num">{row.controlNumber}</td>
                     <td className="num">{formatStockQty(String(row.quantity))}</td>
+                    <td className="num">{formatBRL(row.unitRetailPrice)}</td>
                     <td className="num">{formatBRL(row.unitCost)}</td>
                     <td className="num">{formatBRL(row.stockValue)}</td>
                     <td className="num">{formatBRL(row.profit)}</td>
@@ -388,6 +390,7 @@ export function ProductReportStockPrintPage() {
                   <tr style={{ fontWeight: 700 }}>
                     <td colSpan={4}>Total geral</td>
                     <td className="num">{formatStockQty(String(data.totals.quantity ?? 0))}</td>
+                    <td className="num">—</td>
                     <td className="num">—</td>
                     <td className="num">{formatBRL(data.totals.stockValue ?? 0)}</td>
                     <td className="num">{formatBRL(data.totals.profit ?? 0)}</td>
