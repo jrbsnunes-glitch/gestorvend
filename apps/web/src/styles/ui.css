@@ -262,24 +262,44 @@
 
 .products-list-table th.col-status,
 .products-list-table td.col-status {
-  width: 4.25rem;
-  min-width: 4.25rem;
+  width: 5.25rem;
+  min-width: 5.25rem;
+  max-width: 5.25rem;
   white-space: nowrap;
+  overflow: hidden;
+  text-align: center;
   padding-left: 0.35rem;
-  padding-right: 0.35rem;
+  padding-right: 0.5rem;
 }
 
 .products-list-table th.col-status .badge,
 .products-list-table td.col-status .badge {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 0.72rem;
-  padding: 0.12rem 0.4rem;
+  padding: 0.12rem 0.35rem;
 }
 
 .products-list-table th.col-actions,
 .products-list-table td.col-actions {
-  width: 11.5rem;
-  min-width: 11.5rem;
-  max-width: 11.5rem;
+  width: 12.25rem;
+  min-width: 12.25rem;
+  max-width: 12.25rem;
+  padding-left: 0.65rem;
+  padding-right: 0.45rem;
+}
+
+.products-list-table td.col-actions .row-record-actions {
+  gap: 0.28rem;
+  justify-content: flex-end;
+}
+
+.products-list-table .row-record-actions .btn-compact {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.48rem;
+  line-height: 1.2;
 }
 
 .products-list-table tbody td:not(.col-actions):not(.empty) {
@@ -289,12 +309,6 @@
 .products-list-table thead th:not(.empty),
 .products-list-table tbody td:not(.empty) {
   padding: 0.5rem 0.55rem;
-}
-
-.products-list-table .row-record-actions .btn-compact {
-  font-size: 0.74rem;
-  padding: 0.22rem 0.52rem;
-  line-height: 1.2;
 }
 
 /* Modal Pesquisar — mesma lógica de colunas compactas */
