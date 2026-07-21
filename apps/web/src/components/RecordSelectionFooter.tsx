@@ -29,7 +29,7 @@ export function RecordSelectionFooter({ partyLabel, partyType, partyId, onClear 
       partyType === 'customer'
         ? `customerId=${encodeURIComponent(partyId)}`
         : `supplierId=${encodeURIComponent(partyId)}`;
-    navigate(`/notas-fiscais?${param}&partyName=${encodedName}`);
+    navigate(`/notas-fiscais/parceiro?${param}&partyName=${encodedName}`);
   }
 
   return (

@@ -33,6 +33,15 @@ function blockOf(xml: string, tag: string): string | null {
   return m?.[1] ?? null;
 }
 
+/** Lê chave 44 dígitos de nfeProc/protNFe/chNFe ou Id="NFe…". */
+export function extractAccessKeyFromXml(xml: string): string | null {
+  const fromTag = (textOf(xml, 'chNFe') ?? '').replace(/\D/g, '');
+  if (fromTag.length === 44) return fromTag;
+  const fromId = xml.match(/\bId\s*=\s*["']NFe(\d{44})["']/i);
+  if (fromId?.[1]) return fromId[1];
+  return null;
+}
+
 /**
  * Extrai dados de NF-e modelo 55 (nfeProc/NFe) para preview de entrada.
  */

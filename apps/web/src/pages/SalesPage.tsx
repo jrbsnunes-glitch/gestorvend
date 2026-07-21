@@ -781,6 +781,7 @@ function PosScreen({
   /* --- estado do carrinho atual --- */
   const [lines, setLines] = useState<CartLine[]>([]);
   const [discount, setDiscount] = useState(0);
+  const [surcharge, setSurcharge] = useState(0);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [payments, setPayments] = useState<CartPayment[]>([]);
 
@@ -857,6 +858,10 @@ function PosScreen({
       return;
     }
     setDiscount(v);
+  }
+
+  function applySurcharge(value: number) {
+    setSurcharge(Math.max(0, value));
   }
 
   function requestFinalizeSale() {
@@ -951,7 +956,7 @@ function PosScreen({
     () => lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0),
     [lines],
   );
-  const total = Math.max(0, subtotal - discount);
+  const total = Math.max(0, subtotal - discount + surcharge);
   const paidSum = useMemo(() => payments.reduce((s, p) => s + p.amount, 0), [payments]);
   const remaining = Math.max(0, total - paidSum);
   const change = Math.max(0, paidSum - total);
@@ -974,6 +979,7 @@ function PosScreen({
         json: {
           customerId: customer?.id ?? null,
           discount,
+          surcharge,
           permissionPassword: permissionPassword || undefined,
           items: lines.map((l) => ({
             variantId: l.variantId,
@@ -1042,11 +1048,15 @@ function PosScreen({
     mutationFn: ({ docId, permissionPassword }: { docId: string; permissionPassword: string }) =>
       api(`/fiscal/documents/${encodeURIComponent(docId)}/cancel`, {
         method: 'POST',
-        json: { permissionPassword },
+        json: {
+          permissionPassword,
+          xJust: 'Cancelamento solicitado pelo emitente no GestorVend.',
+        },
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sales'] });
       qc.invalidateQueries({ queryKey: ['sales', 'today'] });
+      qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
       setPermModal(null);
       setPermModalError(null);
       setToast({ kind: 'ok', text: 'Documento fiscal cancelado.' });
@@ -1086,14 +1096,17 @@ function PosScreen({
     onError: (e: Error) => setToast({ kind: 'err', text: e.message }),
   });
 
-  /** Fila local DFe (stub até worker SEFAZ). Só faz sentido com empresa em modo fiscal planejado. */
   const queueFiscalDocumentMut = useMutation({
-    mutationFn: (saleId: string) =>
-      api('/fiscal/documents/queue', { method: 'POST', json: { saleId } }),
-    onSuccess: () => {
+    mutationFn: ({ saleId, kind }: { saleId: string; kind: 'NFC_E' | 'NF_E' }) =>
+      api('/fiscal/documents/queue', { method: 'POST', json: { saleId, kind } }),
+    onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['sales'] });
       qc.invalidateQueries({ queryKey: ['sales', 'today'] });
-      setToast({ kind: 'ok', text: 'Documento fiscal enfileirado (aguardando processamento).' });
+      qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
+      setToast({
+        kind: 'ok',
+        text: `${vars.kind === 'NF_E' ? 'NF-e' : 'NFC-e'} enfileirada (worker processa em até ~1 min).`,
+      });
     },
     onError: (e: Error) => setToast({ kind: 'err', text: e.message }),
   });
@@ -1182,6 +1195,7 @@ function PosScreen({
   function resetSale() {
     setLines([]);
     setDiscount(0);
+    setSurcharge(0);
     setCustomer(null);
     setPayments([]);
     setScannerValue('');
@@ -1304,6 +1318,10 @@ function PosScreen({
         ev.preventDefault();
         const v = prompt('Desconto em R$ no total da venda', String(discount));
         if (v != null) applyDiscount(parseDecimal(v));
+      } else if (ev.key === 'F9') {
+        ev.preventDefault();
+        const v = prompt('Acréscimo em R$ no total da venda', String(surcharge));
+        if (v != null) applySurcharge(parseDecimal(v));
       } else if (ev.key === 'Escape' && lines.length > 0) {
         if (confirm('Cancelar venda atual e limpar carrinho?')) resetSale();
       }
@@ -1315,6 +1333,7 @@ function PosScreen({
     createSale,
     customerOpen,
     discount,
+    surcharge,
     historyOpen,
     closeOpen,
     lines.length,
@@ -1564,7 +1583,9 @@ function PosScreen({
                     <strong>{formatBRL(subtotal)}</strong>
                   </div>
                   <div className="pos-totals-row">
-                    <span>Desconto</span>
+                    <span>
+                      Desconto <span className="pos-shortcut-key">F8</span>
+                    </span>
                     <div className="pos-discount-row" style={{ width: 160 }}>
                       <input
                         type="number"
@@ -1576,9 +1597,25 @@ function PosScreen({
                         disabled={!canApplyDiscount}
                         title={
                           canApplyDiscount
-                            ? undefined
+                            ? 'Desconto comercial no total (− vDesc)'
                             : 'Sem permissão para desconto — solicite ao administrador'
                         }
+                      />
+                    </div>
+                  </div>
+                  <div className="pos-totals-row">
+                    <span>
+                      Acréscimo <span className="pos-shortcut-key">F9</span>
+                    </span>
+                    <div className="pos-discount-row" style={{ width: 160 }}>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={surcharge || ''}
+                        placeholder="0,00"
+                        onChange={(e) => applySurcharge(parseDecimal(e.target.value))}
+                        title="Outras despesas / acréscimo no total (+ vOutro)"
                       />
                     </div>
                   </div>
@@ -2023,19 +2060,38 @@ function PosScreen({
                           {s.status === 'COMPLETED' &&
                             electronicFiscalPlanned &&
                             canManagePastSales && (
-                              <button
-                                type="button"
-                                className="pos-btn pos-btn-ghost pos-history-action-warn"
-                                disabled={queueFiscalDocumentMut.isPending}
-                                title="Cria/atualiza registro na fila local (transmitir à SEFAZ é a etapa seguinte)."
-                                onClick={() => queueFiscalDocumentMut.mutate(s.id)}
-                              >
-                                {queueFiscalDocumentMut.isPending
-                                  ? 'Enfileirando…'
-                                  : s.fiscalDocument
-                                    ? 'Reenfileirar NFC-e (fila)'
-                                    : 'Enfileirar NFC-e (fila)'}
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  className="pos-btn pos-btn-ghost pos-history-action-warn"
+                                  disabled={queueFiscalDocumentMut.isPending}
+                                  title="Enfileira NFC-e (modelo 65) para transmissão à SEFAZ."
+                                  onClick={() =>
+                                    queueFiscalDocumentMut.mutate({ saleId: s.id, kind: 'NFC_E' })
+                                  }
+                                >
+                                  {queueFiscalDocumentMut.isPending
+                                    ? 'Enfileirando…'
+                                    : s.fiscalDocument?.kind === 'NFC_E'
+                                      ? 'Reenfileirar NFC-e'
+                                      : 'Enfileirar NFC-e'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="pos-btn pos-btn-ghost pos-history-action-warn"
+                                  disabled={queueFiscalDocumentMut.isPending}
+                                  title="Enfileira NF-e (modelo 55). Exige cliente com CPF/CNPJ."
+                                  onClick={() =>
+                                    queueFiscalDocumentMut.mutate({ saleId: s.id, kind: 'NF_E' })
+                                  }
+                                >
+                                  {queueFiscalDocumentMut.isPending
+                                    ? 'Enfileirando…'
+                                    : s.fiscalDocument?.kind === 'NF_E'
+                                      ? 'Reenfileirar NF-e'
+                                      : 'Enfileirar NF-e'}
+                                </button>
+                              </>
                             )}
                           {s.status === 'COMPLETED' && canCancelSale && (
                             <>
@@ -2210,6 +2266,7 @@ function PosScreen({
           total={total}
           subtotal={subtotal}
           discount={discount}
+          surcharge={surcharge}
           itemsCount={lines.length}
           customerName={customer?.name ?? null}
           payments={payments}
@@ -2448,6 +2505,7 @@ function PosTopbar({
           <span className="pos-shortcut-key">F2</span> finalizar ·{' '}
           <span className="pos-shortcut-key">F4</span> cliente ·{' '}
           <span className="pos-shortcut-key">F8</span> desconto ·{' '}
+          <span className="pos-shortcut-key">F9</span> acréscimo ·{' '}
           <span className="pos-shortcut-key">Esc</span> cancelar
         </span>
         <span
@@ -2488,6 +2546,7 @@ function PaymentOverlay({
   total,
   subtotal,
   discount,
+  surcharge,
   itemsCount,
   customerName,
   payments,
@@ -2502,6 +2561,7 @@ function PaymentOverlay({
   total: number;
   subtotal: number;
   discount: number;
+  surcharge: number;
   itemsCount: number;
   customerName: string | null;
   payments: CartPayment[];
@@ -2598,11 +2658,13 @@ function PaymentOverlay({
         <div className="pos-payment-total">
           <span className="pos-payment-total-label">Total a pagar</span>
           <span className="pos-payment-total-value">{formatBRL(total)}</span>
-          {discount > 0 && (
+          {discount > 0 || surcharge > 0 ? (
             <span className="pos-payment-total-detail">
-              Subtotal {formatBRL(subtotal)} · desconto {formatBRL(discount)}
+              Subtotal {formatBRL(subtotal)}
+              {discount > 0 ? ` · desconto ${formatBRL(discount)}` : ''}
+              {surcharge > 0 ? ` · acréscimo ${formatBRL(surcharge)}` : ''}
             </span>
-          )}
+          ) : null}
         </div>
 
         <div className="pos-payment-body">

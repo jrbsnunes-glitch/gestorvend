@@ -25,6 +25,8 @@ import { GeneralRegistersShell } from './pages/GeneralRegistersShell';
 import { ReferentialChartPage } from './pages/ReferentialChartPage';
 import { FinancePrintPage } from './pages/FinancePrintPage';
 import { PartyFiscalPage } from './pages/PartyFiscalPage';
+import { FiscalNotesPage } from './pages/FiscalNotesPage';
+import { FiscalNotesPrintPage } from './pages/FiscalNotesPrintPage';
 import { Login } from './pages/Login';
 import { ProductReportMovementPrintPage } from './pages/ProductReportMovementPrintPage';
 import { ProductReportTurnoverPrintPage } from './pages/ProductReportTurnoverPrintPage';
@@ -152,6 +154,7 @@ function AppInner() {
         <Route path="financeiro/impressao" element={<FinancePrintPage />} />
         <Route path="balanco/impressao" element={<FinancialOverviewPrintPage />} />
         <Route path="balanco/rentabilidade" element={<ProfitabilityReportPage />} />
+        <Route path="notas-fiscais/impressao" element={<FiscalNotesPrintPage />} />
 
         <Route
           element={
@@ -184,8 +187,9 @@ function AppInner() {
             <Route path="fechamento" element={<StockFechamentoPage />} />
           </Route>
           <Route path="caixa" element={<CashPage />} />
+          <Route path="notas-fiscais" element={<FiscalNotesPage />} />
+          <Route path="notas-fiscais/parceiro" element={<PartyFiscalPage />} />
           <Route path="financeiro" element={<FinancePage />} />
-          <Route path="notas-fiscais" element={<PartyFiscalPage />} />
           <Route path="balanco" element={<FinancialOverviewPage />} />
           <Route path="balanco/relatorios" element={<FinancialOverviewReportsPage />} />
           <Route path="balanco/plano-contas" element={<ReferentialChartPage />} />

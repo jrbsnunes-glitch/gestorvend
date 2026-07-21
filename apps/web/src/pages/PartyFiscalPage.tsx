@@ -41,6 +41,8 @@ function fiscalStatusPt(status: string): string {
   switch (status) {
     case 'AUTHORIZED':
       return 'Autorizada';
+    case 'CONTINGENCY':
+      return 'Contingência';
     case 'PENDING':
       return 'Pendente';
     case 'REJECTED':

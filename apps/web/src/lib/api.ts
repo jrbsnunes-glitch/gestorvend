@@ -390,10 +390,20 @@ export async function api<T>(
   return res.json() as Promise<T>;
 }
 
-/** Upload multipart (ex.: logotipo da empresa). */
-export async function apiUpload<T>(path: string, file: File, fieldName = 'file'): Promise<T> {
+/** Upload multipart (ex.: logotipo da empresa, certificado A1). */
+export async function apiUpload<T>(
+  path: string,
+  file: File,
+  fieldName = 'file',
+  extraFields?: Record<string, string>,
+): Promise<T> {
   const fd = new FormData();
   fd.append(fieldName, file);
+  if (extraFields) {
+    for (const [k, v] of Object.entries(extraFields)) {
+      if (v !== undefined && v !== null) fd.append(k, v);
+    }
+  }
 
   const buildHeaders = (): HeadersInit => {
     const headers: HeadersInit = {};

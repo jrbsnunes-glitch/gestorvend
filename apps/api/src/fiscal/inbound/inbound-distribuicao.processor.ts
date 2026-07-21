@@ -7,8 +7,8 @@ import { InboundNfeService } from './inbound-nfe.service';
 
 /**
  * Polling periódico da Distribuição DF-e (NSU) para descobrir NF-e emitidas
- * contra o CNPJ do tenant. Não lança estoque — apenas enfileira documentos
- * para revisão humana (Caixa de entrada).
+ * contra o CNPJ do tenant. Com auto-lançamento desligado, apenas enfileira
+ * documentos para revisão (Caixa de entrada).
  */
 @Injectable()
 export class InboundDistribuicaoProcessorService {

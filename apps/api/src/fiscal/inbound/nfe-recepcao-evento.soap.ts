@@ -2,8 +2,33 @@ import * as https from 'https';
 import { xmlEscape } from '../utils/xml-escape';
 import { signXmlElementById } from '../issuer/sign-xml-by-id';
 
+/** Confirmação da Operação — manifesto conclusivo (mercadoria recebida). */
+export const MANIFEST_CONFIRMACAO_OPERACAO = '210200';
 /** Ciência da Operação — libera o XML completo na Distribuição DF-e (NT Manifestação). */
 export const MANIFEST_CIENCIA_OPERACAO = '210210';
+/** Desconhecimento da Operação. */
+export const MANIFEST_DESCONHECIMENTO_OPERACAO = '210220';
+/** Operação não Realizada — exige justificativa (xJust). */
+export const MANIFEST_OPERACAO_NAO_REALIZADA = '210240';
+
+export type ManifestTpEvento =
+  | typeof MANIFEST_CONFIRMACAO_OPERACAO
+  | typeof MANIFEST_CIENCIA_OPERACAO
+  | typeof MANIFEST_DESCONHECIMENTO_OPERACAO
+  | typeof MANIFEST_OPERACAO_NAO_REALIZADA;
+
+const MANIFEST_DESC: Record<ManifestTpEvento, string> = {
+  [MANIFEST_CONFIRMACAO_OPERACAO]: 'Confirmacao da Operacao',
+  [MANIFEST_CIENCIA_OPERACAO]: 'Ciencia da Operacao',
+  [MANIFEST_DESCONHECIMENTO_OPERACAO]: 'Desconhecimento da Operacao',
+  [MANIFEST_OPERACAO_NAO_REALIZADA]: 'Operacao nao Realizada',
+};
+
+/** Eventos que exigem xJust (mín. 15 caracteres na NT). */
+export const MANIFEST_REQUIRES_JUSTIFICATION = new Set<string>([
+  MANIFEST_DESCONHECIMENTO_OPERACAO,
+  MANIFEST_OPERACAO_NAO_REALIZADA,
+]);
 
 const PROD_URL =
   'https://www.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx';
@@ -20,23 +45,40 @@ function padNSeq(n: number): string {
   return String(Math.max(1, Math.min(20, n))).padStart(2, '0');
 }
 
+export function isManifestTpEvento(value: string): value is ManifestTpEvento {
+  return value in MANIFEST_DESC;
+}
+
 /**
- * Monta e assina o evento de Ciência da Operação (tpEvento 210210).
+ * Monta e assina evento de manifestação do destinatário.
  * Id do infEvento: ID{tpEvento}{chNFe}{nSeqEvento 2 dígitos}
  */
-export function buildCienciaOperacaoEventXml(params: {
+export function buildManifestacaoEventXml(params: {
   tpAmb: 1 | 2;
   cOrgao: string;
   cnpj14: string;
   chNFe: string;
+  tpEvento: ManifestTpEvento;
   nSeqEvento?: number;
+  /** Obrigatório para 210220 e 210240 (mín. 15 caracteres). */
+  xJust?: string | null;
   privateKeyPem: string;
   certificatePem: string;
 }): { eventoXml: string; infEventoId: string } {
   const nSeq = params.nSeqEvento ?? 1;
-  const tpEvento = MANIFEST_CIENCIA_OPERACAO;
+  const tpEvento = params.tpEvento;
   const infEventoId = `ID${tpEvento}${params.chNFe}${padNSeq(nSeq)}`;
   const dhEvento = formatSefazDateTime(new Date());
+  const descEvento = MANIFEST_DESC[tpEvento];
+  const needsJust = MANIFEST_REQUIRES_JUSTIFICATION.has(tpEvento);
+  const xJust = (params.xJust ?? '').trim();
+  if (needsJust && xJust.length < 15) {
+    throw new Error(
+      `O evento ${tpEvento} exige justificativa (xJust) com no mínimo 15 caracteres.`,
+    );
+  }
+
+  const detJust = needsJust ? `<xJust>${xmlEscape(xJust.slice(0, 255))}</xJust>` : '';
 
   const unsigned =
     `<evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">` +
@@ -50,7 +92,8 @@ export function buildCienciaOperacaoEventXml(params: {
     `<nSeqEvento>${nSeq}</nSeqEvento>` +
     `<verEvento>1.00</verEvento>` +
     `<detEvento versao="1.00">` +
-    `<descEvento>Ciencia da Operacao</descEvento>` +
+    `<descEvento>${descEvento}</descEvento>` +
+    detJust +
     `</detEvento>` +
     `</infEvento>` +
     `</evento>`;
@@ -62,6 +105,22 @@ export function buildCienciaOperacaoEventXml(params: {
   });
 
   return { eventoXml, infEventoId };
+}
+
+/** @deprecated Preferir buildManifestacaoEventXml com tpEvento 210210. */
+export function buildCienciaOperacaoEventXml(params: {
+  tpAmb: 1 | 2;
+  cOrgao: string;
+  cnpj14: string;
+  chNFe: string;
+  nSeqEvento?: number;
+  privateKeyPem: string;
+  certificatePem: string;
+}): { eventoXml: string; infEventoId: string } {
+  return buildManifestacaoEventXml({
+    ...params,
+    tpEvento: MANIFEST_CIENCIA_OPERACAO,
+  });
 }
 
 export function buildRecepcaoEventoEnvXml(params: {

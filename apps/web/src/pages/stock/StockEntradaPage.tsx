@@ -6,7 +6,9 @@ import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
 import { SupplierSearchCombo } from '../../components/ProductCatalogCombos';
 import { ProductSearchModal, type ProductSearchRow } from '../../components/ProductSearchModal';
-import { api, ApiHttpError } from '../../lib/api';
+import { api, apiUpload, ApiHttpError } from '../../lib/api';
+import { formatCnpj } from '../../lib/format';
+import { isPortalXmlFallbackCStat, openPortalNfeConsulta } from '../../lib/portal-nfe';
 import { formatConversionHint } from '../../lib/product-conversion';
 
 type Line = {
@@ -102,6 +104,7 @@ type InboundFetchResponse = {
   warnings: string[];
   manifested?: boolean;
   unmatchedCount?: number;
+  importedFromFile?: boolean;
 };
 
 type DuplicateReceiptInfo = {
@@ -126,6 +129,8 @@ export function StockEntradaPage() {
   const [nfeKey, setNfeKey] = useState('');
   const [supplierId, setSupplierId] = useState('');
   const [supplierNameHint, setSupplierNameHint] = useState('');
+  /** Emitente da NF-e ainda sem cadastro — usado no botão "Cadastrar fornecedor". */
+  const [pendingEmitter, setPendingEmitter] = useState<{ name: string; cnpj: string } | null>(null);
   const [locationId, setLocationId] = useState('');
   const [documentNumber, setDocumentNumber] = useState('');
   const [series, setSeries] = useState('');
@@ -145,6 +150,10 @@ export function StockEntradaPage() {
   const [duplicateInfo, setDuplicateInfo] = useState<DuplicateReceiptInfo | null>(null);
   const [nfeWarnings, setNfeWarnings] = useState<string[]>([]);
   const [nfeFetchMsg, setNfeFetchMsg] = useState<string | null>(null);
+  /** Quando o WS recusa (640/137/632), oferece abrir Portal + Importar XML. */
+  const [portalFallback, setPortalFallback] = useState<{ accessKey: string; copied: boolean } | null>(
+    null,
+  );
   const [productSearchLine, setProductSearchLine] = useState<number | null>(null);
   const [creatingLine, setCreatingLine] = useState<number | null>(null);
 
@@ -205,6 +214,7 @@ export function StockEntradaPage() {
     setNfeKey('');
     setSupplierId('');
     setSupplierNameHint('');
+    setPendingEmitter(null);
     setLocationId('');
     setDocumentNumber('');
     setSeries('');
@@ -221,6 +231,7 @@ export function StockEntradaPage() {
     setDuplicateInfo(null);
     setNfeWarnings([]);
     setNfeFetchMsg(null);
+    setPortalFallback(null);
   }
 
   function applyInboundPreview(data: InboundFetchResponse) {
@@ -234,11 +245,16 @@ export function StockEntradaPage() {
     }
     setNatureOperation(p.natureOperation ?? 'Compra para comercialização');
     setTotalValue(p.totalValue != null ? String(p.totalValue) : '');
+    const emitterName = (data.supplierName ?? p.emitter.name ?? '').trim();
+    const emitterCnpj = (p.emitter.cnpj ?? '').replace(/\D/g, '');
     if (data.supplierId) {
       setSupplierId(data.supplierId);
-      setSupplierNameHint(data.supplierName ?? '');
-    } else if (data.supplierName) {
-      setSupplierNameHint(data.supplierName);
+      setSupplierNameHint(emitterName || data.supplierName || '');
+      setPendingEmitter(null);
+    } else {
+      setSupplierId('');
+      setSupplierNameHint(emitterName);
+      setPendingEmitter(emitterName ? { name: emitterName, cnpj: emitterCnpj } : null);
     }
     const matchByLine = new Map(data.suggestedMatches.map((m) => [m.lineNumber, m]));
     setLines(
@@ -267,6 +283,42 @@ export function StockEntradaPage() {
     );
   }
 
+  /** Oferece cadastro automático quando o emitente da NF-e ainda não existe. */
+  function offerRegisterSupplierFromNfe(data: InboundFetchResponse) {
+    if (data.supplierId) return;
+    const name = (data.supplierName ?? data.preview.emitter.name ?? '').trim();
+    if (!name) return;
+    const cnpj = (data.preview.emitter.cnpj ?? '').replace(/\D/g, '');
+    const cnpjLabel = cnpj.length === 14 ? ` (CNPJ ${formatCnpj(cnpj)})` : cnpj ? ` (doc. ${cnpj})` : '';
+    const ok = window.confirm(
+      `O fornecedor "${name}"${cnpjLabel} não está cadastrado.\n\nDeseja cadastrá-lo agora?`,
+    );
+    if (ok) registerSupplier.mutate({ legalName: name, document: cnpj || null });
+  }
+
+  const registerSupplier = useMutation({
+    mutationFn: (payload: { legalName: string; document: string | null }) =>
+      api<{ id: string; legalName: string }>('/suppliers', {
+        method: 'POST',
+        json: {
+          legalName: payload.legalName,
+          document: payload.document || undefined,
+        },
+      }),
+    onSuccess: (row) => {
+      qc.invalidateQueries({ queryKey: ['suppliers'] });
+      setSupplierId(row.id);
+      setSupplierNameHint(row.legalName);
+      setPendingEmitter(null);
+      setNfeFetchMsg((prev) =>
+        prev ? `${prev} Fornecedor cadastrado e vinculado.` : 'Fornecedor cadastrado e vinculado.',
+      );
+    },
+    onError: (e: Error) => {
+      setErr(`Não foi possível cadastrar o fornecedor: ${e.message}`);
+    },
+  });
+
   const fetchNfe = useMutation({
     mutationFn: (accessKeyOverride?: string) =>
       api<InboundFetchResponse>('/fiscal/inbound/fetch-by-key', {
@@ -276,6 +328,7 @@ export function StockEntradaPage() {
     onSuccess: (data) => {
       setDuplicateInfo(null);
       setErr(null);
+      setPortalFallback(null);
       applyInboundPreview(data);
       setNfeWarnings(data.warnings);
       setNfeFetchMsg(
@@ -285,6 +338,53 @@ export function StockEntradaPage() {
             ? 'NF-e baixada da SEFAZ (Ciência da Operação registrada automaticamente para liberar o XML).'
             : 'NF-e baixada da SEFAZ.',
       );
+      offerRegisterSupplierFromNfe(data);
+    },
+    onError: (e: Error, accessKeyOverride?: string) => {
+      if (e instanceof ApiHttpError && e.status === 409 && e.payload && typeof e.payload === 'object') {
+        const body = e.payload as {
+          message?: { message?: string; duplicate?: { controlNumber: number; goodsReceiptId: string } };
+        };
+        const dup = body.message?.duplicate;
+        if (dup) {
+          setDuplicateInfo({
+            controlNumber: dup.controlNumber,
+            goodsReceiptId: dup.goodsReceiptId,
+            message: body.message?.message ?? e.message,
+          });
+          setErr(body.message?.message ?? e.message);
+          setPortalFallback(null);
+          return;
+        }
+      }
+      setDuplicateInfo(null);
+      setErr(e.message);
+      const key = ((accessKeyOverride ?? nfeKey) || '').replace(/\D/g, '');
+      if (isPortalXmlFallbackCStat(e.message) && key.length === 44) {
+        void openPortalNfeConsulta(key).then(({ copied }) => {
+          setPortalFallback({ accessKey: key, copied });
+        });
+      } else {
+        setPortalFallback(null);
+      }
+    },
+  });
+
+  const xmlFileRef = useRef<HTMLInputElement>(null);
+
+  const importXml = useMutation({
+    mutationFn: (file: File) =>
+      apiUpload<InboundFetchResponse>('/fiscal/inbound/import-xml', file),
+    onSuccess: (data) => {
+      setDuplicateInfo(null);
+      setErr(null);
+      setPortalFallback(null);
+      applyInboundPreview(data);
+      setNfeWarnings(data.warnings);
+      setNfeFetchMsg(
+        `XML importado com sucesso (chave ${data.preview.accessKey}). Sem consulta à SEFAZ.`,
+      );
+      offerRegisterSupplierFromNfe(data);
     },
     onError: (e: Error) => {
       if (e instanceof ApiHttpError && e.status === 409 && e.payload && typeof e.payload === 'object') {
@@ -750,11 +850,82 @@ export function StockEntradaPage() {
                             >
                               {fetchNfe.isPending ? 'Buscando…' : 'Buscar NF-e'}
                             </button>
+                            <input
+                              ref={xmlFileRef}
+                              type="file"
+                              accept=".xml,text/xml,application/xml"
+                              style={{ display: 'none' }}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = '';
+                                if (!file) return;
+                                setErr(null);
+                                setNfeFetchMsg(null);
+                                importXml.mutate(file);
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              disabled={fetchNfe.isPending || importXml.isPending}
+                              onClick={() => xmlFileRef.current?.click()}
+                              title="Use o XML baixado no Portal Nacional quando a SEFAZ retornar cStat 137, 640 etc."
+                            >
+                              {importXml.isPending ? 'Importando…' : 'Importar XML'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-ghost"
+                              disabled={nfeKey.replace(/\D/g, '').length !== 44}
+                              onClick={() => {
+                                const key = nfeKey.replace(/\D/g, '');
+                                void openPortalNfeConsulta(key).then(({ copied }) => {
+                                  setPortalFallback({ accessKey: key, copied });
+                                });
+                              }}
+                              title="Abre o Portal Nacional em nova aba e copia a chave"
+                            >
+                              Abrir Portal NF-e
+                            </button>
                           </div>
                           <p className="muted entrada-nfe-key-hint">
-                            Informe a chave e clique em <strong>Buscar NF-e</strong> para baixar o XML na SEFAZ e
-                            preencher os campos automaticamente.
+                            <strong>Buscar NF-e</strong> consulta o webservice SEFAZ. Se retornar cStat 137/640
+                            (sem permissão ou documento), o Portal abre automaticamente — cole a chave (já
+                            copiada), baixe o XML e use <strong>Importar XML</strong>.
                           </p>
+                          {portalFallback && (
+                            <div className="alert alert-warn" style={{ marginTop: '0.5rem' }}>
+                              <p style={{ margin: '0 0 0.5rem' }}>
+                                O webservice não liberou esta NF-e. O{' '}
+                                <strong>Portal Nacional</strong> foi aberto em nova aba
+                                {portalFallback.copied
+                                  ? ' e a chave foi copiada — cole no campo da consulta.'
+                                  : '.'}{' '}
+                                Após baixar o XML, volte aqui e clique em <strong>Importar XML</strong>.
+                              </p>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-compact"
+                                  onClick={() => {
+                                    void openPortalNfeConsulta(portalFallback.accessKey).then(({ copied }) => {
+                                      setPortalFallback({ accessKey: portalFallback.accessKey, copied });
+                                    });
+                                  }}
+                                >
+                                  Abrir Portal novamente
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-compact"
+                                  disabled={importXml.isPending}
+                                  onClick={() => xmlFileRef.current?.click()}
+                                >
+                                  Importar XML baixado
+                                </button>
+                              </div>
+                            </div>
+                          )}
                           {nfeFetchMsg && (
                             <p className="alert alert-success" style={{ marginTop: '0.5rem' }}>
                               {nfeFetchMsg}
@@ -823,9 +994,32 @@ export function StockEntradaPage() {
                           setSupplierId(id);
                           if (picked) setSupplierNameHint(picked);
                           if (!id) setSupplierNameHint('');
+                          if (id) setPendingEmitter(null);
                         }}
                         hintName={supplierNameHint}
                       />
+                      {!supplierId && pendingEmitter ? (
+                        <p className="muted" style={{ marginTop: '0.5rem' }}>
+                          Emitente da NF-e ainda não cadastrado
+                          {pendingEmitter.cnpj
+                            ? ` · CNPJ ${formatCnpj(pendingEmitter.cnpj)}`
+                            : ''}
+                          .{' '}
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            disabled={registerSupplier.isPending}
+                            onClick={() =>
+                              registerSupplier.mutate({
+                                legalName: pendingEmitter.name,
+                                document: pendingEmitter.cnpj || null,
+                              })
+                            }
+                          >
+                            {registerSupplier.isPending ? 'Cadastrando…' : 'Cadastrar fornecedor'}
+                          </button>
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 </details>

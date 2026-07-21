@@ -212,13 +212,21 @@
 
 .entrada-nfe-key-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   align-items: stretch;
 }
 
-.entrada-nfe-key-row input {
-  flex: 1 1 auto;
+.entrada-nfe-key-row input[type='text'],
+.entrada-nfe-key-row input:not([type]),
+.entrada-nfe-key-row > input#ent-key {
+  flex: 1 1 220px;
   min-width: 0;
+}
+
+.entrada-nfe-key-row .btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .entrada-nfe-key-hint {
@@ -243,7 +251,8 @@
   margin-bottom: 1.25rem;
 }
 
-.stock-subnav a {
+.stock-subnav a,
+.stock-subnav button {
   padding: 0.45rem 0.85rem;
   border-radius: var(--radius-md);
   font-size: 0.88rem;
@@ -251,14 +260,19 @@
   color: var(--color-text-secondary);
   text-decoration: none;
   border: 1px solid transparent;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
 }
 
-.stock-subnav a:hover {
+.stock-subnav a:hover,
+.stock-subnav button:hover {
   background: var(--color-surface);
   color: var(--color-text);
 }
 
-.stock-subnav a.active {
+.stock-subnav a.active,
+.stock-subnav button.active {
   background: var(--color-primary-muted);
   color: var(--color-primary);
   border-color: #93c5fd;

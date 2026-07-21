@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { validateCnpj14 } from '../common/cnpj.util';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { TenantService } from '../tenant/tenant.service';
 import { CompanyLogoStorage } from './company-logo.storage';
@@ -75,8 +76,14 @@ export class CompanyService {
     if (legalName !== undefined) data.legalName = legalName;
     const tradeName = trimRequired(body.tradeName, 'Nome fantasia');
     if (tradeName !== undefined) data.tradeName = tradeName;
-    const cnpj = trimRequired(body.cnpj, 'CNPJ');
-    if (cnpj !== undefined) data.cnpj = cnpj;
+    const cnpjRaw = trimRequired(body.cnpj, 'CNPJ');
+    if (cnpjRaw !== undefined) {
+      const checked = validateCnpj14(cnpjRaw);
+      if (!checked.ok) {
+        throw new BadRequestException(checked.reason);
+      }
+      data.cnpj = checked.cnpj;
+    }
 
     const optional: (keyof CompanyInput)[] = [
       'ie',

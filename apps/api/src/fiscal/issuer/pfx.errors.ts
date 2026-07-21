@@ -6,7 +6,7 @@ export function formatPfxLoadError(err: unknown, certPath: string): string {
   if (lower.includes('enoent') || lower.includes('no such file')) {
     return (
       `Arquivo do certificado não encontrado no servidor: "${certPath}". ` +
-      'Copie o .pfx para a VPS e informe o caminho absoluto em Empresa → Emissor fiscal.'
+      'Envie o .pfx em Empresa → Emissor fiscal (Localizar) ou informe o caminho absoluto na VPS.'
     );
   }
 

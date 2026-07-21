@@ -32,6 +32,7 @@ export class SalesController {
       customerId?: string | null;
       notes?: string | null;
       discount?: number;
+      surcharge?: number;
       permissionPassword?: string;
       items: Array<{
         variantId: string;
@@ -54,6 +55,7 @@ export class SalesController {
       customerId: body.customerId,
       notes: body.notes,
       discount: body.discount,
+      surcharge: body.surcharge,
       items: body.items,
       payments: body.payments,
     });

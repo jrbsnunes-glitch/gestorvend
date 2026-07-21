@@ -9,10 +9,13 @@ import { ConfigService } from '@nestjs/config';
 import { validateCnpj14, digitsCnpj } from '../../common/cnpj.util';
 import {
   FiscalSefazEnvironment,
+  GoodsReceiptMode,
+  GoodsReceiptStatus,
   InboundNfeStatus,
   Prisma,
 } from '../../generated/tenant-client';
 import { TenantPrismaService } from '../../prisma/tenant-prisma.service';
+import { GoodsReceiptService } from '../../inventory/goods-receipt.service';
 import { FiscalIssuerSettingsService } from '../fiscal-issuer-settings.service';
 import { extractCnpjFromPfx } from '../issuer/cert-cnpj';
 import { createMutualTlsAgentFromPfx, loadPfxMaterial } from '../issuer/load-pfx';
@@ -22,6 +25,8 @@ import {
   formatSefazBusinessError,
   formatSefazCallLog,
   formatSefazTransportError,
+  maskCnpj,
+  parseNfeAccessKeyParts,
   type SefazCallContext,
 } from './inbound-nfe.errors';
 import { InboundNfeStorage } from './inbound-nfe.storage';
@@ -34,14 +39,17 @@ import {
   postDistribuicaoDfe,
   type DistDocZip,
 } from './nfe-distribuicao-dfe.soap';
-import { parseInboundNfeXml } from './nfe-inbound-xml.parser';
+import { parseInboundNfeXml, extractAccessKeyFromXml } from './nfe-inbound-xml.parser';
 import {
-  buildCienciaOperacaoEventXml,
+  buildManifestacaoEventXml,
   buildRecepcaoEventoEnvXml,
+  isManifestTpEvento,
   MANIFEST_CIENCIA_OPERACAO,
+  MANIFEST_REQUIRES_JUSTIFICATION,
   parseRecepcaoEventoResponse,
   postRecepcaoEvento,
   recepcaoEventoEndpoint,
+  type ManifestTpEvento,
 } from './nfe-recepcao-evento.soap';
 
 export type InboundDuplicateInfo = {
@@ -65,6 +73,8 @@ export type InboundFetchResponse = {
   duplicate: false;
   cached: boolean;
   manifested: boolean;
+  /** XML enviado pelo usuário (Portal Nacional / arquivo local), sem consulta SEFAZ. */
+  importedFromFile?: boolean;
   preview: ReturnType<typeof parseInboundNfeXml>;
   suggestedMatches: SuggestedMatch[];
   supplierId: string | null;
@@ -86,6 +96,34 @@ export type InboundDocumentListItem = {
   unmatchedCount: number | null;
   fetchedAt: string;
   goodsReceiptId: string | null;
+  /** Presente quando já existe rascunho automático de entrada. */
+  draftReceiptControlNumber?: number | null;
+  manifestacaoEvento?: string | null;
+};
+
+export type InboundDiagnostics = {
+  ambiente: 'PRODUCAO' | 'HOMOLOGACAO';
+  tpAmb: 1 | 2;
+  cnpjConsulta: string;
+  cnpjConsultaMasked: string;
+  companyCnpj: string | null;
+  companyCnpjMatchesCert: boolean | null;
+  certificateConfigured: boolean;
+  inboundUltNsu: string | null;
+  autoReceipt: {
+    enabled: boolean;
+    postStock: boolean;
+    minMatchPercent: number;
+  };
+  tips: string[];
+  accessKey?: {
+    key: string;
+    emitCnpj: string;
+    model: string;
+    serie: string;
+    number: string;
+    note: string;
+  } | null;
 };
 
 type SefazCtx = {
@@ -111,6 +149,7 @@ export class InboundNfeService {
     private readonly tenantPrisma: TenantPrismaService,
     private readonly issuerSvc: FiscalIssuerSettingsService,
     private readonly storage: InboundNfeStorage,
+    private readonly goodsReceipts: GoodsReceiptService,
   ) {}
 
   async checkDuplicate(tenantSlug: string, accessKeyRaw: string): Promise<InboundDuplicateInfo | null> {
@@ -211,6 +250,91 @@ export class InboundNfeService {
     return this.buildFetchResponse(tenantSlug, xml, accessKey, { cached, manifested });
   }
 
+  /**
+   * Importa XML completo (nfeProc) baixado no Portal Nacional — sem chamar SEFAZ.
+   * Útil quando consChNFe retorna cStat 137 mas o XML já está disponível.
+   */
+  async importXml(tenantSlug: string, xmlRaw: string): Promise<InboundFetchResponse> {
+    const xml = String(xmlRaw ?? '').trim();
+    if (!xml) {
+      throw new BadRequestException('Arquivo XML vazio.');
+    }
+    if (!(/<nfeProc\b/i.test(xml) || /<(?:\w+:)?NFe\b/i.test(xml))) {
+      throw new BadRequestException(
+        'Arquivo inválido. Envie o XML completo da NF-e (nfeProc ou NFe), como o baixado no Portal Nacional.',
+      );
+    }
+
+    const keyFromXml = extractAccessKeyFromXml(xml);
+    if (!keyFromXml) {
+      throw new BadRequestException(
+        'Não foi possível ler a chave de acesso (44 dígitos) no XML. Confira se o arquivo é um nfeProc válido.',
+      );
+    }
+    const validated = validateNfeAccessKey(keyFromXml);
+    if (!validated.ok) {
+      throw new BadRequestException(validated.reason);
+    }
+    const accessKey = validated.key;
+
+    const duplicate = await this.findDuplicateReceipt(tenantSlug, accessKey);
+    if (duplicate) {
+      throw new ConflictException({
+        message: `Esta NF-e já foi importada na entrada #${duplicate.controlNumber}.`,
+        duplicate,
+      });
+    }
+
+    const previewEarly = parseInboundNfeXml(xml, accessKey);
+    if (!previewEarly.items.length) {
+      throw new BadRequestException('XML sem itens de produto. Verifique o arquivo.');
+    }
+
+    const saved = await this.storage.saveXml(tenantSlug, accessKey, xml);
+    const { unmatchedCount } = await this.buildSuggestions(tenantSlug, previewEarly);
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    await db.inboundNfeDocument.upsert({
+      where: { accessKey },
+      create: {
+        accessKey,
+        xmlPath: saved.path,
+        xmlSha256: saved.sha256,
+        nsu: null,
+        sefazCStat: '100',
+        sefazMotivo: 'Importado de arquivo XML (Portal / manual)',
+        status: unmatchedCount > 0 ? InboundNfeStatus.PENDENTE_REVISAO : InboundNfeStatus.COMPLETO,
+        emitterCnpj: previewEarly.emitter.cnpj || null,
+        emitterName: previewEarly.emitter.name || null,
+        documentNumber: previewEarly.documentNumber,
+        issueDate: previewEarly.issueDate ? new Date(previewEarly.issueDate) : null,
+        totalValue: previewEarly.totalValue != null ? String(previewEarly.totalValue) : null,
+        itemCount: previewEarly.items.length,
+        unmatchedCount,
+      },
+      update: {
+        xmlPath: saved.path,
+        xmlSha256: saved.sha256,
+        sefazCStat: '100',
+        sefazMotivo: 'Importado de arquivo XML (Portal / manual)',
+        status: unmatchedCount > 0 ? InboundNfeStatus.PENDENTE_REVISAO : InboundNfeStatus.COMPLETO,
+        emitterCnpj: previewEarly.emitter.cnpj || null,
+        emitterName: previewEarly.emitter.name || null,
+        documentNumber: previewEarly.documentNumber,
+        issueDate: previewEarly.issueDate ? new Date(previewEarly.issueDate) : null,
+        totalValue: previewEarly.totalValue != null ? String(previewEarly.totalValue) : null,
+        itemCount: previewEarly.items.length,
+        unmatchedCount,
+        fetchedAt: new Date(),
+      },
+    });
+
+    const response = await this.buildFetchResponse(tenantSlug, xml, accessKey, {
+      cached: false,
+      manifested: false,
+    });
+    return { ...response, importedFromFile: true };
+  }
+
   async listDocuments(
     tenantSlug: string,
     opts?: { status?: InboundNfeStatus; take?: number },
@@ -223,12 +347,19 @@ export class InboundNfeService {
       where.status = {
         in: [InboundNfeStatus.PENDENTE_REVISAO, InboundNfeStatus.COMPLETO, InboundNfeStatus.RESUMO],
       };
-      where.goodsReceiptId = null;
+      // Inclui rascunhos automáticos (DRAFT); oculta só entradas já POSTED/IMPORTADO.
+      where.OR = [
+        { goodsReceiptId: null },
+        { goodsReceipt: { status: GoodsReceiptStatus.DRAFT } },
+      ];
     }
     const rows = await db.inboundNfeDocument.findMany({
       where,
       orderBy: { fetchedAt: 'desc' },
       take: Math.min(200, Math.max(1, opts?.take ?? 50)),
+      include: {
+        goodsReceipt: { select: { controlNumber: true, status: true } },
+      },
     });
     return rows.map((r) => ({
       id: r.id,
@@ -243,7 +374,122 @@ export class InboundNfeService {
       unmatchedCount: r.unmatchedCount,
       fetchedAt: r.fetchedAt.toISOString(),
       goodsReceiptId: r.goodsReceiptId,
+      draftReceiptControlNumber:
+        r.goodsReceipt?.status === GoodsReceiptStatus.DRAFT
+          ? r.goodsReceipt.controlNumber
+          : null,
+      manifestacaoEvento: r.manifestacaoEvento,
     }));
+  }
+
+  /**
+   * Checklist WS vs Portal: CNPJ do certificado, ambiente, NSU e análise da chave.
+   */
+  async getDiagnostics(
+    tenantSlug: string,
+    accessKeyRaw?: string,
+  ): Promise<InboundDiagnostics> {
+    const ensured = await this.issuerSvc.ensureForTenant(tenantSlug);
+    if (!ensured) {
+      throw new BadRequestException('Cadastre a empresa antes de diagnosticar a entrada NF-e.');
+    }
+    const { company, settings } = ensured;
+    const tips: string[] = [];
+    const amb =
+      settings.sefazEnvironment === FiscalSefazEnvironment.PRODUCAO ? 'PRODUCAO' : 'HOMOLOGACAO';
+    const tpAmb: 1 | 2 = amb === 'PRODUCAO' ? 1 : 2;
+
+    const certPath =
+      (settings.certificatePath?.trim() || this.config.get<string>('FISCAL_ISSUER_CERT_PATH')?.trim()) ??
+      '';
+    const certPassword =
+      settings.certificatePassword?.trim() ||
+      this.config.get<string>('FISCAL_ISSUER_CERT_PASSWORD')?.trim() ||
+      '';
+    const certificateConfigured = Boolean(certPath && certPassword);
+
+    let cnpjConsulta = digitsCnpj(company.cnpj);
+    let companyCnpjMatchesCert: boolean | null = null;
+    if (certificateConfigured) {
+      try {
+        const certCnpjRaw = extractCnpjFromPfx(certPath, certPassword);
+        const certOk = certCnpjRaw ? validateCnpj14(certCnpjRaw) : null;
+        if (certOk?.ok) {
+          cnpjConsulta = certOk.cnpj;
+          const companyOk = validateCnpj14(digitsCnpj(company.cnpj));
+          if (companyOk.ok) {
+            companyCnpjMatchesCert = companyOk.cnpj === cnpjConsulta;
+            if (!companyCnpjMatchesCert) {
+              tips.push(
+                `CNPJ da empresa (${companyOk.cnpj}) difere do certificado A1 (${cnpjConsulta}). A consulta SEFAZ usa o CNPJ do certificado.`,
+              );
+            }
+          }
+        }
+      } catch {
+        tips.push('Não foi possível ler o CNPJ do certificado A1 — confira caminho e senha.');
+      }
+    } else {
+      tips.push('Certificado A1 não configurado — o WS NFeDistribuicaoDFe exige mTLS.');
+    }
+
+    if (amb === 'HOMOLOGACAO') {
+      tips.push(
+        'Ambiente Homologação: notas reais (produção) não aparecem no WS. No Portal Nacional use o ambiente correto; no GestorVend mude para Produção em Empresa → Emissor.',
+      );
+    }
+
+    if (!settings.inboundUltNsu || settings.inboundUltNsu === '0') {
+      tips.push(
+        'NSU ainda em 0 — o polling DistDF-e ainda não consumiu documentos. Use “Buscar novas NF-e agora” na caixa de entrada.',
+      );
+    }
+
+    tips.push(
+      'Se o Portal Nacional baixar o XML e o WS retornar cStat 137, importe o arquivo em Entrada → Importar XML. O site e o webservice usam a mesma base do Ambiente Nacional, mas a consulta autentica pelo CNPJ do certificado.',
+    );
+
+    let accessKey: InboundDiagnostics['accessKey'] = null;
+    if (accessKeyRaw?.trim()) {
+      const validated = validateNfeAccessKey(accessKeyRaw);
+      if (!validated.ok) {
+        tips.push(`Chave inválida: ${validated.reason}`);
+      } else {
+        const parts = parseNfeAccessKeyParts(validated.key)!;
+        accessKey = {
+          key: parts.key,
+          emitCnpj: parts.emitCnpj,
+          model: parts.model,
+          serie: parts.serie,
+          number: parts.number,
+          note:
+            'O CNPJ na chave é do emitente (fornecedor), não do destinatário. O WS só devolve a nota se o CNPJ do certificado for destinatário, transportador ou autXML.',
+        };
+        if (parts.emitCnpj === cnpjConsulta) {
+          tips.push(
+            'O CNPJ da chave é igual ao do certificado — esta chave parece ser de nota emitida por você. Distribuição DF-e não devolve NF-e próprias; use o XML do emitente ou o Portal apenas para consulta.',
+          );
+        }
+      }
+    }
+
+    return {
+      ambiente: amb,
+      tpAmb,
+      cnpjConsulta,
+      cnpjConsultaMasked: maskCnpj(cnpjConsulta),
+      companyCnpj: digitsCnpj(company.cnpj) || null,
+      companyCnpjMatchesCert,
+      certificateConfigured,
+      inboundUltNsu: settings.inboundUltNsu,
+      autoReceipt: {
+        enabled: settings.inboundAutoReceiptEnabled,
+        postStock: settings.inboundAutoReceiptPostStock,
+        minMatchPercent: settings.inboundAutoReceiptMinMatchPercent,
+      },
+      tips,
+      accessKey,
+    };
   }
 
   async getDocumentPreview(tenantSlug: string, accessKeyRaw: string): Promise<InboundFetchResponse> {
@@ -428,6 +674,7 @@ export class InboundNfeService {
             fetchedAt: new Date(),
           },
         });
+        await this.tryAutoReceipt(tenantSlug, accessKey);
         return true;
       } catch (e) {
         // Guarda só o resumo se o XML completo ainda não estiver disponível
@@ -504,6 +751,7 @@ export class InboundNfeService {
           fetchedAt: new Date(),
         },
       });
+      await this.tryAutoReceipt(tenantSlug, accessKey);
       return true;
     }
 
@@ -668,15 +916,58 @@ export class InboundNfeService {
     accessKey: string,
     existingCtx?: SefazCtx,
   ): Promise<{ nProt?: string; cStat: string }> {
+    return this.registerManifestacao(tenantSlug, {
+      accessKey,
+      tpEvento: MANIFEST_CIENCIA_OPERACAO,
+    }, existingCtx);
+  }
+
+  /**
+   * Manifestação do destinatário (210200 / 210210 / 210220 / 210240).
+   * Ciência (210210) continua sendo automática no download; demais eventos são manuais.
+   */
+  async registerManifestacao(
+    tenantSlug: string,
+    input: { accessKey: string; tpEvento: string; xJust?: string | null },
+    existingCtx?: SefazCtx,
+  ): Promise<{ nProt?: string; cStat: string; tpEvento: ManifestTpEvento }> {
+    const validated = validateNfeAccessKey(input.accessKey);
+    if (!validated.ok) {
+      throw new BadRequestException(validated.reason);
+    }
+    const accessKey = validated.key;
+    if (!isManifestTpEvento(input.tpEvento)) {
+      throw new BadRequestException(
+        'tpEvento inválido. Use 210200 (Confirmação), 210210 (Ciência), 210220 (Desconhecimento) ou 210240 (Não realizada).',
+      );
+    }
+    const tpEvento = input.tpEvento;
+    if (MANIFEST_REQUIRES_JUSTIFICATION.has(tpEvento)) {
+      const just = (input.xJust ?? '').trim();
+      if (just.length < 15) {
+        throw new BadRequestException(
+          'Informe justificativa com no mínimo 15 caracteres para este evento.',
+        );
+      }
+    }
+
     const ctx = existingCtx ?? (await this.resolveSefazContext(tenantSlug));
-    const { eventoXml } = buildCienciaOperacaoEventXml({
-      tpAmb: ctx.tpAmb,
-      cOrgao: '91', // Ambiente Nacional
-      cnpj14: ctx.cnpj14,
-      chNFe: accessKey,
-      privateKeyPem: ctx.privateKeyPem,
-      certificatePem: ctx.certificatePem,
-    });
+    let eventoXml: string;
+    try {
+      ({ eventoXml } = buildManifestacaoEventXml({
+        tpAmb: ctx.tpAmb,
+        cOrgao: '91',
+        cnpj14: ctx.cnpj14,
+        chNFe: accessKey,
+        tpEvento,
+        xJust: input.xJust,
+        privateKeyPem: ctx.privateKeyPem,
+        certificatePem: ctx.certificatePem,
+      }));
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+
     const idLote = String(Date.now()).slice(-15);
     const envXml = buildRecepcaoEventoEnvXml({
       tpAmb: ctx.tpAmb,
@@ -690,19 +981,18 @@ export class InboundNfeService {
       soapResponse = await postRecepcaoEvento(endpoint, envXml, ctx.agent);
     } catch (e) {
       throw new BadRequestException(
-        `Falha ao enviar Ciência da Operação: ${(e as Error).message}`,
+        `Falha ao enviar manifestação ${tpEvento}: ${(e as Error).message}`,
       );
     }
 
     const parsed = parseRecepcaoEventoResponse(soapResponse);
     if (!parsed.ok) {
-      // 573/596 etc. — evento já registrado: trata como sucesso parcial
       if (parsed.cStat === '573' || parsed.cStat === '596') {
-        this.log.log(`Evento já registrado para ${accessKey} (cStat ${parsed.cStat}).`);
-        return { cStat: parsed.cStat, nProt: undefined };
+        this.log.log(`Evento ${tpEvento} já registrado para ${accessKey} (cStat ${parsed.cStat}).`);
+        return { cStat: parsed.cStat, nProt: undefined, tpEvento };
       }
       throw new BadRequestException(
-        parsed.xMotivo || `SEFAZ rejeitou Ciência da Operação (cStat ${parsed.cStat}).`,
+        parsed.xMotivo || `SEFAZ rejeitou manifestação ${tpEvento} (cStat ${parsed.cStat}).`,
       );
     }
 
@@ -710,12 +1000,151 @@ export class InboundNfeService {
     await db.inboundNfeDocument.updateMany({
       where: { accessKey },
       data: {
-        manifestacaoEvento: MANIFEST_CIENCIA_OPERACAO,
+        manifestacaoEvento: tpEvento,
         manifestacaoProtocolo: parsed.nProt ?? null,
       },
     });
 
-    return { nProt: parsed.nProt, cStat: parsed.cStat };
+    return { nProt: parsed.nProt, cStat: parsed.cStat, tpEvento };
+  }
+
+  /**
+   * Reconsulta um NSU pontual (consNSU) — útil quando o doc ficou em RESUMO.
+   */
+  async reprocessNsu(
+    tenantSlug: string,
+    nsuRaw: string,
+  ): Promise<{ ok: boolean; message: string; accessKey?: string }> {
+    const nsu = nsuRaw.replace(/\D/g, '').padStart(15, '0');
+    if (!nsu || nsu === '000000000000000') {
+      throw new BadRequestException('Informe um NSU válido.');
+    }
+    const ctx = await this.resolveSefazContext(tenantSlug);
+    const callCtx = this.toCallCtx(tenantSlug, '', ctx);
+    const distXml = buildDistDFeIntXml({
+      tpAmb: ctx.tpAmb,
+      cUFAutor: ctx.cUFAutor,
+      cnpj14: ctx.cnpj14,
+      query: { kind: 'consNSU', nsu },
+    });
+    let soapResponse: string;
+    try {
+      soapResponse = await postDistribuicaoDfe(ctx.endpoint, distXml, ctx.agent);
+    } catch (e) {
+      throw new BadRequestException(formatSefazTransportError(e, callCtx));
+    }
+    const batch = parseDistribuicaoDfeBatch(soapResponse);
+    if (!batch.ok) {
+      throw new BadRequestException(
+        formatSefazBusinessError(batch.xMotivo, batch.cStat, callCtx),
+      );
+    }
+    if (!batch.docs.length) {
+      return { ok: false, message: `NSU ${nsu}: nenhum documento (cStat ${batch.cStat}).` };
+    }
+    let lastKey: string | undefined;
+    for (const doc of batch.docs) {
+      await this.ingestDistDoc(tenantSlug, doc, ctx);
+      lastKey = doc.accessKey ?? lastKey;
+    }
+    return {
+      ok: true,
+      message: `NSU ${nsu}: ${batch.docs.length} documento(s) reprocessado(s).`,
+      accessKey: lastKey,
+    };
+  }
+
+  /** Tenta criar entrada automática (rascunho ou postada) conforme regras do emissor. */
+  private async tryAutoReceipt(tenantSlug: string, accessKey: string): Promise<void> {
+    const ensured = await this.issuerSvc.ensureForTenant(tenantSlug);
+    if (!ensured?.settings.inboundAutoReceiptEnabled) return;
+
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const doc = await db.inboundNfeDocument.findUnique({ where: { accessKey } });
+    if (!doc || doc.goodsReceiptId || doc.status === InboundNfeStatus.RESUMO) return;
+    if (doc.status === InboundNfeStatus.IMPORTADO) return;
+
+    const existing = await db.goodsReceipt.findFirst({
+      where: { nfeAccessKey: accessKey },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    const xml = await this.storage.readXml(tenantSlug, accessKey);
+    if (!xml || !(/<nfeProc\b/i.test(xml) || /<NFe\b/i.test(xml))) return;
+
+    const preview = parseInboundNfeXml(xml, accessKey);
+    const { suggestedMatches, supplierId, unmatchedCount } = await this.buildSuggestions(
+      tenantSlug,
+      preview,
+    );
+    const itemCount = preview.items.length;
+    if (itemCount === 0) return;
+    const matched = itemCount - unmatchedCount;
+    const matchPercent = Math.round((matched / itemCount) * 100);
+    const minPct = Math.max(0, Math.min(100, ensured.settings.inboundAutoReceiptMinMatchPercent));
+    if (matchPercent < minPct) {
+      this.log.log(
+        `Auto-entrada ${accessKey}: match ${matchPercent}% < mínimo ${minPct}% — ignorado.`,
+      );
+      return;
+    }
+    if (!supplierId) {
+      this.log.log(`Auto-entrada ${accessKey}: fornecedor não cadastrado — ignorado.`);
+      return;
+    }
+    if (suggestedMatches.some((m) => !m.variantId)) {
+      this.log.log(`Auto-entrada ${accessKey}: ainda há item sem variantId — ignorado.`);
+      return;
+    }
+
+    const location = await db.stockLocation.findFirst({
+      where: { isDefault: true },
+      select: { id: true },
+    });
+    if (!location) {
+      this.log.warn(`Auto-entrada ${accessKey}: nenhum local de estoque padrão.`);
+      return;
+    }
+
+    const postStock = ensured.settings.inboundAutoReceiptPostStock;
+    try {
+      const receipt = await this.goodsReceipts.create(tenantSlug, {
+        mode: GoodsReceiptMode.WITH_NFE_KEY,
+        nfeAccessKey: accessKey,
+        supplierId,
+        locationId: location.id,
+        documentNumber: preview.documentNumber,
+        series: preview.series,
+        issueDate: preview.issueDate,
+        natureOperation: preview.natureOperation,
+        totalValue: preview.totalValue,
+        notes: postStock
+          ? 'Entrada automática (caixa NF-e) — estoque lançado.'
+          : 'Rascunho automático (caixa NF-e) — revise e confirme o estoque.',
+        userId: null,
+        status: postStock ? GoodsReceiptStatus.POSTED : GoodsReceiptStatus.DRAFT,
+        items: preview.items.map((item) => {
+          const match = suggestedMatches.find((m) => m.lineNumber === item.lineNumber)!;
+          return {
+            variantId: match.variantId!,
+            quantity: item.quantity,
+            unitCost: item.unitCost,
+            ncm: item.ncm,
+            cfop: item.cfop,
+            description: item.description,
+            supplierProductCode: match.supplierProductCode ?? item.supplierCode,
+            invoiceUnit: item.unit,
+            invoiceQuantity: item.quantity,
+          };
+        }),
+      });
+      this.log.log(
+        `Auto-entrada ${accessKey}: #${receipt.controlNumber} (${postStock ? 'POSTED' : 'DRAFT'}).`,
+      );
+    } catch (e) {
+      this.log.warn(`Auto-entrada falhou para ${accessKey}: ${(e as Error).message}`);
+    }
   }
 
   private async resolveSefazContext(tenantSlug: string): Promise<SefazCtx> {

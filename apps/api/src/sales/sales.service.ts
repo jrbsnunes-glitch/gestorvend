@@ -22,6 +22,8 @@ export type CreateSaleInput = {
   customerId?: string | null;
   notes?: string | null;
   discount?: string | number;
+  /** Acréscimo no total (R$) — espelha vOutro do leiaute NF-e/NFC-e. */
+  surcharge?: string | number;
   /** Origem da venda (PDV físico, WhatsApp via GestorVendChat, etc.). */
   source?: SaleSource;
   /** Referência externa (ex.: ID do pedido no GestorVendChat) para conciliação. */
@@ -123,7 +125,13 @@ export class SalesService {
     const db = await this.tenantPrisma.getClient(input.tenantSlug);
 
     const discount = Number(input.discount ?? 0);
-    if (discount < 0) throw new BadRequestException('Desconto inválido');
+    if (discount < 0 || !Number.isFinite(discount)) {
+      throw new BadRequestException('Desconto inválido');
+    }
+    const surcharge = Number(input.surcharge ?? 0);
+    if (surcharge < 0 || !Number.isFinite(surcharge)) {
+      throw new BadRequestException('Acréscimo inválido');
+    }
 
     if (discount > 0) {
       await this.permissions.assertPermission(
@@ -141,9 +149,15 @@ export class SalesService {
       const p = Number(it.unitPrice);
       const d = Number(it.discount ?? 0);
       if (q <= 0) throw new BadRequestException('Quantidade inválida');
+      if (d < 0) throw new BadRequestException('Desconto de item inválido');
       subtotal += q * p - d;
     }
-    const total = Math.max(0, subtotal - discount);
+    subtotal = roundMoney2(subtotal);
+    if (discount > subtotal + 0.009) {
+      throw new BadRequestException('Desconto não pode ser maior que o subtotal dos produtos.');
+    }
+    // MOC NF-e/NFC-e: vNF ≈ vProd − vDesc + vOutro (+ frete/seguro/impostos).
+    const total = roundMoney2(Math.max(0, subtotal - discount + surcharge));
     if (!input.payments?.length) {
       throw new BadRequestException('Informe ao menos uma forma de pagamento');
     }
@@ -167,6 +181,7 @@ export class SalesService {
           userId: input.userId,
           subtotal: String(subtotal.toFixed(2)),
           discount: String(discount.toFixed(2)),
+          surcharge: String(surcharge.toFixed(2)),
           total: String(total.toFixed(2)),
           notes: input.notes ?? null,
           items: {
@@ -349,7 +364,8 @@ export class SalesService {
         remaining.reduce((s, it) => s + Number(it.totalLine), 0),
       );
       const disc = Number(sale.discount);
-      let newTotal = roundMoney2(newSubtotal - disc);
+      const surcharge = Number(sale.surcharge);
+      let newTotal = roundMoney2(newSubtotal - disc + surcharge);
       if (newTotal < 0) {
         throw new BadRequestException(
           'Total da venda ficaria negativo com o desconto atual; reduza o desconto primeiro.',

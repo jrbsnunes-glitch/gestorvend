@@ -4,6 +4,7 @@ import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination } from '../components/ListPagination';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
+import { CustomerGroupSearchCombo } from '../components/ProductCatalogCombos';
 import { RecordSelectionFooter } from '../components/RecordSelectionFooter';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
@@ -333,13 +334,8 @@ export function CustomersPage() {
               <input id="c-limit" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} />
             </div>
             <div className="field">
-              <label htmlFor="c-seg">Grupo / segmento</label>
-              <input
-                id="c-seg"
-                value={segment}
-                onChange={(e) => setSegment(e.target.value)}
-                placeholder="Ex.: varejo, cooperativas"
-              />
+              <label htmlFor="c-seg">Grupo</label>
+              <CustomerGroupSearchCombo id="c-seg" value={segment} onChange={setSegment} />
             </div>
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setCreateOpen(false)}>
@@ -396,13 +392,8 @@ export function CustomersPage() {
               <input id="ce-limit" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} />
             </div>
             <div className="field">
-              <label htmlFor="ce-seg">Grupo / segmento</label>
-              <input
-                id="ce-seg"
-                value={segment}
-                onChange={(e) => setSegment(e.target.value)}
-                placeholder="Ex.: varejo, cooperativas"
-              />
+              <label htmlFor="ce-seg">Grupo</label>
+              <CustomerGroupSearchCombo id="ce-seg" value={segment} onChange={setSegment} />
             </div>
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setEditOpen(false)}>

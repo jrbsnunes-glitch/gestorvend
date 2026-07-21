@@ -73,6 +73,12 @@ model FiscalIssuerSettings {
   nfceCsc          String?                @db.VarChar(512)
   /// Último NSU consumido na Distribuição DF-e (polling de NF-e de entrada).
   inboundUltNsu    String?                @db.VarChar(20)
+  /// Se true, após baixar XML com match suficiente cria GoodsReceipt automaticamente.
+  inboundAutoReceiptEnabled Boolean       @default(false)
+  /// true = POSTED (move estoque); false = DRAFT (rascunho para revisão).
+  inboundAutoReceiptPostStock Boolean     @default(false)
+  /// Percentual mínimo de itens com match (0–100) para auto-lançamento. Default 100 = todos.
+  inboundAutoReceiptMinMatchPercent Int   @default(100)
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 }
@@ -91,7 +97,7 @@ enum FiscalDocumentKind {
   NF_E
 }
 
-/// Ciclo local do documento (worker SEFAZ ainda não implementado).
+/// Ciclo local do documento (worker SEFAZ / contingência).
 enum FiscalDocumentStatus {
   QUEUED
   BUILDING_XML
@@ -100,6 +106,8 @@ enum FiscalDocumentStatus {
   REJECTED
   ERROR
   CANCELLED
+  /// Emitida em contingência — pendente de transmissão à SEFAZ quando a conexão voltar.
+  CONTINGENCY
 }
 
 /// Situação fiscal parametrizável, reaproveitada por vários produtos (reforma tributária / NF-e futura).
@@ -205,6 +213,14 @@ model UserActivityLog {
 
 // --- Cadastros ---
 
+/// Grupo / segmento de clientes (catálogo — como Category de produtos).
+model CustomerGroup {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Customer {
   id           String   @id @default(uuid())
   document     String?
@@ -219,6 +235,7 @@ model Customer {
   city         String?
   state        String?
   zip          String?
+  /// Nome do grupo (espelha CustomerGroup.name quando escolhido no cadastro).
   segment      String?
   notes        String?
   createdAt    DateTime @default(now())
@@ -580,6 +597,8 @@ model Sale {
   user          User?          @relation(fields: [userId], references: [id])
   subtotal      Decimal        @db.Decimal(14, 2)
   discount      Decimal        @default(0) @db.Decimal(14, 2)
+  /// Acréscimo comercial no total da venda (NFC-e/NF-e: vOutro — outras despesas acessórias).
+  surcharge     Decimal        @default(0) @db.Decimal(14, 2)
   total         Decimal        @db.Decimal(14, 2)
   notes         String?
   createdAt     DateTime       @default(now())
@@ -606,6 +625,11 @@ model FiscalDocument {
   accessKey        String?              @db.VarChar(44)
   protocol         String?              @db.VarChar(32)
   sefazEnvironment String?              @db.VarChar(16)
+  /// Tipo de emissão NF-e/NFC-e (1=normal; 9=contingência off-line etc.).
+  tpEmis           Int                  @default(1)
+  /// Caminho absoluto do XML autorizado (nfeProc) no servidor.
+  xmlPath          String?              @db.VarChar(512)
+  xmlSha256        String?              @db.VarChar(64)
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 }

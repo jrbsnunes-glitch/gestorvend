@@ -7,6 +7,7 @@
  */
 
 import { companyDisplayName, resolveCompanyAssetUrl } from '../lib/company-branding';
+import { formatCnpj } from '../lib/format';
 
 export type CompanyHeaderData = {
   legalName: string;
@@ -72,7 +73,7 @@ export function CompanyHeader({ company }: { company: CompanyHeaderData }) {
           <strong>{company.legalName?.trim() || 'GestorVend'}</strong>
         )}
         <span className="print-company-line">
-          CNPJ {company.cnpj || '—'}
+          CNPJ {company.cnpj ? formatCnpj(company.cnpj) : '—'}
           {company.ie ? ` · IE ${company.ie}` : ''}
         </span>
         {company.address && (

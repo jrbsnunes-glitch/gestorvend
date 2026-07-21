@@ -44,7 +44,9 @@ export type CreateGoodsReceiptInput = {
   notes?: string | null;
   items: ReceiptItemDto[];
   payable?: PayableOptionsDto | null;
-  userId: string;
+  userId?: string | null;
+  /** Default POSTED (comportamento legado). DRAFT não move estoque. */
+  status?: GoodsReceiptStatus;
 };
 
 @Injectable()
@@ -103,6 +105,7 @@ export class GoodsReceiptService {
 
     return db
       .$transaction(async (tx) => {
+        const postStock = (body.status ?? GoodsReceiptStatus.POSTED) === GoodsReceiptStatus.POSTED;
         const receipt = await tx.goodsReceipt.create({
           data: {
             mode: body.mode,
@@ -114,9 +117,9 @@ export class GoodsReceiptService {
             natureOperation: body.natureOperation ?? null,
             totalValue: body.totalValue != null ? String(body.totalValue) : null,
             notes: body.notes ?? null,
-            status: GoodsReceiptStatus.POSTED,
-            postedAt: new Date(),
-            userId: body.userId,
+            status: postStock ? GoodsReceiptStatus.POSTED : GoodsReceiptStatus.DRAFT,
+            postedAt: postStock ? new Date() : null,
+            userId: body.userId?.trim() || null,
             items: {
               create: await Promise.all(
                 body.items.map(async (it) => {
@@ -149,6 +152,17 @@ export class GoodsReceiptService {
           },
           include: { items: true },
         });
+
+        if (!postStock) {
+          return tx.goodsReceipt.findUniqueOrThrow({
+            where: { id: receipt.id },
+            include: {
+              supplier: true,
+              items: { include: { variant: { include: { product: true } } } },
+              payables: true,
+            },
+          });
+        }
 
         for (const it of body.items) {
           const variant = await tx.productVariant.findUniqueOrThrow({
@@ -305,9 +319,13 @@ export class GoodsReceiptService {
       })
       .then(async (result) => {
         if (nfeAccessKey) {
+          const isPosted = result.status === GoodsReceiptStatus.POSTED;
           await db.inboundNfeDocument.updateMany({
             where: { accessKey: nfeAccessKey, goodsReceiptId: null },
-            data: { goodsReceiptId: result.id, status: InboundNfeStatus.IMPORTADO },
+            data: {
+              goodsReceiptId: result.id,
+              ...(isPosted ? { status: InboundNfeStatus.IMPORTADO } : {}),
+            },
           });
         }
         return result;

@@ -445,7 +445,7 @@ export function FinancePage() {
                   p.set('supplierId', filterSupplierId);
                   if (filterPartyName) p.set('partyName', filterPartyName);
                 }
-                navigate(`/notas-fiscais?${p.toString()}`);
+                navigate(`/notas-fiscais/parceiro?${p.toString()}`);
               }}
             >
               Notas Fiscais

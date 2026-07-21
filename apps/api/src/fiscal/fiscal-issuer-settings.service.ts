@@ -6,6 +6,9 @@ import {
   Prisma,
 } from '../generated/tenant-client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { formatPfxLoadError } from './issuer/pfx.errors';
+import { IssuerCertificateStorage } from './issuer/issuer-certificate.storage';
+import { loadPfxMaterialFromBuffer } from './issuer/load-pfx';
 
 function onlyDigits7(s: string): string {
   return s.replace(/\D/g, '').slice(0, 7);
@@ -30,6 +33,8 @@ export type FiscalIssuerPublicDto = {
   nfceLastNumber: number;
   nfeLastNumber: number;
   certificatePath: string | null;
+  /** Path aponta para o .pfx gerenciado pelo upload (pasta certs do tenant). */
+  certificateManagedUpload: boolean;
   /** `FISCAL_ISSUER_CERT_PATH` preenchido e sem `certificatePath` na base. */
   certPathFromEnvFallback: boolean;
   /** Senha do .pfx guardada na base deste tenant. */
@@ -48,11 +53,19 @@ export type FiscalIssuerPublicDto = {
   nfceCscIdFromEnvFallback: boolean;
   /** Segredo vem só do `.env` (base vazia). */
   nfceCscSecretFromEnvFallback: boolean;
+  /** Entrada automática a partir da caixa NF-e. */
+  inboundAutoReceiptEnabled: boolean;
+  inboundAutoReceiptPostStock: boolean;
+  inboundAutoReceiptMinMatchPercent: number;
+  inboundUltNsu: string | null;
 };
 
 @Injectable()
 export class FiscalIssuerSettingsService {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    private readonly certStorage: IssuerCertificateStorage,
+  ) {}
 
   /** Garante linha singleton de emissor; retorna null se ainda não houver empresa. */
   async ensureForTenant(
@@ -85,10 +98,14 @@ export class FiscalIssuerSettingsService {
     if (!row) {
       throw new BadRequestException('Cadastre a empresa (menu Empresa) antes do emissor fiscal.');
     }
-    return this.toPublic(row.settings, env);
+    return this.toPublic(tenantSlug, row.settings, env);
   }
 
-  toPublic(s: FiscalIssuerSettings, env: FiscalIssuerEnvFallback): FiscalIssuerPublicDto {
+  toPublic(
+    tenantSlug: string,
+    s: FiscalIssuerSettings,
+    env: FiscalIssuerEnvFallback,
+  ): FiscalIssuerPublicDto {
     const dbPath = s.certificatePath?.trim() ?? '';
     const envPath = env.certPath?.trim() ?? '';
     const hasDbCertPwd = Boolean(s.certificatePassword?.trim());
@@ -110,6 +127,7 @@ export class FiscalIssuerSettingsService {
       nfceLastNumber: s.nfceLastNumber,
       nfeLastNumber: s.nfeLastNumber,
       certificatePath: s.certificatePath ?? null,
+      certificateManagedUpload: this.certStorage.isManagedPath(tenantSlug, s.certificatePath),
       certPathFromEnvFallback: Boolean(envPath) && !dbPath,
       hasCertificatePasswordInDb: hasDbCertPwd,
       certificatePasswordConfigured: certPwdEffective,
@@ -119,7 +137,62 @@ export class FiscalIssuerSettingsService {
       nfceCscIdConfigured: cscIdEffective,
       nfceCscIdFromEnvFallback: Boolean(envCscId) && !dbCscId,
       nfceCscSecretFromEnvFallback: env.cscSecretConfigured && !hasDbCscSecret,
+      inboundAutoReceiptEnabled: s.inboundAutoReceiptEnabled,
+      inboundAutoReceiptPostStock: s.inboundAutoReceiptPostStock,
+      inboundAutoReceiptMinMatchPercent: s.inboundAutoReceiptMinMatchPercent,
+      inboundUltNsu: s.inboundUltNsu,
     };
+  }
+
+  async uploadCertificate(
+    tenantSlug: string,
+    file: { buffer: Buffer; originalname?: string; mimetype?: string; size?: number } | undefined,
+    passwordFromForm: string | undefined,
+    env: FiscalIssuerEnvFallback,
+  ): Promise<FiscalIssuerPublicDto> {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const row = await this.ensureForTenant(tenantSlug);
+    if (!row) {
+      throw new BadRequestException('Cadastre a empresa (menu Empresa) antes do emissor fiscal.');
+    }
+
+    const buffer = this.certStorage.assertPfxUpload(
+      file ?? { buffer: Buffer.alloc(0) },
+    );
+
+    const pwdForm = passwordFromForm?.trim() ?? '';
+    const pwdDb = row.settings.certificatePassword?.trim() ?? '';
+    const password = pwdForm || pwdDb;
+    if (!password) {
+      throw new BadRequestException(
+        'Informe a senha do .pfx no campo abaixo (ou salve a senha antes) para validar o certificado no envio.',
+      );
+    }
+
+    try {
+      loadPfxMaterialFromBuffer(buffer, password);
+    } catch (e) {
+      throw new BadRequestException(
+        formatPfxLoadError(e, file?.originalname?.trim() || 'certificado.pfx'),
+      );
+    }
+
+    const absolutePath = await this.certStorage.save(tenantSlug, buffer);
+    const data: Prisma.FiscalIssuerSettingsUpdateInput = {
+      certificatePath: absolutePath,
+    };
+    if (pwdForm) {
+      if (pwdForm.length > 500) {
+        throw new BadRequestException('Senha do certificado longa demais.');
+      }
+      data.certificatePassword = pwdForm;
+    }
+
+    const updated = await db.fiscalIssuerSettings.update({
+      where: { id: row.settings.id },
+      data,
+    });
+    return this.toPublic(tenantSlug, updated, env);
   }
 
   async patch(
@@ -160,7 +233,9 @@ export class FiscalIssuerSettingsService {
     if (body.municipalityIbge !== undefined) {
       const mun = onlyDigits7(String(body.municipalityIbge));
       if (mun.length !== 7 || mun === '0000000') {
-        throw new BadRequestException('Informe o código IBGE do município (7 dígitos, sem zeros inválidos).');
+        throw new BadRequestException(
+          'Informe o código IBGE do município (7 dígitos, sem zeros inválidos).',
+        );
       }
       data.municipalityIbge = mun;
     }
@@ -216,10 +291,24 @@ export class FiscalIssuerSettingsService {
       }
     }
 
+    if (body.inboundAutoReceiptEnabled !== undefined) {
+      data.inboundAutoReceiptEnabled = Boolean(body.inboundAutoReceiptEnabled);
+    }
+    if (body.inboundAutoReceiptPostStock !== undefined) {
+      data.inboundAutoReceiptPostStock = Boolean(body.inboundAutoReceiptPostStock);
+    }
+    if (body.inboundAutoReceiptMinMatchPercent !== undefined) {
+      const n = Number(body.inboundAutoReceiptMinMatchPercent);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        throw new BadRequestException('Percentual mínimo de match deve ser entre 0 e 100.');
+      }
+      data.inboundAutoReceiptMinMatchPercent = Math.trunc(n);
+    }
+
     const updated = await db.fiscalIssuerSettings.update({
       where: { id: settings.id },
       data,
     });
-    return this.toPublic(updated, env);
+    return this.toPublic(tenantSlug, updated, env);
   }
 }

@@ -28,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/fornecedores', label: 'Fornecedores', managerOnly: true },
   { to: '/estoque', label: 'Estoque', managerOnly: true },
   { to: '/caixa', label: 'Caixa' },
+  { to: '/notas-fiscais', label: 'Notas Fiscais' },
   { to: '/financeiro', label: 'Financeiro', managerOnly: true, allowFinanceRole: true },
   { to: '/balanco', label: 'Balanço', managerOnly: true, allowFinanceRole: true },
   { to: '/cadastros', label: 'Cadastros Gerais', managerOnly: true },

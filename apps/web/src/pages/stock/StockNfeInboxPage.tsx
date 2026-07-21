@@ -18,6 +18,8 @@ type InboxDoc = {
   unmatchedCount: number | null;
   fetchedAt: string;
   goodsReceiptId: string | null;
+  draftReceiptControlNumber?: number | null;
+  manifestacaoEvento?: string | null;
 };
 
 type InboundFetchResponse = {
@@ -50,7 +52,25 @@ type InboundFetchResponse = {
   manifested?: boolean;
 };
 
-function statusLabel(s: InboxDoc['status']): string {
+type InboundDiagnostics = {
+  ambiente: 'PRODUCAO' | 'HOMOLOGACAO';
+  cnpjConsultaMasked: string;
+  companyCnpj: string | null;
+  companyCnpjMatchesCert: boolean | null;
+  certificateConfigured: boolean;
+  inboundUltNsu: string | null;
+  autoReceipt: { enabled: boolean; postStock: boolean; minMatchPercent: number };
+  tips: string[];
+  accessKey?: {
+    emitCnpj: string;
+    number: string;
+    serie: string;
+    note: string;
+  } | null;
+};
+
+function statusLabel(s: InboxDoc['status'], draftNo?: number | null): string {
+  if (draftNo) return `Rascunho #${draftNo}`;
   switch (s) {
     case 'RESUMO':
       return 'Resumo (aguardando XML)';
@@ -65,7 +85,8 @@ function statusLabel(s: InboxDoc['status']): string {
   }
 }
 
-function statusClass(s: InboxDoc['status']): string {
+function statusClass(s: InboxDoc['status'], draftNo?: number | null): string {
+  if (draftNo) return 'badge badge-muted';
   switch (s) {
     case 'PENDENTE_REVISAO':
       return 'badge badge-warn';
@@ -78,15 +99,35 @@ function statusClass(s: InboxDoc['status']): string {
   }
 }
 
+function manifestLabel(tp: string | null | undefined): string {
+  switch (tp) {
+    case '210200':
+      return 'Confirmada';
+    case '210210':
+      return 'Ciência';
+    case '210220':
+      return 'Desconhecida';
+    case '210240':
+      return 'Não realizada';
+    default:
+      return tp ? tp : '—';
+  }
+}
+
 /**
  * Caixa de entrada de NF-e descobertas via Distribuição DF-e (NSU) ou busca por chave.
- * O lançamento no estoque exige revisão — abre a Entrada com a chave preenchida.
+ * O lançamento no estoque exige revisão — abre a Entrada com a chave preenchida —
+ * salvo quando a auto-entrada (Empresa → Emissor) criar rascunho/POSTED.
  */
 export function StockNfeInboxPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [previewKey, setPreviewKey] = useState<string | null>(null);
   const [pollMsg, setPollMsg] = useState<string | null>(null);
+  const [diagOpen, setDiagOpen] = useState(false);
+  const [diagKey, setDiagKey] = useState('');
+  const [justFor, setJustFor] = useState<{ accessKey: string; tpEvento: string } | null>(null);
+  const [xJust, setXJust] = useState('');
 
   const list = useQuery({
     queryKey: ['fiscal', 'inbound', 'documents'],
@@ -98,6 +139,15 @@ export function StockNfeInboxPage() {
     queryKey: ['fiscal', 'inbound', 'documents', previewKey],
     queryFn: () => api<InboundFetchResponse>(`/fiscal/inbound/documents/${previewKey}`),
     enabled: Boolean(previewKey),
+  });
+
+  const diagnostics = useQuery({
+    queryKey: ['fiscal', 'inbound', 'diagnostics', diagKey],
+    queryFn: () =>
+      api<InboundDiagnostics>(
+        `/fiscal/inbound/diagnostics${diagKey.trim() ? `?accessKey=${encodeURIComponent(diagKey.trim())}` : ''}`,
+      ),
+    enabled: diagOpen,
   });
 
   const poll = useMutation({
@@ -117,8 +167,47 @@ export function StockNfeInboxPage() {
     onError: (e: Error) => setPollMsg(e.message),
   });
 
+  const manifest = useMutation({
+    mutationFn: (body: { accessKey: string; tpEvento: string; xJust?: string }) =>
+      api<{ cStat: string; nProt?: string; tpEvento: string }>('/fiscal/inbound/manifest', {
+        method: 'POST',
+        json: body,
+      }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['fiscal', 'inbound', 'documents'] });
+      setJustFor(null);
+      setXJust('');
+      setPollMsg(
+        `Manifestação ${manifestLabel(data.tpEvento)} registrada (cStat ${data.cStat}` +
+          (data.nProt ? `, prot. ${data.nProt}` : '') +
+          ').',
+      );
+    },
+    onError: (e: Error) => setPollMsg(e.message),
+  });
+
   function openInEntrada(accessKey: string) {
     navigate(`/estoque/entrada?chave=${accessKey}`);
+  }
+
+  function requestManifest(accessKey: string, tpEvento: string) {
+    if (tpEvento === '210220' || tpEvento === '210240') {
+      setJustFor({ accessKey, tpEvento });
+      setXJust('');
+      return;
+    }
+    const labels: Record<string, string> = {
+      '210200': 'Confirmação da Operação',
+      '210210': 'Ciência da Operação',
+    };
+    if (
+      !window.confirm(
+        `Registrar ${labels[tpEvento] ?? tpEvento} na SEFAZ para esta NF-e?`,
+      )
+    ) {
+      return;
+    }
+    manifest.mutate({ accessKey, tpEvento });
   }
 
   return (
@@ -128,9 +217,12 @@ export function StockNfeInboxPage() {
         style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', alignItems: 'center' }}
       >
         <p style={{ margin: 0, flex: 1, fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
-          NF-e de entrada descobertas automaticamente (polling SEFAZ) ou baixadas por chave. O estoque
-          só é lançado após revisão humana quando houver item sem vínculo.
+          NF-e via webservice oficial (Distribuição DF-e), não scraping do Portal. Se o WS retornar
+          cStat 137 e o Portal baixar o XML, use Importar XML na Entrada.
         </p>
+        <button type="button" className="btn btn-ghost" onClick={() => setDiagOpen(true)}>
+          Diagnóstico WS
+        </button>
         <button
           type="button"
           className="btn btn-secondary"
@@ -145,7 +237,7 @@ export function StockNfeInboxPage() {
       </div>
 
       {pollMsg && (
-        <div className={`alert ${poll.isError ? 'alert-error' : 'alert-success'}`} style={{ marginTop: '0.75rem' }}>
+        <div className={`alert ${poll.isError || manifest.isError ? 'alert-error' : 'alert-success'}`} style={{ marginTop: '0.75rem' }}>
           {pollMsg}
         </div>
       )}
@@ -159,6 +251,7 @@ export function StockNfeInboxPage() {
           <thead>
             <tr>
               <th>Status</th>
+              <th>Manifesto</th>
               <th>Fornecedor</th>
               <th>NF</th>
               <th>Emissão</th>
@@ -172,14 +265,14 @@ export function StockNfeInboxPage() {
           <tbody>
             {list.isLoading && (
               <tr>
-                <td colSpan={9} className="empty">
+                <td colSpan={10} className="empty">
                   Carregando…
                 </td>
               </tr>
             )}
             {!list.isLoading && !(list.data?.length ?? 0) && (
               <tr>
-                <td colSpan={9} className="empty">
+                <td colSpan={10} className="empty">
                   Nenhuma NF-e pendente. Use &quot;Buscar novas NF-e agora&quot; ou informe a chave em Entrada de
                   produtos.
                 </td>
@@ -188,8 +281,11 @@ export function StockNfeInboxPage() {
             {(list.data ?? []).map((doc) => (
               <tr key={doc.id}>
                 <td>
-                  <span className={statusClass(doc.status)}>{statusLabel(doc.status)}</span>
+                  <span className={statusClass(doc.status, doc.draftReceiptControlNumber)}>
+                    {statusLabel(doc.status, doc.draftReceiptControlNumber)}
+                  </span>
                 </td>
+                <td style={{ fontSize: '0.8rem' }}>{manifestLabel(doc.manifestacaoEvento)}</td>
                 <td>
                   <strong>{doc.emitterName ?? '—'}</strong>
                   {doc.emitterCnpj ? (
@@ -219,7 +315,34 @@ export function StockNfeInboxPage() {
                       disabled={doc.status === 'IMPORTADO' || doc.status === 'RESUMO'}
                       onClick={() => openInEntrada(doc.accessKey)}
                     >
-                      Revisar e lançar
+                      {doc.draftReceiptControlNumber ? 'Abrir rascunho' : 'Revisar e lançar'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-compact"
+                      disabled={manifest.isPending}
+                      title="Confirmação da Operação (210200)"
+                      onClick={() => requestManifest(doc.accessKey, '210200')}
+                    >
+                      Confirmar
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-compact"
+                      disabled={manifest.isPending}
+                      title="Desconhecimento (210220)"
+                      onClick={() => requestManifest(doc.accessKey, '210220')}
+                    >
+                      Desconhecer
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-compact"
+                      disabled={manifest.isPending}
+                      title="Operação não realizada (210240)"
+                      onClick={() => requestManifest(doc.accessKey, '210240')}
+                    >
+                      Não realizada
                     </button>
                   </div>
                 </td>
@@ -313,6 +436,131 @@ export function StockNfeInboxPage() {
                 }}
               >
                 Revisar e lançar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {diagOpen && (
+        <FormModalBackdrop onClose={() => setDiagOpen(false)}>
+          <div className="modal" role="dialog" aria-labelledby="nfe-diag-title">
+            <h2 id="nfe-diag-title">Diagnóstico WS × Portal</h2>
+            <p className="muted" style={{ fontSize: '0.85rem' }}>
+              O Portal Nacional é a interface humana; a entrada automática usa o webservice
+              NFeDistribuicaoDFe com o certificado A1.
+            </p>
+            <div className="field">
+              <label htmlFor="diag-key">Chave NF-e (opcional)</label>
+              <input
+                id="diag-key"
+                value={diagKey}
+                onChange={(e) => setDiagKey(e.target.value.replace(/\D/g, '').slice(0, 44))}
+                placeholder="44 dígitos para analisar emitente"
+                inputMode="numeric"
+              />
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ marginBottom: '0.75rem' }}
+              onClick={() => qc.invalidateQueries({ queryKey: ['fiscal', 'inbound', 'diagnostics'] })}
+            >
+              Atualizar
+            </button>
+            {diagnostics.isLoading && <p>Carregando…</p>}
+            {diagnostics.isError && (
+              <div className="alert alert-error">{(diagnostics.error as Error).message}</div>
+            )}
+            {diagnostics.data && (
+              <>
+                <ul style={{ margin: '0 0 0.75rem', paddingLeft: '1.1rem', fontSize: '0.88rem' }}>
+                  <li>
+                    Ambiente: <strong>{diagnostics.data.ambiente}</strong>
+                  </li>
+                  <li>
+                    CNPJ consulta (cert): <strong>{diagnostics.data.cnpjConsultaMasked}</strong>
+                    {diagnostics.data.companyCnpjMatchesCert === false
+                      ? ' — difere do CNPJ da empresa'
+                      : ''}
+                  </li>
+                  <li>
+                    Certificado A1:{' '}
+                    {diagnostics.data.certificateConfigured ? 'configurado' : 'faltando'}
+                  </li>
+                  <li>
+                    Último NSU: <code>{diagnostics.data.inboundUltNsu ?? '0'}</code>
+                  </li>
+                  <li>
+                    Auto-entrada:{' '}
+                    {diagnostics.data.autoReceipt.enabled
+                      ? `ligada (${diagnostics.data.autoReceipt.postStock ? 'POSTED' : 'DRAFT'}, match ≥ ${diagnostics.data.autoReceipt.minMatchPercent}%)`
+                      : 'desligada'}
+                  </li>
+                </ul>
+                {diagnostics.data.accessKey && (
+                  <p style={{ fontSize: '0.85rem' }}>
+                    Emitente na chave: CNPJ {diagnostics.data.accessKey.emitCnpj} · NF{' '}
+                    {diagnostics.data.accessKey.number}/{diagnostics.data.accessKey.serie}
+                    <br />
+                    <span className="muted">{diagnostics.data.accessKey.note}</span>
+                  </p>
+                )}
+                <div className="alert alert-success" style={{ fontSize: '0.85rem' }}>
+                  <strong>Dicas</strong>
+                  <ul style={{ margin: '0.35rem 0 0', paddingLeft: '1.1rem' }}>
+                    {diagnostics.data.tips.map((t) => (
+                      <li key={t}>{t}</li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setDiagOpen(false)}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {justFor && (
+        <FormModalBackdrop onClose={() => setJustFor(null)}>
+          <div className="modal" role="dialog" aria-labelledby="nfe-just-title">
+            <h2 id="nfe-just-title">
+              {justFor.tpEvento === '210220' ? 'Desconhecimento' : 'Operação não realizada'}
+            </h2>
+            <p className="muted" style={{ fontSize: '0.85rem' }}>
+              Informe a justificativa (mínimo 15 caracteres) exigida pela SEFAZ.
+            </p>
+            <div className="field">
+              <label htmlFor="xjust">Justificativa</label>
+              <textarea
+                id="xjust"
+                rows={3}
+                value={xJust}
+                onChange={(e) => setXJust(e.target.value)}
+                maxLength={255}
+              />
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setJustFor(null)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={manifest.isPending || xJust.trim().length < 15}
+                onClick={() =>
+                  manifest.mutate({
+                    accessKey: justFor.accessKey,
+                    tpEvento: justFor.tpEvento,
+                    xJust: xJust.trim(),
+                  })
+                }
+              >
+                {manifest.isPending ? 'Enviando…' : 'Enviar à SEFAZ'}
               </button>
             </div>
           </div>

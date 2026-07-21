@@ -1,6 +1,8 @@
+import * as https from 'https';
+
 /**
- * Cliente mínimo SOAP 1.2 para lote de autorização NFC-e (NFeAutorizacao4).
- * A URL deve apontar ao .asmx publicado pelo autorizador (ex.: SVRS homologação).
+ * Cliente SOAP 1.2 para lote de autorização NF-e/NFC-e (NFeAutorizacao4).
+ * Em produção/homologação real a SEFAZ exige mTLS (certificado A1).
  */
 export function buildNfceAutorizacaoEnvelope(enviNFeXml: string): string {
   const cdata = `<![CDATA[${enviNFeXml.replace(/]]>/g, ']]]]><![CDATA[>')}]]>`;
@@ -17,44 +19,112 @@ export function buildNfceAutorizacaoEnvelope(enviNFeXml: string): string {
 }
 
 export type SoapAutorizacaoResult =
-  | { ok: true; accessKey?: string; protocol?: string }
-  | { ok: false; motive: string; rawSnippet: string };
+  | { ok: true; accessKey: string; protocol?: string; protNFeXml?: string; cStat: string }
+  | { ok: false; motive: string; rawSnippet: string; cStat?: string };
 
+/**
+ * Interpreta retEnviNFe / protNFe.
+ * cStat 100/150 = autorizado; lote 104 com protNFe interno também é sucesso.
+ */
 export function parseSefazAutorizacaoResponse(xmlText: string): SoapAutorizacaoResult {
   const rawSnippet = xmlText.slice(0, 4000);
-  const cStat = xmlText.match(/<cStat>(\d+)<\/cStat>/);
-  const chNFe = xmlText.match(/<chNFe>(\d{44})<\/chNFe>/);
-  const nProt = xmlText.match(/<nProt>(\d+)<\/nProt>/);
-  const motivoBlocks = [...xmlText.matchAll(/<xMotivo>([^<]*)<\/xMotivo>/g)].map((m) => m[1]);
-  const lastMotivo = motivoBlocks[motivoBlocks.length - 1];
-  const code = cStat?.[1];
 
-  if (code === '100' && chNFe?.[1]) {
-    return { ok: true, accessKey: chNFe[1], protocol: nProt?.[1] };
+  const protBlock =
+    xmlText.match(/<protNFe[\s\S]*?<\/protNFe>/i)?.[0] ??
+    xmlText.match(/<retEnviNFe[\s\S]*?<\/retEnviNFe>/i)?.[0] ??
+    xmlText;
+
+  const infProt = protBlock.match(/<infProt[\s\S]*?<\/infProt>/i)?.[0] ?? protBlock;
+
+  const cStatInf = infProt.match(/<cStat>(\d+)<\/cStat>/i)?.[1];
+  const cStatLote = xmlText.match(/<retEnviNFe[\s\S]*?<cStat>(\d+)<\/cStat>/i)?.[1];
+  const chNFe = infProt.match(/<chNFe>(\d{44})<\/chNFe>/i)?.[1];
+  const nProt = infProt.match(/<nProt>([^<]+)<\/nProt>/i)?.[1]?.trim();
+  const motivos = [...xmlText.matchAll(/<xMotivo>([^<]*)<\/xMotivo>/gi)].map((m) => m[1].trim());
+  const lastMotivo = motivos[motivos.length - 1];
+
+  const authStat = cStatInf ?? '';
+  if ((authStat === '100' || authStat === '150') && chNFe) {
+    const protNFeXml = xmlText.match(/<protNFe[\s\S]*?<\/protNFe>/i)?.[0];
+    return {
+      ok: true,
+      accessKey: chNFe,
+      protocol: nProt,
+      protNFeXml,
+      cStat: authStat,
+    };
   }
-  if (code === '104') {
-    return { ok: false, motive: lastMotivo || 'Lote em processamento (104).', rawSnippet };
+
+  // Lote processado (104) sem protNFe útil
+  if (cStatLote === '104' && !chNFe) {
+    return {
+      ok: false,
+      cStat: '104',
+      motive: lastMotivo || 'Lote processado sem protocolo de autorização (104).',
+      rawSnippet,
+    };
   }
+
+  const code = authStat || cStatLote || 'SEM_CSTAT';
   return {
     ok: false,
-    motive: `${code ?? 'SEM_CSTAT'}: ${lastMotivo || motivoBlocks[0] || 'Sem motivo textual'}`,
+    cStat: code,
+    motive: `${code}: ${lastMotivo || motivos[0] || 'Sem motivo textual'}`,
     rawSnippet,
   };
 }
 
-export async function postNfceAutorizacaoLote(endpointUrl: string, enviNFeXml: string): Promise<string> {
+export function postNfceAutorizacaoLote(
+  endpointUrl: string,
+  enviNFeXml: string,
+  agent?: https.Agent,
+): Promise<string> {
   const soap = buildNfceAutorizacaoEnvelope(enviNFeXml);
-  const res = await fetch(endpointUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type':
-        'application/soap+xml; charset=utf-8; action="http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4/nfeAutorizacaoLote"',
-    },
-    body: soap,
+  const u = new URL(endpointUrl);
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: u.hostname,
+        port: u.port || 443,
+        path: u.pathname + u.search,
+        method: 'POST',
+        agent,
+        headers: {
+          'Content-Type':
+            'application/soap+xml; charset=utf-8; action="http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4/nfeAutorizacaoLote"',
+          'Content-Length': Buffer.byteLength(soap),
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error(`HTTP ${res.statusCode} na SEFAZ: ${data.slice(0, 500)}`));
+            return;
+          }
+          resolve(data);
+        });
+      },
+    );
+    req.on('error', reject);
+    req.write(soap);
+    req.end();
   });
-  const txt = await res.text();
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status} na SEFAZ: ${txt.slice(0, 500)}`);
-  }
-  return txt;
+}
+
+/** Monta nfeProc (XML autorizado) a partir da NFe assinada + protNFe. */
+export function buildNfeProcXml(nfeSignedXml: string, protNFeXml: string): string {
+  const nfe = nfeSignedXml.replace(/^<\?xml[^>]*>\s*/i, '').trim();
+  const prot = protNFeXml.trim();
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>` +
+    `<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">` +
+    nfe +
+    prot +
+    `</nfeProc>`
+  );
 }

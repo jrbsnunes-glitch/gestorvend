@@ -221,6 +221,162 @@ export function CategorySearchCombo({
   );
 }
 
+type CustomerGroupRow = { id: string; name: string };
+
+/**
+ * Grupo de clientes — mesma UX da categoria de produtos (pesquisar / + Cadastrar).
+ * O valor persistido no cliente é o nome do grupo (`Customer.segment`).
+ */
+export function CustomerGroupSearchCombo({
+  id,
+  value,
+  onChange,
+  disabled,
+}: {
+  id: string;
+  /** Nome do grupo (segmento) selecionado. */
+  value: string;
+  onChange: (groupName: string) => void;
+  disabled?: boolean;
+}) {
+  const qc = useQueryClient();
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (value) setQ(value);
+    else setQ('');
+  }, [value]);
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  const searchQ = useDeferredValue(q);
+  const isFiltering = open && q !== searchQ;
+
+  const list = useQuery({
+    queryKey: ['customer-groups', 'search', searchQ],
+    queryFn: () => api<CustomerGroupRow[]>(`/customer-groups?q=${encodeURIComponent(searchQ)}`),
+    enabled: open,
+    staleTime: 10_000,
+  });
+
+  const create = useMutation({
+    mutationFn: (name: string) =>
+      api<CustomerGroupRow>('/customer-groups', { method: 'POST', json: { name } }),
+    onSuccess: (row) => {
+      qc.invalidateQueries({ queryKey: ['customer-groups'] });
+      onChange(row.name);
+      setQ(row.name);
+      setOpen(false);
+    },
+  });
+
+  const rows = list.data ?? [];
+  const term = q.trim();
+  const showLoading = (list.isFetching && rows.length === 0) || isFiltering;
+  const canCreate =
+    term.length > 0 &&
+    !rows.some((g) => g.name.toLowerCase() === term.toLowerCase()) &&
+    !create.isPending;
+
+  const panelAbove = useCatalogPanelAbove(
+    open,
+    wrapRef,
+    searchQ,
+    rows.length,
+    showLoading,
+    canCreate,
+    term,
+    value,
+    create.isPending,
+  );
+
+  return (
+    <div className="catalog-combo" ref={wrapRef}>
+      <input
+        id={id}
+        type="text"
+        autoComplete="off"
+        disabled={disabled}
+        placeholder="Pesquisar ou cadastrar grupo…"
+        value={q}
+        onChange={(e) => {
+          setQ(e.target.value);
+          if (value) onChange('');
+        }}
+        onFocus={() => setOpen(true)}
+        aria-label="Grupo de clientes: pesquisar ou cadastrar"
+      />
+      {open && (
+        <div
+          className={
+            'catalog-combo-panel catalog-combo-panel--raised' + (panelAbove ? ' catalog-combo-panel--above' : '')
+          }
+          role="listbox"
+        >
+          {term.length === 0 && !showLoading && rows.length > 0 && (
+            <div className="catalog-combo-hint">Digite para filtrar ou clique em um grupo abaixo.</div>
+          )}
+          {showLoading && <div className="catalog-combo-empty">Buscando grupos…</div>}
+          {!showLoading &&
+            rows.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                className="catalog-combo-option"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onChange(g.name);
+                  setQ(g.name);
+                  setOpen(false);
+                }}
+              >
+                {g.name}
+              </button>
+            ))}
+          {!showLoading && !rows.length && term.length > 0 && (
+            <div className="catalog-combo-empty">
+              Nenhum grupo para «{term}». Cadastre um novo com o botão abaixo ou ajuste o termo.
+            </div>
+          )}
+          {!showLoading && !rows.length && term.length === 0 && (
+            <div className="catalog-combo-empty">Nenhum grupo cadastrado ainda. Digite um nome e cadastre.</div>
+          )}
+          {canCreate && (
+            <button
+              type="button"
+              className="catalog-combo-create"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => create.mutate(term)}
+              disabled={create.isPending}
+            >
+              + Cadastrar &quot;{term}&quot;
+            </button>
+          )}
+          {create.isError && (
+            <div className="catalog-combo-error">{(create.error as Error).message}</div>
+          )}
+        </div>
+      )}
+      {value && (
+        <p className="catalog-combo-foot">
+          Selecionado: <strong>{value}</strong>
+          <button type="button" className="btn btn-ghost catalog-combo-clear" onClick={() => onChange('')}>
+            Limpar
+          </button>
+        </p>
+      )}
+    </div>
+  );
+}
+
 type SupplierRow = {
   id: string;
   legalName: string;
@@ -254,7 +410,8 @@ export function SupplierSearchCombo({
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (hintName && value) setQ(hintName);
+    // Mostra o nome sugerido mesmo sem id (ex.: emitente da NF-e ainda não cadastrado).
+    if (hintName) setQ(hintName);
     else if (!value) setQ('');
   }, [hintName, value]);
 
@@ -361,6 +518,11 @@ export function SupplierSearchCombo({
           )}
         </div>
       )}
+      {!value && hintName ? (
+        <p className="catalog-combo-foot">
+          Sugestão da NF-e: <strong>{hintName}</strong> — ainda não vinculado ao cadastro.
+        </p>
+      ) : null}
       {value && (
         <p className="catalog-combo-foot">
           Selecionado:{' '}

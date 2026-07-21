@@ -29,6 +29,7 @@ type SaleReceipt = {
   status: string;
   subtotal: string;
   discount: string;
+  surcharge?: string;
   total: string;
   createdAt: string;
   notes: string | null;
@@ -234,6 +235,12 @@ export function SaleReceiptPrintPage() {
               <div className="sale-receipt-totals-row">
                 <span>Desconto</span>
                 <span>− {formatBRL(s.discount)}</span>
+              </div>
+            )}
+            {parseN(s.surcharge) > 0.005 && (
+              <div className="sale-receipt-totals-row">
+                <span>Acréscimo</span>
+                <span>+ {formatBRL(s.surcharge)}</span>
               </div>
             )}
             <div className="sale-receipt-totals-row is-total">

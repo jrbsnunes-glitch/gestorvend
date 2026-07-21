@@ -39,29 +39,32 @@ export function validateNfeAccessKey(
 }
 
 /**
- * Monta 44 dígitos da chave NFC-e modelo 65: cUF + AAMM + CNPJ(14) + mod(02) + série(03) +
- * nNF(09) + tpEmiss(01) + cNF(08) + DV(01).
+ * Monta 44 dígitos da chave NF-e (55) ou NFC-e (65):
+ * cUF + AAMM + CNPJ(14) + mod(02) + série(03) + nNF(09) + tpEmiss(01) + cNF(08) + DV(01).
  */
 export function buildNfceAccessKey(parts: {
   codUf: string;
-  aammEmissao: string; // AAAAMM só 4 dígitos yyMM oficial — usamos apenas mm? Manual: últimos dois do ano + mês YYMM na chave são "AAMM" (4 dígitos)
+  aammEmissao: string;
   cnpj14: string;
   serie3: number;
   nNF9: number;
   tpEmis: number;
   codigoNumerico8: number;
+  /** Default 65 (NFC-e). Use 55 para NF-e. */
+  modelo?: 55 | 65;
 }): string {
   const yyMM = parts.aammEmissao.replace(/\D/g, '').slice(0, 4).padStart(4, '0');
   const cnpj14 = parts.cnpj14.replace(/\D/g, '').slice(0, 14).padStart(14, '0');
   const serie = String(parts.serie3).padStart(3, '0').slice(-3);
   const nnf = String(parts.nNF9).padStart(9, '0').slice(-9);
-  const tp = String(parts.tpEmis).replace(/\D/g, '').slice(0, 1);
+  const tp = String(parts.tpEmis).replace(/\D/g, '').slice(0, 1) || '1';
   const cNF = String(parts.codigoNumerico8).padStart(8, '0').slice(-8);
+  const mod = String(parts.modelo ?? 65);
   const base43 =
     parts.codUf.replace(/\D/g, '').padStart(2, '0').slice(-2) +
     yyMM +
     cnpj14 +
-    '65' +
+    mod +
     serie +
     nnf +
     tp +

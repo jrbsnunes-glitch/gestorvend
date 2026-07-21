@@ -131,3 +131,249 @@
   width: auto;
   object-fit: contain;
 }
+
+/* Cadastro Empresa — layout compacto */
+.company-form {
+  max-width: 960px;
+}
+
+.company-form > .page-desc,
+.page.company-page > .page-desc {
+  margin-bottom: 0.75rem;
+  font-size: 0.88rem;
+}
+
+.company-form .card {
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 0.65rem;
+  box-shadow: none;
+}
+
+.company-form .card + .card {
+  margin-top: 0.65rem;
+}
+
+.company-form__h {
+  margin: 0 0 0.45rem;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--color-text);
+}
+
+.company-form__hint {
+  margin: 0 0 0.45rem;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+}
+
+.company-form .field {
+  margin-bottom: 0.4rem;
+  gap: 0.18rem;
+}
+
+.company-form .field label,
+.company-form .field .label {
+  font-size: 0.75rem;
+}
+
+.company-form .field input,
+.company-form .field select,
+.company-form .field textarea {
+  padding: 0.32rem 0.55rem;
+  font-size: 0.86rem;
+  border-radius: var(--radius-sm, 6px);
+}
+
+.company-form .form-row {
+  gap: 0 0.55rem;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+.company-form .form-row--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.company-form .form-row--2 > .field {
+  min-width: 0;
+}
+
+.company-form .form-row--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.company-form .form-row--4 {
+  grid-template-columns: 1.4fr 1.1fr 0.9fr 0.9fr;
+}
+
+.company-form .form-row--addr {
+  grid-template-columns: 2fr 0.55fr 1fr;
+}
+
+.company-form .form-row--tight {
+  align-items: start;
+}
+
+.company-form__logo-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.company-form__file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.company-form__file-btn {
+  height: 2.15rem;
+  padding: 0 0.85rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.company-form__logo-url-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  height: 2.15rem;
+  padding: 0.32rem 0.55rem;
+  font-size: 0.86rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-sizing: border-box;
+}
+
+.company-form__logo-preview {
+  width: 2.15rem;
+  height: 2.15rem;
+  object-fit: contain;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 2px;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.company-form__file-pick {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.company-form__path {
+  margin: 0 0 0.5rem;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+.company-form__path code {
+  font-size: 0.72rem;
+  word-break: break-all;
+}
+
+.company-form__check {
+  display: flex;
+  gap: 0.35rem;
+  align-items: flex-start;
+  margin-top: 0.25rem;
+  font-size: 0.74rem;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--color-text-secondary);
+}
+
+.company-form__check input {
+  margin-top: 0.15rem;
+  flex-shrink: 0;
+}
+
+.company-form__check span {
+  min-width: 0;
+}
+
+.company-form .inline-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  align-items: center;
+  margin: 0.15rem 0 0.35rem;
+}
+
+.company-form .inline-checks label {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: flex-start;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.company-form .sub {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin-top: 0.05rem;
+}
+
+.company-form .inline-checks .sub {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin-top: 0.05rem;
+}
+
+.company-form details.company-form__more {
+  margin: 0.25rem 0 0.4rem;
+}
+
+.company-form details.company-form__more > summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  list-style: none;
+}
+
+.company-form details.company-form__more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.company-form .company-form__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.company-form .company-form__status {
+  margin: 0 0 0.45rem;
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  line-height: 1.35;
+}
+
+@media (max-width: 720px) {
+  .company-form .form-row--2,
+  .company-form .form-row--3,
+  .company-form .form-row--4,
+  .company-form .form-row--addr {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .company-form .form-row--addr .field:first-child {
+    grid-column: 1 / -1;
+  }
+}

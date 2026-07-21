@@ -86,6 +86,25 @@ export function formatSefazTransportError(err: unknown, ctx: SefazCallContext): 
   return `Erro ao consultar a SEFAZ (${ambLabel}): ${raw}`;
 }
 
+/** Partes úteis da chave NF-e (44 dígitos) para diagnóstico vs Portal. */
+export function parseNfeAccessKeyParts(accessKey: string): {
+  key: string;
+  emitCnpj: string;
+  model: string;
+  serie: string;
+  number: string;
+} | null {
+  const key = accessKey.replace(/\D/g, '');
+  if (key.length !== 44) return null;
+  return {
+    key,
+    emitCnpj: key.slice(6, 20),
+    model: key.slice(20, 22),
+    serie: key.slice(22, 25).replace(/^0+/, '') || '0',
+    number: key.slice(25, 34).replace(/^0+/, '') || '0',
+  };
+}
+
 /** Enriquece retorno da SEFAZ quando cStat ≠ 138 */
 export function formatSefazBusinessError(
   xMotivo: string,
@@ -93,6 +112,10 @@ export function formatSefazBusinessError(
   ctx: SefazCallContext,
 ): string {
   const ambLabel = ctx.ambiente === 'PRODUCAO' ? 'Produção' : 'Homologação';
+  const parts = parseNfeAccessKeyParts(ctx.accessKey);
+  const emitHint = parts
+    ? ` Emitente na chave: CNPJ ${parts.emitCnpj} · NF ${parts.number}/${parts.serie}.`
+    : '';
   const hint =
     cStat === '489'
       ? ' O CNPJ enviado na consulta deve ser o do titular do certificado A1 (e-CNPJ), com dígitos verificadores válidos. Atualize o CNPJ em Empresa.'
@@ -102,9 +125,18 @@ export function formatSefazBusinessError(
       ? ' A SEFAZ só mantém o XML disponível por ~90 dias após receber a NF-e no Ambiente Nacional. Notas antigas não podem mais ser baixadas por este serviço — peça o XML ao fornecedor, use backup interno ou lance a entrada manualmente (sem chave).'
       : cStat === '633'
       ? ' É necessário manifestação do destinatário (Ciência ou Confirmação da Operação) antes do download do XML completo.'
+      : cStat === '640'
+        ? ' O CNPJ do certificado A1 não é destinatário, transportador nem autorizado (autXML) desta NF-e — o webservice bloqueia a consulta.' +
+          emitHint +
+          ' Abra o Portal Nacional da NF-e, cole a chave, baixe o XML (com certificado no navegador, se o Portal exigir) e use Importar XML na Entrada.'
       : cStat === '137'
-        ? ' Nenhum documento localizado — confira se a chave está correta e se o ambiente SEFAZ (' +
-          `${ambLabel}) corresponde à nota.`
+        ? ' Nenhum documento no webservice NFeDistribuicaoDFe para o CNPJ do certificado nesta consulta.' +
+          emitHint +
+          ` Confira: (1) ambiente SEFAZ = ${ambLabel} (nota real exige Produção);` +
+          ` (2) sua empresa é o destinatário (ou autXML) da NF-e;` +
+          ` (3) certificado A1 do CNPJ ${maskCnpj(ctx.cnpj14)};` +
+          ` (4) nota ainda na janela de ~90 dias do Ambiente Nacional.` +
+          ' Se o Portal Nacional baixar o XML, use Importar XML na Entrada — o site e o WS compartilham a mesma base, mas a consulta por chave só devolve documentos de interesse do CNPJ autenticado.'
         : '';
-  return `${xMotivo}${hint} (cStat ${cStat ?? '?'}, ambiente ${ambLabel})`;
+  return `${xMotivo}${hint} (cStat ${cStat ?? '?'}, ambiente ${ambLabel}, consulta CNPJ ${maskCnpj(ctx.cnpj14)})`;
 }
