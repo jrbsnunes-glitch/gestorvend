@@ -89,6 +89,7 @@ type ProductSearchRow = {
   productId: string;
   productName: string;
   description: string | null;
+  productControlNumber?: number;
   variantId: string;
   sku: string;
   barcode: string | null;
@@ -1264,7 +1265,12 @@ function PosScreen({
         staleTime: 2_000,
       });
       const exact =
-        matches.find((m) => m.barcode === code || m.sku === code) ?? matches[0];
+        matches.find(
+          (m) =>
+            m.barcode === code ||
+            m.sku === code ||
+            (m.productControlNumber != null && String(m.productControlNumber) === code),
+        ) ?? matches[0];
       if (exact) {
         addLineFromProduct(exact);
       } else {
@@ -1379,7 +1385,7 @@ function PosScreen({
                 ref={scannerRef}
                 className="pos-scanner-input"
                 autoFocus
-                placeholder="Bipar código de barras ou pesquisar por SKU/nome…"
+                placeholder="Bipar código, EAN, SKU ou pesquisar por nome…"
                 value={scannerValue}
                 onChange={(e) => {
                   setScannerValue(e.target.value);
@@ -1418,7 +1424,7 @@ function PosScreen({
                         <div>
                           <div className="pos-suggest-name">{p.productName}</div>
                           <div className="pos-suggest-meta">
-                            SKU {p.sku}
+                            Cód. {p.productControlNumber ?? '—'} · SKU {p.sku}
                             {p.barcode ? ` · EAN ${p.barcode}` : ''}
                           </div>
                         </div>

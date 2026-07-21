@@ -310,6 +310,8 @@ model Product {
   /// Conversão de unidade na entrada NF-e (ex.: CX-12 → 1 CX = 12 unidades no estoque)
   conversion  String?          @db.VarChar(32)
   isActive    Boolean          @default(true)
+  /// Número sequencial único para identificação rápida (listagem, PDV, pesquisa por código).
+  controlNumber Int              @unique @default(autoincrement())
   /// Controle agregado do produto: menor `minStock` entre as variantes (recalculado ao salvar variantes). Piso 1 por política cadastral.
   inventoryControlMin Decimal @default(1) @db.Decimal(18, 4)
   variants    ProductVariant[]

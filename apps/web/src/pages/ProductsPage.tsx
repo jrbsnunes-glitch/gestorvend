@@ -26,7 +26,9 @@ type ProductSearchRow = {
   productId: string;
   productName: string;
   description: string | null;
-  /** Menor estoque mínimo entre SKUs — controle gravado no produto (mesmo relatório por intervalo). */
+  /** Código sequencial único do produto (PDV / listagem). */
+  productControlNumber?: number;
+  /** Menor estoque mínimo entre SKUs — usado em relatórios por intervalo. */
   productInventoryControlMin?: string;
   variantId: string;
   sku: string;
@@ -53,6 +55,8 @@ type Product = {
   name: string;
   description: string | null;
   defaultBarcode: string | null;
+  /** Código sequencial único gerado automaticamente no cadastro. */
+  controlNumber?: number;
   /** Menor `minStock` entre variantes; usado nos relatórios por intervalo. */
   inventoryControlMin?: string;
   ncm: string | null;
@@ -79,6 +83,12 @@ type PriceHistoryRow = {
   goodsReceiptId: string | null;
   createdAt: string;
 };
+
+function formatProductCode(value: number | string | null | undefined): string {
+  const n = typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(n) || n <= 0) return '—';
+  return String(n);
+}
 
 function formatStockQty(value: string): string {
   const n = parseFloat(value);
@@ -206,9 +216,9 @@ export function ProductsPage() {
 
   const rows = useMemo(() => {
     const sortedProducts = [...(list.data ?? [])].sort((a, b) => {
-      const ctrlA = parseFloat(String(a.inventoryControlMin ?? '1').replace(',', '.')) || 1;
-      const ctrlB = parseFloat(String(b.inventoryControlMin ?? '1').replace(',', '.')) || 1;
-      if (ctrlA !== ctrlB) return ctrlA - ctrlB;
+      const codeA = a.controlNumber ?? 0;
+      const codeB = b.controlNumber ?? 0;
+      if (codeA !== codeB) return codeA - codeB;
       return a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' });
     });
 
@@ -396,8 +406,8 @@ export function ProductsPage() {
     <div className="page print-area">
       <h1 className="page-title">Produtos</h1>
       <p className="page-desc">
-        Produtos e variações (SKU). Cadastro não aceita estoque mínimo abaixo de <strong>1</strong> por SKU; o{' '}
-        <strong>Ctr. prod.</strong> replica o menor mínimo da família (usado também no relatório por intervalo).{' '}
+        Produtos e variações (SKU). Cada produto recebe um <strong>código sequencial único</strong> (1ª coluna) para pesquisa no PDV. Cadastro não aceita estoque mínimo abaixo de <strong>1</strong> por SKU; o{' '}
+        <strong>mín. cadastro</strong> replica o menor mínimo da família (relatórios por intervalo).{' '}
         <strong>Mín. SKU</strong> define o ponto de reposição no PDV/alertas. Categoria e dados fiscais no formulário.
       </p>
 
@@ -468,7 +478,7 @@ export function ProductsPage() {
               <table className="data-table products-search-table">
                 <thead>
                   <tr>
-                    <th className="num th-nowrap products-search-table__ctr">Ctr. prod.</th>
+                    <th className="num th-nowrap products-search-table__ctr">Código</th>
                     <th>Produto</th>
                     <th className="products-search-table__sku-th">SKU</th>
                     <th className="num th-nowrap products-search-table__vmin">Mín. SKU</th>
@@ -516,8 +526,8 @@ export function ProductsPage() {
                         setViewOpen(true);
                       }}
                     >
-                      <td className="num products-search-table__ctr" title="Menor estoque mínimo entre SKUs deste produto">
-                        {formatStockQty(row.productInventoryControlMin ?? '1')}
+                      <td className="num products-search-table__ctr" title="Código sequencial do produto">
+                        {formatProductCode(row.productControlNumber)}
                       </td>
                       <td>
                         <strong>{row.productName}</strong>
@@ -581,9 +591,9 @@ export function ProductsPage() {
             <tr>
               <th
                 className="num th-nowrap col-inv-ctrl"
-                title="Menor estoque mínimo entre SKUs deste produto"
+                title="Código sequencial único do produto (pesquisável no PDV)"
               >
-                Ctr. prod.
+                Código
               </th>
               <th>Produto</th>
               <th className="col-category">Categoria</th>
@@ -617,7 +627,7 @@ export function ProductsPage() {
             )}
             {pagination.pageItems.map(({ product, variant }) => (
               <tr key={`${product.id}-${variant?.id ?? 'x'}`}>
-                <td className="num col-inv-ctrl">{formatStockQty(product.inventoryControlMin ?? '1')}</td>
+                <td className="num col-inv-ctrl">{formatProductCode(product.controlNumber)}</td>
                 <td>
                   <strong>{product.name}</strong>
                 </td>
@@ -674,7 +684,7 @@ export function ProductsPage() {
           <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Novo produto</h2>
             <p style={{ margin: '0 0 1rem', fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>
-              Primeira variação (SKU) pode ser ajustada depois pela API.
+              Primeira variação (SKU) pode ser ajustada depois. O <strong>código sequencial</strong> do produto é gerado automaticamente ao salvar.
             </p>
             {err && <div className="alert alert-error">{err}</div>}
             <div className="product-form">
@@ -927,6 +937,11 @@ export function ProductsPage() {
         >
           <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Alterar produto</h2>
+            {editProduct.controlNumber != null && (
+              <p style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>
+                Código do produto: <strong>{formatProductCode(editProduct.controlNumber)}</strong>
+              </p>
+            )}
             {err && <div className="alert alert-error">{err}</div>}
             <div className="product-form">
               <section className="product-form__section" aria-label="Identificação">
@@ -1252,7 +1267,10 @@ export function ProductsPage() {
                   <strong>Status:</strong> {viewProduct.isActive ? 'Ativo' : 'Inativo'}
                 </p>
                 <p>
-                  <strong>Controle produto / estoque:</strong>{' '}
+                  <strong>Código:</strong> {formatProductCode(viewProduct.controlNumber)}
+                </p>
+                <p>
+                  <strong>Mín. cadastro (relatórios):</strong>{' '}
                   {formatStockQty(viewProduct.inventoryControlMin ?? '1')} (menor mínimo entre SKUs cadastradas)
                 </p>
                 <h3 style={{ fontSize: '0.95rem', marginTop: '1rem' }}>Variações (SKU)</h3>

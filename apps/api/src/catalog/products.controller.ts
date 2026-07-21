@@ -120,51 +120,31 @@ export class ProductsController {
     }
   }
 
-  @Get()
-  @Roles('admin', 'manager', 'seller', 'finance')
-  async list(@CurrentUser() user: JwtPayload) {
-    const db = await this.tenantPrisma.getClient(user.tenantSlug);
-    return db.product.findMany({
-      include: {
-        variants: { orderBy: { sku: 'asc' } },
-        category: true,
-        fiscalSituation: true,
-      },
-      orderBy: [{ inventoryControlMin: 'asc' }, { name: 'asc' }],
-    });
+  private parseProductControlSearch(term: string): number | null {
+    if (!/^\d+$/.test(term)) return null;
+    const n = Number.parseInt(term, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
   }
 
-  /** Consulta em tempo real por nome, descrição, SKU ou código de barras (une estoque por variação). */
-  @Get('search')
-  @Roles('admin', 'manager', 'seller', 'finance')
-  async search(@CurrentUser() user: JwtPayload, @Query('q') q?: string) {
-    const db = await this.tenantPrisma.getClient(user.tenantSlug);
-    const term = (q ?? '').trim();
-    if (term.length < 1) return [];
-
-    const variants = await db.productVariant.findMany({
-      where: {
-        OR: [
-          { product: { name: { contains: term, mode: 'insensitive' } } },
-          { product: { description: { contains: term, mode: 'insensitive' } } },
-          { sku: { contains: term, mode: 'insensitive' } },
-          { barcode: { contains: term, mode: 'insensitive' } },
-        ],
-      },
-      take: 80,
-      orderBy: [
-        { product: { inventoryControlMin: 'asc' } },
-        { product: { name: 'asc' } },
-        { sku: 'asc' },
-      ],
-      include: {
-        product: {
-          select: { id: true, name: true, description: true, inventoryControlMin: true },
-        },
-        stockBalances: { select: { quantity: true } },
-      },
-    });
-
+  private mapProductSearchRows(
+    variants: Array<{
+      id: string;
+      sku: string;
+      barcode: string | null;
+      retailPrice: Prisma.Decimal;
+      promoPrice: Prisma.Decimal | null;
+      costAverage: Prisma.Decimal;
+      minStock: Prisma.Decimal;
+      product: {
+        id: string;
+        name: string;
+        description: string | null;
+        inventoryControlMin: Prisma.Decimal;
+        controlNumber: number;
+      };
+      stockBalances: Array<{ quantity: Prisma.Decimal }>;
+    }>,
+  ) {
     return variants.map((v) => {
       const stockTotal = v.stockBalances.reduce(
         (acc, b) => acc.add(b.quantity),
@@ -174,6 +154,7 @@ export class ProductsController {
         productId: v.product.id,
         productName: v.product.name,
         description: v.product.description,
+        productControlNumber: v.product.controlNumber,
         productInventoryControlMin: String(v.product.inventoryControlMin),
         variantId: v.id,
         sku: v.sku,
@@ -185,6 +166,71 @@ export class ProductsController {
         minStock: String(v.minStock),
       };
     });
+  }
+
+  @Get()
+  @Roles('admin', 'manager', 'seller', 'finance')
+  async list(@CurrentUser() user: JwtPayload) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    return db.product.findMany({
+      include: {
+        variants: { orderBy: { sku: 'asc' } },
+        category: true,
+        fiscalSituation: true,
+      },
+      orderBy: [{ controlNumber: 'asc' }],
+    });
+  }
+
+  /** Consulta em tempo real por código sequencial, nome, descrição, SKU ou código de barras. */
+  @Get('search')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  async search(@CurrentUser() user: JwtPayload, @Query('q') q?: string) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const term = (q ?? '').trim();
+    if (term.length < 1) return [];
+
+    const controlNumber = this.parseProductControlSearch(term);
+    const include = {
+      product: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          inventoryControlMin: true,
+          controlNumber: true,
+        },
+      },
+      stockBalances: { select: { quantity: true } },
+    } as const;
+
+    if (controlNumber != null) {
+      const exactByCode = await db.productVariant.findMany({
+        where: { product: { controlNumber } },
+        take: 80,
+        orderBy: [{ sku: 'asc' }],
+        include,
+      });
+      if (exactByCode.length) {
+        return this.mapProductSearchRows(exactByCode);
+      }
+    }
+
+    const variants = await db.productVariant.findMany({
+      where: {
+        OR: [
+          { product: { name: { contains: term, mode: 'insensitive' } } },
+          { product: { description: { contains: term, mode: 'insensitive' } } },
+          { sku: { contains: term, mode: 'insensitive' } },
+          { barcode: { contains: term, mode: 'insensitive' } },
+        ],
+      },
+      take: 80,
+      orderBy: [{ product: { controlNumber: 'asc' } }, { sku: 'asc' }],
+      include,
+    });
+
+    return this.mapProductSearchRows(variants);
   }
 
   /**
