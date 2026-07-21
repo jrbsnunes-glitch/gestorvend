@@ -22,6 +22,9 @@ import { api } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
 import { useListPagination } from '../hooks/useListPagination';
 
+/** Unidade tributária padrão em produtos novos (código em TaxUnitCode). */
+const DEFAULT_PRODUCT_TAX_UNIT = 'UN';
+
 type ProductSearchRow = {
   productId: string;
   productName: string;
@@ -147,7 +150,7 @@ export function ProductsPage() {
   const [categoryNameHint, setCategoryNameHint] = useState('');
   const [exTipi, setExTipi] = useState('');
   const [fiscalOrigin, setFiscalOrigin] = useState('');
-  const [taxUnit, setTaxUnit] = useState('');
+  const [taxUnit, setTaxUnit] = useState(DEFAULT_PRODUCT_TAX_UNIT);
   const [conversion, setConversion] = useState('');
   const [fiscalSituationId, setFiscalSituationId] = useState('');
   const [isActive, setIsActive] = useState(true);
@@ -244,7 +247,7 @@ export function ProductsPage() {
     setCategoryNameHint('');
     setExTipi('');
     setFiscalOrigin('');
-    setTaxUnit('');
+    setTaxUnit(DEFAULT_PRODUCT_TAX_UNIT);
     setConversion('');
     setFiscalSituationId('');
     setSku('');
@@ -266,7 +269,7 @@ export function ProductsPage() {
     setCategoryNameHint(p.category?.name ?? '');
     setExTipi(p.exTipi ?? '');
     setFiscalOrigin(p.fiscalOrigin ?? '');
-    setTaxUnit(p.taxUnit ?? '');
+    setTaxUnit(p.taxUnit?.trim() || DEFAULT_PRODUCT_TAX_UNIT);
     setConversion(p.conversion ?? '');
     setFiscalSituationId(p.fiscalSituation?.id ?? p.fiscalSituationId ?? '');
     setIsActive(p.isActive);
@@ -295,7 +298,7 @@ export function ProductsPage() {
           cest: cest || null,
           exTipi: exTipi.trim() || null,
           fiscalOrigin: fiscalOrigin || null,
-          taxUnit: taxUnit.trim() || null,
+          taxUnit: taxUnit.trim() || DEFAULT_PRODUCT_TAX_UNIT,
           conversion: conversion.trim() || null,
           categoryId: categoryId || null,
           fiscalSituationId: fiscalSituationId || null,
@@ -332,7 +335,7 @@ export function ProductsPage() {
           cest: cest || null,
           exTipi: exTipi.trim() || null,
           fiscalOrigin: fiscalOrigin || null,
-          taxUnit: taxUnit.trim() || null,
+          taxUnit: taxUnit.trim() || DEFAULT_PRODUCT_TAX_UNIT,
           conversion: conversion.trim() || null,
           fiscalSituationId: fiscalSituationId || null,
           categoryId: categoryId || null,
@@ -879,8 +882,11 @@ export function ProductsPage() {
                       label="Unidade tributável"
                       value={taxUnit}
                       onChange={setTaxUnit}
-                      hintLabel={taxUnit || null}
+                      hintLabel={taxUnit || DEFAULT_PRODUCT_TAX_UNIT}
                     />
+                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                      Padrão <strong>UN</strong> (Unidade). Pesquise ou cadastre outra unidade se necessário.
+                    </span>
                   </div>
                   <div className="field">
                     <label htmlFor="p-conversion">Conversão (entrada NF-e)</label>
@@ -1084,8 +1090,11 @@ export function ProductsPage() {
                       label="Unidade tributável"
                       value={taxUnit}
                       onChange={setTaxUnit}
-                      hintLabel={taxUnit || null}
+                      hintLabel={taxUnit || DEFAULT_PRODUCT_TAX_UNIT}
                     />
+                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                      Padrão <strong>UN</strong> (Unidade). Pesquise ou cadastre outra unidade se necessário.
+                    </span>
                   </div>
                   <div className="field">
                     <label htmlFor="pe-conversion">Conversão (entrada NF-e)</label>

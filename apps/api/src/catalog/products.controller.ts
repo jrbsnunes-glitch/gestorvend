@@ -37,6 +37,15 @@ export class ProductsController {
     return String(n);
   }
 
+  /** Código da unidade tributável; padrão UN quando não informado. */
+  private normalizeProductTaxUnit(raw: unknown): string {
+    const trimmed = String(raw ?? '')
+      .trim()
+      .slice(0, 10)
+      .toUpperCase();
+    return trimmed || 'UN';
+  }
+
   private async syncProductInventoryControlMin(tx: Prisma.TransactionClient, productId: string) {
     const agg = await tx.productVariant.aggregate({
       where: { productId },
@@ -453,7 +462,7 @@ export class ProductsController {
           cest: body.cest ?? null,
           exTipi: body.exTipi?.trim() ? body.exTipi.trim().slice(0, 10) : null,
           fiscalOrigin: body.fiscalOrigin?.trim() ? body.fiscalOrigin.trim().slice(0, 2) : null,
-          taxUnit: body.taxUnit?.trim() ? body.taxUnit.trim().slice(0, 10).toUpperCase() : null,
+          taxUnit: this.normalizeProductTaxUnit(body.taxUnit),
           conversion: body.conversion?.trim() ? body.conversion.trim().slice(0, 32).toUpperCase() : null,
           variants: {
             create: body.variants.map((v, idx) => ({
@@ -529,7 +538,7 @@ export class ProductsController {
           description: body.description?.trim() || null,
           defaultBarcode,
           ncm: body.ncm?.trim() || null,
-          taxUnit: body.taxUnit?.trim() ? body.taxUnit.trim().slice(0, 10).toUpperCase() : null,
+          taxUnit: this.normalizeProductTaxUnit(body.taxUnit),
           variants: {
             create: {
               sku,
@@ -626,7 +635,7 @@ export class ProductsController {
             fiscalOrigin: body.fiscalOrigin ? String(body.fiscalOrigin).trim().slice(0, 2) : null,
           }),
           ...(body.taxUnit !== undefined && {
-            taxUnit: body.taxUnit ? String(body.taxUnit).trim().slice(0, 10).toUpperCase() : null,
+            taxUnit: this.normalizeProductTaxUnit(body.taxUnit),
           }),
           ...(body.conversion !== undefined && {
             conversion: body.conversion
