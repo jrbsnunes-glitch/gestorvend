@@ -1237,63 +1237,114 @@ export function ProductsPage() {
               <div className="alert alert-error">{(detail.error as Error).message}</div>
             )}
             {!detail.isLoading && !detail.isError && (
-              <div className="modal-view-grid">
-                <p>
-                  <strong>Nome:</strong> {viewProduct.name}
-                </p>
-                <p>
-                  <strong>Descrição:</strong> {viewProduct.description ?? '—'}
-                </p>
-                <p>
-                  <strong>Categoria:</strong> {viewProduct.category?.name ?? '—'}
-                </p>
-                <p>
-                  <strong>NCM / CEST:</strong> {viewProduct.ncm ?? '—'} / {viewProduct.cest ?? '—'}
-                </p>
-                <p>
-                  <strong>EX TIPI:</strong> {viewProduct.exTipi ?? '—'}
-                </p>
-                <p>
-                  <strong>Origem (ICMS):</strong>{' '}
-                  {viewProduct.fiscalOrigin != null && viewProduct.fiscalOrigin !== ''
-                    ? FISCAL_ORIGIN_OPTIONS.find((o) => o.value === viewProduct.fiscalOrigin)?.label ??
-                      viewProduct.fiscalOrigin
-                    : '—'}
-                </p>
-                <p>
-                  <strong>Unidade tributável:</strong> {viewProduct.taxUnit ?? '—'}
-                </p>
-                <p>
-                  <strong>Status:</strong> {viewProduct.isActive ? 'Ativo' : 'Inativo'}
-                </p>
-                <p>
-                  <strong>Código:</strong> {formatProductCode(viewProduct.controlNumber)}
-                </p>
-                <p>
-                  <strong>Mín. cadastro (relatórios):</strong>{' '}
-                  {formatStockQty(viewProduct.inventoryControlMin ?? '1')} (menor mínimo entre SKUs cadastradas)
-                </p>
-                <h3 style={{ fontSize: '0.95rem', marginTop: '1rem' }}>Variações (SKU)</h3>
-                <ul style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.9rem' }}>
-                  {viewProduct.variants.map((v) => (
-                    <li key={v.id}>
-                      <strong>{v.sku}</strong> — mín. {formatStockQty(v.minStock ?? '1')} · venda {formatBRL(v.retailPrice)} · custo{' '}
-                      {formatBRL(v.costAverage ?? '0')} · lucro {profitBRL(String(v.retailPrice), String(v.costAverage ?? '0'))}
-                      {v.barcode ? ` · EAN ${v.barcode}` : ''}
-                    </li>
-                  ))}
-                </ul>
-                <h3 style={{ fontSize: '0.95rem', marginTop: '1.25rem' }}>Histórico de preços</h3>
+              <div className="product-view-sections">
+                <h3 className="product-view-sections__title">Dados do produto</h3>
+                <div className="table-wrap">
+                  <table className="data-table product-view-table product-view-table--fields">
+                    <thead>
+                      <tr>
+                        <th>Campo</th>
+                        <th>Valor</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Código</td>
+                        <td>{formatProductCode(viewProduct.controlNumber)}</td>
+                      </tr>
+                      <tr>
+                        <td>Nome</td>
+                        <td>{viewProduct.name}</td>
+                      </tr>
+                      <tr>
+                        <td>Categoria</td>
+                        <td>{viewProduct.category?.name ?? '—'}</td>
+                      </tr>
+                      <tr>
+                        <td>Descrição</td>
+                        <td>{viewProduct.description?.trim() ? viewProduct.description : '—'}</td>
+                      </tr>
+                      <tr>
+                        <td>NCM / CEST</td>
+                        <td>
+                          {viewProduct.ncm ?? '—'} / {viewProduct.cest ?? '—'}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>EX TIPI</td>
+                        <td>{viewProduct.exTipi ?? '—'}</td>
+                      </tr>
+                      <tr>
+                        <td>Origem (ICMS)</td>
+                        <td>
+                          {viewProduct.fiscalOrigin != null && viewProduct.fiscalOrigin !== ''
+                            ? FISCAL_ORIGIN_OPTIONS.find((o) => o.value === viewProduct.fiscalOrigin)?.label ??
+                              viewProduct.fiscalOrigin
+                            : '—'}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>Unidade tributável</td>
+                        <td>{viewProduct.taxUnit ?? '—'}</td>
+                      </tr>
+                      <tr>
+                        <td>Status</td>
+                        <td>{viewProduct.isActive ? 'Ativo' : 'Inativo'}</td>
+                      </tr>
+                      <tr>
+                        <td>Mín. cadastro (relatórios)</td>
+                        <td>
+                          {formatStockQty(viewProduct.inventoryControlMin ?? '1')} (menor mínimo entre SKUs
+                          cadastradas)
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <h3 className="product-view-sections__title">Variações (SKU)</h3>
+                {viewProduct.variants.length === 0 ? (
+                  <p className="product-view-sections__empty">Nenhuma variação cadastrada.</p>
+                ) : (
+                  <div className="table-wrap">
+                    <table className="data-table product-view-table">
+                      <thead>
+                        <tr>
+                          <th>SKU</th>
+                          <th className="num">Mín.</th>
+                          <th className="num">Venda</th>
+                          <th className="num">Custo</th>
+                          <th className="num">Lucro</th>
+                          <th>EAN</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {viewProduct.variants.map((v) => (
+                          <tr key={v.id}>
+                            <td>{v.sku}</td>
+                            <td className="num">{formatStockQty(v.minStock ?? '1')}</td>
+                            <td className="num">{formatBRL(v.retailPrice)}</td>
+                            <td className="num">{formatBRL(v.costAverage ?? '0')}</td>
+                            <td className="num">{profitBRL(String(v.retailPrice), String(v.costAverage ?? '0'))}</td>
+                            <td>{v.barcode ?? '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <h3 className="product-view-sections__title">Histórico de preços</h3>
                 {priceHistory.isError && (
                   <div className="alert alert-error">{(priceHistory.error as Error).message}</div>
                 )}
                 {priceHistory.isLoading && <p style={{ fontSize: '0.9rem' }}>Carregando histórico…</p>}
                 {!priceHistory.isLoading && !priceHistory.isError && (priceHistory.data?.length ?? 0) === 0 && (
-                  <p style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>Nenhuma alteração registrada ainda.</p>
+                  <p className="product-view-sections__empty">Nenhuma alteração registrada ainda.</p>
                 )}
                 {(priceHistory.data?.length ?? 0) > 0 && (
                   <div className="table-wrap" style={{ maxHeight: '240px', overflow: 'auto' }}>
-                    <table className="data-table" style={{ fontSize: '0.85rem' }}>
+                    <table className="data-table product-view-table">
                       <thead>
                         <tr>
                           <th>Quando</th>
