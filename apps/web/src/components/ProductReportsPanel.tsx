@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useState, type CSSProperties } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { buildProductMovementReportQuery, buildProductTurnoverReportQuery, buildProductStockReportQuery, productStockReportRoute, type ProductStockReportKind } from '../lib/product-report-format';
+import { buildProductMovementReportQuery, buildProductTurnoverReportQuery, buildProductStockReportQuery, productStockReportRoute, parseProductCodeBound, type ProductStockReportKind } from '../lib/product-report-format';
 
 function monthStartISO(): string {
   const d = new Date();
@@ -18,10 +18,7 @@ function todayISO(): string {
 }
 
 function parseCadMinBound(raw: string): number | null {
-  const s = raw.trim();
-  if (s === '') return null;
-  const n = Number(s.replace(',', '.'));
-  return Number.isFinite(n) ? n : null;
+  return parseProductCodeBound(raw);
 }
 
 /** Painel modal: relatórios de movimentação, giro e posição de estoque. */
@@ -34,6 +31,7 @@ export function ProductReportsPanel() {
   const [movFrom, setMovFrom] = useState(monthStartISO);
   const [movTo, setMovTo] = useState(todayISO);
   const [movLocation, setMovLocation] = useState('');
+  const [movCategory, setMovCategory] = useState('');
   const [movMaxCeiling, setMovMaxCeiling] = useState('');
   const [movUseMin, setMovUseMin] = useState(true);
   const [movUseMax, setMovUseMax] = useState(false);
@@ -46,6 +44,7 @@ export function ProductReportsPanel() {
   const [turnTake, setTurnTake] = useState('80');
   const [turnCadFrom, setTurnCadFrom] = useState('');
   const [turnCadTo, setTurnCadTo] = useState('');
+  const [turnCategory, setTurnCategory] = useState('');
   const [turnShowNoSale, setTurnShowNoSale] = useState(true);
   const [turnMaxCeiling, setTurnMaxCeiling] = useState('');
   const [turnUseMin, setTurnUseMin] = useState(true);
@@ -101,15 +100,15 @@ export function ProductReportsPanel() {
     const fromN = cadFromNum;
     const toN = cadToNum;
     if (movCadFrom.trim() === '' || movCadTo.trim() === '') {
-      setMovErr('Informe o intervalo de controle de estoque do produto (“de” e “até”, menor mínimo entre SKUs).');
+      setMovErr('Informe o intervalo de código do produto (“de” e “até”).');
       return;
     }
     if (fromN === null || toN === null) {
-      setMovErr('Intervalo inválido: use números válidos (ex.: 0 ou 15,5).');
+      setMovErr('Intervalo inválido: use códigos inteiros positivos (ex.: 1 ou 150).');
       return;
     }
     if (fromN > toN) {
-      setMovErr('“De” não pode ser maior que “até” no intervalo de controle de estoque ao nível do produto.');
+      setMovErr('“De” não pode ser maior que “até” no intervalo de código.');
       return;
     }
     if (!movFrom || !movTo) {
@@ -127,6 +126,7 @@ export function ProductReportsPanel() {
     const qs = buildProductMovementReportQuery({
       minStockCadFrom: movCadFrom,
       minStockCadTo: movCadTo,
+      categoryId: movCategory || undefined,
       from: movFrom,
       to: movTo,
       locationId: movLocation || undefined,
@@ -146,16 +146,16 @@ export function ProductReportsPanel() {
       return;
     }
     if (turnCadPartial) {
-      setTurnErr('Informe ambos “de” e “até” no intervalo de controle do produto ou deixe os dois em branco.');
+      setTurnErr('Informe ambos “de” e “até” no intervalo de código ou deixe os dois em branco.');
       return;
     }
     if (turnCadFrom.trim() !== '' || turnCadTo.trim() !== '') {
       if (turnCadFromNum === null || turnCadToNum === null) {
-        setTurnErr('Intervalo de controle inválido: use números válidos.');
+        setTurnErr('Intervalo de código inválido: use números inteiros positivos.');
         return;
       }
       if (turnCadFromNum > turnCadToNum) {
-        setTurnErr('“De” não pode ser maior que “até” no controle de estoque ao nível do produto.');
+        setTurnErr('“De” não pode ser maior que “até” no intervalo de código.');
         return;
       }
     }
@@ -173,6 +173,7 @@ export function ProductReportsPanel() {
       take: turnTake,
       minStockCadFrom: turnCadOk ? turnCadFrom : undefined,
       minStockCadTo: turnCadOk ? turnCadTo : undefined,
+      categoryId: turnCategory || undefined,
       showNoSale: turnCadOk ? turnShowNoSale : undefined,
       useMinControl: turnUseMin,
       useMaxControl: turnUseMax,
@@ -191,18 +192,18 @@ export function ProductReportsPanel() {
     const hasFrom = stkCadFrom.trim() !== '';
     const hasTo = stkCadTo.trim() !== '';
     if (hasFrom !== hasTo) {
-      setStkErr('Informe ambos os campos de controle (de / até) ou deixe os dois em branco.');
+      setStkErr('Informe ambos os campos de código (de / até) ou deixe os dois em branco.');
       return;
     }
     if (hasFrom && hasTo) {
       const a = parseCadMinBound(stkCadFrom);
       const b = parseCadMinBound(stkCadTo);
       if (a === null || b === null) {
-        setStkErr('Intervalo de controle inválido.');
+        setStkErr('Intervalo de código inválido (use inteiros positivos).');
         return;
       }
       if (a > b) {
-        setStkErr('Controle “de” não pode ser maior que “até”.');
+        setStkErr('Código “de” não pode ser maior que “até”.');
         return;
       }
     }
@@ -264,43 +265,40 @@ export function ProductReportsPanel() {
           <details style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', maxWidth: '100%' }}>
             <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Sobre controles min / máx / alertas</summary>
             <p style={{ margin: '0.4rem 0 0', lineHeight: 1.35 }}>
-              Informe um <strong>intervalo sobre o controle de estoque do produto no cadastro</strong>: esse valor corresponde ao{' '}
-              <strong>menor estoque mínimo entre as variantes</strong> (SKU) do produto, gravado ao salvar. Entram todas as variantes desses
-              produtos — mesmo que alguma SKU tenha mínimo fora do intervalo. Nos limites por movimento, o mínimo continua sendo o da
-              variação em questão; o <strong>máximo</strong> usa o <strong>teto</strong> que você informar abaixo. “Só linhas em alerta”
-              mantém apenas movimentações em que o saldo após o evento ficou abaixo do mínimo da variação ou acima do teto (quando
-              estiver marcado).               Por padrão o painel abre com <strong>Incluir sem movimento no período</strong> marcado para listar todas as
-              variações do conjunto mesmo sem lançamentos no intervalo — desmarque se quiser só quem efetivamente movimentou.
+              Informe um <strong>intervalo de código sequencial do produto</strong> (1ª coluna da listagem). Entram todas as variantes
+              dos produtos nesse intervalo. Nos limites por movimento, o mínimo continua sendo o da variação em questão; o{' '}
+              <strong>máximo</strong> usa o <strong>teto</strong> que você informar abaixo. “Só linhas em alerta” mantém apenas
+              movimentações em que o saldo após o evento ficou abaixo do mínimo da variação ou acima do teto (quando estiver marcado).
+              Por padrão o painel abre com <strong>Incluir sem movimento no período</strong> marcado para listar todas as variações do
+              conjunto mesmo sem lançamentos no intervalo — desmarque se quiser só quem efetivamente movimentou.
             </p>
           </details>
           {movErr && <div className="alert alert-error">{movErr}</div>}
           <div style={narrow}>
             <p style={{ margin: '0 0 0.35rem', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-              Produtos cujo controle de estoque (menor mínimo entre SKUs) está entre “de” e “até” (inclusive)
+              Produtos cujo código sequencial está entre “de” e “até” (inclusive)
             </p>
             <p style={{ margin: '0 0 0.45rem', fontSize: '0.72rem', color: 'var(--color-text-muted)', lineHeight: 1.35 }}>
-              O filtro usa o controle gravado no <strong>produto</strong> — o mínimo da variante com menor reposição configurada — e inclui{' '}
-              <strong>todas as variantes</strong> desses produtos. Ex.: intervalo iniciando em 1 <strong>exclui</strong> produtos cujo
-              menor mínimo entre variantes for <strong>0</strong> (nem que outra SKU tenha mínimo maior). Para conferir apenas uma SKU, use
-              um link direto por <strong>variantId</strong>.
+              O filtro usa o <strong>código do produto</strong> e inclui <strong>todas as variantes</strong> desses produtos. Para
+              conferir apenas uma SKU, use um link direto por <strong>variantId</strong>.
             </p>
             <div className="form-row" style={{ flexWrap: 'wrap', gap: '0.65rem', alignItems: 'flex-end' }}>
               <div className="field" style={{ minWidth: '7rem' }}>
-                <label htmlFor="pr-mov-cfrom">De</label>
+                <label htmlFor="pr-mov-cfrom">Código de</label>
                 <input
                   id="pr-mov-cfrom"
-                  inputMode="decimal"
-                  placeholder="0"
+                  inputMode="numeric"
+                  placeholder="1"
                   value={movCadFrom}
                   onChange={(e) => setMovCadFrom(e.target.value)}
                 />
               </div>
               <div className="field" style={{ minWidth: '7rem' }}>
-                <label htmlFor="pr-mov-cto">Até</label>
+                <label htmlFor="pr-mov-cto">Código até</label>
                 <input
                   id="pr-mov-cto"
-                  inputMode="decimal"
-                  placeholder="10"
+                  inputMode="numeric"
+                  placeholder="100"
                   value={movCadTo}
                   onChange={(e) => setMovCadTo(e.target.value)}
                 />
@@ -308,6 +306,17 @@ export function ProductReportsPanel() {
             </div>
           </div>
           <div style={narrow}>
+            <div className="field" style={{ marginBottom: '0.65rem' }}>
+              <label htmlFor="pr-mov-cat">Categoria</label>
+              <select id="pr-mov-cat" value={movCategory} onChange={(e) => setMovCategory(e.target.value)}>
+                <option value="">Todas</option>
+                {(categories.data ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <p style={{ margin: '0 0 0.35rem', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>Período</p>
             <div
               style={{
@@ -402,8 +411,8 @@ export function ProductReportsPanel() {
       {tab === 'turnover' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
           <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--color-text-muted)', maxWidth: '26rem', lineHeight: 1.35 }}>
-            Ranking por qtd. vendida no período. <strong>Cad. min</strong> opcional = mesmo filtro da movimentação; em branco, só quem
-            vendeu.
+            Ranking por qtd. vendida no período. <strong>Código</strong> opcional = mesmo filtro da movimentação; em branco, só quem vendeu
+            (respeitando categoria, se informada).
           </p>
           <details style={{ fontSize: '0.76rem', color: 'var(--color-text-secondary)', maxWidth: '100%' }}>
             <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Min / máx / alertas</summary>
@@ -415,14 +424,14 @@ export function ProductReportsPanel() {
           {turnErr && <div className="alert alert-error">{turnErr}</div>}
           <div style={narrow}>
             <p style={{ margin: '0 0 0.35rem', fontSize: '0.76rem', color: 'var(--color-text-muted)' }}>
-              Cad. min (controle no produto = menor mínimo entre SKUs)
+              Código do produto (opcional)
             </p>
             <div className="form-row" style={{ flexWrap: 'wrap', gap: '0.65rem', alignItems: 'flex-end' }}>
               <div className="field" style={{ minWidth: '7rem' }}>
                 <label htmlFor="pr-turn-cfrom">De</label>
                 <input
                   id="pr-turn-cfrom"
-                  inputMode="decimal"
+                  inputMode="numeric"
                   placeholder="ex.: 1"
                   value={turnCadFrom}
                   onChange={(e) => setTurnCadFrom(e.target.value)}
@@ -432,12 +441,23 @@ export function ProductReportsPanel() {
                 <label htmlFor="pr-turn-cto">Até</label>
                 <input
                   id="pr-turn-cto"
-                  inputMode="decimal"
-                  placeholder="ex.: 10"
+                  inputMode="numeric"
+                  placeholder="ex.: 100"
                   value={turnCadTo}
                   onChange={(e) => setTurnCadTo(e.target.value)}
                 />
               </div>
+            </div>
+            <div className="field" style={{ marginTop: '0.65rem' }}>
+              <label htmlFor="pr-turn-cat">Categoria</label>
+              <select id="pr-turn-cat" value={turnCategory} onChange={(e) => setTurnCategory(e.target.value)}>
+                <option value="">Todas</option>
+                {(categories.data ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
           <div className="form-row" style={{ flexWrap: 'wrap', gap: '0.65rem', alignItems: 'flex-end' }}>
@@ -523,14 +543,14 @@ export function ProductReportsPanel() {
           {stkErr && <div className="alert alert-error">{stkErr}</div>}
           <div style={narrow}>
             <p style={{ margin: '0 0 0.35rem', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-              Controle de estoque do produto (menor mínimo entre SKUs) — opcional
+              Código do produto — opcional
             </p>
             <div className="form-row" style={{ flexWrap: 'wrap', gap: '0.65rem', alignItems: 'flex-end' }}>
               <div className="field" style={{ minWidth: '7rem' }}>
                 <label htmlFor="pr-stk-cfrom">De</label>
                 <input
                   id="pr-stk-cfrom"
-                  inputMode="decimal"
+                  inputMode="numeric"
                   placeholder="opc."
                   value={stkCadFrom}
                   onChange={(e) => setStkCadFrom(e.target.value)}
@@ -540,7 +560,7 @@ export function ProductReportsPanel() {
                 <label htmlFor="pr-stk-cto">Até</label>
                 <input
                   id="pr-stk-cto"
-                  inputMode="decimal"
+                  inputMode="numeric"
                   placeholder="opc."
                   value={stkCadTo}
                   onChange={(e) => setStkCadTo(e.target.value)}
@@ -550,7 +570,7 @@ export function ProductReportsPanel() {
           </div>
           <div style={narrow}>
             <div className="field" style={{ marginBottom: '0.65rem' }}>
-              <label htmlFor="pr-stk-cat">Grupo</label>
+              <label htmlFor="pr-stk-cat">Categoria</label>
               <select id="pr-stk-cat" value={stkCategory} onChange={(e) => setStkCategory(e.target.value)}>
                 <option value="">Todos</option>
                 {(categories.data ?? []).map((c) => (

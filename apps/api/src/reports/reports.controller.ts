@@ -423,9 +423,8 @@ export class ReportsController {
   }
 
   /**
-   * Movimentação de produtos: uma variação (`variantId`) ou todas as variantes dos produtos cujo **controle de estoque
-   * no cadastro** (`Product.inventoryControlMin`, igual ao menor `minStock` entre variantes) estiver entre
-   * `minStockCadFrom` e `minStockCadTo`.
+   * Movimentação de produtos: uma variação (`variantId`) ou todas as variantes dos produtos cujo **código sequencial**
+   * (`Product.controlNumber`) estiver entre `minStockCadFrom` e `minStockCadTo`.
    *
    * `showNoMovement`: quando verdadeiro, mantém variações sem nenhuma movimentação na janela (tabela vazia).
    *
@@ -438,6 +437,7 @@ export class ReportsController {
     @Query('variantId') variantIdRaw?: string,
     @Query('minStockCadFrom') minStockCadFromRaw?: string,
     @Query('minStockCadTo') minStockCadToRaw?: string,
+    @Query('categoryId') categoryId?: string,
     @Query('from') fromRaw?: string,
     @Query('to') toRaw?: string,
     @Query('locationId') locationId?: string,
@@ -476,7 +476,7 @@ export class ReportsController {
     }
 
     const trimmedVid = (variantIdRaw ?? '').trim();
-    let cadastroMinStockInterval: { from: number; to: number } | null = null;
+    let productCodeInterval: { from: number; to: number } | null = null;
 
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
 
@@ -484,59 +484,41 @@ export class ReportsController {
       id: string;
       sku: string;
       minStock: Prisma.Decimal;
-      product: { id: string; name: string; inventoryControlMin: Prisma.Decimal };
+      product: { id: string; name: string; controlNumber: number };
     }>;
 
     if (trimmedVid) {
       const v = await db.productVariant.findUnique({
         where: { id: trimmedVid },
         include: {
-          product: { select: { id: true, name: true, inventoryControlMin: true } },
+          product: { select: { id: true, name: true, controlNumber: true } },
         },
       });
       if (!v) throw new BadRequestException('Variação não encontrada.');
       variants = [v];
     } else {
-      const fromTxt = String(minStockCadFromRaw ?? '').trim();
-      const toTxt = String(minStockCadToRaw ?? '').trim();
-      if (!fromTxt || !toTxt) {
-        throw new BadRequestException(
-          'Informe variantId de uma variação ou ambos os parâmetros minStockCadFrom e minStockCadTo (intervalo do controle de estoque do produto no cadastro — menor mínimo entre variantes).',
-        );
-      }
-      const cadMin = Number(fromTxt.replace(',', '.'));
-      const cadMax = Number(toTxt.replace(',', '.'));
-      if (Number.isNaN(cadMin) || Number.isNaN(cadMax)) {
-        throw new BadRequestException('Intervalo minStockCadFrom / minStockCadTo inválido (use números).');
-      }
-      if (cadMin > cadMax) {
-        throw new BadRequestException('minStockCadFrom não pode ser maior que minStockCadTo.');
-      }
-      cadastroMinStockInterval = { from: cadMin, to: cadMax };
-
-      await this.reconcileProductInventoryControlMins(db);
+      const codeInterval = this.parseOptionalProductCodeInterval(minStockCadFromRaw, minStockCadToRaw, true)!;
+      productCodeInterval = codeInterval;
 
       const cap = this.productMovementCadRangeMaxVariants;
       const found = await db.productVariant.findMany({
         where: {
-          product: {
-            inventoryControlMin: { gte: cadMin, lte: cadMax },
-          },
+          product: this.productReportProductWhere(codeInterval, categoryId),
         },
         include: {
-          product: { select: { id: true, name: true, inventoryControlMin: true } },
+          product: { select: { id: true, name: true, controlNumber: true } },
         },
-        orderBy: [{ product: { name: 'asc' } }, { sku: 'asc' }],
+        orderBy: [{ product: { controlNumber: 'asc' } }, { sku: 'asc' }],
         take: cap + 1,
       });
       if (!found.length) {
         throw new BadRequestException(
-          `Nenhum produto com controle de estoque (cadastro, menor mínimo entre variantes) entre ${cadMin} e ${cadMax}. Ajuste o intervalo.`,
+          `Nenhum produto com código entre ${codeInterval.from} e ${codeInterval.to}. Ajuste o intervalo ou a categoria.`,
         );
       }
       if (found.length > cap) {
         throw new BadRequestException(
-          `Mais de ${cap} variações nesse conjunto (produtos cujo controle está no intervalo). ` +
+          `Mais de ${cap} variações nesse conjunto (códigos no intervalo). ` +
             'Informe um intervalo mais restrito ou use variantId.',
         );
       }
@@ -549,7 +531,7 @@ export class ReportsController {
         sku: string;
         productName: string;
         minStock: number;
-        productInventoryControlMin: number;
+        productControlNumber: number;
       };
       meta: { hadMovementsInPeriod: boolean };
       rows: ProductMovementRow[];
@@ -582,14 +564,13 @@ export class ReportsController {
       if (!includeSection) {
         continue;
       }
-      const pic = Number(v.product.inventoryControlMin);
       sections.push({
         variant: {
           id: v.id,
           sku: v.sku,
           productName: v.product.name,
           minStock: ms,
-          productInventoryControlMin: pic,
+          productControlNumber: v.product.controlNumber,
         },
         meta: { hadMovementsInPeriod: rawRows.length > 0 },
         rows: displayRows,
@@ -598,21 +579,33 @@ export class ReportsController {
 
     const baseNote =
       'Saldo antes/depois por local. Ajustes (ADJUST) definem saldo absoluto. Controle mínimo por movimento usa o estoque mínimo da variação; o máximo é um teto informado no filtro. ' +
-      'O intervalo cadastro aplicado ao conjunto refere-se ao controle gravado no produto (menor mínimo entre variantes). Filtro “somente alertas” restringe às linhas que violam os limites ativos.';
+      'O intervalo de código aplicado ao conjunto filtra pelo código sequencial do produto. Filtro “somente alertas” restringe às linhas que violam os limites ativos.';
     let noteCad = '';
-    if (cadastroMinStockInterval) {
+    if (productCodeInterval) {
       const productCount = new Set(variants.map((x) => x.product.id)).size;
       noteCad =
-        ` Filtro de conjunto: produtos com controle de estoque cadastrado entre ${cadastroMinStockInterval.from} e ` +
-        `${cadastroMinStockInterval.to} (${productCount} produtos, ${variants.length} variações; ` +
+        ` Filtro de conjunto: produtos com código entre ${productCodeInterval.from} e ` +
+        `${productCodeInterval.to} (${productCount} produtos, ${variants.length} variações; ` +
         `${sections.length} exibidas após filtros).`;
     }
+
+    const categoryName =
+      categoryId?.trim() && variants.length
+        ? (
+            await db.category.findUnique({
+              where: { id: categoryId.trim() },
+              select: { name: true },
+            })
+          )?.name ?? null
+        : null;
 
     return {
       title: 'Movimentação de produtos',
       period: { from: fromRaw, to: toRaw },
       locationId: locationId ?? null,
-      cadastroMinStockInterval,
+      categoryId: categoryId?.trim() || null,
+      categoryName,
+      productCodeInterval,
       options: {
         useMinControl: useMin,
         useMaxControl: useMax,
@@ -633,7 +626,7 @@ export class ReportsController {
    *
    * Modos:
    * - Sem `variantId` e sem intervalo `minStockCadFrom`/`minStockCadTo`: ranking só das variantes que venderam no período (legado).
-   * - Com `variantId` ou com intervalo cadastro (controle do produto = menor mínimo entre SKUs): lista o conjunto de variantes
+   * - Com `variantId` ou com intervalo de código (`Product.controlNumber`): lista o conjunto de variantes
    *   alinhado ao relatório de movimentação; `showNoSale` mantém linhas com quantidade vendida zero (padrão verdadeiro).
    */
   @Get('product-turnover')
@@ -646,6 +639,7 @@ export class ReportsController {
     @Query('variantId') variantIdRaw?: string,
     @Query('minStockCadFrom') minStockCadFromRaw?: string,
     @Query('minStockCadTo') minStockCadToRaw?: string,
+    @Query('categoryId') categoryId?: string,
     @Query('showNoSale') showNoSaleRaw?: string,
     @Query('maxStockCeiling') maxStockCeilingRaw?: string,
     @Query('useMinControl') useMinControl?: string,
@@ -695,14 +689,14 @@ export class ReportsController {
     });
 
     const trimmedVid = (variantIdRaw ?? '').trim();
-    let cadastroMinStockInterval: { from: number; to: number } | null = null;
+    let productCodeInterval: { from: number; to: number } | null = null;
 
     type TurnVariantRow = {
       id: string;
       sku: string;
       minStock: Prisma.Decimal;
       costAverage: Prisma.Decimal;
-      product: { id: string; name: string; inventoryControlMin: Prisma.Decimal };
+      product: { id: string; name: string; controlNumber: number };
     };
 
     let variants: TurnVariantRow[];
@@ -715,7 +709,7 @@ export class ReportsController {
           sku: true,
           minStock: true,
           costAverage: true,
-          product: { select: { id: true, name: true, inventoryControlMin: true } },
+          product: { select: { id: true, name: true, controlNumber: true } },
         },
       });
       if (!v) throw new BadRequestException('Variação não encontrada.');
@@ -724,70 +718,58 @@ export class ReportsController {
       const fromTxt = String(minStockCadFromRaw ?? '').trim();
       const toTxt = String(minStockCadToRaw ?? '').trim();
       if (fromTxt || toTxt) {
-        if (!fromTxt || !toTxt) {
-          throw new BadRequestException(
-            'Informe ambos minStockCadFrom e minStockCadTo ou deixe os dois em branco (apenas ranking das variantes que venderam no período).',
-          );
-        }
-        const cadMin = Number(fromTxt.replace(',', '.'));
-        const cadMax = Number(toTxt.replace(',', '.'));
-        if (Number.isNaN(cadMin) || Number.isNaN(cadMax)) {
-          throw new BadRequestException('Intervalo minStockCadFrom / minStockCadTo inválido (use números).');
-        }
-        if (cadMin > cadMax) {
-          throw new BadRequestException('minStockCadFrom não pode ser maior que minStockCadTo.');
-        }
-        cadastroMinStockInterval = { from: cadMin, to: cadMax };
-        await this.reconcileProductInventoryControlMins(db);
+        const codeInterval = this.parseOptionalProductCodeInterval(minStockCadFromRaw, minStockCadToRaw, false)!;
+        productCodeInterval = codeInterval;
         const cap = this.productMovementCadRangeMaxVariants;
         const found = await db.productVariant.findMany({
           where: {
-            product: {
-              inventoryControlMin: { gte: cadMin, lte: cadMax },
-            },
+            product: this.productReportProductWhere(codeInterval, categoryId),
           },
           select: {
             id: true,
             sku: true,
             minStock: true,
             costAverage: true,
-            product: { select: { id: true, name: true, inventoryControlMin: true } },
+            product: { select: { id: true, name: true, controlNumber: true } },
           },
-          orderBy: [{ product: { name: 'asc' } }, { sku: 'asc' }],
+          orderBy: [{ product: { controlNumber: 'asc' } }, { sku: 'asc' }],
           take: cap + 1,
         });
         if (!found.length) {
           throw new BadRequestException(
-            `Nenhum produto com controle de estoque (cadastro, menor mínimo entre variantes) entre ${cadMin} e ${cadMax}. Ajuste o intervalo.`,
+            `Nenhum produto com código entre ${codeInterval.from} e ${codeInterval.to}. Ajuste o intervalo ou a categoria.`,
           );
         }
         if (found.length > cap) {
           throw new BadRequestException(
-            `Mais de ${cap} variações nesse conjunto (produtos cujo controle está no intervalo). ` +
+            `Mais de ${cap} variações nesse conjunto (códigos no intervalo). ` +
               'Informe um intervalo mais restrito ou use variantId.',
           );
         }
         variants = found;
-      } else {
-        const saleVariantIds = [...new Set(items.map((i) => i.variantId))];
-        if (saleVariantIds.length === 0) {
-          variants = [];
         } else {
-          variants = await db.productVariant.findMany({
-            where: { id: { in: saleVariantIds } },
+          const saleVariantIds = [...new Set(items.map((i) => i.variantId))];
+          if (saleVariantIds.length === 0) {
+            variants = [];
+          } else {
+            variants = await db.productVariant.findMany({
+              where: {
+                id: { in: saleVariantIds },
+                product: this.productReportProductWhere(null, categoryId),
+              },
             select: {
               id: true,
               sku: true,
               minStock: true,
               costAverage: true,
-              product: { select: { id: true, name: true, inventoryControlMin: true } },
+              product: { select: { id: true, name: true, controlNumber: true } },
             },
           });
         }
       }
     }
 
-    const isConjuntoMode = Boolean(trimmedVid || cadastroMinStockInterval);
+    const isConjuntoMode = Boolean(trimmedVid || productCodeInterval);
     const showNoSale = isConjuntoMode && showNoSaleRaw !== '0' && showNoSaleRaw !== 'false';
 
     const variantMap = new Map(variants.map((v) => [v.id, v]));
@@ -851,9 +833,9 @@ export class ReportsController {
     if (useMin || useMax || onlyAlerts) {
       methodology += ' Alertas: estoque atual vs. mín. da SKU e/ou teto.';
     }
-    if (cadastroMinStockInterval) {
+    if (productCodeInterval) {
       const productCount = new Set(variants.map((x) => x.product.id)).size;
-      methodology += ` Conjunto por controle produto ${cadastroMinStockInterval.from}–${cadastroMinStockInterval.to} (${productCount} prod., ${variants.length} SKUs).`;
+      methodology += ` Conjunto por código produto ${productCodeInterval.from}–${productCodeInterval.to} (${productCount} prod., ${variants.length} SKUs).`;
     }
 
     const lines =
@@ -879,7 +861,7 @@ export class ReportsController {
                 sku: v.sku,
                 productName: v.product.name,
                 minStock: minS,
-                productInventoryControlMin: Number(v.product.inventoryControlMin),
+                productControlNumber: v.product.controlNumber,
                 stockOnHand: onHand,
                 belowMinStock,
                 aboveMaxStock,
@@ -894,10 +876,22 @@ export class ReportsController {
             .sort((x, y) => y.qtySold - x.qtySold || x.sku.localeCompare(y.sku))
             .slice(0, take);
 
+    const categoryName =
+      categoryId?.trim() && variants.length
+        ? (
+            await db.category.findUnique({
+              where: { id: categoryId.trim() },
+              select: { name: true },
+            })
+          )?.name ?? null
+        : null;
+
     return {
       title: 'Giro de produtos',
       period: { from: fromRaw, to: toRaw },
-      cadastroMinStockInterval,
+      categoryId: categoryId?.trim() || null,
+      categoryName,
+      productCodeInterval,
       options: {
         useMinControl: useMin,
         useMaxControl: useMax,
@@ -972,60 +966,72 @@ export class ReportsController {
     return { from: fromRaw, to: toRaw, asOf: periodEnd };
   }
 
-  private parseOptionalCadInterval(
+  private parseOptionalProductCodeInterval(
     fromRaw?: string,
     toRaw?: string,
+    required = false,
   ): { from: number; to: number } | null {
     const fromTxt = String(fromRaw ?? '').trim();
     const toTxt = String(toRaw ?? '').trim();
-    if (!fromTxt && !toTxt) return null;
+    if (!fromTxt && !toTxt) {
+      if (required) {
+        throw new BadRequestException(
+          'Informe variantId de uma variação ou ambos os parâmetros minStockCadFrom e minStockCadTo (intervalo de código sequencial do produto).',
+        );
+      }
+      return null;
+    }
     if (!fromTxt || !toTxt) {
       throw new BadRequestException('Informe ambos minStockCadFrom e minStockCadTo ou deixe os dois em branco.');
     }
-    const cadMin = Number(fromTxt.replace(',', '.'));
-    const cadMax = Number(toTxt.replace(',', '.'));
-    if (Number.isNaN(cadMin) || Number.isNaN(cadMax)) {
-      throw new BadRequestException('Intervalo minStockCadFrom / minStockCadTo inválido (use números).');
+    const codeMin = Number(fromTxt);
+    const codeMax = Number(toTxt);
+    if (!Number.isInteger(codeMin) || !Number.isInteger(codeMax) || codeMin < 1 || codeMax < 1) {
+      throw new BadRequestException('Intervalo minStockCadFrom / minStockCadTo inválido (use códigos inteiros positivos).');
     }
-    if (cadMin > cadMax) {
+    if (codeMin > codeMax) {
       throw new BadRequestException('minStockCadFrom não pode ser maior que minStockCadTo.');
     }
-    return { from: cadMin, to: cadMax };
+    return { from: codeMin, to: codeMax };
+  }
+
+  private productReportProductWhere(
+    codeInterval: { from: number; to: number } | null,
+    categoryId?: string,
+  ): Prisma.ProductWhereInput {
+    const where: Prisma.ProductWhereInput = { isActive: true };
+    const cat = (categoryId ?? '').trim();
+    if (cat) where.categoryId = cat;
+    if (codeInterval) {
+      where.controlNumber = { gte: codeInterval.from, lte: codeInterval.to };
+    }
+    return where;
   }
 
   private async loadStockReportVariants(
     db: PrismaClient,
-    cadInterval: { from: number; to: number } | null,
+    codeInterval: { from: number; to: number } | null,
     categoryId?: string,
   ) {
-    await this.reconcileProductInventoryControlMins(db);
-
-    const productWhere: Prisma.ProductWhereInput = { isActive: true };
-    const cat = (categoryId ?? '').trim();
-    if (cat) productWhere.categoryId = cat;
-    if (cadInterval) {
-      productWhere.inventoryControlMin = { gte: cadInterval.from, lte: cadInterval.to };
-    }
-
     const variants = await db.productVariant.findMany({
-      where: { product: productWhere },
+      where: { product: this.productReportProductWhere(codeInterval, categoryId) },
       include: {
         product: {
           select: {
             id: true,
             name: true,
-            inventoryControlMin: true,
+            controlNumber: true,
             category: { select: { id: true, name: true } },
           },
         },
       },
-      orderBy: [{ product: { name: 'asc' } }, { sku: 'asc' }],
+      orderBy: [{ product: { controlNumber: 'asc' } }, { sku: 'asc' }],
       take: this.stockReportMaxVariants + 1,
     });
 
     if (variants.length > this.stockReportMaxVariants) {
       throw new BadRequestException(
-        `Mais de ${this.stockReportMaxVariants} variações no conjunto. Restrinja controle, grupo ou cadastro.`,
+        `Mais de ${this.stockReportMaxVariants} variações no conjunto. Restrinja código, categoria ou cadastro.`,
       );
     }
     return variants;
@@ -1036,7 +1042,7 @@ export class ReportsController {
     locationId?: string,
     categoryId?: string,
     categoryName?: string | null,
-    cadInterval?: { from: number; to: number } | null,
+    codeInterval?: { from: number; to: number } | null,
   ) {
     return {
       period,
@@ -1044,7 +1050,7 @@ export class ReportsController {
       locationId: locationId?.trim() || null,
       categoryId: categoryId?.trim() || null,
       categoryName: categoryName ?? null,
-      cadastroMinStockInterval: cadInterval ?? null,
+      productCodeInterval: codeInterval ?? null,
     };
   }
 
@@ -1064,7 +1070,7 @@ export class ReportsController {
     @Query('minStockCadTo') minStockCadToRaw?: string,
   ) {
     const period = this.parseStockReportPeriod(fromRaw, toRaw);
-    const cadInterval = this.parseOptionalCadInterval(minStockCadFromRaw, minStockCadToRaw);
+    const cadInterval = this.parseOptionalProductCodeInterval(minStockCadFromRaw, minStockCadToRaw, false);
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const variants = await this.loadStockReportVariants(db, cadInterval, categoryId);
     const variantIds = variants.map((v) => v.id);
@@ -1089,7 +1095,7 @@ export class ReportsController {
         sku: v.sku,
         productName: v.product.name,
         categoryName: v.product.category?.name ?? null,
-        inventoryControlMin: Number(v.product.inventoryControlMin),
+        controlNumber: v.product.controlNumber,
         minStock: Number(v.minStock),
         quantity: qty,
         unitCost,
@@ -1136,7 +1142,7 @@ export class ReportsController {
     @Query('minStockCadTo') minStockCadToRaw?: string,
   ) {
     const period = this.parseStockReportPeriod(fromRaw, toRaw);
-    const cadInterval = this.parseOptionalCadInterval(minStockCadFromRaw, minStockCadToRaw);
+    const cadInterval = this.parseOptionalProductCodeInterval(minStockCadFromRaw, minStockCadToRaw, false);
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const variants = await this.loadStockReportVariants(db, cadInterval, categoryId);
     const variantIds = variants.map((v) => v.id);
@@ -1156,7 +1162,7 @@ export class ReportsController {
         sku: v.sku,
         productName: v.product.name,
         categoryName: v.product.category?.name ?? null,
-        inventoryControlMin: Number(v.product.inventoryControlMin),
+        controlNumber: v.product.controlNumber,
         minStock: Number(v.minStock),
         quantity: qty,
         unitRetailPrice: unitRetail,
@@ -1197,7 +1203,7 @@ export class ReportsController {
     @Query('minStockCadTo') minStockCadToRaw?: string,
   ) {
     const period = this.parseStockReportPeriod(fromRaw, toRaw);
-    const cadInterval = this.parseOptionalCadInterval(minStockCadFromRaw, minStockCadToRaw);
+    const cadInterval = this.parseOptionalProductCodeInterval(minStockCadFromRaw, minStockCadToRaw, false);
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const variants = await this.loadStockReportVariants(db, cadInterval, categoryId);
     const variantIds = variants.map((v) => v.id);
@@ -1209,7 +1215,7 @@ export class ReportsController {
       sku: string;
       productName: string;
       categoryName: string | null;
-      inventoryControlMin: number;
+      controlNumber: number;
       minStock: number;
       quantity: number;
       deficit: number;
@@ -1224,7 +1230,7 @@ export class ReportsController {
         sku: v.sku,
         productName: v.product.name,
         categoryName: v.product.category?.name ?? null,
-        inventoryControlMin: Number(v.product.inventoryControlMin),
+        controlNumber: v.product.controlNumber,
         minStock: minS,
         quantity: qty,
         deficit: Math.max(0, minS - qty),

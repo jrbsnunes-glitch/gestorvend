@@ -4,13 +4,15 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
-import { buildProductTurnoverReportQuery } from '../lib/product-report-format';
+import { buildProductTurnoverReportQuery, parseProductCodeBound } from '../lib/product-report-format';
 import './cash-print.css';
 
 type TurnoverResponse = {
   methodology: string;
   period: { from: string; to: string };
-  cadastroMinStockInterval: { from: number; to: number } | null;
+  categoryId: string | null;
+  categoryName: string | null;
+  productCodeInterval: { from: number; to: number } | null;
   options: {
     useMinControl: boolean;
     useMaxControl: boolean;
@@ -23,7 +25,7 @@ type TurnoverResponse = {
     sku: string;
     productName: string;
     minStock: number;
-    productInventoryControlMin: number;
+    productControlNumber: number;
     stockOnHand: number;
     belowMinStock: boolean;
     aboveMaxStock: boolean;
@@ -39,6 +41,7 @@ type TurnDraft = {
   variantId: string;
   minStockCadFrom: string;
   minStockCadTo: string;
+  categoryId: string;
   from: string;
   to: string;
   take: string;
@@ -50,10 +53,7 @@ type TurnDraft = {
 };
 
 function parseCadMinBound(raw: string): number | null {
-  const s = raw.trim();
-  if (s === '') return null;
-  const n = Number(s.replace(',', '.'));
-  return Number.isFinite(n) ? n : null;
+  return parseProductCodeBound(raw);
 }
 
 function turnDraftFromSearchParams(sp: URLSearchParams): TurnDraft {
@@ -61,6 +61,7 @@ function turnDraftFromSearchParams(sp: URLSearchParams): TurnDraft {
     variantId: sp.get('variantId') ?? '',
     minStockCadFrom: sp.get('minStockCadFrom') ?? '',
     minStockCadTo: sp.get('minStockCadTo') ?? '',
+    categoryId: sp.get('categoryId') ?? '',
     from: sp.get('from') ?? '',
     to: sp.get('to') ?? '',
     take: sp.get('take') ?? '80',
@@ -106,6 +107,7 @@ export function ProductReportTurnoverPrintPage() {
         variantId: hasVariant ? draft.variantId : undefined,
         minStockCadFrom: cadOk ? draft.minStockCadFrom : undefined,
         minStockCadTo: cadOk ? draft.minStockCadTo : undefined,
+        categoryId: draft.categoryId || undefined,
         showNoSale: cadOk || hasVariant ? draft.showNoSale : undefined,
         useMinControl: draft.useMinControl,
         useMaxControl: draft.useMaxControl,
@@ -116,6 +118,11 @@ export function ProductReportTurnoverPrintPage() {
   );
 
   const enabled = Boolean(draft.from.trim() && draft.to.trim());
+
+  const categories = useQuery({
+    queryKey: ['categories', 'product-turnover-print'],
+    queryFn: () => api<Array<{ id: string; name: string }>>('/categories?q='),
+  });
 
   const report = useQuery({
     queryKey: ['reports', 'product-turnover-print', qs],
@@ -137,11 +144,11 @@ export function ProductReportTurnoverPrintPage() {
         return;
       }
     } else if (cadPartial) {
-      setApplyErr('Informe ambos “de” e “até” no controle do produto ou deixe os dois em branco.');
+      setApplyErr('Informe ambos “de” e “até” no código do produto ou deixe os dois em branco.');
       return;
     } else if (draft.minStockCadFrom.trim() !== '' || draft.minStockCadTo.trim() !== '') {
       if (cadFromN === null || cadToN === null) {
-        setApplyErr('Intervalo de controle inválido (use números).');
+        setApplyErr('Intervalo de código inválido (use inteiros positivos).');
         return;
       }
       if (cadFromN > cadToN) {
@@ -183,8 +190,9 @@ export function ProductReportTurnoverPrintPage() {
         Período {data.period.from} a {data.period.to}
         {' · '}
         Top {draft.take.trim() || '80'} por quantidade vendida (vendas concluídas)
-        {data.cadastroMinStockInterval
-          ? ` · Controle estoque produto (menor mín. SKUs): ${data.cadastroMinStockInterval.from} a ${data.cadastroMinStockInterval.to}`
+        {data.categoryName ? ` · Categoria: ${data.categoryName}` : ''}
+        {data.productCodeInterval
+          ? ` · Código produto: ${data.productCodeInterval.from} a ${data.productCodeInterval.to}`
           : hasVariant
             ? ' · Uma variação (variantId)'
             : null}
@@ -195,7 +203,7 @@ export function ProductReportTurnoverPrintPage() {
         {', '}máx=
         {data.options.useMaxControl ? `sim (teto ${data.options.maxStockCeiling ?? '—'})` : 'não'}
         {', '}somente alertas={data.options.alertsOnly ? 'sim' : 'não'}
-        {data.cadastroMinStockInterval || hasVariant
+        {data.productCodeInterval || hasVariant
           ? `, sem venda no período=${data.options.showNoSale ? 'incluir' : 'omitir'}`
           : ''}
         .
@@ -241,13 +249,13 @@ export function ProductReportTurnoverPrintPage() {
         {applyErr && <div className="alert alert-error pm-move-filters__alert">{applyErr}</div>}
         {hasVariant ? (
           <p className="pm-move-filters__legacy">
-            Filtro por <strong style={{ wordBreak: 'break-all' }}>variantId</strong> — intervalo cad. min fica desativado. Para conjunto por
-            produto, limpe o campo e use “Cad. min”.
+            Filtro por <strong style={{ wordBreak: 'break-all' }}>variantId</strong> — intervalo de código fica desativado. Para conjunto por
+            produto, limpe o campo e use o intervalo de código.
           </p>
         ) : (
           <p className="pm-move-filters__hint">
-            <strong>Cad. min</strong> opcional: mesmo critério da movimentação (controle no produto = menor mínimo entre SKUs). Em branco: só
-            SKUs com venda no período.
+            <strong>Código</strong> opcional: mesmo critério da movimentação. Em branco: só SKUs com venda no período (respeitando categoria,
+            se informada).
           </p>
         )}
 
@@ -262,13 +270,13 @@ export function ProductReportTurnoverPrintPage() {
             />
           </div>
           {!hasVariant && (
-            <div className="pm-move-filters__cadgroup" aria-label="Intervalo controle cadastro produto">
-              <span className="pm-move-filters__muted-label">Cad. min</span>
+            <div className="pm-move-filters__cadgroup" aria-label="Intervalo código produto">
+              <span className="pm-move-filters__muted-label">Código</span>
               <div className="field pm-move-filters__tinyfield">
                 <label htmlFor="pt-cfrom">De</label>
                 <input
                   id="pt-cfrom"
-                  inputMode="decimal"
+                  inputMode="numeric"
                   value={draft.minStockCadFrom}
                   onChange={(e) => setDraft((d) => ({ ...d, minStockCadFrom: e.target.value }))}
                   placeholder="1"
@@ -279,13 +287,30 @@ export function ProductReportTurnoverPrintPage() {
                 <label htmlFor="pt-cto">Até</label>
                 <input
                   id="pt-cto"
-                  inputMode="decimal"
+                  inputMode="numeric"
                   value={draft.minStockCadTo}
                   onChange={(e) => setDraft((d) => ({ ...d, minStockCadTo: e.target.value }))}
-                  placeholder="10"
+                  placeholder="100"
                   style={{ width: '5rem' }}
                 />
               </div>
+            </div>
+          )}
+          {!hasVariant && (
+            <div className="field pm-move-filters__tinyfield">
+              <label htmlFor="pt-cat">Categoria</label>
+              <select
+                id="pt-cat"
+                value={draft.categoryId}
+                onChange={(e) => setDraft((d) => ({ ...d, categoryId: e.target.value }))}
+              >
+                <option value="">Todas</option>
+                {(categories.data ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
           <div className="field pm-move-filters__tinyfield">
@@ -393,7 +418,7 @@ export function ProductReportTurnoverPrintPage() {
               <table className="print-table">
                 <thead>
                   <tr>
-                    <th className="num">Ctr. prod.</th>
+                    <th className="num">Código</th>
                     <th>Produto</th>
                     <th>SKU</th>
                     {showMinCol ? <th className="num">Mín. cad.</th> : null}
@@ -410,9 +435,7 @@ export function ProductReportTurnoverPrintPage() {
                 <tbody>
                   {data.lines.map((r, idx) => (
                     <tr key={`${r.variantId}-${idx}`}>
-                      <td className="num">
-                        {r.productInventoryControlMin.toLocaleString('pt-BR', { maximumFractionDigits: 4 })}
-                      </td>
+                      <td className="num">{r.productControlNumber}</td>
                       <td>{r.productName}</td>
                       <td>{r.sku}</td>
                       {showMinCol ? (

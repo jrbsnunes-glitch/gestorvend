@@ -409,8 +409,7 @@ export function ProductsPage() {
     <div className="page print-area">
       <h1 className="page-title">Produtos</h1>
       <p className="page-desc">
-        Produtos e variações (SKU). Cada produto recebe um <strong>código sequencial único</strong> (1ª coluna) para pesquisa no PDV. Cadastro não aceita estoque mínimo abaixo de <strong>1</strong> por SKU; o{' '}
-        <strong>mín. cadastro</strong> replica o menor mínimo da família (relatórios por intervalo).{' '}
+        Produtos e variações (SKU). Cada produto recebe um <strong>código sequencial único</strong> (1ª coluna) para pesquisa no PDV e filtros de relatório. Cadastro não aceita estoque mínimo abaixo de <strong>1</strong> por SKU.{' '}
         <strong>Mín. SKU</strong> define o ponto de reposição no PDV/alertas. Categoria e dados fiscais no formulário.
       </p>
 

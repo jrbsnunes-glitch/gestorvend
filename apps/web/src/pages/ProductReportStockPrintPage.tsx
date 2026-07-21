@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { formatBRL, formatDate, formatStockQty } from '../lib/format';
 import {
   buildProductStockReportQuery,
+  parseProductCodeBound,
   productStockReportApiPath,
   productStockReportTitle,
   type ProductStockReportKind,
@@ -25,7 +26,7 @@ type FinancialLine = {
   sku: string;
   productName: string;
   categoryName: string | null;
-  inventoryControlMin: number;
+  controlNumber: number;
   minStock: number;
   quantity: number;
   unitCost: number;
@@ -39,7 +40,7 @@ type PhysicalLine = {
   sku: string;
   productName: string;
   categoryName: string | null;
-  inventoryControlMin: number;
+  controlNumber: number;
   minStock: number;
   quantity: number;
   unitRetailPrice: number;
@@ -50,7 +51,7 @@ type MinimumLine = {
   sku: string;
   productName: string;
   categoryName: string | null;
-  inventoryControlMin: number;
+  controlNumber: number;
   minStock: number;
   quantity: number;
   deficit: number;
@@ -63,7 +64,7 @@ type StockReportResponse = {
   locationId: string | null;
   categoryId: string | null;
   categoryName: string | null;
-  cadastroMinStockInterval: { from: number; to: number } | null;
+  productCodeInterval: { from: number; to: number } | null;
   note: string;
   lines: FinancialLine[] | PhysicalLine[] | MinimumLine[];
   totals: Record<string, number>;
@@ -100,10 +101,7 @@ function draftFromSearchParams(sp: URLSearchParams): StockFilters {
 }
 
 function parseCadMinBound(raw: string): number | null {
-  const s = raw.trim();
-  if (s === '') return null;
-  const n = Number(s.replace(',', '.'));
-  return Number.isFinite(n) ? n : null;
+  return parseProductCodeBound(raw);
 }
 
 export function ProductReportStockPrintPage() {
@@ -162,18 +160,18 @@ export function ProductReportStockPrintPage() {
     const hasFrom = draft.minStockCadFrom.trim() !== '';
     const hasTo = draft.minStockCadTo.trim() !== '';
     if (hasFrom !== hasTo) {
-      setApplyErr('Informe ambos os campos de controle (de / até) ou deixe os dois em branco.');
+      setApplyErr('Informe ambos os campos de código (de / até) ou deixe os dois em branco.');
       return;
     }
     if (hasFrom && hasTo) {
       const a = parseCadMinBound(draft.minStockCadFrom);
       const b = parseCadMinBound(draft.minStockCadTo);
       if (a === null || b === null) {
-        setApplyErr('Intervalo de controle inválido.');
+        setApplyErr('Intervalo de código inválido (use inteiros positivos).');
         return;
       }
       if (a > b) {
-        setApplyErr('Controle “de” não pode ser maior que “até”.');
+        setApplyErr('Código “de” não pode ser maior que “até”.');
         return;
       }
     }
@@ -212,18 +210,18 @@ export function ProductReportStockPrintPage() {
         {data.categoryName ? (
           <>
             {' · '}
-            Grupo: <strong>{data.categoryName}</strong>
+            Categoria: <strong>{data.categoryName}</strong>
           </>
         ) : (
-          <> · Grupo: todos</>
+          <> · Categoria: todas</>
         )}
-        {data.cadastroMinStockInterval ? (
+        {data.productCodeInterval ? (
           <>
             {' · '}
-            Controle: {data.cadastroMinStockInterval.from} – {data.cadastroMinStockInterval.to}
+            Código: {data.productCodeInterval.from} – {data.productCodeInterval.to}
           </>
         ) : (
-          <> · Controle: todos</>
+          <> · Código: todos</>
         )}
       </p>
       <p className="print-sub" style={{ fontSize: '0.82rem' }}>
@@ -263,13 +261,13 @@ export function ProductReportStockPrintPage() {
         <div className="pm-move-filters__title">Filtros — {title}</div>
         {applyErr && <div className="alert alert-error pm-move-filters__alert">{applyErr}</div>}
         <div className="pm-move-filters__row">
-          <div className="pm-move-filters__cadgroup" aria-label="Intervalo controle cadastro produto">
-            <span className="pm-move-filters__muted-label">Controle</span>
+          <div className="pm-move-filters__cadgroup" aria-label="Intervalo código produto">
+            <span className="pm-move-filters__muted-label">Código</span>
             <div className="field pm-move-filters__tinyfield">
               <label htmlFor="ps-cfrom">De</label>
               <input
                 id="ps-cfrom"
-                inputMode="decimal"
+                inputMode="numeric"
                 placeholder="opc."
                 value={draft.minStockCadFrom}
                 onChange={(e) => setDraft((d) => ({ ...d, minStockCadFrom: e.target.value }))}
@@ -280,7 +278,7 @@ export function ProductReportStockPrintPage() {
               <label htmlFor="ps-cto">Até</label>
               <input
                 id="ps-cto"
-                inputMode="decimal"
+                inputMode="numeric"
                 placeholder="opc."
                 value={draft.minStockCadTo}
                 onChange={(e) => setDraft((d) => ({ ...d, minStockCadTo: e.target.value }))}
@@ -289,7 +287,7 @@ export function ProductReportStockPrintPage() {
             </div>
           </div>
           <div className="field pm-move-filters__tinyfield">
-            <label htmlFor="ps-cat">Grupo</label>
+            <label htmlFor="ps-cat">Categoria</label>
             <select
               id="ps-cat"
               value={draft.categoryId}
@@ -356,8 +354,8 @@ export function ProductReportStockPrintPage() {
                 <tr>
                   <th>SKU</th>
                   <th>Produto</th>
-                  <th>Grupo</th>
-                  <th className="num">Controle</th>
+                  <th>Categoria</th>
+                  <th className="num">Código</th>
                   <th className="num">Qtd.</th>
                   <th className="num">Custo unit.</th>
                   <th className="num">Valor estoque</th>
@@ -377,7 +375,7 @@ export function ProductReportStockPrintPage() {
                     <td>{row.sku}</td>
                     <td>{row.productName}</td>
                     <td>{row.categoryName ?? '—'}</td>
-                    <td className="num">{formatStockQty(String(row.inventoryControlMin))}</td>
+                    <td className="num">{row.controlNumber}</td>
                     <td className="num">{formatStockQty(String(row.quantity))}</td>
                     <td className="num">{formatBRL(row.unitCost)}</td>
                     <td className="num">{formatBRL(row.stockValue)}</td>
@@ -409,8 +407,8 @@ export function ProductReportStockPrintPage() {
                 <tr>
                   <th>SKU</th>
                   <th>Produto</th>
-                  <th>Grupo</th>
-                  <th className="num">Controle</th>
+                  <th>Categoria</th>
+                  <th className="num">Código</th>
                   <th className="num">Qtd.</th>
                   <th className="num">Preço venda</th>
                   <th className="num">Valor (qtd × preço)</th>
@@ -429,7 +427,7 @@ export function ProductReportStockPrintPage() {
                     <td>{row.sku}</td>
                     <td>{row.productName}</td>
                     <td>{row.categoryName ?? '—'}</td>
-                    <td className="num">{formatStockQty(String(row.inventoryControlMin))}</td>
+                    <td className="num">{row.controlNumber}</td>
                     <td className="num">{formatStockQty(String(row.quantity))}</td>
                     <td className="num">{formatBRL(row.unitRetailPrice)}</td>
                     <td className="num">{formatBRL(row.saleValue)}</td>
@@ -459,8 +457,8 @@ export function ProductReportStockPrintPage() {
                 <tr>
                   <th>SKU</th>
                   <th>Produto</th>
-                  <th>Grupo</th>
-                  <th className="num">Controle</th>
+                  <th>Categoria</th>
+                  <th className="num">Código</th>
                   <th className="num">Mínimo SKU</th>
                   <th className="num">Qtd. atual</th>
                   <th className="num">Déficit</th>
@@ -479,7 +477,7 @@ export function ProductReportStockPrintPage() {
                     <td>{row.sku}</td>
                     <td>{row.productName}</td>
                     <td>{row.categoryName ?? '—'}</td>
-                    <td className="num">{formatStockQty(String(row.inventoryControlMin))}</td>
+                    <td className="num">{row.controlNumber}</td>
                     <td className="num">{formatStockQty(String(row.minStock))}</td>
                     <td className="num">{formatStockQty(String(row.quantity))}</td>
                     <td className="num">{formatStockQty(String(row.deficit))}</td>

@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatDate } from '../lib/format';
-import { buildProductMovementReportQuery, movementLabel } from '../lib/product-report-format';
+import { buildProductMovementReportQuery, movementLabel, parseProductCodeBound } from '../lib/product-report-format';
 import './cash-print.css';
 
 type MovementRow = {
@@ -24,7 +24,7 @@ type MovementRow = {
 };
 
 type MovementsSection = {
-  variant: { id: string; sku: string; productName: string; minStock: number; productInventoryControlMin: number };
+  variant: { id: string; sku: string; productName: string; minStock: number; productControlNumber: number };
   meta: { hadMovementsInPeriod: boolean };
   rows: MovementRow[];
 };
@@ -32,7 +32,9 @@ type MovementsSection = {
 type MovementsResponse = {
   period: { from: string; to: string };
   locationId: string | null;
-  cadastroMinStockInterval: { from: number; to: number } | null;
+  categoryId: string | null;
+  categoryName: string | null;
+  productCodeInterval: { from: number; to: number } | null;
   options: {
     useMinControl: boolean;
     useMaxControl: boolean;
@@ -48,6 +50,7 @@ type MovDraft = {
   variantId: string;
   minStockCadFrom: string;
   minStockCadTo: string;
+  categoryId: string;
   from: string;
   to: string;
   locationId: string;
@@ -59,10 +62,7 @@ type MovDraft = {
 };
 
 function parseCadMinBound(raw: string): number | null {
-  const s = raw.trim();
-  if (s === '') return null;
-  const n = Number(s.replace(',', '.'));
-  return Number.isFinite(n) ? n : null;
+  return parseProductCodeBound(raw);
 }
 
 function movDraftFromSearchParams(sp: URLSearchParams): MovDraft {
@@ -70,6 +70,7 @@ function movDraftFromSearchParams(sp: URLSearchParams): MovDraft {
     variantId: sp.get('variantId') ?? '',
     minStockCadFrom: sp.get('minStockCadFrom') ?? '',
     minStockCadTo: sp.get('minStockCadTo') ?? '',
+    categoryId: sp.get('categoryId') ?? '',
     from: sp.get('from') ?? '',
     to: sp.get('to') ?? '',
     locationId: sp.get('locationId') ?? '',
@@ -118,6 +119,7 @@ export function ProductReportMovementPrintPage() {
         variantId: hasLegacyVariant ? draft.variantId : undefined,
         minStockCadFrom: hasLegacyVariant ? undefined : draft.minStockCadFrom,
         minStockCadTo: hasLegacyVariant ? undefined : draft.minStockCadTo,
+        categoryId: draft.categoryId || undefined,
         from: draft.from,
         to: draft.to,
         locationId: draft.locationId || undefined,
@@ -135,6 +137,11 @@ export function ProductReportMovementPrintPage() {
   const locations = useQuery({
     queryKey: ['stock-locations'],
     queryFn: () => api<Array<{ id: string; code: string; name: string }>>('/stock-locations'),
+  });
+
+  const categories = useQuery({
+    queryKey: ['categories', 'product-movement-print'],
+    queryFn: () => api<Array<{ id: string; name: string }>>('/categories?q='),
   });
 
   const report = useQuery({
@@ -156,9 +163,7 @@ export function ProductReportMovementPrintPage() {
     }
     if (!vid) {
       if (draft.minStockCadFrom.trim() === '' || draft.minStockCadTo.trim() === '') {
-        setApplyErr(
-          'Informe o intervalo de controle de estoque ao nível do produto — “de” e “até” (menor mínimo entre SKUs no cadastro).',
-        );
+        setApplyErr('Informe o intervalo de código do produto — “de” e “até”.');
         return;
       }
       const a = parseCadMinBound(draft.minStockCadFrom);
@@ -186,6 +191,7 @@ export function ProductReportMovementPrintPage() {
         variantId: vid || undefined,
         minStockCadFrom: vid ? undefined : draft.minStockCadFrom,
         minStockCadTo: vid ? undefined : draft.minStockCadTo,
+        categoryId: draft.categoryId || undefined,
         from,
         to,
         locationId: draft.locationId || undefined,
@@ -204,8 +210,9 @@ export function ProductReportMovementPrintPage() {
       <p className="print-sub">
         Período {data.period.from} a {data.period.to}
         {data.locationId ? ' · Local filtrado nos parâmetros' : ''}
-        {data.cadastroMinStockInterval
-          ? ` · Controle estoque produto (menor mín. SKUs): ${data.cadastroMinStockInterval.from} a ${data.cadastroMinStockInterval.to}`
+        {data.categoryName ? ` · Categoria: ${data.categoryName}` : ''}
+        {data.productCodeInterval
+          ? ` · Código produto: ${data.productCodeInterval.from} a ${data.productCodeInterval.to}`
           : null}
         {data.sections.length > 1 ? ` · ${data.sections.length} variações` : null}
       </p>
@@ -221,7 +228,7 @@ export function ProductReportMovementPrintPage() {
     <p className="print-sub">Carregando…</p>
   ) : (
     <p className="print-sub">
-      Defina o intervalo de controle de estoque ao nível do produto (menor mínimo entre variantes) e o período nos filtros abaixo e clique em{' '}
+      Defina o intervalo de código do produto e o período nos filtros abaixo e clique em{' '}
       <strong>Atualizar relatório</strong>.
     </p>
   );
@@ -260,24 +267,23 @@ export function ProductReportMovementPrintPage() {
           </p>
         ) : (
           <p className="pm-move-filters__hint">
-            Por intervalo: entram <strong>todos os SKUs dos produtos</strong> cujo controle gravado — menor{' '}
-            <strong>mínimo entre variantes</strong> — estiver dentro de cad. min. Se “cad. min · de” &gt; 0, famílias cujo menor mínimo for
-            zero ficam de fora, mesmo havendo SKU com mínimo maior.
+            Por intervalo: entram <strong>todos os SKUs dos produtos</strong> cujo <strong>código sequencial</strong> estiver dentro do
+            intervalo informado.
           </p>
         )}
 
         <div className="pm-move-filters__row">
           {!hasLegacyVariant && (
-            <div className="pm-move-filters__cadgroup" aria-label="Intervalo estoque mínimo cadastro">
-              <span className="pm-move-filters__muted-label">Cad. min</span>
+            <div className="pm-move-filters__cadgroup" aria-label="Intervalo código produto">
+              <span className="pm-move-filters__muted-label">Código</span>
               <div className="field pm-move-filters__tinyfield">
                 <label htmlFor="pm-cfrom">De</label>
                 <input
                   id="pm-cfrom"
-                  inputMode="decimal"
+                  inputMode="numeric"
                   value={draft.minStockCadFrom}
                   onChange={(e) => setDraft((d) => ({ ...d, minStockCadFrom: e.target.value }))}
-                  placeholder="0"
+                  placeholder="1"
                   style={{ width: '5rem' }}
                 />
               </div>
@@ -285,13 +291,30 @@ export function ProductReportMovementPrintPage() {
                 <label htmlFor="pm-cto">Até</label>
                 <input
                   id="pm-cto"
-                  inputMode="decimal"
+                  inputMode="numeric"
                   value={draft.minStockCadTo}
                   onChange={(e) => setDraft((d) => ({ ...d, minStockCadTo: e.target.value }))}
                   placeholder="99"
                   style={{ width: '5rem' }}
                 />
               </div>
+            </div>
+          )}
+          {!hasLegacyVariant && (
+            <div className="field pm-move-filters__tinyfield">
+              <label htmlFor="pm-cat">Categoria</label>
+              <select
+                id="pm-cat"
+                value={draft.categoryId}
+                onChange={(e) => setDraft((d) => ({ ...d, categoryId: e.target.value }))}
+              >
+                <option value="">Todas</option>
+                {(categories.data ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
           <div className="field pm-move-filters__tinyfield">
@@ -381,7 +404,7 @@ export function ProductReportMovementPrintPage() {
 
         {!enabled && (
           <p className="print-empty no-print">
-            Informe período válido {hasLegacyVariant ? '' : 'e intervalo de controle estoque produto '}
+            Informe período válido {hasLegacyVariant ? '' : 'e intervalo de código '}
             nos filtros e clique em <strong>Atualizar relatório</strong>.
           </p>
         )}
@@ -417,7 +440,7 @@ export function ProductReportMovementPrintPage() {
                 {sec.variant.productName} <span style={{ fontWeight: 600 }}>({sec.variant.sku})</span>
                 {' — '}
                 <span style={{ fontWeight: 500, fontSize: '0.9rem', color: '#475569' }}>
-                  Mín. SKUs esta variante {sec.variant.minStock} · controle produto {sec.variant.productInventoryControlMin}
+                  Mín. SKUs esta variante {sec.variant.minStock} · código produto {sec.variant.productControlNumber}
                 </span>
               </h2>
               {!sec.rows.length ? (
