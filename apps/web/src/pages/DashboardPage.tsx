@@ -1,11 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { BillPaymentsButton } from '../components/BillSettlementsModal';
+import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { api } from '../lib/api';
 import { companyDisplayName, useCompanyBranding } from '../lib/company-branding';
 import { formatBRL, formatDate } from '../lib/format';
+
+const DASH_PREVIEW_LIMIT = 5;
+
+type DashPanelKey = 'topProducts' | 'lowStock' | 'payables' | 'receivables';
 
 type Overview = {
   revenue: { today: number; month: number };
@@ -106,8 +111,164 @@ function dueLabelShort(status: string, dueDate: string): string {
   return `vence em ${formatDate(dueDate)}`;
 }
 
+function previewItems<T>(items: T[]): T[] {
+  return items.slice(0, DASH_PREVIEW_LIMIT);
+}
+
+function DashSeeMoreButton({ total, onClick }: { total: number; onClick: () => void }) {
+  if (total <= DASH_PREVIEW_LIMIT) return null;
+  return (
+    <div className="dash-block-more">
+      <button type="button" className="btn btn-secondary btn-compact" onClick={onClick}>
+        Ver mais ({total - DASH_PREVIEW_LIMIT} restantes)
+      </button>
+    </div>
+  );
+}
+
+function TopProductsTable({
+  items,
+  compact,
+}: {
+  items: Overview['topProducts'];
+  compact?: boolean;
+}) {
+  return (
+    <table className={`data-table${compact ? ' dash-block-table' : ''}`}>
+      <thead>
+        <tr>
+          <th className="num" style={{ width: '3rem' }}>
+            #
+          </th>
+          <th>Produto</th>
+          <th style={{ textAlign: 'right' }}>Qtd</th>
+          <th style={{ textAlign: 'right' }}>Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((p, idx) => (
+          <tr key={p.variantId}>
+            <td className="num">{idx + 1}</td>
+            <td>
+              <strong>{p.productName}</strong>
+              <div className="dash-cell-sub">SKU {p.sku}</div>
+            </td>
+            <td className="num">{p.quantity.toLocaleString('pt-BR')}</td>
+            <td className="num">{formatBRL(p.total)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function LowStockTable({
+  items,
+  compact,
+}: {
+  items: Overview['lowStock'];
+  compact?: boolean;
+}) {
+  return (
+    <table className={`data-table${compact ? ' dash-block-table' : ''}`}>
+      <thead>
+        <tr>
+          <th className="num" style={{ width: '3rem' }}>
+            #
+          </th>
+          <th>Produto</th>
+          <th style={{ textAlign: 'right' }}>Saldo</th>
+          <th style={{ textAlign: 'right' }}>Mínimo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((row, idx) => (
+          <tr key={row.variantId}>
+            <td className="num">{idx + 1}</td>
+            <td>
+              <strong>{row.productName}</strong>
+              <div className="dash-cell-sub">SKU {row.sku}</div>
+            </td>
+            <td
+              className="num"
+              style={{ color: row.onHand <= 0 ? '#b91c1c' : '#b45309', fontWeight: 700 }}
+            >
+              {row.onHand.toLocaleString('pt-BR')}
+            </td>
+            <td className="num dash-cell-muted">{row.minStock.toLocaleString('pt-BR')}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function PayablesList({ items }: { items: Overview['payablesSoon'] }) {
+  return (
+    <ul className="dash-list">
+      {items.map((p) => (
+        <li key={p.id}>
+          <div>
+            <div className="dash-list-title-row">
+              <strong>{p.description}</strong>
+              {dueDaysBadge(p.status, p.dueDate)}
+            </div>
+            <div className="dash-list-meta">
+              {p.supplier ?? '—'} · {dueLabelShort(p.status, p.dueDate)}
+              {p.amountRemaining < p.amount - 0.005 ? <span> · face {formatBRL(p.amount)}</span> : null}
+            </div>
+            {p.amountRemaining < p.amount - 0.005 ? (
+              <div className="no-print" style={{ marginTop: '0.35rem' }}>
+                <BillPaymentsButton kind="pagar" billId={p.id} description={p.description} />
+              </div>
+            ) : null}
+          </div>
+          <strong className="dash-list-amt">{formatBRL(p.amountRemaining)}</strong>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ReceivablesList({ items }: { items: Overview['receivablesSoon'] }) {
+  return (
+    <ul className="dash-list">
+      {items.map((r) => (
+        <li key={r.id}>
+          <div>
+            <div className="dash-list-title-row">
+              <strong>{r.description}</strong>
+              {dueDaysBadge(r.status, r.dueDate)}
+            </div>
+            <div className="dash-list-meta">
+              {r.customer ?? '—'} · {dueLabelShort(r.status, r.dueDate)}
+              {r.amountRemaining < r.amount - 0.005 ? <span> · face {formatBRL(r.amount)}</span> : null}
+            </div>
+            {r.amountRemaining < r.amount - 0.005 ? (
+              <div className="no-print" style={{ marginTop: '0.35rem' }}>
+                <BillPaymentsButton kind="receber" billId={r.id} description={r.description} />
+              </div>
+            ) : null}
+          </div>
+          <strong className="dash-list-amt" style={{ color: '#15803d' }}>
+            {formatBRL(r.amountRemaining)}
+          </strong>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+const PANEL_MODAL_TITLES: Record<DashPanelKey, string> = {
+  topProducts: 'Top produtos (últimos 30 dias)',
+  lowStock: 'Estoque crítico',
+  payables: 'A pagar (vencidos e até 7 dias)',
+  receivables: 'A receber (vencidos e até 7 dias)',
+};
+
 export function DashboardPage() {
   const company = useCompanyBranding();
+  const [expandedPanel, setExpandedPanel] = useState<DashPanelKey | null>(null);
   const overview = useQuery({
     queryKey: ['dashboard', 'overview'],
     queryFn: () => api<Overview>('/dashboard/overview'),
@@ -116,6 +277,25 @@ export function DashboardPage() {
   });
 
   const data = overview.data;
+
+  const topProducts = data?.topProducts ?? [];
+  const lowStock = data?.lowStock ?? [];
+  const payablesSoon = data?.payablesSoon ?? [];
+  const receivablesSoon = data?.receivablesSoon ?? [];
+
+  function renderExpandedPanel() {
+    if (!expandedPanel || !data) return null;
+    switch (expandedPanel) {
+      case 'topProducts':
+        return <TopProductsTable items={topProducts} />;
+      case 'lowStock':
+        return <LowStockTable items={lowStock} />;
+      case 'payables':
+        return <PayablesList items={payablesSoon} />;
+      case 'receivables':
+        return <ReceivablesList items={receivablesSoon} />;
+    }
+  }
 
   return (
     <div className="page dashboard-page">
@@ -179,39 +359,14 @@ export function DashboardPage() {
             </Link>
           </header>
           {overview.isLoading && <p className="dash-empty">Carregando…</p>}
-          {!overview.isLoading && !data?.topProducts.length && (
+          {!overview.isLoading && !topProducts.length && (
             <p className="dash-empty">Ainda sem vendas no período.</p>
           )}
-          {data?.topProducts.length ? (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th className="num" style={{ width: '3rem' }}>
-                    Cont.
-                  </th>
-                  <th>Produto</th>
-                  <th style={{ textAlign: 'right' }}>Qtd</th>
-                  <th style={{ textAlign: 'right' }}>Valor</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.topProducts.map((p, idx) => (
-                  <tr key={p.variantId}>
-                    <td className="num">{idx + 1}</td>
-                    <td>
-                      <strong>{p.productName}</strong>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>SKU {p.sku}</div>
-                    </td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                      {p.quantity.toLocaleString('pt-BR')}
-                    </td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                      {formatBRL(p.total)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {topProducts.length ? (
+            <>
+              <TopProductsTable items={previewItems(topProducts)} compact />
+              <DashSeeMoreButton total={topProducts.length} onClick={() => setExpandedPanel('topProducts')} />
+            </>
           ) : null}
         </article>
 
@@ -223,39 +378,14 @@ export function DashboardPage() {
             </Link>
           </header>
           {overview.isLoading && <p className="dash-empty">Carregando…</p>}
-          {!overview.isLoading && !data?.lowStock.length && (
+          {!overview.isLoading && !lowStock.length && (
             <p className="dash-empty">Nenhum produto abaixo do estoque mínimo.</p>
           )}
-          {data?.lowStock.length ? (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th className="num" style={{ width: '3rem' }}>
-                    Cont.
-                  </th>
-                  <th>Produto</th>
-                  <th style={{ textAlign: 'right' }}>Saldo</th>
-                  <th style={{ textAlign: 'right' }}>Mínimo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.lowStock.map((row, idx) => (
-                  <tr key={row.variantId}>
-                    <td className="num">{idx + 1}</td>
-                    <td>
-                      <strong>{row.productName}</strong>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>SKU {row.sku}</div>
-                    </td>
-                    <td style={{ textAlign: 'right', color: row.onHand <= 0 ? '#b91c1c' : '#b45309', fontWeight: 700 }}>
-                      {row.onHand.toLocaleString('pt-BR')}
-                    </td>
-                    <td style={{ textAlign: 'right', color: 'var(--color-text-muted)' }}>
-                      {row.minStock.toLocaleString('pt-BR')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {lowStock.length ? (
+            <>
+              <LowStockTable items={previewItems(lowStock)} compact />
+              <DashSeeMoreButton total={lowStock.length} onClick={() => setExpandedPanel('lowStock')} />
+            </>
           ) : null}
         </article>
 
@@ -267,37 +397,14 @@ export function DashboardPage() {
             </Link>
           </header>
           {overview.isLoading && <p className="dash-empty">Carregando…</p>}
-          {!overview.isLoading && !data?.payablesSoon.length && (
+          {!overview.isLoading && !payablesSoon.length && (
             <p className="dash-empty">Sem títulos vencidos ou a vencer nos próximos 7 dias.</p>
           )}
-          {data?.payablesSoon.length ? (
-            <ul className="dash-list">
-              {data.payablesSoon.map((p) => (
-                <li key={p.id}>
-                  <div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.35rem' }}>
-                      <strong>{p.description}</strong>
-                      {dueDaysBadge(p.status, p.dueDate)}
-                    </div>
-                    <div className="dash-list-meta">
-                      {p.supplier ?? '—'} · {dueLabelShort(p.status, p.dueDate)}
-                      {p.amountRemaining < p.amount - 0.005 ? (
-                        <span>
-                          {' '}
-                          · face {formatBRL(p.amount)}
-                        </span>
-                      ) : null}
-                    </div>
-                    {p.amountRemaining < p.amount - 0.005 ? (
-                      <div className="no-print" style={{ marginTop: '0.35rem' }}>
-                        <BillPaymentsButton kind="pagar" billId={p.id} description={p.description} />
-                      </div>
-                    ) : null}
-                  </div>
-                  <strong className="dash-list-amt">{formatBRL(p.amountRemaining)}</strong>
-                </li>
-              ))}
-            </ul>
+          {payablesSoon.length ? (
+            <>
+              <PayablesList items={previewItems(payablesSoon)} />
+              <DashSeeMoreButton total={payablesSoon.length} onClick={() => setExpandedPanel('payables')} />
+            </>
           ) : null}
         </article>
 
@@ -309,42 +416,42 @@ export function DashboardPage() {
             </Link>
           </header>
           {overview.isLoading && <p className="dash-empty">Carregando…</p>}
-          {!overview.isLoading && !data?.receivablesSoon.length && (
+          {!overview.isLoading && !receivablesSoon.length && (
             <p className="dash-empty">Sem títulos vencidos ou a receber nos próximos 7 dias.</p>
           )}
-          {data?.receivablesSoon.length ? (
-            <ul className="dash-list">
-              {data.receivablesSoon.map((r) => (
-                <li key={r.id}>
-                  <div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.35rem' }}>
-                      <strong>{r.description}</strong>
-                      {dueDaysBadge(r.status, r.dueDate)}
-                    </div>
-                    <div className="dash-list-meta">
-                      {r.customer ?? '—'} · {dueLabelShort(r.status, r.dueDate)}
-                      {r.amountRemaining < r.amount - 0.005 ? (
-                        <span>
-                          {' '}
-                          · face {formatBRL(r.amount)}
-                        </span>
-                      ) : null}
-                    </div>
-                    {r.amountRemaining < r.amount - 0.005 ? (
-                      <div className="no-print" style={{ marginTop: '0.35rem' }}>
-                        <BillPaymentsButton kind="receber" billId={r.id} description={r.description} />
-                      </div>
-                    ) : null}
-                  </div>
-                  <strong className="dash-list-amt" style={{ color: '#15803d' }}>
-                    {formatBRL(r.amountRemaining)}
-                  </strong>
-                </li>
-              ))}
-            </ul>
+          {receivablesSoon.length ? (
+            <>
+              <ReceivablesList items={previewItems(receivablesSoon)} />
+              <DashSeeMoreButton total={receivablesSoon.length} onClick={() => setExpandedPanel('receivables')} />
+            </>
           ) : null}
         </article>
       </section>
+
+      {expandedPanel && (
+        <FormModalBackdrop className="modal-backdrop--wide" onClose={() => setExpandedPanel(null)}>
+          <div
+            className="modal modal--wide dash-panel-modal"
+            role="dialog"
+            aria-labelledby="dash-panel-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="dash-panel-modal-title">{PANEL_MODAL_TITLES[expandedPanel]}</h2>
+            <p className="dash-panel-modal-count">
+              {expandedPanel === 'topProducts' && `${topProducts.length} produto(s) no ranking`}
+              {expandedPanel === 'lowStock' && `${lowStock.length} variação(ões) com estoque crítico`}
+              {expandedPanel === 'payables' && `${payablesSoon.length} título(s) a pagar`}
+              {expandedPanel === 'receivables' && `${receivablesSoon.length} título(s) a receber`}
+            </p>
+            <div className="dash-panel-modal-body">{renderExpandedPanel()}</div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setExpandedPanel(null)}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
     </div>
   );
 }
