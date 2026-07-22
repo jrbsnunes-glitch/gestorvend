@@ -2,11 +2,18 @@ export type InboundNfeItemDto = {
   lineNumber: number;
   supplierCode: string | null;
   ean: string | null;
+  /** GTIN da unidade tributável (cEANTrib), quando distinto do comercial. */
+  eanTrib: string | null;
   description: string;
   ncm: string | null;
   cfop: string | null;
+  /** Unidade comercial (uCom). */
   unit: string | null;
+  /** Unidade tributável (uTrib) — auditoria; não usar como fator de pack. */
+  taxUnit: string | null;
   quantity: number;
+  /** Quantidade tributável (qTrib). */
+  taxQuantity: number | null;
   unitCost: number;
   total: number;
 };
@@ -59,17 +66,23 @@ export function parseInboundNfeXml(xml: string, accessKey: string): InboundNfePr
     const det = m[2];
     const prod = blockOf(det, 'prod') ?? det;
     const qCom = parseFloat(textOf(prod, 'qCom') ?? '0') || 0;
+    const qTribRaw = textOf(prod, 'qTrib');
+    const qTrib = qTribRaw != null ? parseFloat(qTribRaw) : NaN;
     const vUnCom = parseFloat(textOf(prod, 'vUnCom') ?? '0') || 0;
     const vProd = parseFloat(textOf(prod, 'vProd') ?? '0') || qCom * vUnCom;
+    const eanTrib = textOf(prod, 'cEANTrib');
     return {
       lineNumber: parseInt(m[1], 10) || 0,
       supplierCode: textOf(prod, 'cProd'),
       ean: textOf(prod, 'cEAN'),
+      eanTrib: eanTrib && eanTrib.toUpperCase() !== 'SEM GTIN' ? eanTrib : null,
       description: textOf(prod, 'xProd') ?? '',
       ncm: textOf(prod, 'NCM'),
       cfop: textOf(prod, 'CFOP'),
       unit: textOf(prod, 'uCom'),
+      taxUnit: textOf(prod, 'uTrib'),
       quantity: qCom,
+      taxQuantity: Number.isFinite(qTrib) ? qTrib : null,
       unitCost: vUnCom,
       total: vProd,
     };

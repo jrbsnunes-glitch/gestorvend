@@ -20,6 +20,109 @@ function factorToken(factor: number): string {
   return String(Number(factor));
 }
 
+/** Unidades comerciais típicas de embalagem (caixa/fardo/pack) na NF-e. */
+const PACK_INVOICE_UNITS = new Set([
+  'CX',
+  'CXA',
+  'CAIXA',
+  'FD',
+  'FARDO',
+  'PCT',
+  'PC',
+  'PACOTE',
+  'DZ',
+  'DUZIA',
+  'CJ',
+  'CONJ',
+  'CONJUNTO',
+  'KIT',
+  'SC',
+  'SACO',
+  'BD',
+  'BANDEJA',
+  'DISPLAY',
+  'DP',
+]);
+
+/** Unidades que NÃO são embalagem (estoque unitário / peso / volume). */
+const NON_PACK_INVOICE_UNITS = new Set([
+  'UN',
+  'UND',
+  'UNIT',
+  'UNIDADE',
+  'KG',
+  'G',
+  'GR',
+  'MG',
+  'T',
+  'TON',
+  'LT',
+  'L',
+  'ML',
+  'M',
+  'MT',
+  'M2',
+  'M3',
+  'CM',
+  'MM',
+  'HR',
+  'H',
+  'PAR',
+  'PR',
+]);
+
+/**
+ * Indica se a unidade comercial da NF (uCom) parece embalagem
+ * (caixa, fardo, pacote…), não unidade/peso/volume.
+ */
+export function isPackInvoiceUnit(unit: string | null | undefined): boolean {
+  const raw = normalizeUnitToken(unit);
+  if (!raw) return false;
+
+  // CX12, CX-12, PCT10…
+  const withFactor = raw.match(/^([A-Z]+)(?:-)?(\d+(?:\.\d+)?)$/);
+  const letters = withFactor?.[1] ?? (raw.match(/^([A-Z]+)$/)?.[1] ?? '');
+  if (!letters) return false;
+  if (NON_PACK_INVOICE_UNITS.has(letters)) return false;
+  if (PACK_INVOICE_UNITS.has(letters)) return true;
+  // Tokens longos tipo FARDO24
+  for (const pack of PACK_INVOICE_UNITS) {
+    if (letters.startsWith(pack) && letters.length <= pack.length + 2) return true;
+  }
+  return false;
+}
+
+/**
+ * Tenta extrair sugestão de itens por embalagem de uCom (CX12) ou xProd (C/12, X12, CX 24).
+ * Retorna null se não achar número confiável > 1.
+ */
+export function suggestPackItemQtyFromText(
+  description: string | null | undefined,
+  invoiceUnit: string | null | undefined,
+): number | null {
+  const fromUnit = parseProductConversion(invoiceUnit);
+  if (fromUnit && fromUnit.factor > 1) return fromUnit.factor;
+
+  const text = `${description ?? ''} ${invoiceUnit ?? ''}`.toUpperCase();
+  const patterns = [
+    /\bC\s*\/\s*(\d{1,4}(?:[.,]\d+)?)\b/,
+    /\bC\/(\d{1,4}(?:[.,]\d+)?)\b/,
+    /\bX\s*(\d{1,4}(?:[.,]\d+)?)\b/,
+    /\bCX[\s\-]?(\d{1,4}(?:[.,]\d+)?)\b/,
+    /\bPCT[\s\-]?(\d{1,4}(?:[.,]\d+)?)\b/,
+    /\bFD[\s\-]?(\d{1,4}(?:[.,]\d+)?)\b/,
+    /\bCOM\s+(\d{1,4}(?:[.,]\d+)?)\s*(?:UN|UND|UNID)?\b/,
+    /\b(\d{1,4}(?:[.,]\d+)?)\s*(?:UN|UND|UNID|LATAS?|PEC(?:AS?)?)\s*(?:\/|\s+POR\s+)?(?:CX|CAIXA|FD|FARDO|PCT)?\b/,
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (!m?.[1]) continue;
+    const n = parseFloat(m[1].replace(',', '.'));
+    if (Number.isFinite(n) && n > 1 && n <= 10_000) return n;
+  }
+  return null;
+}
+
 export function parseProductConversion(
   spec: string | null | undefined,
 ): ParsedProductConversion | null {

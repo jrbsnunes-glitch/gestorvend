@@ -585,7 +585,10 @@ export class ProductsController {
     });
   }
 
-  /** Cria produto a partir de linha de NF-e de entrada (sem vínculo com fornecedor). */
+  /**
+   * Cria produto a partir de linha de NF-e de entrada.
+   * Com `asPack: true`, cria (ou vincula) o unitário + o composto com conversion/packItemQty.
+   */
   @Post('from-inbound-line')
   @Roles('admin', 'manager')
   async createFromInboundLine(
@@ -600,6 +603,15 @@ export class ProductsController {
       unitCost?: number | string;
       supplierId?: string | null;
       supplierProductCode?: string | null;
+      /** Quando true, cadastra caixa/pack + unitário. */
+      asPack?: boolean;
+      packItemQty?: number | string | null;
+      /** Unidade da NF (uCom); default taxUnit. */
+      conversion?: string | null;
+      unitProduct?: {
+        existingVariantId?: string | null;
+        create?: { name: string; ncm?: string | null; taxUnit?: string | null } | null;
+      } | null;
     },
   ) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
@@ -609,54 +621,172 @@ export class ProductsController {
     const defaultBarcode = body.defaultBarcode?.trim()
       ? body.defaultBarcode.trim().slice(0, 32)
       : null;
-    const cost = body.unitCost != null ? String(body.unitCost) : '0';
-    const sku = `SKU-${Date.now()}`;
+    const invoiceUnitCost =
+      body.unitCost != null ? parseFloat(String(body.unitCost).replace(',', '.')) || 0 : 0;
+    const linkCode = body.supplierProductCode?.trim() || null;
+    const supplierId = body.supplierId?.trim() || null;
 
-    const created = await db.$transaction(async (tx) => {
-      const prod = await tx.product.create({
+    if (!body.asPack) {
+      const cost = String(invoiceUnitCost);
+      const sku = `SKU-${Date.now()}`;
+      const created = await db.$transaction(async (tx) => {
+        const prod = await tx.product.create({
+          data: {
+            name,
+            description: body.description?.trim() || null,
+            defaultBarcode,
+            ncm: body.ncm?.trim() || null,
+            taxUnit: this.normalizeProductTaxUnit(body.taxUnit),
+            variants: {
+              create: {
+                sku,
+                barcode: defaultBarcode,
+                retailPrice: cost,
+                costAverage: cost,
+                minStock: '1',
+              },
+            },
+          },
+          include: { variants: true },
+        });
+
+        const variantId = prod.variants[0]?.id;
+        if (variantId && supplierId && linkCode) {
+          await tx.supplierProductLink.upsert({
+            where: {
+              supplierId_supplierProductCode: {
+                supplierId,
+                supplierProductCode: linkCode,
+              },
+            },
+            create: {
+              supplierId,
+              variantId,
+              supplierProductCode: linkCode,
+            },
+            update: { variantId },
+          });
+        }
+
+        await this.syncProductInventoryControlMin(tx, prod.id);
+        return prod;
+      });
+      return created;
+    }
+
+    // --- Modo composto (caixa/pack) ---
+    const conversionRaw =
+      normalizeProductConversion(body.conversion) ||
+      normalizeProductConversion(body.taxUnit);
+    if (!conversionRaw) {
+      throw new BadRequestException(
+        'Informe a unidade da NF (ex.: CX, FD, PCT) para cadastrar o produto composto.',
+      );
+    }
+    const packQtyErr = validatePackItemQty(body.packItemQty);
+    if (packQtyErr) throw new BadRequestException(packQtyErr);
+    const packItemQty = normalizePackItemQty(body.packItemQty);
+    if (packItemQty == null || packItemQty <= 1) {
+      throw new BadRequestException(
+        'Informe quantos itens vêm em cada produto composto (ex.: 12, 50).',
+      );
+    }
+
+    const unitCostPerItem = invoiceUnitCost / packItemQty;
+    const unitCostStr = String(unitCostPerItem);
+    const packCostStr = String(invoiceUnitCost);
+    const ts = Date.now();
+
+    const createdPack = await db.$transaction(async (tx) => {
+      let stockComponentVariantId: string | null = null;
+
+      const existingVariantId = body.unitProduct?.existingVariantId?.trim() || null;
+      if (existingVariantId) {
+        stockComponentVariantId = await this.resolveStockComponentVariantId(db, {
+          stockComponentVariantId: existingVariantId,
+          conversion: conversionRaw,
+          packItemQty,
+        });
+      } else {
+        const unitName = body.unitProduct?.create?.name?.trim();
+        if (!unitName) {
+          throw new BadRequestException(
+            'Informe o nome do produto unitário ou vincule um já existente.',
+          );
+        }
+        const unitProd = await tx.product.create({
+          data: {
+            name: unitName,
+            description: null,
+            ncm: body.unitProduct?.create?.ncm?.trim() || body.ncm?.trim() || null,
+            taxUnit: this.normalizeProductTaxUnit(
+              body.unitProduct?.create?.taxUnit ?? 'UN',
+            ),
+            variants: {
+              create: {
+                sku: `SKU-UN-${ts}`,
+                barcode: null,
+                retailPrice: unitCostStr,
+                costAverage: unitCostStr,
+                minStock: '1',
+              },
+            },
+          },
+          include: { variants: true },
+        });
+        await this.syncProductInventoryControlMin(tx, unitProd.id);
+        stockComponentVariantId = unitProd.variants[0]?.id ?? null;
+        if (!stockComponentVariantId) {
+          throw new BadRequestException('Falha ao criar variante do produto unitário.');
+        }
+      }
+
+      const packProd = await tx.product.create({
         data: {
           name,
           description: body.description?.trim() || null,
           defaultBarcode,
           ncm: body.ncm?.trim() || null,
-          taxUnit: this.normalizeProductTaxUnit(body.taxUnit),
+          taxUnit: this.normalizeProductTaxUnit(body.taxUnit ?? conversionRaw),
+          conversion: conversionRaw,
+          packItemQty: String(packItemQty),
+          stockComponentVariantId,
           variants: {
             create: {
-              sku,
+              sku: `SKU-CX-${ts}`,
               barcode: defaultBarcode,
-              retailPrice: cost,
-              costAverage: cost,
+              retailPrice: packCostStr,
+              costAverage: '0',
               minStock: '1',
             },
           },
         },
-        include: { variants: true },
+        include: productDetailInclude,
       });
 
-      const variantId = prod.variants[0]?.id;
-      const linkCode = body.supplierProductCode?.trim();
-      if (variantId && body.supplierId && linkCode) {
+      const packVariantId = packProd.variants[0]?.id;
+      if (packVariantId && supplierId && linkCode) {
         await tx.supplierProductLink.upsert({
           where: {
             supplierId_supplierProductCode: {
-              supplierId: body.supplierId,
+              supplierId,
               supplierProductCode: linkCode,
             },
           },
           create: {
-            supplierId: body.supplierId,
-            variantId,
+            supplierId,
+            variantId: packVariantId,
             supplierProductCode: linkCode,
           },
-          update: { variantId },
+          update: { variantId: packVariantId },
         });
       }
 
-      await this.syncProductInventoryControlMin(tx, prod.id);
-      return prod;
+      await this.syncProductInventoryControlMin(tx, packProd.id);
+      return packProd;
     });
 
-    return created;
+    return createdPack;
   }
 
   @Patch(':id')

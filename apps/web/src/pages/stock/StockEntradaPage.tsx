@@ -10,13 +10,15 @@ import { ProductSearchModal, type ProductSearchRow } from '../../components/Prod
 import { api, apiUpload, ApiHttpError } from '../../lib/api';
 import { formatCnpj } from '../../lib/format';
 import { isPortalXmlFallbackCStat, openPortalNfeConsulta } from '../../lib/portal-nfe';
-import { formatConversionHint } from '../../lib/product-conversion';
+import { formatConversionHint, isPackInvoiceUnit, suggestPackItemQtyFromText } from '../../lib/product-conversion';
 
 type Line = {
   lineNumber?: number;
   variantId: string;
   variantLabel: string;
   supplierProductCode: string;
+  /** EAN/GTIN da linha NF (cEAN), quando houver. */
+  ean: string;
   invoiceUnit: string;
   invoiceQuantity: string;
   quantity: string;
@@ -33,6 +35,7 @@ function emptyLine(): Line {
     variantId: '',
     variantLabel: '',
     supplierProductCode: '',
+    ean: '',
     invoiceUnit: '',
     invoiceQuantity: '1',
     quantity: '1',
@@ -83,11 +86,14 @@ type InboundFetchResponse = {
       lineNumber: number;
       supplierCode: string | null;
       ean: string | null;
+      eanTrib?: string | null;
       description: string;
       ncm: string | null;
       cfop: string | null;
       unit: string | null;
+      taxUnit?: string | null;
       quantity: number;
+      taxQuantity?: number | null;
       unitCost: number;
       total: number;
     }>;
@@ -157,6 +163,11 @@ export function StockEntradaPage() {
   );
   const [productSearchLine, setProductSearchLine] = useState<number | null>(null);
   const [creatingLine, setCreatingLine] = useState<number | null>(null);
+  const [packWizardLine, setPackWizardLine] = useState<number | null>(null);
+  /** Conversão local logo após criar pack (antes do refetch de /products). */
+  const [localConversionByVariant, setLocalConversionByVariant] = useState<
+    Record<string, { conversion: string | null; packItemQty: string | null }>
+  >({});
 
   const receipts = useQuery({
     queryKey: ['goods-receipts'],
@@ -192,8 +203,11 @@ export function StockEntradaPage() {
         });
       }
     }
+    for (const [id, meta] of Object.entries(localConversionByVariant)) {
+      map.set(id, meta);
+    }
     return map;
-  }, [products.data]);
+  }, [products.data, localConversionByVariant]);
 
   const ncmByVariant = useMemo(() => {
     const map = new Map<string, string>();
@@ -273,6 +287,10 @@ export function StockEntradaPage() {
               variantId: match?.variantId ?? '',
               variantLabel: match?.label ?? '',
               supplierProductCode: supplierCode,
+              ean:
+                item.ean && item.ean.toUpperCase() !== 'SEM GTIN'
+                  ? item.ean
+                  : '',
               invoiceUnit: item.unit ?? '',
               invoiceQuantity: String(item.quantity),
               quantity: String(item.quantity),
@@ -551,6 +569,7 @@ export function StockEntradaPage() {
           name: l.description.trim() || l.supplierProductCode.trim() || 'Produto NF-e',
           description: l.description.trim() || null,
           ncm: l.ncm.trim() || null,
+          defaultBarcode: l.ean.trim() || null,
           taxUnit: l.invoiceUnit.trim() || null,
           unitCost: parseFloat(l.unitCost.replace(',', '.')) || 0,
           supplierId: supplierId || null,
@@ -581,6 +600,70 @@ export function StockEntradaPage() {
     },
   });
 
+  const createPackFromLine = useMutation({
+    mutationFn: (payload: {
+      lineIndex: number;
+      packName: string;
+      unitName: string;
+      packItemQty: number;
+      existingUnitVariantId: string | null;
+    }) => {
+      const l = lines[payload.lineIndex];
+      if (!l) throw new Error('Linha inválida');
+      const conversion = l.invoiceUnit.trim().toUpperCase() || 'CX';
+      return api<{
+        variants: Array<{ id: string; sku: string }>;
+        name: string;
+        conversion: string | null;
+        packItemQty: string | null;
+      }>('/products/from-inbound-line', {
+        method: 'POST',
+        json: {
+          asPack: true,
+          name: payload.packName,
+          description: l.description.trim() || null,
+          ncm: l.ncm.trim() || null,
+          defaultBarcode: l.ean.trim() || null,
+          taxUnit: conversion,
+          conversion,
+          packItemQty: payload.packItemQty,
+          unitCost: parseFloat(l.unitCost.replace(',', '.')) || 0,
+          supplierId: supplierId || null,
+          supplierProductCode: l.supplierProductCode.trim() || null,
+          unitProduct: payload.existingUnitVariantId
+            ? { existingVariantId: payload.existingUnitVariantId }
+            : { create: { name: payload.unitName, ncm: l.ncm.trim() || null, taxUnit: 'UN' } },
+        },
+      });
+    },
+    onSuccess: (product, payload) => {
+      const v = product.variants[0];
+      if (v) {
+        setLocalConversionByVariant((prev) => ({
+          ...prev,
+          [v.id]: {
+            conversion: product.conversion ?? null,
+            packItemQty: product.packItemQty != null ? String(product.packItemQty) : null,
+          },
+        }));
+        pickProductForLine(payload.lineIndex, {
+          productId: '',
+          productName: product.name,
+          variantId: v.id,
+          sku: v.sku,
+          barcode: null,
+          retailPrice: '0',
+          costAverage: '0',
+          stockTotal: '0',
+        });
+      }
+      qc.invalidateQueries({ queryKey: ['products'] });
+      setPackWizardLine(null);
+    },
+    onError: (e: Error) => {
+      setErr(e.message);
+    },
+  });
   return (
     <div>
       <CrudToolbar
@@ -1126,6 +1209,15 @@ export function StockEntradaPage() {
                                     placeholder="UN"
                                     style={{ width: '4rem' }}
                                   />
+                                  {isPackInvoiceUnit(l.invoiceUnit) && (
+                                    <span
+                                      className="muted"
+                                      style={{ display: 'block', fontSize: '0.72rem', marginTop: '0.15rem' }}
+                                      title="Unidade de embalagem detectada"
+                                    >
+                                      Embalagem
+                                    </span>
+                                  )}
                                 </td>
                                 <td>
                                   <input value={l.ncm} onChange={(e) => setLine(i, { ncm: e.target.value })} />
@@ -1171,8 +1263,18 @@ export function StockEntradaPage() {
                                   <td colSpan={9}>
                                     <div className="alert alert-warn entrada-unresolved-banner">
                                       <strong>Produto sem vínculo com o fornecedor.</strong>{' '}
-                                      Deseja vincular a um produto existente ou incluir um novo com os dados
-                                      da nota?
+                                      {isPackInvoiceUnit(l.invoiceUnit) ? (
+                                        <>
+                                          Unidade <strong>{l.invoiceUnit.trim().toUpperCase() || '—'}</strong>{' '}
+                                          indica embalagem (caixa/fardo). Cadastre a caixa e o item unitário,
+                                          ou vincule a um produto existente.
+                                        </>
+                                      ) : (
+                                        <>
+                                          Deseja vincular a um produto existente ou incluir um novo com os dados
+                                          da nota?
+                                        </>
+                                      )}
                                       <div className="entrada-unresolved-actions">
                                         <button
                                           type="button"
@@ -1181,9 +1283,18 @@ export function StockEntradaPage() {
                                         >
                                           Pesquisar produto existente
                                         </button>
+                                        {isPackInvoiceUnit(l.invoiceUnit) && (
+                                          <button
+                                            type="button"
+                                            className="btn btn-primary btn-sm"
+                                            onClick={() => setPackWizardLine(i)}
+                                          >
+                                            Cadastrar caixa + unitário
+                                          </button>
+                                        )}
                                         <button
                                           type="button"
-                                          className="btn btn-primary btn-sm"
+                                          className="btn btn-secondary btn-sm"
                                           disabled={createProductFromLine.isPending && creatingLine === i}
                                           onClick={() => {
                                             setCreatingLine(i);
@@ -1379,6 +1490,20 @@ export function StockEntradaPage() {
           if (productSearchLine != null) pickProductForLine(productSearchLine, row);
         }}
       />
+
+      {packWizardLine != null && lines[packWizardLine] && (
+        <PackFromInboundModal
+          line={lines[packWizardLine]}
+          isPending={createPackFromLine.isPending}
+          onCancel={() => setPackWizardLine(null)}
+          onSubmit={(values) => {
+            createPackFromLine.mutate({
+              lineIndex: packWizardLine,
+              ...values,
+            });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1391,6 +1516,164 @@ type EditValues = {
   natureOperation: string | null;
   notes: string | null;
 };
+
+function PackFromInboundModal({
+  line,
+  isPending,
+  onCancel,
+  onSubmit,
+}: {
+  line: Line;
+  isPending: boolean;
+  onCancel: () => void;
+  onSubmit: (values: {
+    packName: string;
+    unitName: string;
+    packItemQty: number;
+    existingUnitVariantId: string | null;
+  }) => void;
+}) {
+  const baseName = line.description.trim() || line.supplierProductCode.trim() || 'Produto NF-e';
+  const suggestedQty = suggestPackItemQtyFromText(line.description, line.invoiceUnit);
+  const [packName, setPackName] = useState(baseName);
+  const [unitName, setUnitName] = useState(`${baseName} (UN)`);
+  const [packItemQty, setPackItemQty] = useState(suggestedQty != null ? String(suggestedQty) : '');
+  const [existingUnit, setExistingUnit] = useState<{
+    variantId: string;
+    label: string;
+  } | null>(null);
+  const [unitSearchOpen, setUnitSearchOpen] = useState(false);
+  const [localErr, setLocalErr] = useState<string | null>(null);
+
+  const qtyNum = parseFloat(packItemQty.replace(',', '.')) || 0;
+  const invoiceQty = parseFloat(line.invoiceQuantity.replace(',', '.')) || 0;
+  const previewStock = qtyNum > 1 ? invoiceQty * qtyNum : null;
+
+  return (
+    <>
+      <FormModalBackdrop onClose={onCancel}>
+        <div
+          className="modal"
+          onClick={(e) => e.stopPropagation()}
+          style={{ width: 'min(560px, 96vw)' }}
+        >
+          <h2>Cadastrar caixa + unitário</h2>
+          <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+            A NF veio em <strong>{line.invoiceUnit.trim().toUpperCase() || 'CX'}</strong>. O sistema cria o
+            produto composto (caixa) e o unitário; na entrada o estoque sobe no unitário (
+            qtd NF × itens por embalagem).
+          </p>
+          {localErr && <div className="alert alert-error">{localErr}</div>}
+          <div className="field">
+            <label htmlFor="pack-name">Nome do produto composto (caixa)</label>
+            <input id="pack-name" value={packName} onChange={(e) => setPackName(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="pack-qty">Itens por embalagem</label>
+            <input
+              id="pack-qty"
+              type="number"
+              min={2}
+              step="1"
+              inputMode="decimal"
+              value={packItemQty}
+              onChange={(e) => setPackItemQty(e.target.value)}
+              placeholder="Ex.: 12, 50"
+            />
+            <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+              Quantos itens unitários vêm em cada {line.invoiceUnit.trim().toUpperCase() || 'caixa'}.
+              {suggestedQty != null && suggestedQty > 1
+                ? ` Sugestão a partir da NF: ${suggestedQty}.`
+                : ''}
+              {previewStock != null && (
+                <>
+                  {' '}
+                  Preview: {invoiceQty} × {qtyNum} = <strong>{previewStock}</strong> un. no estoque.
+                </>
+              )}
+            </span>
+          </div>
+          <div className="field">
+            <span className="field-label-text">Produto unitário</span>
+            {existingUnit ? (
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <input readOnly value={existingUnit.label} style={{ flex: '1 1 220px' }} />
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setExistingUnit(null)}
+                >
+                  Criar novo em vez disso
+                </button>
+              </div>
+            ) : (
+              <>
+                <input
+                  id="unit-name"
+                  value={unitName}
+                  onChange={(e) => setUnitName(e.target.value)}
+                  placeholder="Nome do item unitário"
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ marginTop: '0.4rem' }}
+                  onClick={() => setUnitSearchOpen(true)}
+                >
+                  Ou vincular unitário já cadastrado
+                </button>
+              </>
+            )}
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={isPending}>
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={isPending}
+              onClick={() => {
+                if (!packName.trim()) {
+                  setLocalErr('Informe o nome do produto composto.');
+                  return;
+                }
+                if (qtyNum <= 1) {
+                  setLocalErr('Informe quantos itens vêm em cada embalagem (maior que 1).');
+                  return;
+                }
+                if (!existingUnit && !unitName.trim()) {
+                  setLocalErr('Informe o nome do produto unitário ou vincule um existente.');
+                  return;
+                }
+                setLocalErr(null);
+                onSubmit({
+                  packName: packName.trim(),
+                  unitName: unitName.trim() || `${packName.trim()} (UN)`,
+                  packItemQty: qtyNum,
+                  existingUnitVariantId: existingUnit?.variantId ?? null,
+                });
+              }}
+            >
+              {isPending ? 'Cadastrando…' : 'Cadastrar e vincular à linha'}
+            </button>
+          </div>
+        </div>
+      </FormModalBackdrop>
+      <ProductSearchModal
+        open={unitSearchOpen}
+        onClose={() => setUnitSearchOpen(false)}
+        onPick={(row) => {
+          setExistingUnit({
+            variantId: row.variantId,
+            label: `${row.productName} · ${row.sku}`,
+          });
+          setUnitSearchOpen(false);
+        }}
+      />
+    </>
+  );
+}
 
 function EditReceiptModal({
   receipt,
