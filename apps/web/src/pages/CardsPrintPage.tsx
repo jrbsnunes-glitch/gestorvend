@@ -80,7 +80,11 @@ export function CardsPrintPage() {
     <div className="page print-area">
       <ReportPrintSticker
         documentTitle={`Cartões — ${title}`}
-        backLink={<Link to="/cartoes">← Voltar</Link>}
+        documentExtras={
+          <p className="print-sub page-desc no-print" style={{ marginBottom: 0 }}>
+            <Link to="/cartoes">← Voltar</Link>
+          </p>
+        }
       />
       <h1>{title}</h1>
       <p>

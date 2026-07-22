@@ -40,6 +40,13 @@ type FiscalDocRow = {
   };
 };
 
+type FiscalDocDetail = FiscalDocRow & {
+  sale: FiscalDocRow['sale'] & {
+    items?: Array<Record<string, unknown>>;
+    payments?: unknown[];
+  };
+};
+
 type ListResponse = { total: number; take: number; skip: number; items: FiscalDocRow[] };
 
 type CustomerOpt = { id: string; name: string; segment: string | null };
@@ -162,9 +169,7 @@ export function FiscalNotesPage() {
 
   const detail = useQuery({
     queryKey: ['fiscal', 'documents', viewId ?? openId],
-    queryFn: () => api<FiscalDocRow & { sale: FiscalDocRow['sale'] & { items?: unknown[]; payments?: unknown[] } }>(
-      `/fiscal/documents/${viewId ?? openId}`,
-    ),
+    queryFn: () => api<FiscalDocDetail>(`/fiscal/documents/${viewId ?? openId}`),
     enabled: Boolean(viewId || openId),
   });
 
@@ -674,14 +679,7 @@ export function FiscalNotesPage() {
   );
 }
 
-function fiscalNoteViewSections(
-  doc: FiscalDocRow & {
-    sale: FiscalDocRow['sale'] & {
-      items?: Array<Record<string, unknown>>;
-      payments?: unknown[];
-    };
-  },
-): RecordViewSection[] {
+function fiscalNoteViewSections(doc: FiscalDocDetail): RecordViewSection[] {
   const items = (doc.sale.items ?? []) as Array<{
     quantity: string;
     unitPrice: string;
@@ -746,7 +744,7 @@ function FiscalNoteDetail({
   cancelling,
   onPrintSecondCopy,
 }: {
-  doc: FiscalDocRow & { sale: FiscalDocRow['sale'] & { items?: Array<Record<string, unknown>>; payments?: unknown[] } };
+  doc: FiscalDocDetail;
   editable: boolean;
   onSendContingency: () => void;
   sending: boolean;

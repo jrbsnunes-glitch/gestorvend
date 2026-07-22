@@ -67,7 +67,7 @@ function formatCnpjForReceipt(raw: string): string {
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
 }
 
-function parseN(v: string | number): number {
+function parseN(v: string | number | null | undefined): number {
   const n = typeof v === 'string' ? parseFloat(v) : Number(v);
   return Number.isFinite(n) ? n : 0;
 }
