@@ -1,5 +1,6 @@
 /**
  * Conversão digitada pelo usuário (como na NF-e): CX-12, CX24, CX-6, PCT-10, PCT…
+ * Preferir o campo explícito `packItemQty` quando informado.
  */
 export type ParsedProductConversion = {
   token: string;
@@ -44,6 +45,29 @@ export function normalizeProductConversion(
   return parsed ? parsed.token : null;
 }
 
+export function normalizePackItemQty(
+  value: number | string | null | undefined,
+): number | null {
+  if (value == null || value === '') return null;
+  const n = typeof value === 'number' ? value : parseFloat(String(value).replace(',', '.'));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+/**
+ * Fator efetivo: `packItemQty` explícito tem prioridade; senão o número embutido
+ * em `conversion` (CX-12 → 12); senão 1.
+ */
+export function resolveConversionFactor(
+  conversion: string | null | undefined,
+  packItemQty?: number | string | null,
+): number {
+  const explicit = normalizePackItemQty(packItemQty);
+  if (explicit != null) return explicit;
+  const parsed = parseProductConversion(conversion);
+  return parsed?.factor ?? 1;
+}
+
 export function invoiceUnitMatchesConversion(
   invoiceUnit: string | null | undefined,
   conversion: string | null | undefined,
@@ -73,12 +97,14 @@ export function previewStockFromInvoice(
   invoiceQty: number,
   invoiceUnit: string | null | undefined,
   conversion: string | null | undefined,
+  packItemQty?: number | string | null,
 ): { quantity: number; converted: boolean } {
   const parsed = parseProductConversion(conversion);
   if (parsed && invoiceUnitMatchesConversion(invoiceUnit, conversion)) {
+    const factor = resolveConversionFactor(conversion, packItemQty);
     return {
-      quantity: invoiceQty * parsed.factor,
-      converted: parsed.factor !== 1,
+      quantity: invoiceQty * factor,
+      converted: factor !== 1,
     };
   }
   return { quantity: invoiceQty, converted: false };
@@ -88,13 +114,15 @@ export function formatConversionHint(
   invoiceQty: number,
   invoiceUnit: string | null | undefined,
   conversion: string | null | undefined,
+  packItemQty?: number | string | null,
 ): string | null {
   const parsed = parseProductConversion(conversion);
   if (!parsed || !invoiceUnitMatchesConversion(invoiceUnit, conversion)) return null;
-  if (parsed.factor === 1) {
+  const factor = resolveConversionFactor(conversion, packItemQty);
+  if (factor === 1) {
     return `Unidade da NF (${normalizeUnitToken(invoiceUnit)}) confere com a conversão ${parsed.token}`;
   }
-  const stockQty = invoiceQty * parsed.factor;
+  const stockQty = invoiceQty * factor;
   const unitLabel = normalizeUnitToken(invoiceUnit) || parsed.token;
-  return `${invoiceQty} ${unitLabel} × ${parsed.factor} = ${stockQty} un. no estoque`;
+  return `${invoiceQty} ${unitLabel} × ${factor} = ${stockQty} un. no estoque`;
 }

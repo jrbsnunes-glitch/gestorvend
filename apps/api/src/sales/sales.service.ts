@@ -55,6 +55,7 @@ async function resolveSaleStockTarget(
         select: {
           name: true,
           conversion: true,
+          packItemQty: true,
           stockComponentVariantId: true,
           stockComponentVariant: {
             select: { product: { select: { name: true } } },
@@ -68,6 +69,7 @@ async function resolveSaleStockTarget(
     soldQty,
     variant.product.conversion,
     Boolean(componentId),
+    variant.product.packItemQty != null ? Number(variant.product.packItemQty) : null,
   );
   return {
     stockVariantId: componentId ?? soldVariantId,

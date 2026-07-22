@@ -329,8 +329,11 @@ model Product {
   taxUnit     String?          @db.VarChar(10)
   /// Conversão de unidade na entrada NF-e (ex.: CX-12 → 1 CX = 12 unidades no estoque)
   conversion  String?          @db.VarChar(32)
+  /// Quantidade de itens unitários em cada produto composto (ex.: 12, 50).
+  /// Usado na entrada NF-e e na venda para multiplicar o saldo do SKU unitário.
+  packItemQty Decimal?         @db.Decimal(18, 4)
   /// Produto composto (caixa/pack): estoque movimenta neste variant unitário (ex.: lata),
-  /// multiplicado pelo fator de `conversion` na entrada NF-e e na venda do pack.
+  /// multiplicado por `packItemQty` (ou fator embutido em `conversion`) na entrada/venda.
   stockComponentVariantId String?
   stockComponentVariant   ProductVariant? @relation("ProductStockComponent", fields: [stockComponentVariantId], references: [id], onDelete: SetNull)
   isActive    Boolean          @default(true)

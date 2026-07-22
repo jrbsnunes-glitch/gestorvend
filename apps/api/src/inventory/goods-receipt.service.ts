@@ -127,7 +127,11 @@ export class GoodsReceiptService {
                     where: { id: it.variantId },
                     include: {
                       product: {
-                        select: { conversion: true, stockComponentVariantId: true },
+                        select: {
+                          conversion: true,
+                          packItemQty: true,
+                          stockComponentVariantId: true,
+                        },
                       },
                     },
                   });
@@ -139,6 +143,9 @@ export class GoodsReceiptService {
                     it.invoiceUnit,
                     rawCost,
                     variant.product.conversion,
+                    variant.product.packItemQty != null
+                      ? Number(variant.product.packItemQty)
+                      : null,
                   );
                   return {
                     variantId: it.variantId,
@@ -173,7 +180,11 @@ export class GoodsReceiptService {
             where: { id: it.variantId },
             include: {
               product: {
-                select: { conversion: true, stockComponentVariantId: true },
+                select: {
+                  conversion: true,
+                  packItemQty: true,
+                  stockComponentVariantId: true,
+                },
               },
             },
           });
@@ -185,6 +196,9 @@ export class GoodsReceiptService {
             it.invoiceUnit,
             rawCost,
             variant.product.conversion,
+            variant.product.packItemQty != null
+              ? Number(variant.product.packItemQty)
+              : null,
           );
           const qtyNum = resolved.quantity;
           const unitCost = resolved.unitCost;

@@ -18,7 +18,14 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
-import { validateProductConversion, parseProductConversion, normalizeProductConversion } from '../common/product-conversion.util';
+import {
+  validateProductConversion,
+  parseProductConversion,
+  normalizeProductConversion,
+  normalizePackItemQty,
+  validatePackItemQty,
+  resolveConversionFactor,
+} from '../common/product-conversion.util';
 
 const productDetailInclude = {
   variants: { orderBy: { sku: 'asc' as const } },
@@ -40,8 +47,9 @@ export class ProductsController {
   constructor(private readonly tenantPrisma: TenantPrismaService) {}
 
   /**
-   * Valida vínculo caixa → SKU unitário. Exige conversão (como na NF) e impede
-   * apontar para o próprio produto ou para outro pack.
+   * Valida vínculo caixa → SKU unitário. Exige conversão (como na NF),
+   * quantidade de itens por composto (> 1) e impede apontar para o próprio
+   * produto ou para outro pack.
    */
   private async resolveStockComponentVariantId(
     db: Awaited<ReturnType<TenantPrismaService['getClient']>>,
@@ -49,13 +57,20 @@ export class ProductsController {
       productId?: string | null;
       stockComponentVariantId: string | null | undefined;
       conversion: string | null | undefined;
+      packItemQty?: number | string | null;
     },
   ): Promise<string | null> {
     const id = opts.stockComponentVariantId?.trim() || null;
     if (!id) return null;
     if (!parseProductConversion(opts.conversion)) {
       throw new BadRequestException(
-        'Informe a conversão como na NF-e (ex.: CX-12, CX24, CX-6, PCT-12) ao vincular o produto unitário.',
+        'Informe a conversão como na NF-e (ex.: CX, CX-12, PCT) ao vincular o produto unitário.',
+      );
+    }
+    const factor = resolveConversionFactor(opts.conversion, opts.packItemQty);
+    if (factor <= 1) {
+      throw new BadRequestException(
+        'Informe quantos itens vêm em cada produto composto (ex.: 12, 50) ao vincular o produto unitário.',
       );
     }
     const component = await db.productVariant.findUnique({
@@ -467,6 +482,8 @@ export class ProductsController {
       fiscalOrigin?: string | null;
       taxUnit?: string | null;
       conversion?: string | null;
+      /** Itens unitários por caixa/pack (ex.: 12, 50). */
+      packItemQty?: number | string | null;
       /** SKU unitário (lata) quando este produto é caixa/pack composto. */
       stockComponentVariantId?: string | null;
       variants: Array<{
@@ -487,10 +504,14 @@ export class ProductsController {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const conversionErr = validateProductConversion(body.conversion);
     if (conversionErr) throw new BadRequestException(conversionErr);
+    const packQtyErr = validatePackItemQty(body.packItemQty);
+    if (packQtyErr) throw new BadRequestException(packQtyErr);
+    const packItemQty = normalizePackItemQty(body.packItemQty);
 
     const stockComponentVariantId = await this.resolveStockComponentVariantId(db, {
       stockComponentVariantId: body.stockComponentVariantId,
       conversion: body.conversion,
+      packItemQty,
     });
 
     // O código de barras "principal" do produto também é replicado para a
@@ -522,6 +543,7 @@ export class ProductsController {
           fiscalOrigin: body.fiscalOrigin?.trim() ? body.fiscalOrigin.trim().slice(0, 2) : null,
           taxUnit: this.normalizeProductTaxUnit(body.taxUnit),
           conversion: normalizeProductConversion(body.conversion),
+          packItemQty: packItemQty != null ? String(packItemQty) : null,
           stockComponentVariantId,
           variants: {
             create: body.variants.map((v, idx) => ({
@@ -661,10 +683,16 @@ export class ProductsController {
       );
       if (conversionErr) throw new BadRequestException(conversionErr);
     }
+    if (body.packItemQty !== undefined) {
+      const packQtyErr = validatePackItemQty(
+        body.packItemQty as number | string | null | undefined,
+      );
+      if (packQtyErr) throw new BadRequestException(packQtyErr);
+    }
 
     const current = await db.product.findUniqueOrThrow({
       where: { id },
-      select: { conversion: true, stockComponentVariantId: true },
+      select: { conversion: true, packItemQty: true, stockComponentVariantId: true },
     });
     const nextConversion =
       body.conversion !== undefined
@@ -672,6 +700,12 @@ export class ProductsController {
           ? normalizeProductConversion(String(body.conversion))
           : null
         : current.conversion;
+    const nextPackItemQty =
+      body.packItemQty !== undefined
+        ? normalizePackItemQty(body.packItemQty as number | string | null | undefined)
+        : current.packItemQty != null
+          ? Number(current.packItemQty)
+          : null;
     let nextStockComponent: string | null | undefined = undefined;
     if (body.conversion !== undefined && !nextConversion) {
       // Sem conversão não há pack composto.
@@ -683,6 +717,7 @@ export class ProductsController {
                 ? String(body.stockComponentVariantId)
                 : null,
               conversion: nextConversion,
+              packItemQty: nextPackItemQty,
             })
           : null;
     } else if (body.stockComponentVariantId !== undefined) {
@@ -692,13 +727,18 @@ export class ProductsController {
           ? String(body.stockComponentVariantId)
           : null,
         conversion: nextConversion,
+        packItemQty: nextPackItemQty,
       });
-    } else if (body.conversion !== undefined && current.stockComponentVariantId) {
-      // Recalcula validação se a conversão mudou mantendo vínculo.
+    } else if (
+      (body.conversion !== undefined || body.packItemQty !== undefined) &&
+      current.stockComponentVariantId
+    ) {
+      // Recalcula validação se conversão/fator mudou mantendo vínculo.
       nextStockComponent = await this.resolveStockComponentVariantId(db, {
         productId: id,
         stockComponentVariantId: current.stockComponentVariantId,
         conversion: nextConversion,
+        packItemQty: nextPackItemQty,
       });
     }
 
@@ -738,6 +778,9 @@ export class ProductsController {
           }),
           ...(body.conversion !== undefined && {
             conversion: nextConversion,
+          }),
+          ...(body.packItemQty !== undefined && {
+            packItemQty: nextPackItemQty != null ? String(nextPackItemQty) : null,
           }),
           ...(nextStockComponent !== undefined && {
             stockComponentVariantId: nextStockComponent,

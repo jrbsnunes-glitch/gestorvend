@@ -23,7 +23,12 @@ import { ProductSearchModal, type ProductSearchRow as SearchPickRow } from '../c
 import { api } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
 import { useListPagination } from '../hooks/useListPagination';
-import { parseProductConversion, normalizeProductConversion } from '../lib/product-conversion';
+import {
+  parseProductConversion,
+  normalizeProductConversion,
+  normalizePackItemQty,
+  resolveConversionFactor,
+} from '../lib/product-conversion';
 
 /** Unidade tributária padrão em produtos novos (código em TaxUnitCode). */
 const DEFAULT_PRODUCT_TAX_UNIT = 'UN';
@@ -71,6 +76,8 @@ type Product = {
   fiscalOrigin: string | null;
   taxUnit: string | null;
   conversion: string | null;
+  /** Itens unitários por caixa/pack (ex.: 12, 50). */
+  packItemQty?: string | null;
   stockComponentVariantId?: string | null;
   stockComponentVariant?: {
     id: string;
@@ -162,6 +169,7 @@ export function ProductsPage() {
   const [fiscalOrigin, setFiscalOrigin] = useState('');
   const [taxUnit, setTaxUnit] = useState(DEFAULT_PRODUCT_TAX_UNIT);
   const [conversion, setConversion] = useState('');
+  const [packItemQty, setPackItemQty] = useState('');
   const [stockComponentVariantId, setStockComponentVariantId] = useState<string | null>(null);
   const [stockComponentLabel, setStockComponentLabel] = useState('');
   const [componentSearchOpen, setComponentSearchOpen] = useState(false);
@@ -308,6 +316,7 @@ export function ProductsPage() {
     setFiscalOrigin('');
     setTaxUnit(DEFAULT_PRODUCT_TAX_UNIT);
     setConversion('');
+    setPackItemQty('');
     setStockComponentVariantId(null);
     setStockComponentLabel('');
     setFiscalSituationId('');
@@ -332,6 +341,13 @@ export function ProductsPage() {
     setFiscalOrigin(p.fiscalOrigin ?? '');
     setTaxUnit(p.taxUnit?.trim() || DEFAULT_PRODUCT_TAX_UNIT);
     setConversion(p.conversion ?? '');
+    {
+      const explicit = normalizePackItemQty(p.packItemQty);
+      const fromConv = parseProductConversion(p.conversion);
+      const derived =
+        explicit ?? (fromConv && fromConv.factor > 1 ? fromConv.factor : null);
+      setPackItemQty(derived != null ? String(derived) : '');
+    }
     setStockComponentVariantId(p.stockComponentVariantId ?? p.stockComponentVariant?.id ?? null);
     setStockComponentLabel(
       p.stockComponentVariant
@@ -367,9 +383,12 @@ export function ProductsPage() {
           fiscalOrigin: fiscalOrigin || null,
           taxUnit: taxUnit.trim() || DEFAULT_PRODUCT_TAX_UNIT,
           conversion: normalizeProductConversion(conversion.trim()) || null,
-          stockComponentVariantId: normalizeProductConversion(conversion.trim())
-            ? stockComponentVariantId
-            : null,
+          packItemQty: normalizePackItemQty(packItemQty),
+          stockComponentVariantId:
+            normalizeProductConversion(conversion.trim()) &&
+            resolveConversionFactor(conversion, packItemQty) > 1
+              ? stockComponentVariantId
+              : null,
           categoryId: categoryId || null,
           fiscalSituationId: fiscalSituationId || null,
           variants: [
@@ -407,9 +426,12 @@ export function ProductsPage() {
           fiscalOrigin: fiscalOrigin || null,
           taxUnit: taxUnit.trim() || DEFAULT_PRODUCT_TAX_UNIT,
           conversion: normalizeProductConversion(conversion.trim()) || null,
-          stockComponentVariantId: normalizeProductConversion(conversion.trim())
-            ? stockComponentVariantId
-            : null,
+          packItemQty: normalizePackItemQty(packItemQty),
+          stockComponentVariantId:
+            normalizeProductConversion(conversion.trim()) &&
+            resolveConversionFactor(conversion, packItemQty) > 1
+              ? stockComponentVariantId
+              : null,
           fiscalSituationId: fiscalSituationId || null,
           categoryId: categoryId || null,
           variantPrices: payload.product.variants.map((v) => {
@@ -480,6 +502,15 @@ export function ProductsPage() {
           },
           { label: 'Unidade tributável', value: viewProduct.taxUnit },
           { label: 'Conversão (NF-e)', value: viewProduct.conversion },
+          {
+            label: 'Itens por composto',
+            value: (() => {
+              const explicit = normalizePackItemQty(viewProduct.packItemQty);
+              if (explicit != null) return String(explicit);
+              const fromConv = parseProductConversion(viewProduct.conversion);
+              return fromConv && fromConv.factor > 1 ? String(fromConv.factor) : null;
+            })(),
+          },
           {
             label: 'Produto composto',
             value: viewProduct.stockComponentVariant
@@ -1046,12 +1077,36 @@ export function ProductsPage() {
                         const n = normalizeProductConversion(conversion);
                         if (n) setConversion(n);
                       }}
-                      placeholder="Ex.: CX-12, CX24, CX-6, PCT-10"
+                      placeholder="Ex.: CX, CX-12, PCT, PCT-10"
                     />
                     <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Digite <strong>como vem na NF-e</strong> (uCom). Exemplos: CX-12, CX24, CX-6, PCT-10.
-                      O sistema confere com a unidade da nota; o número indica quantas unidades de estoque
-                      equivalem a 1 da NF.
+                      Digite a <strong>unidade como vem na NF-e</strong> (uCom). Exemplos: CX, PCT,
+                      CX-12. O sistema confere com a unidade da nota.
+                    </span>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="p-pack-qty">Itens por produto composto</label>
+                    <input
+                      id="p-pack-qty"
+                      type="number"
+                      min={1}
+                      step="1"
+                      inputMode="decimal"
+                      value={packItemQty}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setPackItemQty(next);
+                        if (resolveConversionFactor(conversion, next) <= 1) {
+                          setStockComponentVariantId(null);
+                          setStockComponentLabel('');
+                        }
+                      }}
+                      placeholder="Ex.: 12, 50"
+                    />
+                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                      Quantos itens unitários vêm em cada caixa/pack (ex.: 12 latas por caixa). Na
+                      entrada da NF, <strong>qtd da nota × este valor</strong> = saldo no estoque
+                      unitário.
                     </span>
                   </div>
                   <div className="field">
@@ -1069,11 +1124,11 @@ export function ProductsPage() {
                         Cadastre antes o produto da <strong>unidade</strong>.
                       </li>
                       <li>
-                        Neste produto (caixa), digite a conversão <strong>igual à unidade da NF</strong> (ex.:
-                        CX24, CX-6, PCT-12).
+                        Neste produto (caixa), informe a conversão <strong>igual à unidade da NF</strong>{' '}
+                        (ex.: CX) e quantos itens vêm em cada composto (ex.: 12).
                       </li>
                       <li>
-                        Clique em <strong>Vincular produto</strong> e escolha o produto.
+                        Clique em <strong>Vincular produto</strong> e escolha o produto unitário.
                       </li>
                     </ol>
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1089,9 +1144,16 @@ export function ProductsPage() {
                         onClick={() => {
                           if (!parseProductConversion(conversion)) {
                             setErr(
-                              'Informe a Conversão como na NF-e (ex.: CX-12, CX24, CX-6, PCT-12) antes de vincular o produto.',
+                              'Informe a Conversão como na NF-e (ex.: CX, CX-12, PCT) antes de vincular o produto.',
                             );
                             document.getElementById('p-conversion')?.focus();
+                            return;
+                          }
+                          if (resolveConversionFactor(conversion, packItemQty) <= 1) {
+                            setErr(
+                              'Informe quantos itens vêm em cada produto composto (ex.: 12, 50) antes de vincular.',
+                            );
+                            document.getElementById('p-pack-qty')?.focus();
                             return;
                           }
                           setErr(null);
@@ -1118,12 +1180,21 @@ export function ProductsPage() {
                         Digite a conversão (como na nota) para liberar o vínculo do produto.
                       </span>
                     )}
-                    {parseProductConversion(conversion) && !stockComponentVariantId && (
-                      <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                        Conversão ok. Agora vincule o produto para a entrada/venda da caixa baixar o estoque
-                        unitário.
-                      </span>
-                    )}
+                    {parseProductConversion(conversion) &&
+                      resolveConversionFactor(conversion, packItemQty) <= 1 && (
+                        <span style={{ fontSize: '0.78rem', color: 'var(--color-danger, #b91c1c)' }}>
+                          Informe a quantidade de itens por composto (ex.: 12) para liberar o vínculo.
+                        </span>
+                      )}
+                    {parseProductConversion(conversion) &&
+                      resolveConversionFactor(conversion, packItemQty) > 1 &&
+                      !stockComponentVariantId && (
+                        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                          Pronto. Agora vincule o produto para a entrada/venda da caixa baixar o estoque
+                          unitário (
+                          {resolveConversionFactor(conversion, packItemQty)} un. por 1 da NF).
+                        </span>
+                      )}
                   </div>
                   </div>
                 </div>
@@ -1337,12 +1408,36 @@ export function ProductsPage() {
                         const n = normalizeProductConversion(conversion);
                         if (n) setConversion(n);
                       }}
-                      placeholder="Ex.: CX-12, CX24, CX-6, PCT-10"
+                      placeholder="Ex.: CX, CX-12, PCT, PCT-10"
                     />
                     <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Digite <strong>como vem na NF-e</strong> (uCom). Exemplos: CX-12, CX24, CX-6, PCT-10.
-                      O sistema confere com a unidade da nota; o número indica quantas unidades de estoque
-                      equivalem a 1 da NF.
+                      Digite a <strong>unidade como vem na NF-e</strong> (uCom). Exemplos: CX, PCT,
+                      CX-12. O sistema confere com a unidade da nota.
+                    </span>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="pe-pack-qty">Itens por produto composto</label>
+                    <input
+                      id="pe-pack-qty"
+                      type="number"
+                      min={1}
+                      step="1"
+                      inputMode="decimal"
+                      value={packItemQty}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setPackItemQty(next);
+                        if (resolveConversionFactor(conversion, next) <= 1) {
+                          setStockComponentVariantId(null);
+                          setStockComponentLabel('');
+                        }
+                      }}
+                      placeholder="Ex.: 12, 50"
+                    />
+                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                      Quantos itens unitários vêm em cada caixa/pack (ex.: 12 latas por caixa). Na
+                      entrada da NF, <strong>qtd da nota × este valor</strong> = saldo no estoque
+                      unitário.
                     </span>
                   </div>
                   <div className="field">
@@ -1360,11 +1455,11 @@ export function ProductsPage() {
                         Cadastre antes o produto da <strong>unidade</strong>.
                       </li>
                       <li>
-                        Neste produto (caixa), digite a conversão <strong>igual à unidade da NF</strong> (ex.:
-                        CX24, CX-6, PCT-12).
+                        Neste produto (caixa), informe a conversão <strong>igual à unidade da NF</strong>{' '}
+                        (ex.: CX) e quantos itens vêm em cada composto (ex.: 12).
                       </li>
                       <li>
-                        Clique em <strong>Vincular produto</strong> e escolha o produto.
+                        Clique em <strong>Vincular produto</strong> e escolha o produto unitário.
                       </li>
                     </ol>
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1380,9 +1475,16 @@ export function ProductsPage() {
                         onClick={() => {
                           if (!parseProductConversion(conversion)) {
                             setErr(
-                              'Informe a Conversão como na NF-e (ex.: CX-12, CX24, CX-6, PCT-12) antes de vincular o produto.',
+                              'Informe a Conversão como na NF-e (ex.: CX, CX-12, PCT) antes de vincular o produto.',
                             );
                             document.getElementById('pe-conversion')?.focus();
+                            return;
+                          }
+                          if (resolveConversionFactor(conversion, packItemQty) <= 1) {
+                            setErr(
+                              'Informe quantos itens vêm em cada produto composto (ex.: 12, 50) antes de vincular.',
+                            );
+                            document.getElementById('pe-pack-qty')?.focus();
                             return;
                           }
                           setErr(null);
@@ -1409,12 +1511,21 @@ export function ProductsPage() {
                         Digite a conversão (como na nota) para liberar o vínculo do produto.
                       </span>
                     )}
-                    {parseProductConversion(conversion) && !stockComponentVariantId && (
-                      <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                        Conversão ok. Agora vincule o produto para a entrada/venda da caixa baixar o estoque
-                        unitário.
-                      </span>
-                    )}
+                    {parseProductConversion(conversion) &&
+                      resolveConversionFactor(conversion, packItemQty) <= 1 && (
+                        <span style={{ fontSize: '0.78rem', color: 'var(--color-danger, #b91c1c)' }}>
+                          Informe a quantidade de itens por composto (ex.: 12) para liberar o vínculo.
+                        </span>
+                      )}
+                    {parseProductConversion(conversion) &&
+                      resolveConversionFactor(conversion, packItemQty) > 1 &&
+                      !stockComponentVariantId && (
+                        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                          Pronto. Agora vincule o produto para a entrada/venda da caixa baixar o estoque
+                          unitário (
+                          {resolveConversionFactor(conversion, packItemQty)} un. por 1 da NF).
+                        </span>
+                      )}
                   </div>
                   </div>
                 </div>

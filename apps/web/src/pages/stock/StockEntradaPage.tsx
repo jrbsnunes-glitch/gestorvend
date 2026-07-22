@@ -176,16 +176,20 @@ export function StockEntradaPage() {
           name: string;
           ncm: string | null;
           conversion: string | null;
+          packItemQty?: string | null;
           variants: Array<{ id: string; sku: string }>;
         }>
       >('/products'),
   });
 
   const conversionByVariant = useMemo(() => {
-    const map = new Map<string, string | null>();
+    const map = new Map<string, { conversion: string | null; packItemQty: string | null }>();
     for (const p of products.data ?? []) {
       for (const v of p.variants) {
-        map.set(v.id, p.conversion ?? null);
+        map.set(v.id, {
+          conversion: p.conversion ?? null,
+          packItemQty: p.packItemQty ?? null,
+        });
       }
     }
     return map;
@@ -1047,12 +1051,16 @@ export function StockEntradaPage() {
                       </thead>
                       <tbody>
                         {lines.map((l, i) => {
+                          const convMeta = l.variantId
+                            ? conversionByVariant.get(l.variantId)
+                            : undefined;
                           const convHint =
                             l.variantId && l.invoiceUnit
                               ? formatConversionHint(
                                   parseFloat(l.invoiceQuantity.replace(',', '.')) || 0,
                                   l.invoiceUnit,
-                                  conversionByVariant.get(l.variantId) ?? null,
+                                  convMeta?.conversion ?? null,
+                                  convMeta?.packItemQty ?? null,
                                 )
                               : null;
                           return (
