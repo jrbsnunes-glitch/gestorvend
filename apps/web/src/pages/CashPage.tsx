@@ -414,8 +414,9 @@ export function CashPage() {
   const [movReason, setMovReason] = useState('');
   const [movErr, setMovErr] = useState<string | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
-  const [printFrom, setPrintFrom] = useState(todayISO());
-  const [printTo, setPrintTo] = useState(todayISO());
+  /** Datas em branco por padrão — só entram no filtro se o usuário preencher. */
+  const [printFrom, setPrintFrom] = useState('');
+  const [printTo, setPrintTo] = useState('');
   /** Tipo de saída: caixas (sessão+conferência) ou itens vendidos. */
   const [printKind, setPrintKind] = useState<'sessions' | 'items'>('sessions');
   const [printUserId, setPrintUserId] = useState<string>('');
@@ -455,15 +456,13 @@ export function CashPage() {
     if (printControlFrom.trim()) qs.set('controlFrom', printControlFrom.trim());
     if (printControlTo.trim()) qs.set('controlTo', printControlTo.trim());
     const hasControl = Boolean(printControlFrom.trim() || printControlTo.trim());
-    if (!hasControl) {
-      if (!printFrom || !printTo) return null;
-      qs.set('from', printFrom);
-      qs.set('to', printTo);
-    } else if (printFrom && printTo) {
-      // Datas opcionais junto com controle (refinam a janela no front se preciso).
+    const hasDate = Boolean(printFrom && printTo);
+    // Só envia data se o usuário preencheu as duas; com controle sozinho, não restringe por dia.
+    if (hasDate) {
       qs.set('from', printFrom);
       qs.set('to', printTo);
     }
+    if (!hasControl && !hasDate) return null;
     if (printUserId) qs.set('userId', printUserId);
     if (printSessionStatus !== 'ALL') qs.set('status', printSessionStatus);
     if (printIncludeItems) qs.set('includeItems', '1');
@@ -880,7 +879,8 @@ export function CashPage() {
           >
             <h2>Imprimir caixa</h2>
             <p style={{ marginTop: 0, fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
-              Combine os filtros abaixo e escolha o tipo de relatório. Campos vazios são ignorados.
+              Preencha só o que quiser filtrar. Campos em branco são ignorados — controle e data
+              só se combinam se ambos forem informados.
             </p>
 
             <div className="print-modes" style={{ gridTemplateColumns: '1fr 1fr' }}>
@@ -1036,11 +1036,25 @@ export function CashPage() {
                     const t = todayISO();
                     setPrintFrom(t);
                     setPrintTo(t);
-                    setPrintControlFrom('');
-                    setPrintControlTo('');
                   }}
                 >
                   Hoje
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setPrintFrom('');
+                    setPrintTo('');
+                    setPrintControlFrom('');
+                    setPrintControlTo('');
+                    setPrintUserId('');
+                    setPrintSessionStatus('ALL');
+                    setPrintItemsStatus('COMPLETED');
+                    setPrintIncludeItems(false);
+                  }}
+                >
+                  Limpar
                 </button>
                 <button
                   type="button"
@@ -1061,10 +1075,8 @@ export function CashPage() {
                   type="button"
                   className="btn btn-primary"
                   disabled={
-                    !printFrom &&
-                    !printTo &&
-                    !printControlFrom.trim() &&
-                    !printControlTo.trim()
+                    !(printControlFrom.trim() || printControlTo.trim()) &&
+                    !(printFrom && printTo)
                   }
                   onClick={() => {
                     if (printKind === 'items') {
@@ -1074,14 +1086,12 @@ export function CashPage() {
                       const hasControl = Boolean(
                         printControlFrom.trim() || printControlTo.trim(),
                       );
-                      if (!hasControl) {
-                        if (!printFrom || !printTo) return;
-                        qs.set('from', printFrom);
-                        qs.set('to', printTo);
-                      } else if (printFrom && printTo) {
+                      const hasDate = Boolean(printFrom && printTo);
+                      if (hasDate) {
                         qs.set('from', printFrom);
                         qs.set('to', printTo);
                       }
+                      if (!hasControl && !hasDate) return;
                       if (printUserId) qs.set('userId', printUserId);
                       navigate(`/caixa/impressao/itens?${qs.toString()}`);
                       return;

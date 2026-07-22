@@ -475,7 +475,9 @@ export class CashController {
    *
    * Filtros combináveis: controle (`controlFrom`/`controlTo`), data (`from`/`to`),
    * `userId` e `status` (OPEN | CLOSED | RECONCILED | ALL).
-   * Controles e datas podem ser usados juntos (AND). Sem nenhum dos dois, usa o dia atual.
+   * Controles e datas só se combinam (AND) quando ambos forem enviados.
+   * Sem data e com controle: retorna as sessões do intervalo de controle (janela inteira).
+   * Sem controle e sem data: usa o dia atual como fallback.
    */
   @Get('report')
   @Roles('admin', 'manager', 'seller')
