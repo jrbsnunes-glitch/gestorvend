@@ -391,7 +391,50 @@
 
 .print-table.print-table-compact th,
 .print-table.print-table-compact td {
-  padding: 0.22rem 0.28rem;
+  padding: 0.18rem 0.22rem;
+  line-height: 1.2;
+}
+
+/* Relatórios de caixa reformulados — mais densos, menos margem */
+.print-page--compact .print-section {
+  margin-bottom: 0.7rem;
+}
+
+.print-page--compact .print-section h2 {
+  margin: 0 0 0.28rem;
+  font-size: 0.72rem;
+  padding-bottom: 0.12rem;
+}
+
+.print-page--compact .print-sub {
+  font-size: 0.78rem;
+  margin: 0.1rem 0 0;
+}
+
+.print-page--compact .gv-report-doc-head {
+  margin-bottom: 0.55rem;
+  padding-bottom: 0.45rem;
+}
+
+.print-page--compact .gv-report-doc-head h1 {
+  font-size: 1.2rem;
+}
+
+.print-page--compact .gv-report-standard-top {
+  margin-bottom: 0.55rem;
+}
+
+.print-summary-line {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  color: #334155;
+  line-height: 1.3;
+}
+
+@media print {
+  .print-page--compact .print-doc {
+    padding: 8mm 10mm;
+  }
 }
 
 .print-foot {

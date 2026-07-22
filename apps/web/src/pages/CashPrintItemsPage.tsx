@@ -11,14 +11,10 @@ type ItemRow = {
   saleNumber: number;
   saleStatus: 'COMPLETED' | 'CANCELLED' | string;
   saleCreatedAt: string;
-  saleTotal: string;
   user: { id: string; name: string; email: string } | null;
-  customer: { id: string; name: string } | null;
-  payments: { method: string; amount: string }[];
   itemId: string;
   productName: string;
   sku: string | null;
-  barcode: string | null;
   quantity: string;
   unitPrice: string;
   discount: string;
@@ -28,41 +24,21 @@ type ItemRow = {
 type Report = {
   from: string;
   to: string;
-  userId: string | null;
-  status: string;
   items: ItemRow[];
   totals: {
     totalItems: number;
-    /** Soma qty × preço antes dos descontos de linha. */
-    totalGross: number;
-    /** Descontos por linha. */
     totalLineItemDiscount: number;
-    /** Desconto no total do cupom (PDV etc.) — não vem repetido linha a linha. */
     totalOrderDiscount: number;
-    /** Σ totalLine antes do desconto do cupom — útil de auditoria. */
+    totalSurcharges: number;
     linesSubtotalBeforeOrderDiscount: number;
-    /** Linhas + cupom. */
     totalDiscount: number;
-    /** Σ sale.total vendas concluídas — faturamento líquido. */
     totalNet: number;
     completedLineCount: number;
     cancelledLineCount: number;
   };
-  byProduct: { name: string; sku: string | null; quantity: number; total: number }[];
-  byUser: { name: string; email: string; quantity: number; total: number }[];
 };
 
-type Me = { name: string; email: string };
 type Operator = { id: string; name: string; email: string };
-
-const PAYMENT_LABELS: Record<string, string> = {
-  CASH: 'Dinheiro',
-  CARD: 'Cartão',
-  PIX: 'Pix',
-  CREDIT: 'Crediário',
-  OTHER: 'Outro',
-  EXPENSE: 'Despesa',
-};
 
 function parseLocalDate(s: string): Date {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
@@ -78,19 +54,44 @@ function fmtDate(s: string): string {
 }
 
 function fmtDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('pt-BR');
+  return new Date(iso).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
-function periodLabel(from: string, to: string): string {
-  const f = parseLocalDate(from);
-  const t = parseLocalDate(to);
-  const sameDay =
-    f.getFullYear() === t.getFullYear() &&
-    f.getMonth() === t.getMonth() &&
-    f.getDate() === t.getDate();
-  return sameDay
-    ? `Itens vendidos em ${f.toLocaleDateString('pt-BR')}`
-    : `Itens vendidos de ${f.toLocaleDateString('pt-BR')} a ${t.toLocaleDateString('pt-BR')}`;
+function filterSubtitle(opts: {
+  from: string;
+  to: string;
+  controlFrom: string;
+  controlTo: string;
+  operatorLabel: string | null;
+  status: string;
+}): string {
+  const parts: string[] = [];
+  if (opts.controlFrom || opts.controlTo) {
+    if (opts.controlFrom && opts.controlTo && opts.controlFrom !== opts.controlTo) {
+      parts.push(`Controles #${opts.controlFrom}–#${opts.controlTo}`);
+    } else if (opts.controlFrom) parts.push(`Controle ≥ #${opts.controlFrom}`);
+    else parts.push(`Controle ≤ #${opts.controlTo}`);
+  }
+  if (opts.from && opts.to) {
+    const f = parseLocalDate(opts.from);
+    const t = parseLocalDate(opts.to);
+    const same =
+      f.getFullYear() === t.getFullYear() &&
+      f.getMonth() === t.getMonth() &&
+      f.getDate() === t.getDate();
+    parts.push(same ? f.toLocaleDateString('pt-BR') : `${fmtDate(opts.from)} – ${fmtDate(opts.to)}`);
+  }
+  if (opts.operatorLabel) parts.push(opts.operatorLabel);
+  if (opts.status === 'CANCELLED') parts.push('Canceladas');
+  else if (opts.status === 'ALL') parts.push('Todas as vendas');
+  else parts.push('Concluídas');
+  return parts.join(' · ') || 'Itens vendidos';
 }
 
 export function CashPrintItemsPage() {
@@ -100,24 +101,27 @@ export function CashPrintItemsPage() {
   const to = params.get('to') ?? '';
   const userId = params.get('userId') ?? '';
   const status = params.get('status') ?? 'COMPLETED';
+  const controlFrom = params.get('controlFrom') ?? '';
+  const controlTo = params.get('controlTo') ?? '';
+  const hasControl = Boolean(controlFrom || controlTo);
+  const hasDate = Boolean(from && to);
 
   const report = useQuery({
-    queryKey: ['cash', 'report-items', from, to, userId, status],
+    queryKey: ['cash', 'report-items', from, to, userId, status, controlFrom, controlTo],
     queryFn: () => {
-      const qs = new URLSearchParams({ from, to, status });
+      const qs = new URLSearchParams({ status });
+      if (hasDate) {
+        qs.set('from', from);
+        qs.set('to', to);
+      }
       if (userId) qs.set('userId', userId);
+      if (controlFrom) qs.set('controlFrom', controlFrom);
+      if (controlTo) qs.set('controlTo', controlTo);
       return api<Report>(`/cash/report/items?${qs.toString()}`);
     },
-    enabled: !!from && !!to,
+    enabled: hasDate || hasControl,
   });
 
-  const me = useQuery({
-    queryKey: ['users', 'me'],
-    queryFn: () => api<Me>('/users/me'),
-    staleTime: 5 * 60_000,
-  });
-
-  // Para mostrar o nome do operador filtrado (sem precisar de outra rota).
   const operators = useQuery({
     queryKey: ['users'],
     queryFn: () => api<Operator[]>('/users'),
@@ -127,14 +131,13 @@ export function CashPrintItemsPage() {
 
   const operatorLabel = useMemo(() => {
     if (!userId) return null;
-    const op = operators.data?.find((u) => u.id === userId);
-    return op ? op.name : userId;
+    return operators.data?.find((u) => u.id === userId)?.name ?? null;
   }, [userId, operators.data]);
 
-  if (!from || !to) {
+  if (!hasDate && !hasControl) {
     return (
       <div className="print-page">
-        <p>Parâmetros inválidos. Volte e selecione um período.</p>
+        <p>Parâmetros inválidos. Volte e selecione período ou controles.</p>
         <button type="button" className="btn btn-primary" onClick={() => navigate('/caixa')}>
           Voltar
         </button>
@@ -143,32 +146,31 @@ export function CashPrintItemsPage() {
   }
 
   const data = report.data;
+  const subtitle = filterSubtitle({
+    from,
+    to,
+    controlFrom,
+    controlTo,
+    operatorLabel,
+    status,
+  });
 
   return (
-    <div className="print-page">
+    <div className="print-page print-page--compact">
       <div className="print-toolbar no-print">
         <button type="button" className="btn btn-secondary" onClick={() => navigate('/caixa')}>
           ← Voltar
         </button>
         <div style={{ flex: 1 }} />
         <button type="button" className="btn btn-primary" onClick={() => window.print()}>
-          🖨 Imprimir agora
+          Imprimir
         </button>
       </div>
 
       <div className="print-doc">
         <StandardReportHeader
-          documentTitle="Relatório de Itens Vendidos"
-          documentExtras={
-            <>
-              <p className="print-sub">{periodLabel(from, to)}</p>
-              {operatorLabel && (
-                <p className="print-sub" style={{ marginTop: '0.15rem' }}>
-                  Operador: <strong>{operatorLabel}</strong>
-                </p>
-              )}
-            </>
-          }
+          documentTitle="Itens vendidos"
+          documentExtras={<p className="print-sub">{subtitle}</p>}
         />
 
         {report.isLoading && <p>Carregando…</p>}
@@ -179,236 +181,73 @@ export function CashPrintItemsPage() {
         )}
 
         {data && (
-          <>
-            {/* Resumo do período */}
-            <section className="print-section">
-              <h2>Resumo</h2>
-              <div className="print-kpis">
-                <KpiPrint
-                  label="Itens vendidos"
-                  value={String(Math.round(data.totals.totalItems * 100) / 100)}
-                />
-                <KpiPrint label="Linhas (concluídas)" value={String(data.totals.completedLineCount)} />
-                <KpiPrint
-                  label="Linhas (canceladas)"
-                  value={String(data.totals.cancelledLineCount)}
-                  muted
-                />
-                <KpiPrint
-                  label="Bruto (qtd × preço)"
-                  value={formatBRL(data.totals.totalGross)}
-                  muted
-                />
-                {data.totals.totalDiscount > 0 ? (
-                  <>
-                    <KpiPrint
-                      label="Descontos (linhas + cupom)"
-                      value={formatBRL(data.totals.totalDiscount)}
-                      muted
-                    />
-                    {data.totals.totalOrderDiscount > 0 ? (
-                      <KpiPrint
-                        label="— no cupom (fora das linhas)"
-                        value={formatBRL(data.totals.totalOrderDiscount)}
-                        muted
-                      />
-                    ) : null}
-                  </>
-                ) : null}
-                <KpiPrint
-                  label="Total líquido (cupons)"
-                  value={formatBRL(data.totals.totalNet)}
-                  highlight
-                />
-              </div>
-            </section>
-
-            {/* Resumo por produto */}
-            {data.byProduct.length > 0 && (
-              <section className="print-section">
-                <h2>Resumo por produto (vendas concluídas)</h2>
-                <table className="print-table">
-                  <thead>
-                    <tr>
-                      <th>Produto</th>
-                      <th>SKU</th>
-                      <th className="num">Qtd</th>
-                      <th className="num">Total (linhas)</th>
+          <section className="print-section">
+            <h2>Itens</h2>
+            <p className="print-summary-line">
+              {Math.round(data.totals.totalItems * 100) / 100} un. ·{' '}
+              {data.totals.completedLineCount} linha(s)
+              {data.totals.cancelledLineCount > 0
+                ? ` · ${data.totals.cancelledLineCount} cancelada(s)`
+                : ''}
+              {data.totals.totalDiscount > 0
+                ? ` · Descontos totais ${formatBRL(data.totals.totalDiscount)}`
+                : ''}
+              {(data.totals.totalSurcharges ?? 0) > 0
+                ? ` · Acréscimos totais ${formatBRL(data.totals.totalSurcharges)}`
+                : ''}
+              {' · '}
+              Líquido {formatBRL(data.totals.totalNet)}
+            </p>
+            {data.items.length === 0 ? (
+              <p className="print-empty">Nenhum item no filtro selecionado.</p>
+            ) : (
+              <table className="print-table print-table-compact">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th className="num">Venda</th>
+                    {!userId && <th>Funcionário</th>}
+                    <th>Produto</th>
+                    <th className="num">Qtd</th>
+                    <th className="num">Unit.</th>
+                    <th className="num">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.items.map((it) => (
+                    <tr
+                      key={it.itemId}
+                      className={it.saleStatus === 'CANCELLED' ? 'is-cancelled' : undefined}
+                    >
+                      <td>{fmtDateTime(it.saleCreatedAt)}</td>
+                      <td className="num">
+                        #{it.saleNumber}
+                        {it.saleStatus === 'CANCELLED' ? ' ✕' : ''}
+                      </td>
+                      {!userId && <td>{it.user?.name ?? '—'}</td>}
+                      <td>
+                        {it.productName}
+                        {it.sku ? ` · ${it.sku}` : ''}
+                      </td>
+                      <td className="num">{Number(it.quantity)}</td>
+                      <td className="num">{formatBRL(it.unitPrice)}</td>
+                      <td className="num">{formatBRL(it.totalLine)}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {data.byProduct.map((p, i) => (
-                      <tr key={`${p.name}-${i}`}>
-                        <td>{p.name}</td>
-                        <td>{p.sku ?? '—'}</td>
-                        <td className="num">{p.quantity}</td>
-                        <td className="num">{formatBRL(p.total)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <th colSpan={2}>Total</th>
-                      <th className="num">
-                        {Math.round(data.totals.totalItems * 100) / 100}
-                      </th>
-                      <th className="num">
-                        {formatBRL(data.totals.linesSubtotalBeforeOrderDiscount)}
-                      </th>
-                    </tr>
-                  </tfoot>
-                </table>
-                {data.totals.totalOrderDiscount > 0 && (
-                  <p
-                    className="print-sub"
-                    style={{ fontSize: '0.82rem', marginTop: '0.45rem', color: '#475569' }}
-                  >
-                    Soma igual às vendas só nas linhas. Com desconto no cupom, o líquido faturado está no
-                    resumo acima (<strong>{formatBRL(data.totals.totalNet)}</strong>).
-                  </p>
-                )}
-              </section>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th colSpan={userId ? 3 : 4}>Total</th>
+                    <th className="num">{Math.round(data.totals.totalItems * 100) / 100}</th>
+                    <th />
+                    <th className="num">{formatBRL(data.totals.linesSubtotalBeforeOrderDiscount)}</th>
+                  </tr>
+                </tfoot>
+              </table>
             )}
-
-            {/* Resumo por operador — só faz sentido quando não filtrou um único */}
-            {!userId && data.byUser.length > 1 && (
-              <section className="print-section">
-                <h2>Resumo por operador</h2>
-                <table className="print-table">
-                  <thead>
-                    <tr>
-                      <th>Operador</th>
-                      <th className="num">Itens</th>
-                      <th className="num">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.byUser.map((u, i) => (
-                      <tr key={`${u.name}-${i}`}>
-                        <td>
-                          {u.name}
-                          {u.email && (
-                            <span style={{ color: '#64748b', marginLeft: 6 }}>· {u.email}</span>
-                          )}
-                        </td>
-                        <td className="num">{u.quantity}</td>
-                        <td className="num">{formatBRL(u.total)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </section>
-            )}
-
-            {/* Lista detalhada de itens */}
-            <section className="print-section">
-              <h2>Detalhamento item a item</h2>
-              {data.items.length === 0 ? (
-                <p className="print-empty">Nenhum item vendido no período.</p>
-              ) : (
-                <table className="print-table">
-                  <thead>
-                    <tr>
-                      <th>Data / Hora</th>
-                      <th>Venda</th>
-                      {!userId && <th>Operador</th>}
-                      <th>Produto</th>
-                      <th>SKU</th>
-                      <th className="num">Qtd</th>
-                      <th className="num">Unit.</th>
-                      <th className="num">Desc.</th>
-                      <th className="num">Tot. linha</th>
-                      <th>Pgto.</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.items.map((it) => (
-                      <tr
-                        key={it.itemId}
-                        className={it.saleStatus === 'CANCELLED' ? 'is-cancelled' : ''}
-                      >
-                        <td>{fmtDateTime(it.saleCreatedAt)}</td>
-                        <td>
-                          #{it.saleNumber}
-                          {it.saleStatus === 'CANCELLED' && (
-                            <span className="badge-cancelled"> CANCELADA</span>
-                          )}
-                        </td>
-                        {!userId && <td>{it.user?.name ?? '—'}</td>}
-                        <td>{it.productName}</td>
-                        <td>{it.sku ?? '—'}</td>
-                        <td className="num">{Number(it.quantity)}</td>
-                        <td className="num">{formatBRL(it.unitPrice)}</td>
-                        <td className="num">
-                          {Number(it.discount) > 0 ? formatBRL(it.discount) : '—'}
-                        </td>
-                        <td className="num">{formatBRL(it.totalLine)}</td>
-                        <td>{paymentsLabel(it.payments)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <th colSpan={userId ? 5 : 6}>Total</th>
-                      <th className="num">{Math.round(data.totals.totalItems * 100) / 100}</th>
-                      <th />
-                      <th className="num">{formatBRL(data.totals.totalLineItemDiscount)}
-                        {data.totals.totalOrderDiscount > 0 ? (
-                          <small style={{ display: 'block', fontWeight: 400, marginTop: 4 }}>
-                            + cupom {formatBRL(data.totals.totalOrderDiscount)}
-                          </small>
-                        ) : null}
-                      </th>
-                      <th className="num">
-                        {formatBRL(data.totals.linesSubtotalBeforeOrderDiscount)}
-                      </th>
-                      <th />
-                    </tr>
-                  </tfoot>
-                </table>
-              )}
-            </section>
-
-            <footer className="print-foot">
-              <span>
-                GestorVend · Itens vendidos · {fmtDate(from)} – {fmtDate(to)}
-              </span>
-              <span>Página gerada por {me.data?.name ?? '—'}</span>
-            </footer>
-          </>
+          </section>
         )}
       </div>
-    </div>
-  );
-}
-
-function paymentsLabel(payments: { method: string; amount: string }[]): string {
-  if (payments.length === 0) return '—';
-  // Agrupa por método (várias parcelas no mesmo método).
-  const map = new Map<string, number>();
-  for (const p of payments) {
-    map.set(p.method, (map.get(p.method) ?? 0) + Number(p.amount));
-  }
-  return Array.from(map.entries())
-    .map(([k, v]) => `${PAYMENT_LABELS[k] ?? k} ${formatBRL(v)}`)
-    .join(' · ');
-}
-
-function KpiPrint({
-  label,
-  value,
-  highlight,
-  muted,
-}: {
-  label: string;
-  value: string;
-  highlight?: boolean;
-  muted?: boolean;
-}) {
-  return (
-    <div className={'print-kpi' + (highlight ? ' is-highlight' : muted ? ' is-muted' : '')}>
-      <span className="print-kpi-label">{label}</span>
-      <strong className="print-kpi-value">{value}</strong>
     </div>
   );
 }

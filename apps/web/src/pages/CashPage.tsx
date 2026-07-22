@@ -133,6 +133,8 @@ type SessionDetail = {
     itemsCount: number;
     /** Somatório de descontos em vendas concluídas (linhas + desconto no cupom). */
     totalDiscounts: number;
+    /** Somatório de acréscimos comerciais (sale.surcharge) em vendas concluídas. */
+    totalSurcharges: number;
     byMethod: Record<string, number>;
     salesByPaymentForm?: Record<string, number>;
     cardPayments?: CardPaymentInSession[];
@@ -372,9 +374,7 @@ function todayISO(): string {
 }
 
 /**
- * Cartão do seletor de modo no modal de impressão. Usado como controle de
- * navegação visual entre "Caixa do dia", "Período", "Controle", "Caixa do
- * funcionário" e "Itens vendidos".
+ * Cartão do seletor de tipo de relatório no modal de impressão.
  */
 function ModeCard({
   active,
@@ -416,25 +416,19 @@ export function CashPage() {
   const [printOpen, setPrintOpen] = useState(false);
   const [printFrom, setPrintFrom] = useState(todayISO());
   const [printTo, setPrintTo] = useState(todayISO());
-  /**
-   * Modos de impressão do relatório consolidado:
-   *  - day:      Caixa do dia (todos os caixas de hoje).
-   *  - period:   Período arbitrário com data inicial e final.
-   *  - control:  Filtro por número de controle (mínimo e máximo).
-   *  - operator: Caixa do dia de um operador específico (data + funcionário).
-   *  - items:    Sub-modo para o relatório de itens vendidos.
-   */
-  const [printMode, setPrintMode] = useState<
-    'day' | 'period' | 'control' | 'operator' | 'items'
-  >('day');
+  /** Tipo de saída: caixas (sessão+conferência) ou itens vendidos. */
+  const [printKind, setPrintKind] = useState<'sessions' | 'items'>('sessions');
   const [printUserId, setPrintUserId] = useState<string>('');
   const [printControlFrom, setPrintControlFrom] = useState<string>('');
   const [printControlTo, setPrintControlTo] = useState<string>('');
+  /** Status do caixa: ALL | OPEN | CLOSED | RECONCILED */
+  const [printSessionStatus, setPrintSessionStatus] = useState<
+    'ALL' | 'OPEN' | 'CLOSED' | 'RECONCILED'
+  >('ALL');
   const [printItemsStatus, setPrintItemsStatus] = useState<'COMPLETED' | 'CANCELLED' | 'ALL'>(
     'COMPLETED',
   );
-  /** Caixa do funcionário: incluir tabela de itens vendidos no relatório consolidado. */
-  const [printOperatorDetailItems, setPrintOperatorDetailItems] = useState(false);
+  const [printIncludeItems, setPrintIncludeItems] = useState(false);
 
   /**
    * Lista de operadores para o seletor "Caixa do dia de um operador".
@@ -455,6 +449,26 @@ export function CashPage() {
     enabled: printOpen,
     staleTime: 30_000,
   });
+
+  function buildCashPrintQuery(): URLSearchParams | null {
+    const qs = new URLSearchParams();
+    if (printControlFrom.trim()) qs.set('controlFrom', printControlFrom.trim());
+    if (printControlTo.trim()) qs.set('controlTo', printControlTo.trim());
+    const hasControl = Boolean(printControlFrom.trim() || printControlTo.trim());
+    if (!hasControl) {
+      if (!printFrom || !printTo) return null;
+      qs.set('from', printFrom);
+      qs.set('to', printTo);
+    } else if (printFrom && printTo) {
+      // Datas opcionais junto com controle (refinam a janela no front se preciso).
+      qs.set('from', printFrom);
+      qs.set('to', printTo);
+    }
+    if (printUserId) qs.set('userId', printUserId);
+    if (printSessionStatus !== 'ALL') qs.set('status', printSessionStatus);
+    if (printIncludeItems) qs.set('includeItems', '1');
+    return qs;
+  }
 
   const list = useQuery({
     queryKey: ['cash', 'sessions', statusFilter],
@@ -862,245 +876,130 @@ export function CashPage() {
             className="modal"
             role="dialog"
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 640 }}
+            style={{ maxWidth: 560 }}
           >
-            <h2>Imprimir relatório de caixa</h2>
+            <h2>Imprimir caixa</h2>
+            <p style={{ marginTop: 0, fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
+              Combine os filtros abaixo e escolha o tipo de relatório. Campos vazios são ignorados.
+            </p>
 
-            {/* Seletor de modo: 5 cartões compactos */}
-            <div className="print-modes">
+            <div className="print-modes" style={{ gridTemplateColumns: '1fr 1fr' }}>
               <ModeCard
-                active={printMode === 'day'}
-                onClick={() => setPrintMode('day')}
-                title="Caixa do dia"
-                hint="Tudo de hoje"
+                active={printKind === 'sessions'}
+                onClick={() => setPrintKind('sessions')}
+                title="Caixas"
+                hint="Abertura, fechamento e conferência"
               />
               <ModeCard
-                active={printMode === 'period'}
-                onClick={() => setPrintMode('period')}
-                title="Período"
-                hint="Data inicial → final"
-              />
-              <ModeCard
-                active={printMode === 'control'}
-                onClick={() => setPrintMode('control')}
-                title="Controle"
-                hint="Nº mín. → máx."
-              />
-              <ModeCard
-                active={printMode === 'operator'}
-                onClick={() => setPrintMode('operator')}
-                title="Caixa do funcionário"
-                hint="Operador + data"
-              />
-              <ModeCard
-                active={printMode === 'items'}
-                onClick={() => setPrintMode('items')}
+                active={printKind === 'items'}
+                onClick={() => setPrintKind('items')}
                 title="Itens vendidos"
-                hint="Detalhe item a item"
+                hint="Detalhe das vendas"
               />
             </div>
 
-            {/* === MODO: CAIXA DO DIA === */}
-            {printMode === 'day' && (
-              <div className="print-mode-panel">
-                <p className="print-mode-desc">
-                  Gera o relatório com todos os caixas abertos/fechados hoje.
-                </p>
-                <div className="print-mode-actions">
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => {
-                      const t = todayISO();
-                      navigate(`/caixa/impressao?from=${t}&to=${t}`);
-                    }}
-                  >
-                    Gerar relatório de hoje
-                  </button>
+            <div className="print-mode-panel">
+              <div className="form-row" style={{ alignItems: 'flex-end' }}>
+                <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                  <label htmlFor="print-control-from">Controle mín.</label>
+                  <input
+                    id="print-control-from"
+                    type="number"
+                    min={1}
+                    placeholder={controlRange.data?.min ? `#${controlRange.data.min}` : '#1'}
+                    value={printControlFrom}
+                    onChange={(e) => setPrintControlFrom(e.target.value)}
+                  />
+                </div>
+                <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                  <label htmlFor="print-control-to">Controle máx.</label>
+                  <input
+                    id="print-control-to"
+                    type="number"
+                    min={1}
+                    placeholder={controlRange.data?.max ? `#${controlRange.data.max}` : '#999'}
+                    value={printControlTo}
+                    onChange={(e) => setPrintControlTo(e.target.value)}
+                  />
                 </div>
               </div>
-            )}
 
-            {/* === MODO: PERÍODO === */}
-            {printMode === 'period' && (
-              <div className="print-mode-panel">
-                <p className="print-mode-desc">
-                  Escolha a data inicial e final do relatório.
-                </p>
-                <div className="form-row" style={{ alignItems: 'flex-end' }}>
-                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                    <label htmlFor="print-from">Data inicial</label>
-                    <input
-                      id="print-from"
-                      type="date"
-                      value={printFrom}
-                      onChange={(e) => setPrintFrom(e.target.value)}
-                    />
-                  </div>
-                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                    <label htmlFor="print-to">Data final</label>
-                    <input
-                      id="print-to"
-                      type="date"
-                      value={printTo}
-                      onChange={(e) => setPrintTo(e.target.value)}
-                    />
-                  </div>
+              <div className="form-row" style={{ alignItems: 'flex-end', marginTop: '0.45rem' }}>
+                <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                  <label htmlFor="print-from">Data inicial</label>
+                  <input
+                    id="print-from"
+                    type="date"
+                    value={printFrom}
+                    onChange={(e) => setPrintFrom(e.target.value)}
+                  />
                 </div>
-                <div className="print-mode-actions">
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => {
-                      const t = todayISO();
-                      const d = new Date();
-                      d.setDate(d.getDate() - 7);
-                      const week = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                      setPrintFrom(week);
-                      setPrintTo(t);
-                    }}
-                  >
-                    Últimos 7 dias
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => {
-                      const t = todayISO();
-                      const d = new Date();
-                      d.setDate(d.getDate() - 30);
-                      const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                      setPrintFrom(m);
-                      setPrintTo(t);
-                    }}
-                  >
-                    Últimos 30 dias
-                  </button>
-                  <div style={{ flex: 1 }} />
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={!printFrom || !printTo}
-                    onClick={() =>
-                      navigate(`/caixa/impressao?from=${printFrom}&to=${printTo}`)
-                    }
-                  >
-                    Gerar relatório
-                  </button>
+                <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                  <label htmlFor="print-to">Data final</label>
+                  <input
+                    id="print-to"
+                    type="date"
+                    value={printTo}
+                    onChange={(e) => setPrintTo(e.target.value)}
+                  />
                 </div>
               </div>
-            )}
 
-            {/* === MODO: CONTROLE === */}
-            {printMode === 'control' && (
-              <div className="print-mode-panel">
-                <p className="print-mode-desc">
-                  Imprima um intervalo específico de caixas pelo número de controle.
-                  {controlRange.data && (
-                    <span style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.78rem' }}>
-                      Controles existentes:{' '}
-                      <strong>
-                        #{controlRange.data.min ?? '—'} a #{controlRange.data.max ?? '—'}
-                      </strong>{' '}
-                      ({controlRange.data.count} caixa{controlRange.data.count === 1 ? '' : 's'})
-                    </span>
-                  )}
-                </p>
-                <div className="form-row" style={{ alignItems: 'flex-end' }}>
-                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                    <label htmlFor="print-control-from">Controle mínimo</label>
-                    <input
-                      id="print-control-from"
-                      type="number"
-                      min={1}
-                      placeholder={
-                        controlRange.data?.min ? `#${controlRange.data.min}` : '#1'
-                      }
-                      value={printControlFrom}
-                      onChange={(e) => setPrintControlFrom(e.target.value)}
-                    />
-                  </div>
-                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                    <label htmlFor="print-control-to">Controle máximo</label>
-                    <input
-                      id="print-control-to"
-                      type="number"
-                      min={1}
-                      placeholder={
-                        controlRange.data?.max ? `#${controlRange.data.max}` : '#999'
-                      }
-                      value={printControlTo}
-                      onChange={(e) => setPrintControlTo(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="print-mode-actions">
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => {
-                      if (controlRange.data?.min) setPrintControlFrom(String(controlRange.data.min));
-                      if (controlRange.data?.max) setPrintControlTo(String(controlRange.data.max));
-                    }}
-                  >
-                    Todos
-                  </button>
-                  <div style={{ flex: 1 }} />
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={!printControlFrom && !printControlTo}
-                    onClick={() => {
-                      const qs = new URLSearchParams();
-                      if (printControlFrom) qs.set('controlFrom', printControlFrom);
-                      if (printControlTo) qs.set('controlTo', printControlTo);
-                      navigate(`/caixa/impressao?${qs.toString()}`);
-                    }}
-                  >
-                    Gerar relatório
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* === MODO: CAIXA DO FUNCIONÁRIO === */}
-            {printMode === 'operator' && (
-              <div className="print-mode-panel">
-                <p className="print-mode-desc">
-                  Imprima o(s) caixa(s) de um operador específico em uma determinada data.
-                </p>
-                <div className="form-row" style={{ alignItems: 'flex-end' }}>
+              <div className="form-row" style={{ alignItems: 'flex-end', marginTop: '0.45rem' }}>
+                {manager && (
                   <div className="field" style={{ flex: 2, marginBottom: 0 }}>
-                    <label htmlFor="print-operator-user">Operador</label>
+                    <label htmlFor="print-user">Funcionário</label>
                     <select
-                      id="print-operator-user"
+                      id="print-user"
                       value={printUserId}
                       onChange={(e) => setPrintUserId(e.target.value)}
-                      disabled={!manager}
                     >
-                      <option value="">
-                        {manager ? 'Selecione o operador…' : 'Apenas o seu próprio caixa'}
-                      </option>
+                      <option value="">Todos</option>
                       {(operatorsList.data ?? []).map((u) => (
                         <option key={u.id} value={u.id}>
-                          {u.name} — {u.email}
+                          {u.name}
                         </option>
                       ))}
                     </select>
                   </div>
+                )}
+                {printKind === 'sessions' ? (
                   <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                    <label htmlFor="print-operator-date">Data</label>
-                    <input
-                      id="print-operator-date"
-                      type="date"
-                      value={printFrom}
-                      onChange={(e) => {
-                        setPrintFrom(e.target.value);
-                        setPrintTo(e.target.value);
-                      }}
-                    />
+                    <label htmlFor="print-session-status">Status do caixa</label>
+                    <select
+                      id="print-session-status"
+                      value={printSessionStatus}
+                      onChange={(e) =>
+                        setPrintSessionStatus(
+                          e.target.value as 'ALL' | 'OPEN' | 'CLOSED' | 'RECONCILED',
+                        )
+                      }
+                    >
+                      <option value="ALL">Todos</option>
+                      <option value="OPEN">Aberto</option>
+                      <option value="CLOSED">Fechado</option>
+                      <option value="RECONCILED">Conferido</option>
+                    </select>
                   </div>
-                </div>
+                ) : (
+                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                    <label htmlFor="print-items-status">Status da venda</label>
+                    <select
+                      id="print-items-status"
+                      value={printItemsStatus}
+                      onChange={(e) =>
+                        setPrintItemsStatus(e.target.value as 'COMPLETED' | 'CANCELLED' | 'ALL')
+                      }
+                    >
+                      <option value="COMPLETED">Concluídas</option>
+                      <option value="CANCELLED">Canceladas</option>
+                      <option value="ALL">Todas</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {printKind === 'sessions' && (
                 <label
                   className="print-mode-check"
                   style={{
@@ -1115,151 +1014,87 @@ export function CashPage() {
                 >
                   <input
                     type="checkbox"
-                    checked={printOperatorDetailItems}
-                    onChange={(e) => setPrintOperatorDetailItems(e.target.checked)}
+                    checked={printIncludeItems}
+                    onChange={(e) => setPrintIncludeItems(e.target.checked)}
                   />
-                  Detalhar itens vendidos no caixa
+                  Incluir itens vendidos no relatório
                 </label>
-                <div className="print-mode-actions">
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => {
-                      const t = todayISO();
-                      setPrintFrom(t);
-                      setPrintTo(t);
-                    }}
-                  >
-                    Hoje
-                  </button>
-                  <div style={{ flex: 1 }} />
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={!printFrom || (manager && !printUserId)}
-                    onClick={() => {
-                      const qs = new URLSearchParams({
-                        from: printFrom,
-                        to: printFrom,
-                      });
-                      if (printUserId) qs.set('userId', printUserId);
-                      if (printOperatorDetailItems) qs.set('detailItems', '1');
-                      navigate(`/caixa/impressao?${qs.toString()}`);
-                    }}
-                  >
-                    Gerar relatório
-                  </button>
-                </div>
-              </div>
-            )}
+              )}
 
-            {/* === MODO: ITENS VENDIDOS === */}
-            {printMode === 'items' && (
-              <div className="print-mode-panel">
-                <p className="print-mode-desc">
-                  Lista detalhada de cada item vendido. Filtre por período e/ou operador.
+              {controlRange.data && (
+                <p style={{ margin: '0.55rem 0 0', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                  Controles no sistema: #{controlRange.data.min ?? '—'} a #{controlRange.data.max ?? '—'} (
+                  {controlRange.data.count})
                 </p>
-                <div className="form-row" style={{ alignItems: 'flex-end' }}>
-                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                    <label htmlFor="print-items-from">De</label>
-                    <input
-                      id="print-items-from"
-                      type="date"
-                      value={printFrom}
-                      onChange={(e) => setPrintFrom(e.target.value)}
-                    />
-                  </div>
-                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                    <label htmlFor="print-items-to">Até</label>
-                    <input
-                      id="print-items-to"
-                      type="date"
-                      value={printTo}
-                      onChange={(e) => setPrintTo(e.target.value)}
-                    />
-                  </div>
-                </div>
+              )}
 
-                <div className="form-row" style={{ alignItems: 'flex-end', marginTop: '0.5rem' }}>
-                  {manager && (
-                    <div className="field" style={{ flex: 2, marginBottom: 0 }}>
-                      <label htmlFor="print-items-user">Operador</label>
-                      <select
-                        id="print-items-user"
-                        value={printUserId}
-                        onChange={(e) => setPrintUserId(e.target.value)}
-                      >
-                        <option value="">Todos os operadores</option>
-                        {(operatorsList.data ?? []).map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.name} — {u.email}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                    <label htmlFor="print-items-status">Status</label>
-                    <select
-                      id="print-items-status"
-                      value={printItemsStatus}
-                      onChange={(e) =>
-                        setPrintItemsStatus(e.target.value as 'COMPLETED' | 'CANCELLED' | 'ALL')
+              <div className="print-mode-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    const t = todayISO();
+                    setPrintFrom(t);
+                    setPrintTo(t);
+                    setPrintControlFrom('');
+                    setPrintControlTo('');
+                  }}
+                >
+                  Hoje
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    if (controlRange.data?.min != null) {
+                      setPrintControlFrom(String(controlRange.data.min));
+                    }
+                    if (controlRange.data?.max != null) {
+                      setPrintControlTo(String(controlRange.data.max));
+                    }
+                  }}
+                >
+                  Todos os controles
+                </button>
+                <div style={{ flex: 1 }} />
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={
+                    !printFrom &&
+                    !printTo &&
+                    !printControlFrom.trim() &&
+                    !printControlTo.trim()
+                  }
+                  onClick={() => {
+                    if (printKind === 'items') {
+                      const qs = new URLSearchParams({ status: printItemsStatus });
+                      if (printControlFrom.trim()) qs.set('controlFrom', printControlFrom.trim());
+                      if (printControlTo.trim()) qs.set('controlTo', printControlTo.trim());
+                      const hasControl = Boolean(
+                        printControlFrom.trim() || printControlTo.trim(),
+                      );
+                      if (!hasControl) {
+                        if (!printFrom || !printTo) return;
+                        qs.set('from', printFrom);
+                        qs.set('to', printTo);
+                      } else if (printFrom && printTo) {
+                        qs.set('from', printFrom);
+                        qs.set('to', printTo);
                       }
-                    >
-                      <option value="COMPLETED">Concluídas</option>
-                      <option value="CANCELLED">Canceladas</option>
-                      <option value="ALL">Todas</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="print-mode-actions">
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => {
-                      const t = todayISO();
-                      setPrintFrom(t);
-                      setPrintTo(t);
-                    }}
-                  >
-                    Hoje
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => {
-                      const t = todayISO();
-                      const d = new Date();
-                      d.setDate(d.getDate() - 7);
-                      const week = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                      setPrintFrom(week);
-                      setPrintTo(t);
-                    }}
-                  >
-                    7 dias
-                  </button>
-                  <div style={{ flex: 1 }} />
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={!printFrom || !printTo}
-                    onClick={() => {
-                      const qs = new URLSearchParams({
-                        from: printFrom,
-                        to: printTo,
-                        status: printItemsStatus,
-                      });
                       if (printUserId) qs.set('userId', printUserId);
                       navigate(`/caixa/impressao/itens?${qs.toString()}`);
-                    }}
-                  >
-                    Gerar relatório de itens
-                  </button>
-                </div>
+                      return;
+                    }
+                    const qs = buildCashPrintQuery();
+                    if (!qs) return;
+                    navigate(`/caixa/impressao?${qs.toString()}`);
+                  }}
+                >
+                  Gerar relatório
+                </button>
               </div>
-            )}
+            </div>
 
             <div className="modal-actions">
               <button type="button" className="btn btn-ghost" onClick={() => setPrintOpen(false)}>
@@ -2194,7 +2029,10 @@ function SessionDetailDrawer({
                 <KpiCard label="Vendas concluídas" value={String(sum.completedCount)} />
                 <KpiCard label="Total vendido" value={formatBRL(sum.totalCompleted)} highlight />
                 {sum.totalDiscounts > 0 ? (
-                  <KpiCard label="Descontos concedidos" value={formatBRL(sum.totalDiscounts)} />
+                  <KpiCard label="Descontos totais" value={formatBRL(sum.totalDiscounts)} />
+                ) : null}
+                {(sum.totalSurcharges ?? 0) > 0 ? (
+                  <KpiCard label="Acréscimos totais" value={formatBRL(sum.totalSurcharges)} />
                 ) : null}
                 <KpiCard label="Itens vendidos" value={String(sum.itemsCount)} />
                 <KpiCard label="Vendas canceladas" value={String(sum.cancelledCount)} small />

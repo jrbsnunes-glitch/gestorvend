@@ -473,8 +473,9 @@ export class CashController {
    * Filtros adicionais:
    *  - `userId`: restringe a um operador (gerentes apenas).
    *
-   * Regra: se `controlFrom`/`controlTo` forem informados, eles têm prioridade
-   * sobre `from`/`to`. Caso contrário, vale a janela de tempo.
+   * Filtros combináveis: controle (`controlFrom`/`controlTo`), data (`from`/`to`),
+   * `userId` e `status` (OPEN | CLOSED | RECONCILED | ALL).
+   * Controles e datas podem ser usados juntos (AND). Sem nenhum dos dois, usa o dia atual.
    */
   @Get('report')
   @Roles('admin', 'manager', 'seller')
@@ -485,6 +486,8 @@ export class CashController {
     @Query('userId') userId?: string,
     @Query('controlFrom') controlFromRaw?: string,
     @Query('controlTo') controlToRaw?: string,
+    /** OPEN | CLOSED | RECONCILED | ALL (padrão: todos) */
+    @Query('status') statusRaw?: string,
   ) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const isManager = user.roles.includes('admin') || user.roles.includes('manager');
@@ -494,6 +497,7 @@ export class CashController {
     const controlTo = controlToRaw ? parseInt(controlToRaw, 10) : null;
     const useControlFilter =
       Number.isFinite(controlFrom as number) || Number.isFinite(controlTo as number);
+    const useDateFilter = Boolean(fromRaw && toRaw);
 
     const from = fromRaw ? parseQueryDate(fromRaw, 'start') : startOfDay(new Date());
     const to = toRaw ? parseQueryDate(toRaw, 'end') : endOfDay(new Date());
@@ -501,15 +505,16 @@ export class CashController {
       throw new BadRequestException('Datas inválidas em "from"/"to".');
     }
 
+    const status = (statusRaw ?? 'ALL').trim().toUpperCase();
     const where: Record<string, unknown> = {};
     if (useControlFilter) {
-      // Filtro por número de controle (inclusivo nos dois lados).
       const cn: Record<string, number> = {};
       if (Number.isFinite(controlFrom as number)) cn.gte = controlFrom as number;
       if (Number.isFinite(controlTo as number)) cn.lte = controlTo as number;
       where.controlNumber = cn;
-    } else {
-      // Janela de tempo: sessões que existiram dentro do range.
+    }
+    // Janela de tempo: sessões que existiram dentro do range (combinável com controle).
+    if (useDateFilter || !useControlFilter) {
       where.openedAt = { lte: to };
       where.AND = [
         {
@@ -519,6 +524,15 @@ export class CashController {
           ],
         },
       ];
+    }
+    if (status === 'OPEN') {
+      where.status = CashSessionStatus.OPEN;
+    } else if (status === 'CLOSED') {
+      where.status = CashSessionStatus.CLOSED;
+      where.reconciledAt = null;
+    } else if (status === 'RECONCILED') {
+      where.status = CashSessionStatus.CLOSED;
+      where.reconciledAt = { not: null };
     }
     if (!isManager) where.userId = user.sub;
     else if (userId) where.userId = userId;
@@ -536,13 +550,15 @@ export class CashController {
     const detailed = await Promise.all(
       sessions.map(async (s) => {
         const upper = s.closedAt ?? new Date();
-        /** Por controle: toda a sessão [openedAt, closedAt]. Por data: interseção com from/to. */
-        const winStart = useControlFilter
-          ? s.openedAt
-          : s.openedAt > from
-            ? s.openedAt
-            : from;
-        const winEnd = useControlFilter ? upper : upper < to ? upper : to;
+        /** Com data: interseção sessão ∩ [from,to]. Só controle: janela inteira da sessão. */
+        const winStart =
+          useDateFilter || !useControlFilter
+            ? s.openedAt > from
+              ? s.openedAt
+              : from
+            : s.openedAt;
+        const winEnd =
+          useDateFilter || !useControlFilter ? (upper < to ? upper : to) : upper;
 
         const sales = await db.sale.findMany({
           where: {
@@ -561,6 +577,7 @@ export class CashController {
         let cancelledCount = 0;
         let itemsCount = 0;
         let totalDiscounts = 0;
+        let totalSurcharges = 0;
 
         for (const sale of sales) {
           const total = Number(sale.total);
@@ -568,6 +585,7 @@ export class CashController {
             totalCompleted += total;
             completedCount += 1;
             totalDiscounts += Number(sale.discount);
+            totalSurcharges += Number(sale.surcharge);
             for (const it of sale.items) {
               itemsCount += Number(it.quantity);
               totalDiscounts += Number(it.discount);
@@ -651,6 +669,7 @@ export class CashController {
           totalCompleted,
           totalCancelled,
           totalDiscounts,
+          totalSurcharges,
           salesByMethod,
           expectedByMethod,
           declaredByMethod: declaredNormalized,
@@ -708,6 +727,7 @@ export class CashController {
         acc.totalCompleted += s.totalCompleted;
         acc.totalCancelled += s.totalCancelled;
         acc.totalDiscounts += s.totalDiscounts;
+        acc.totalSurcharges += s.totalSurcharges;
         acc.openingBalance += Number(s.openingBalance);
         if (s.presentedTotal != null) acc.presentedTotal += s.presentedTotal;
         acc.movementsIn += s.movementsIn;
@@ -735,6 +755,7 @@ export class CashController {
         totalCompleted: 0,
         totalCancelled: 0,
         totalDiscounts: 0,
+        totalSurcharges: 0,
         openingBalance: 0,
         presentedTotal: 0,
         movementsIn: 0,
@@ -815,10 +836,8 @@ export class CashController {
    *  - Caixa (`seller`): vê apenas seus próprios itens.
    *  - Gerente/admin: vê todos; pode filtrar por `userId`.
    *
-   * Aceita os mesmos parâmetros de janela do `/cash/report` (`from`/`to`).
-   * Retorna a lista chã de itens (uma linha por SaleItem) com o contexto da
-   * venda — útil para auditoria de "tudo o que saiu da loja" e para detalhar
-   * um caixa específico (escolhendo operador + dia).
+   * Aceita janela `from`/`to`, opcionalmente `controlFrom`/`controlTo` (vendas
+   * dentro das sessões de caixa com esses controles) e `userId` / `status`.
    */
   @Get('report/items')
   @Roles('admin', 'manager', 'seller')
@@ -828,9 +847,16 @@ export class CashController {
     @Query('to') toRaw?: string,
     @Query('userId') userId?: string,
     @Query('status') status?: string,
+    @Query('controlFrom') controlFromRaw?: string,
+    @Query('controlTo') controlToRaw?: string,
   ) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const isManager = user.roles.includes('admin') || user.roles.includes('manager');
+
+    const controlFrom = controlFromRaw ? parseInt(controlFromRaw, 10) : null;
+    const controlTo = controlToRaw ? parseInt(controlToRaw, 10) : null;
+    const useControlFilter =
+      Number.isFinite(controlFrom as number) || Number.isFinite(controlTo as number);
 
     const from = fromRaw ? parseQueryDate(fromRaw, 'start') : startOfDay(new Date());
     const to = toRaw ? parseQueryDate(toRaw, 'end') : endOfDay(new Date());
@@ -838,9 +864,7 @@ export class CashController {
       throw new BadRequestException('Datas inválidas em "from"/"to".');
     }
 
-    const saleWhere: Record<string, unknown> = {
-      createdAt: { gte: from, lte: to },
-    };
+    const saleWhere: Record<string, unknown> = {};
     // Status — por padrão, apenas vendas concluídas; aceita ALL para incluir canceladas.
     if (!status || status === 'COMPLETED') saleWhere.status = SaleStatus.COMPLETED;
     else if (status === 'CANCELLED') saleWhere.status = SaleStatus.CANCELLED;
@@ -848,6 +872,61 @@ export class CashController {
     // Restrição por operador.
     if (!isManager) saleWhere.userId = user.sub;
     else if (userId) saleWhere.userId = userId;
+
+    if (useControlFilter) {
+      const cn: Record<string, number> = {};
+      if (Number.isFinite(controlFrom as number)) cn.gte = controlFrom as number;
+      if (Number.isFinite(controlTo as number)) cn.lte = controlTo as number;
+      const sessionWhere: Record<string, unknown> = { controlNumber: cn };
+      if (!isManager) sessionWhere.userId = user.sub;
+      else if (userId) sessionWhere.userId = userId;
+      if (fromRaw && toRaw) {
+        sessionWhere.openedAt = { lte: to };
+        sessionWhere.AND = [
+          { OR: [{ closedAt: null }, { closedAt: { gte: from } }] },
+        ];
+      }
+      const sessions = await db.cashRegisterSession.findMany({
+        where: sessionWhere,
+        select: { userId: true, openedAt: true, closedAt: true },
+      });
+      if (sessions.length === 0) {
+        return {
+          from,
+          to,
+          userId: userId ?? null,
+          status: status ?? 'COMPLETED',
+          items: [],
+          totals: {
+            totalItems: 0,
+            totalGross: 0,
+            totalLineItemDiscount: 0,
+            totalOrderDiscount: 0,
+            totalSurcharges: 0,
+            linesSubtotalBeforeOrderDiscount: 0,
+            totalDiscount: 0,
+            totalNet: 0,
+            completedLineCount: 0,
+            cancelledLineCount: 0,
+          },
+          byProduct: [],
+          byUser: [],
+        };
+      }
+      saleWhere.OR = sessions.map((s) => {
+        const upper = s.closedAt ?? new Date();
+        const winStart =
+          fromRaw && toRaw ? (s.openedAt > from ? s.openedAt : from) : s.openedAt;
+        const winEnd =
+          fromRaw && toRaw ? (upper < to ? upper : to) : upper;
+        return {
+          userId: s.userId,
+          createdAt: { gte: winStart, lte: winEnd },
+        };
+      });
+    } else {
+      saleWhere.createdAt = { gte: from, lte: to };
+    }
 
     const sales = await db.sale.findMany({
       where: saleWhere,
@@ -918,11 +997,13 @@ export class CashController {
     );
 
     let totalOrderDiscount = 0;
+    let totalSurcharges = 0;
     /** Soma dos totais efetivamente faturados (alinhado a `sale.total`). */
     let totalSalesNet = 0;
     for (const s of sales) {
       if (s.status !== SaleStatus.COMPLETED) continue;
       totalOrderDiscount += Number(s.discount);
+      totalSurcharges += Number(s.surcharge);
       totalSalesNet += Number(s.total);
     }
 
@@ -935,6 +1016,7 @@ export class CashController {
       totalGross: totalsFromItems.totalGross,
       totalLineItemDiscount: totalsFromItems.totalLineItemDiscount,
       totalOrderDiscount,
+      totalSurcharges,
       /** Soma útil para auditoria (subtotal antes do desconto do cupom). */
       linesSubtotalBeforeOrderDiscount,
       totalDiscount,
@@ -1073,11 +1155,13 @@ export class CashController {
     let totalCancelled = 0;
     let itemsCount = 0;
     let totalDiscounts = 0;
+    let totalSurcharges = 0;
     for (const sale of sales) {
       const total = Number(sale.total);
       if (sale.status === SaleStatus.COMPLETED) {
         totalCompleted += total;
         totalDiscounts += Number(sale.discount);
+        totalSurcharges += Number(sale.surcharge);
         for (const it of sale.items) {
           itemsCount += Number(it.quantity);
           totalDiscounts += Number(it.discount);
@@ -1153,6 +1237,7 @@ export class CashController {
         totalCancelled,
         itemsCount,
         totalDiscounts,
+        totalSurcharges,
         salesByMethod,
         salesByPaymentForm,
         cardPayments,
