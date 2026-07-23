@@ -4,8 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { CompanyLogo } from './CompanyLogo';
 import { ConnectionStatusBanner } from './ConnectionStatusBanner';
 import { api } from '../lib/api';
-import { companyDisplayName, companyUsesCustomLogo } from '../lib/company-branding';
+import { companyDisplayName } from '../lib/company-branding';
 import { getIdentity, isAdmin, profileFromRoles, profileLabel } from '../lib/auth';
+import { APP_VERSION } from '../version';
 import './layout.css';
 
 type NavItem = {
@@ -82,9 +83,12 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
             company={company.data ?? null}
             alt={companyDisplayName(company.data)}
           />
-          {companyUsesCustomLogo(company.data) ? (
+          <div className="sidebar-brand-text">
             <span className="sidebar-brand-name">{companyDisplayName(company.data)}</span>
-          ) : null}
+            <span className="sidebar-app-version" title="Versão do sistema">
+              v{APP_VERSION}
+            </span>
+          </div>
           <span className="sidebar-tag">{profileLabel(profile)}</span>
         </div>
         <nav className="sidebar-nav">

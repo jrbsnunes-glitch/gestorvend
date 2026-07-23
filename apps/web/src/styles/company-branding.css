@@ -29,6 +29,23 @@
   word-break: break-word;
 }
 
+.sidebar-brand-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+}
+
+.sidebar-app-version {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: #64748b;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Página inicial */
 .company-page-head {
   display: flex;
