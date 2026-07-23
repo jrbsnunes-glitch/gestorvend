@@ -725,11 +725,9 @@ export function ProductsPage() {
                     <tr
                       key={row.variantId}
                       style={{ cursor: 'pointer' }}
-                      title="Clique para visualizar o produto"
+                      title="Clique para editar o produto"
                       onClick={() => {
-                        setSearchOpen(false);
-                        setViewProductId(row.productId);
-                        setViewOpen(true);
+                        void openEditFromSearch(row.productId);
                       }}
                     >
                       <td className="num products-search-table__ctr" title="Código sequencial do produto">
@@ -757,13 +755,15 @@ export function ProductsPage() {
                         <button
                           type="button"
                           className="btn btn-secondary btn-sm"
-                          title="Editar produto"
+                          title="Visualizar produto"
                           onClick={(e) => {
                             e.stopPropagation();
-                            void openEditFromSearch(row.productId);
+                            setSearchOpen(false);
+                            setViewProductId(row.productId);
+                            setViewOpen(true);
                           }}
                         >
-                          Editar
+                          Visualizar
                         </button>
                       </td>
                     </tr>
