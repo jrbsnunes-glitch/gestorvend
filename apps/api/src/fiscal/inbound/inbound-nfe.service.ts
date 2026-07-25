@@ -980,9 +980,11 @@ export class InboundNfeService {
     try {
       soapResponse = await postRecepcaoEvento(endpoint, envXml, ctx.agent);
     } catch (e) {
-      throw new BadRequestException(
-        `Falha ao enviar manifestação ${tpEvento}: ${(e as Error).message}`,
-      );
+      const msg = (e as Error).message ?? String(e);
+      const tlsHint = /local issuer certificate|UNABLE_TO_GET_ISSUER_CERT/i.test(msg)
+        ? ' (cadeia SSL da SEFAZ rejeitada pelo Node — a API já relaxa essa validação por padrão; reinicie o serviço após atualizar e confira se não há FISCAL_TLS_REJECT_UNAUTHORIZED=true no .env)'
+        : '';
+      throw new BadRequestException(`Falha ao enviar manifestação ${tpEvento}: ${msg}${tlsHint}`);
     }
 
     const parsed = parseRecepcaoEventoResponse(soapResponse);

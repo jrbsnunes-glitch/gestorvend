@@ -6,11 +6,28 @@ import { formatPfxLoadError } from './pfx.errors';
 
 export type PfxMaterial = { privateKeyPem: string; certificatePem: string };
 
+/**
+ * Validação do certificado SSL do *servidor* SEFAZ.
+ *
+ * Cadeias ICP-Brasil / Ambiente Nacional frequentemente falham no trust store
+ * embutido do Node (`unable to get local issuer certificate`), mesmo com
+ * `ca-certificates` atualizado no SO. Libs fiscais Node costumam usar `false`.
+ *
+ * - Padrão: `false` (compatível com SEFAZ)
+ * - Estrito: `FISCAL_TLS_REJECT_UNAUTHORIZED=true`
+ */
+export function resolveSefazTlsRejectUnauthorized(): boolean {
+  const raw = (process.env.FISCAL_TLS_REJECT_UNAUTHORIZED ?? '').trim().toLowerCase();
+  if (raw === '1' || raw === 'true' || raw === 'yes') return true;
+  if (raw === '0' || raw === 'false' || raw === 'no') return false;
+  return false;
+}
+
 function createMutualTlsAgentFromPem(certificatePem: string, privateKeyPem: string): https.Agent {
   return new https.Agent({
     cert: certificatePem,
     key: privateKeyPem,
-    rejectUnauthorized: true,
+    rejectUnauthorized: resolveSefazTlsRejectUnauthorized(),
     minVersion: 'TLSv1.2',
   });
 }
@@ -21,12 +38,13 @@ export function createMutualTlsAgentFromPfx(pfxPath: string, password: string): 
     throw Object.assign(new Error(`ENOENT: ${pfxPath}`), { code: 'ENOENT' });
   }
 
+  const rejectUnauthorized = resolveSefazTlsRejectUnauthorized();
   const pfx = fs.readFileSync(pfxPath);
   try {
     const secureContext = tls.createSecureContext({ pfx, passphrase: password });
     return new https.Agent({
       secureContext,
-      rejectUnauthorized: true,
+      rejectUnauthorized,
       minVersion: 'TLSv1.2',
     });
   } catch (nativeErr) {

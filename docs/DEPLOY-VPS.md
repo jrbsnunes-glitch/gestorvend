@@ -96,6 +96,13 @@ Saídas: `apps/api/dist/`, `apps/web/dist/`.
 
 Garanta que `WorkingDirectory`/`cwd` seja `apps/api` e que `EnvironmentFile` ou `env_file` aponte para `apps/api/.env`.
 
+### TLS / SEFAZ (entrada NF-e e emissão)
+
+Se aparecer `unable to get local issuer certificate` na manifestação 210210 (ou em outros webservices), o Node não está validando a cadeia SSL do servidor SEFAZ. A API **já desativa** essa verificação no agente mTLS por padrão (comportamento usual em libs fiscais Node/ICP-Brasil).
+
+- Para forçar validação estrita: `FISCAL_TLS_REJECT_UNAUTHORIZED=true` no `.env` da API
+- Após mudar o `.env`, **reinicie** o serviço da API
+
 ## 7) Nginx
 
 1. Copie [`deploy/nginx/gestorvend.conf.example`](../deploy/nginx/gestorvend.conf.example) para `sites-available`, ajuste `server_name`, `root`, caminhos SSL.
