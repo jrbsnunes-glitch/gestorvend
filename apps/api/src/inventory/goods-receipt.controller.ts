@@ -1,7 +1,9 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -9,7 +11,7 @@ import {
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
-import { GoodsReceiptMode, Prisma } from '../generated/tenant-client';
+import { GoodsReceiptMode, GoodsReceiptStatus, Prisma } from '../generated/tenant-client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -132,6 +134,13 @@ export class GoodsReceiptController {
   ) {
     try {
       const db = await this.tenantPrisma.getClient(user.tenantSlug);
+      const current = await db.goodsReceipt.findUnique({ where: { id }, select: { status: true } });
+      if (!current) {
+        throw new NotFoundException('Entrada não encontrada.');
+      }
+      if (current.status === GoodsReceiptStatus.CANCELLED) {
+        throw new BadRequestException('Entrada cancelada não pode ser editada.');
+      }
       return await db.goodsReceipt.update({
         where: { id },
         data: {
@@ -150,5 +159,22 @@ export class GoodsReceiptController {
     } catch (e) {
       mapTenantDbError(e);
     }
+  }
+
+  /**
+   * Estorno interno da entrada (estoque + contas a pagar).
+   * Não cancela a NF-e na SEFAZ — isso só o emitente (fornecedor) pode fazer.
+   */
+  @Post(':id/cancel')
+  @Roles('admin', 'manager')
+  async cancel(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body?: { reason?: string | null },
+  ) {
+    return this.goodsReceipts.cancel(user.tenantSlug, id, {
+      userId: user.sub,
+      reason: body?.reason ?? null,
+    });
   }
 }

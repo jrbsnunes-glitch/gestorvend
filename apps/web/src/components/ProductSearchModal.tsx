@@ -20,9 +20,19 @@ type Props = {
   title?: string;
   onClose: () => void;
   onPick: (row: ProductSearchRow) => void;
+  /** Quando informado, exibe botão para cadastrar produto que ainda não existe. */
+  onCreateNew?: (searchTerm: string) => void;
+  createNewPending?: boolean;
 };
 
-export function ProductSearchModal({ open, title = 'Pesquisar produto', onClose, onPick }: Props) {
+export function ProductSearchModal({
+  open,
+  title = 'Pesquisar produto',
+  onClose,
+  onPick,
+  onCreateNew,
+  createNewPending = false,
+}: Props) {
   const [searchInput, setSearchInput] = useState('');
   const searchQ = useDeferredValue(searchInput.trim());
 
@@ -36,6 +46,9 @@ export function ProductSearchModal({ open, title = 'Pesquisar produto', onClose,
   useModalEscapeKey(onClose, open);
 
   if (!open) return null;
+
+  const noResults =
+    searchQ.length >= 1 && !productSearch.isPending && Array.isArray(productSearch.data) && productSearch.data.length === 0;
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -85,16 +98,14 @@ export function ProductSearchModal({ open, title = 'Pesquisar produto', onClose,
                   </td>
                 </tr>
               )}
-              {searchQ.length >= 1 &&
-                !productSearch.isPending &&
-                Array.isArray(productSearch.data) &&
-                productSearch.data.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="empty">
-                      Nenhum produto encontrado.
-                    </td>
-                  </tr>
-                )}
+              {noResults && (
+                <tr>
+                  <td colSpan={5} className="empty">
+                    Nenhum produto encontrado.
+                    {onCreateNew ? ' Use o botão abaixo para cadastrar um novo.' : ''}
+                  </td>
+                </tr>
+              )}
               {(productSearch.data ?? []).map((row) => (
                 <tr key={row.variantId}>
                   <td>{row.productName}</td>
@@ -118,7 +129,19 @@ export function ProductSearchModal({ open, title = 'Pesquisar produto', onClose,
             </tbody>
           </table>
         </div>
-        <div className="modal-actions">
+        <div className="modal-actions" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+          {onCreateNew ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={createNewPending}
+              onClick={() => onCreateNew(searchInput.trim())}
+            >
+              {createNewPending ? 'Criando…' : 'Incluir novo produto'}
+            </button>
+          ) : (
+            <span />
+          )}
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Fechar
           </button>

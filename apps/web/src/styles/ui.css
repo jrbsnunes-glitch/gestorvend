@@ -1422,6 +1422,23 @@
   width: 100%;
 }
 
+.entrada-supplier-code-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 11rem;
+}
+
+.entrada-supplier-code-cell .catalog-combo {
+  width: 100%;
+}
+
+.entrada-supplier-code-cell__hint {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  line-height: 1.2;
+}
+
 .product-supplier-links__table-wrap {
   margin-bottom: 0.75rem;
 }

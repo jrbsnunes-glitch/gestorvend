@@ -459,6 +459,8 @@ enum GoodsReceiptMode {
 enum GoodsReceiptStatus {
   DRAFT
   POSTED
+  /// Entrada estornada (estoque e títulos revertidos; não é cancelamento SEFAZ da NF-e do fornecedor).
+  CANCELLED
 }
 
 /// Cabeçalho de entrada de mercadorias (espelho simplificado do layout NF-e / SPED).
@@ -467,8 +469,9 @@ model GoodsReceipt {
   /// Número de controle sequencial humano-legível.
   controlNumber    Int                @unique @default(autoincrement())
   mode             GoodsReceiptMode
-  /// Chave de acesso NF-e (44 caracteres), obrigatória se mode = WITH_NFE_KEY
-  nfeAccessKey     String?            @unique @db.VarChar(44)
+  /// Chave de acesso NF-e (44 caracteres). Unicidade entre entradas ativas é enforced na aplicação
+  /// (entradas CANCELLED liberam a chave para reimportação).
+  nfeAccessKey     String?            @db.VarChar(44)
   supplierId       String?
   supplier         Supplier?          @relation(fields: [supplierId], references: [id])
   /// Número / série / data emissão conforme documento fiscal
@@ -489,6 +492,8 @@ model GoodsReceipt {
   priceHistories   ProductVariantPriceHistory[]
   payables         AccountPayable[]
   inboundNfeDocument InboundNfeDocument?
+
+  @@index([nfeAccessKey])
 }
 
 /// Status do documento NF-e de entrada na fila / cache.

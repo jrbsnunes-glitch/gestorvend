@@ -22,6 +22,8 @@ export type ReceiptItemDto = {
   supplierProductCode?: string | null;
   invoiceUnit?: string | null;
   invoiceQuantity?: number | null;
+  /** Preço de venda informado na entrada — atualiza ProductVariant.retailPrice ao lançar. */
+  retailPrice?: number | null;
 };
 
 export type PayableOptionsDto = {
@@ -86,7 +88,10 @@ export class GoodsReceiptService {
 
     if (nfeAccessKey) {
       const existing = await db.goodsReceipt.findFirst({
-        where: { nfeAccessKey },
+        where: {
+          nfeAccessKey,
+          status: { not: GoodsReceiptStatus.CANCELLED },
+        },
         select: { id: true, controlNumber: true, documentNumber: true, createdAt: true },
       });
       if (existing) {
@@ -270,6 +275,31 @@ export class GoodsReceiptService {
             data: { costAverage: String(newAverage) },
           });
 
+          if (it.retailPrice != null && Number.isFinite(Number(it.retailPrice)) && Number(it.retailPrice) >= 0) {
+            const priceVariantId = it.variantId;
+            const priceRow = await tx.productVariant.findUniqueOrThrow({
+              where: { id: priceVariantId },
+            });
+            const newRetail = new Prisma.Decimal(String(it.retailPrice));
+            const oldRetail = new Prisma.Decimal(priceRow.retailPrice);
+            if (!oldRetail.equals(newRetail)) {
+              await tx.productVariantPriceHistory.create({
+                data: {
+                  variantId: priceVariantId,
+                  field: 'RETAIL',
+                  previousValue: oldRetail,
+                  newValue: newRetail,
+                  source: 'GOODS_RECEIPT',
+                  goodsReceiptId: receipt.id,
+                },
+              });
+              await tx.productVariant.update({
+                where: { id: priceVariantId },
+                data: { retailPrice: newRetail },
+              });
+            }
+          }
+
           const linkCode = it.supplierProductCode?.trim();
           if (body.supplierId && linkCode) {
             await tx.supplierProductLink.upsert({
@@ -362,4 +392,214 @@ export class GoodsReceiptService {
         return result;
       });
   }
+
+  /**
+   * Cancela (estorna) uma entrada de mercadorias.
+   *
+   * Escopo interno do ERP — a NF-e continua válida na SEFAZ (emitida pelo fornecedor).
+   * O cancelamento fiscal da NF-e (evento 110111) só pode ser feito pelo emitente.
+   *
+   * Efeitos:
+   * - Estoque: baixa a quantidade lançada (movimento OUT de estorno) nos mesmos locais/variantes.
+   * - Custo/preço: restaura valores anteriores registrados no histórico desta entrada.
+   * - Contas a pagar: cancela títulos OPEN/OVERDUE vinculados; bloqueia se houver baixas.
+   * - Caixa NF-e: desvincula o documento e volta status IMPORTADO → COMPLETO.
+   */
+  async cancel(
+    tenantSlug: string,
+    receiptId: string,
+    opts?: { userId?: string | null; reason?: string | null },
+  ) {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const reason = (opts?.reason ?? '').trim();
+
+    return db.$transaction(async (tx) => {
+      const receipt = await tx.goodsReceipt.findUniqueOrThrow({
+        where: { id: receiptId },
+        include: {
+          items: true,
+          movements: true,
+          payables: { include: { settlements: { select: { id: true }, take: 1 } } },
+          priceHistories: { orderBy: { createdAt: 'asc' } },
+          inboundNfeDocument: true,
+        },
+      });
+
+      if (receipt.status === GoodsReceiptStatus.CANCELLED) {
+        throw new BadRequestException(`A entrada #${receipt.controlNumber} já está cancelada.`);
+      }
+
+      if (receipt.status === GoodsReceiptStatus.DRAFT) {
+        const notes = appendCancelNote(receipt.notes, reason, receipt.controlNumber);
+        await tx.inboundNfeDocument.updateMany({
+          where: { goodsReceiptId: receipt.id },
+          data: { goodsReceiptId: null, status: InboundNfeStatus.COMPLETO },
+        });
+        return tx.goodsReceipt.update({
+          where: { id: receipt.id },
+          data: { status: GoodsReceiptStatus.CANCELLED, notes },
+          include: {
+            supplier: true,
+            items: { include: { variant: { include: { product: true } } } },
+            payables: true,
+          },
+        });
+      }
+
+      // POSTED: validar financeiro
+      for (const pay of receipt.payables) {
+        if (pay.status === BillStatus.PAID || pay.settlements.length > 0) {
+          throw new BadRequestException(
+            `Não é possível cancelar a entrada #${receipt.controlNumber}: o título a pagar "${pay.description}" já possui baixa. Estorne as baixas no financeiro antes.`,
+          );
+        }
+        const remaining = Number(pay.amountRemaining ?? pay.amount);
+        const amount = Number(pay.amount);
+        if (Number.isFinite(remaining) && Number.isFinite(amount) && remaining < amount - 0.0001) {
+          throw new BadRequestException(
+            `Não é possível cancelar a entrada #${receipt.controlNumber}: o título a pagar "${pay.description}" já foi parcialmente baixado.`,
+          );
+        }
+      }
+
+      // Estoque: estornar pelos movimentos originais (local correto)
+      const movements =
+        receipt.movements.length > 0
+          ? receipt.movements.filter((m) => m.type === StockMovementType.IN)
+          : [];
+
+      if (movements.length === 0 && receipt.items.length > 0) {
+        throw new BadRequestException(
+          `Entrada #${receipt.controlNumber} está postada, mas não há movimentos de estoque para estornar. Contate o suporte.`,
+        );
+      }
+
+      for (const mov of movements) {
+        const qty = Number(mov.quantity);
+        if (!Number.isFinite(qty) || qty <= 0) continue;
+        const bal = await tx.stockBalance.findUnique({
+          where: {
+            variantId_locationId: {
+              variantId: mov.variantId,
+              locationId: mov.locationId,
+            },
+          },
+        });
+        const current = bal ? Number(bal.quantity) : 0;
+        if (current + 1e-9 < qty) {
+          const variant = await tx.productVariant.findUnique({
+            where: { id: mov.variantId },
+            select: { sku: true },
+          });
+          throw new BadRequestException(
+            `Estoque insuficiente para estornar a entrada #${receipt.controlNumber} ` +
+              `(SKU ${variant?.sku ?? mov.variantId}: saldo ${current}, necessário ${qty}). ` +
+              `Ajuste o estoque ou faça inventário antes de cancelar.`,
+          );
+        }
+        const next = current - qty;
+        await tx.stockBalance.upsert({
+          where: {
+            variantId_locationId: {
+              variantId: mov.variantId,
+              locationId: mov.locationId,
+            },
+          },
+          create: {
+            variantId: mov.variantId,
+            locationId: mov.locationId,
+            quantity: String(next),
+          },
+          update: { quantity: String(next) },
+        });
+        await tx.stockMovement.create({
+          data: {
+            type: StockMovementType.OUT,
+            source: StockMovementSource.OTHER,
+            variantId: mov.variantId,
+            locationId: mov.locationId,
+            quantity: String(qty),
+            unitCost: mov.unitCost,
+            reference: `Estorno entrada #${receipt.controlNumber}`,
+            userId: opts?.userId ?? null,
+            goodsReceiptId: receipt.id,
+          },
+        });
+      }
+
+      // Restaura custo/preço a partir do histórico desta entrada (ordem cronológica → valor anterior).
+      const restored = new Set<string>();
+      for (const hist of receipt.priceHistories) {
+        const key = `${hist.variantId}:${hist.field}`;
+        if (restored.has(key)) continue;
+        restored.add(key);
+        const prev = hist.previousValue;
+        if (hist.field === 'COST') {
+          await tx.productVariant.update({
+            where: { id: hist.variantId },
+            data: { costAverage: prev },
+          });
+        } else if (hist.field === 'RETAIL') {
+          await tx.productVariant.update({
+            where: { id: hist.variantId },
+            data: { retailPrice: prev },
+          });
+        }
+        await tx.productVariantPriceHistory.create({
+          data: {
+            variantId: hist.variantId,
+            field: hist.field,
+            previousValue: hist.newValue,
+            newValue: prev,
+            source: 'MANUAL',
+            goodsReceiptId: receipt.id,
+          },
+        });
+      }
+
+      // Cancela títulos abertos vinculados
+      if (receipt.payables.length > 0) {
+        await tx.accountPayable.updateMany({
+          where: {
+            goodsReceiptId: receipt.id,
+            status: { in: [BillStatus.OPEN, BillStatus.OVERDUE] },
+          },
+          data: { status: BillStatus.CANCELLED },
+        });
+      }
+
+      // Desvincula NF-e na caixa de entrada
+      await tx.inboundNfeDocument.updateMany({
+        where: { goodsReceiptId: receipt.id },
+        data: { goodsReceiptId: null, status: InboundNfeStatus.COMPLETO },
+      });
+
+      const notes = appendCancelNote(receipt.notes, reason, receipt.controlNumber);
+      return tx.goodsReceipt.update({
+        where: { id: receipt.id },
+        data: {
+          status: GoodsReceiptStatus.CANCELLED,
+          notes,
+        },
+        include: {
+          supplier: true,
+          items: { include: { variant: { include: { product: true } } } },
+          payables: true,
+        },
+      });
+    });
+  }
+}
+
+function appendCancelNote(
+  existing: string | null,
+  reason: string,
+  controlNumber: number,
+): string {
+  const stamp = new Date().toLocaleString('pt-BR');
+  const line = reason
+    ? `[Cancelada em ${stamp}] Entrada #${controlNumber} estornada. Motivo: ${reason}`
+    : `[Cancelada em ${stamp}] Entrada #${controlNumber} estornada (estoque e títulos revertidos).`;
+  const prev = (existing ?? '').trim();
+  return prev ? `${prev}\n${line}` : line;
 }

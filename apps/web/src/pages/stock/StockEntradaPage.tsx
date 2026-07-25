@@ -23,6 +23,8 @@ type Line = {
   invoiceQuantity: string;
   quantity: string;
   unitCost: string;
+  /** Preço de venda a gravar no produto ao lançar a entrada (NF-e). */
+  retailPrice: string;
   ncm: string;
   cfop: string;
   description: string;
@@ -40,6 +42,7 @@ function emptyLine(): Line {
     invoiceQuantity: '1',
     quantity: '1',
     unitCost: '0',
+    retailPrice: '',
     ncm: '',
     cfop: '1102',
     description: '',
@@ -52,7 +55,9 @@ type GoodsReceiptRow = {
   id: string;
   controlNumber: number;
   mode: string;
+  status?: string;
   createdAt: string;
+  nfeAccessKey?: string | null;
   documentNumber: string | null;
   series: string | null;
   issueDate: string | null;
@@ -66,7 +71,11 @@ type GoodsReceiptRow = {
     quantity: string;
     unitCost: string;
     description: string | null;
-    variant: { sku: string; product: { name: string } };
+    ncm?: string | null;
+    cfop?: string | null;
+    supplierProductCode?: string | null;
+    invoiceUnit?: string | null;
+    variant: { sku: string; product: { name: string }; retailPrice?: string };
   }>;
 };
 
@@ -105,6 +114,7 @@ type InboundFetchResponse = {
     label: string | null;
     confidence: string;
     supplierProductCode: string | null;
+    retailPrice?: string | null;
   }>;
   supplierId: string | null;
   supplierName: string | null;
@@ -122,6 +132,16 @@ type DuplicateReceiptInfo = {
 
 function modeLabel(mode: string): string {
   return mode === 'WITH_NFE_KEY' ? 'Com chave NF-e' : 'Sem chave';
+}
+
+function statusLabel(status?: string): string {
+  if (status === 'CANCELLED') return 'Cancelada';
+  if (status === 'DRAFT') return 'Rascunho';
+  return 'Lançada';
+}
+
+function isReceiptCancelled(r: { status?: string }): boolean {
+  return r.status === 'CANCELLED';
 }
 
 export function StockEntradaPage() {
@@ -295,6 +315,7 @@ export function StockEntradaPage() {
               invoiceQuantity: String(item.quantity),
               quantity: String(item.quantity),
               unitCost: String(item.unitCost),
+              retailPrice: match?.retailPrice != null ? String(match.retailPrice) : '',
               ncm: item.ncm ?? '',
               cfop: item.cfop ?? '1102',
               description: item.description,
@@ -462,11 +483,17 @@ export function StockEntradaPage() {
             .filter((l) => l.variantId)
             .map((l) => {
               const rawQty = parseFloat((l.invoiceQuantity || l.quantity).replace(',', '.')) || 0;
+              const retailRaw = l.retailPrice.trim().replace(',', '.');
+              const retailParsed = retailRaw === '' ? null : parseFloat(retailRaw);
               return {
                 variantId: l.variantId,
                 quantity: rawQty,
                 invoiceQuantity: rawQty,
                 unitCost: parseFloat(l.unitCost.replace(',', '.')) || 0,
+                retailPrice:
+                  retailParsed != null && Number.isFinite(retailParsed) && retailParsed >= 0
+                    ? retailParsed
+                    : null,
                 ncm: l.ncm || null,
                 cfop: l.cfop || null,
                 description: l.description || null,
@@ -543,6 +570,47 @@ export function StockEntradaPage() {
     },
   });
 
+  const cancelReceipt = useMutation({
+    mutationFn: (payload: { id: string; reason?: string }) =>
+      api(`/goods-receipts/${payload.id}/cancel`, {
+        method: 'POST',
+        json: { reason: payload.reason || null },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['goods-receipts'] });
+      qc.invalidateQueries({ queryKey: ['stock-movements'] });
+      qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: ['reports', 'stock-position'] });
+      qc.invalidateQueries({ queryKey: ['payables'] });
+      qc.invalidateQueries({ queryKey: ['inbound-nfe'] });
+      setEditing(null);
+      setViewing(null);
+      alert('Entrada cancelada. Estoque e títulos abertos foram estornados.');
+    },
+    onError: (e: Error) => {
+      alert(e.message);
+    },
+  });
+
+  function confirmCancelReceipt(r: GoodsReceiptRow) {
+    if (isReceiptCancelled(r)) {
+      alert('Esta entrada já está cancelada.');
+      return;
+    }
+    const reason = window.prompt(
+      `Cancelar entrada #${r.controlNumber}?\n\n` +
+        'Isto é um estorno interno do ERP (não cancela a NF-e na SEFAZ — só o fornecedor/emitente pode).\n\n' +
+        '• Estoque lançado será baixado\n' +
+        '• Contas a pagar abertas serão canceladas\n' +
+        '• Títulos já baixados impedem o cancelamento\n' +
+        '• A NF-e volta a ficar disponível na caixa de entrada\n\n' +
+        'Informe o motivo (opcional):',
+      '',
+    );
+    if (reason === null) return;
+    cancelReceipt.mutate({ id: r.id, reason: reason.trim() || undefined });
+  }
+
   function setLine(i: number, p: Partial<Line>) {
     setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...p } : l)));
   }
@@ -553,21 +621,29 @@ export function StockEntradaPage() {
       variantLabel: `${row.sku} — ${row.productName}`,
       pendingResolution: false,
       ncm: lines[i]?.ncm || ncmByVariant.get(row.variantId) || '',
+      retailPrice:
+        lines[i]?.retailPrice?.trim() ||
+        (row.retailPrice != null && Number(row.retailPrice) > 0 ? String(row.retailPrice) : ''),
     });
   }
 
   const createProductFromLine = useMutation({
-    mutationFn: (lineIndex: number) => {
-      const l = lines[lineIndex];
+    mutationFn: (args: { lineIndex: number; nameOverride?: string }) => {
+      const l = lines[args.lineIndex];
       if (!l) throw new Error('Linha inválida');
+      const name =
+        (args.nameOverride ?? '').trim() ||
+        l.description.trim() ||
+        l.supplierProductCode.trim() ||
+        'Produto entrada';
       return api<{
         variants: Array<{ id: string; sku: string; product?: { name: string } }>;
         name: string;
       }>('/products/from-inbound-line', {
         method: 'POST',
         json: {
-          name: l.description.trim() || l.supplierProductCode.trim() || 'Produto NF-e',
-          description: l.description.trim() || null,
+          name,
+          description: l.description.trim() || name,
           ncm: l.ncm.trim() || null,
           defaultBarcode: l.ean.trim() || null,
           taxUnit: l.invoiceUnit.trim() || null,
@@ -577,22 +653,23 @@ export function StockEntradaPage() {
         },
       });
     },
-    onSuccess: (product, lineIndex) => {
+    onSuccess: (product, args) => {
       const v = product.variants[0];
       if (v) {
-        pickProductForLine(lineIndex, {
+        pickProductForLine(args.lineIndex, {
           productId: '',
           productName: product.name,
           variantId: v.id,
           sku: v.sku,
           barcode: null,
-          retailPrice: '0',
+          retailPrice: lines[args.lineIndex]?.retailPrice || '0',
           costAverage: '0',
           stockTotal: '0',
         });
       }
       qc.invalidateQueries({ queryKey: ['products'] });
       setCreatingLine(null);
+      setProductSearchLine(null);
     },
     onError: (e: Error) => {
       setCreatingLine(null);
@@ -704,37 +781,41 @@ export function StockEntradaPage() {
                 <th style={{ width: 80 }}>Controle</th>
                 <th>Data</th>
                 <th>Modo</th>
+                <th>Status</th>
                 <th>Documento</th>
                 <th>Fornecedor</th>
                 <th>Itens</th>
                 <th>Resumo</th>
-                <th style={{ width: 180, textAlign: 'right' }}>Ações</th>
+                <th style={{ width: 240, textAlign: 'right' }}>Ações</th>
               </tr>
             </thead>
             <tbody>
               {receipts.isLoading && (
                 <tr>
-                  <td colSpan={8} className="empty">
+                  <td colSpan={9} className="empty">
                     Carregando…
                   </td>
                 </tr>
               )}
               {!receipts.isLoading && !recentReceipts.length && (
                 <tr>
-                  <td colSpan={8} className="empty">
+                  <td colSpan={9} className="empty">
                     Nenhuma entrada registrada. Clique em Incluir para lançar.
                   </td>
                 </tr>
               )}
               {recentReceipts.map((r) => (
-                <tr key={r.id}>
+                <tr
+                  key={r.id}
+                  style={isReceiptCancelled(r) ? { opacity: 0.65 } : undefined}
+                >
                   <td>
                     <span
                       style={{
                         display: 'inline-block',
                         padding: '0.15rem 0.5rem',
-                        background: '#eef2ff',
-                        color: '#3730a3',
+                        background: isReceiptCancelled(r) ? '#fef2f2' : '#eef2ff',
+                        color: isReceiptCancelled(r) ? '#991b1b' : '#3730a3',
                         borderRadius: 6,
                         fontWeight: 700,
                         fontSize: '0.8rem',
@@ -747,6 +828,17 @@ export function StockEntradaPage() {
                     {new Date(r.createdAt).toLocaleString('pt-BR')}
                   </td>
                   <td>{modeLabel(r.mode)}</td>
+                  <td>
+                    <span
+                      style={{
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        color: isReceiptCancelled(r) ? '#991b1b' : 'var(--color-text-secondary)',
+                      }}
+                    >
+                      {statusLabel(r.status)}
+                    </span>
+                  </td>
                   <td>{r.documentNumber ?? '—'}</td>
                   <td>{r.supplier?.legalName ?? '—'}</td>
                   <td>{r.items.length}</td>
@@ -766,14 +858,27 @@ export function StockEntradaPage() {
                     >
                       Visualizar
                     </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      style={{ fontSize: '0.8rem', marginLeft: '0.25rem' }}
-                      onClick={() => setEditing(r)}
-                    >
-                      Editar
-                    </button>
+                    {!isReceiptCancelled(r) && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ fontSize: '0.8rem', marginLeft: '0.25rem' }}
+                        onClick={() => setEditing(r)}
+                      >
+                        Editar
+                      </button>
+                    )}
+                    {!isReceiptCancelled(r) && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ fontSize: '0.8rem', marginLeft: '0.25rem', color: '#b91c1c' }}
+                        disabled={cancelReceipt.isPending}
+                        onClick={() => confirmCancelReceipt(r)}
+                      >
+                        Cancelar
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -798,6 +903,7 @@ export function StockEntradaPage() {
                   title: 'Dados da entrada',
                   fields: [
                     { label: 'Modo', value: modeLabel(viewing.mode) },
+                    { label: 'Status', value: statusLabel(viewing.status) },
                     {
                       label: 'Data',
                       value: new Date(viewing.createdAt).toLocaleString('pt-BR'),
@@ -845,7 +951,9 @@ export function StockEntradaPage() {
           receipt={editing}
           onCancel={() => setEditing(null)}
           onSubmit={(values) => updateHeader.mutate({ id: editing.id, ...values })}
+          onCancelReceipt={() => confirmCancelReceipt(editing)}
           isPending={updateHeader.isPending}
+          isCancelling={cancelReceipt.isPending}
         />
       )}
 
@@ -873,7 +981,8 @@ export function StockEntradaPage() {
                 de estoque e os itens recebidos — o mesmo padrão visual do cadastro de produtos. O{' '}
                 <strong>custo unitário</strong> de cada item atualiza o <strong>custo médio</strong> da variação no
                 cadastro (média ponderada pelo estoque); quando o custo médio mudar, o valor anterior fica no{' '}
-                <strong>histórico de preços</strong> do produto (origem “Entrada NF”).
+                <strong>histórico de preços</strong> do produto (origem “Entrada NF”). O{' '}
+                <strong>Pr. Venda</strong> informado em cada linha atualiza o preço de venda do produto ao confirmar.
               </p>
 
               <div className="entrada-receipt-header-grid">
@@ -1115,13 +1224,14 @@ export function StockEntradaPage() {
                   <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
                     Campos NCM e CFOP seguem a estrutura do leiaute NF-e (produto). CFOP padrão sugerido: 1102. O custo
                     unitário informado aqui entra no cadastro do produto mediante recálculo do custo médio (e gera
-                    histórico se houver alteração).
+                    histórico se houver alteração). O <strong>Pr. Venda</strong>, quando preenchido, atualiza o preço
+                    de venda do produto ao lançar a entrada.
                   </p>
                   <div className="table-wrap">
                     <table className="data-table entrada-items-table">
                       <thead>
                         <tr>
-                          <th>Cód. fornecedor</th>
+                          <th>{mode === 'WITHOUT_NFE' ? 'Fornecedor / cód.' : 'Cód. fornecedor'}</th>
                           <th>Produto (interno)</th>
                           <th>Descrição NF</th>
                           <th>Un. NF</th>
@@ -1129,6 +1239,7 @@ export function StockEntradaPage() {
                           <th>CFOP</th>
                           <th>Qtd NF</th>
                           <th>Custo unit.</th>
+                          <th>Pr. Venda</th>
                           <th></th>
                         </tr>
                       </thead>
@@ -1146,18 +1257,42 @@ export function StockEntradaPage() {
                                   convMeta?.packItemQty ?? null,
                                 )
                               : null;
+                          const colSpan = 10;
                           return (
                             <Fragment key={i}>
                               <tr key={i}>
                                 <td>
-                                  <input
-                                    value={l.supplierProductCode}
-                                    onChange={(e) =>
-                                      setLine(i, { supplierProductCode: e.target.value })
-                                    }
-                                    placeholder="cProd NF-e"
-                                    title="Código do produto no fornecedor — usado para identificar automaticamente nas próximas entradas"
-                                  />
+                                  {mode === 'WITHOUT_NFE' ? (
+                                    <div className="entrada-supplier-code-cell">
+                                      <SupplierSearchCombo
+                                        id={`ent-line-sup-${i}`}
+                                        value={supplierId}
+                                        hintName={supplierNameHint}
+                                        onChange={(id, picked) => {
+                                          setSupplierId(id);
+                                          setSupplierNameHint(picked ?? (id ? supplierNameHint : ''));
+                                          setPendingEmitter(null);
+                                        }}
+                                      />
+                                      <input
+                                        value={l.supplierProductCode}
+                                        onChange={(e) =>
+                                          setLine(i, { supplierProductCode: e.target.value })
+                                        }
+                                        placeholder="Cód. no fornecedor (cProd)"
+                                        title="Código do produto no fornecedor — usado para identificar automaticamente nas próximas entradas"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <input
+                                      value={l.supplierProductCode}
+                                      onChange={(e) =>
+                                        setLine(i, { supplierProductCode: e.target.value })
+                                      }
+                                      placeholder="cProd NF-e"
+                                      title="Código do produto no fornecedor — usado para identificar automaticamente nas próximas entradas"
+                                    />
+                                  )}
                                 </td>
                                 <td>
                                   <div className="entrada-product-pick">
@@ -1248,6 +1383,15 @@ export function StockEntradaPage() {
                                   />
                                 </td>
                                 <td>
+                                  <input
+                                    value={l.retailPrice}
+                                    onChange={(e) => setLine(i, { retailPrice: e.target.value })}
+                                    placeholder="0,00"
+                                    title="Preço de venda — atualiza o cadastro do produto ao confirmar a entrada"
+                                    inputMode="decimal"
+                                  />
+                                </td>
+                                <td>
                                   <button
                                     type="button"
                                     className="btn btn-secondary"
@@ -1260,7 +1404,7 @@ export function StockEntradaPage() {
                               </tr>
                               {l.pendingResolution && !l.variantId && (
                                 <tr key={`${i}-resolve`} className="entrada-unresolved-row">
-                                  <td colSpan={9}>
+                                  <td colSpan={colSpan}>
                                     <div className="alert alert-warn entrada-unresolved-banner">
                                       <strong>Produto sem vínculo com o fornecedor.</strong>{' '}
                                       {isPackInvoiceUnit(l.invoiceUnit) ? (
@@ -1298,7 +1442,7 @@ export function StockEntradaPage() {
                                           disabled={createProductFromLine.isPending && creatingLine === i}
                                           onClick={() => {
                                             setCreatingLine(i);
-                                            createProductFromLine.mutate(i);
+                                            createProductFromLine.mutate({ lineIndex: i });
                                           }}
                                         >
                                           {createProductFromLine.isPending && creatingLine === i
@@ -1312,7 +1456,7 @@ export function StockEntradaPage() {
                               )}
                               {convHint && l.variantId && (
                                 <tr key={`${i}-conv`} className="entrada-conversion-row">
-                                  <td colSpan={9}>
+                                  <td colSpan={colSpan}>
                                     <span className="muted" style={{ fontSize: '0.82rem' }}>
                                       Conversão: {convHint}
                                     </span>
@@ -1489,6 +1633,27 @@ export function StockEntradaPage() {
         onPick={(row) => {
           if (productSearchLine != null) pickProductForLine(productSearchLine, row);
         }}
+        onCreateNew={
+          productSearchLine != null
+            ? (searchTerm) => {
+                const idx = productSearchLine;
+                const line = lines[idx];
+                if (searchTerm && line && !line.description.trim()) {
+                  setLine(idx, { description: searchTerm });
+                }
+                setCreatingLine(idx);
+                createProductFromLine.mutate({
+                  lineIndex: idx,
+                  nameOverride: searchTerm || undefined,
+                });
+              }
+            : undefined
+        }
+        createNewPending={
+          createProductFromLine.isPending &&
+          productSearchLine != null &&
+          creatingLine === productSearchLine
+        }
       />
 
       {packWizardLine != null && lines[packWizardLine] && (
@@ -1679,13 +1844,18 @@ function EditReceiptModal({
   receipt,
   onCancel,
   onSubmit,
+  onCancelReceipt,
   isPending,
+  isCancelling,
 }: {
   receipt: GoodsReceiptRow;
   onCancel: () => void;
   onSubmit: (values: EditValues) => void;
+  onCancelReceipt: () => void;
   isPending: boolean;
+  isCancelling: boolean;
 }) {
+  const cancelled = isReceiptCancelled(receipt);
   const [supplierId, setSupplierId] = useState(receipt.supplierId ?? '');
   const [supplierHint, setSupplierHint] = useState(receipt.supplier?.legalName ?? '');
   const [documentNumber, setDocumentNumber] = useState(receipt.documentNumber ?? '');
@@ -1695,71 +1865,256 @@ function EditReceiptModal({
   );
   const [natureOperation, setNatureOperation] = useState(receipt.natureOperation ?? '');
   const [notes, setNotes] = useState(receipt.notes ?? '');
+  const [totalValue] = useState(receipt.totalValue ?? '');
 
   return (
-    <FormModalBackdrop onClose={onCancel}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(620px, 96vw)' }}>
-        <h2>Editar entrada #{receipt.controlNumber}</h2>
-        <p style={{ margin: '0 0 0.75rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-          Você pode ajustar apenas os campos do <strong>cabeçalho</strong>. Itens já lançados não podem ser
-          alterados para preservar estoque e custo médio.
-        </p>
-        <div className="field">
-          <span className="field-label-text">Fornecedor</span>
-          <SupplierSearchCombo
-            id={`ent-edit-forn-${receipt.id}`}
-            value={supplierId}
-            hintName={supplierHint}
-            onChange={(id, picked) => {
-              setSupplierId(id);
-              if (picked) setSupplierHint(picked);
-              if (!id) setSupplierHint('');
-            }}
-          />
-        </div>
-        <div className="form-row">
-          <div className="field">
-            <label htmlFor="edit-doc">Documento</label>
-            <input id="edit-doc" value={documentNumber} onChange={(e) => setDocumentNumber(e.target.value)} />
+    <FormModalBackdrop className="modal-backdrop--wide no-print" onClose={onCancel}>
+      <div
+        className="modal modal--wide entrada-receipt-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="entrada-edit-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="entrada-edit-modal-title">
+          {cancelled ? 'Entrada cancelada' : 'Editar entrada'} #{receipt.controlNumber}
+        </h2>
+        <div className="entrada-receipt-modal__scroll">
+          <p className="entrada-receipt-lead">
+            {cancelled ? (
+              <>
+                Esta entrada foi <strong>estornada</strong>. Estoque e títulos abertos já foram revertidos. A NF-e
+                do fornecedor permanece válida na SEFAZ (só o emitente pode cancelá-la fiscalmente).
+              </>
+            ) : (
+              <>
+                Visualização completa da entrada. Você pode ajustar o <strong>cabeçalho</strong> (fornecedor,
+                documento, natureza e observações). Os <strong>itens</strong> já lançados aparecem abaixo e não
+                podem ser alterados individualmente — use <strong>Cancelar entrada</strong> para estornar estoque
+                e contas a pagar.
+              </>
+            )}
+          </p>
+
+          <div className="entrada-receipt-header-grid">
+            <details className="submenu-details entrada-receipt-header-grid__doc" open>
+              <summary className="submenu-summary">Dados da entrada / NF-e</summary>
+              <div className="submenu-body">
+                <div className="form-row">
+                  <div className="field">
+                    <label htmlFor="edit-mod">Tipo de entrada</label>
+                    <input id="edit-mod" value={modeLabel(receipt.mode)} readOnly disabled />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="edit-status">Status</label>
+                    <input id="edit-status" value={statusLabel(receipt.status)} readOnly disabled />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="edit-created">Registrada em</label>
+                    <input
+                      id="edit-created"
+                      value={new Date(receipt.createdAt).toLocaleString('pt-BR')}
+                      readOnly
+                      disabled
+                    />
+                  </div>
+                </div>
+                {receipt.mode === 'WITH_NFE_KEY' && (
+                  <div className="field">
+                    <label htmlFor="edit-key">Chave de acesso</label>
+                    <input
+                      id="edit-key"
+                      value={receipt.nfeAccessKey ?? ''}
+                      readOnly
+                      disabled
+                      placeholder="—"
+                    />
+                  </div>
+                )}
+                <div className="form-row">
+                  <div className="field">
+                    <label htmlFor="edit-doc">Documento</label>
+                    <input
+                      id="edit-doc"
+                      value={documentNumber}
+                      onChange={(e) => setDocumentNumber(e.target.value)}
+                      disabled={cancelled}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="edit-ser">Série</label>
+                    <input
+                      id="edit-ser"
+                      value={series}
+                      onChange={(e) => setSeries(e.target.value)}
+                      disabled={cancelled}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="edit-dt">Emissão</label>
+                    <input
+                      id="edit-dt"
+                      type="date"
+                      value={issueDate}
+                      onChange={(e) => setIssueDate(e.target.value)}
+                      disabled={cancelled}
+                    />
+                  </div>
+                </div>
+                <div className="field">
+                  <label htmlFor="edit-nat">Natureza da operação</label>
+                  <input
+                    id="edit-nat"
+                    value={natureOperation}
+                    onChange={(e) => setNatureOperation(e.target.value)}
+                    disabled={cancelled}
+                  />
+                </div>
+              </div>
+            </details>
+
+            <details className="submenu-details entrada-receipt-header-grid__emit" open>
+              <summary className="submenu-summary">Emitente (fornecedor)</summary>
+              <div className="submenu-body">
+                <div className="field">
+                  <span className="field-label-text">Fornecedor</span>
+                  <SupplierSearchCombo
+                    id={`ent-edit-forn-${receipt.id}`}
+                    value={supplierId}
+                    hintName={supplierHint}
+                    disabled={cancelled}
+                    onChange={(id, picked) => {
+                      setSupplierId(id);
+                      if (picked) setSupplierHint(picked);
+                      if (!id) setSupplierHint('');
+                    }}
+                  />
+                </div>
+              </div>
+            </details>
           </div>
-          <div className="field">
-            <label htmlFor="edit-ser">Série</label>
-            <input id="edit-ser" value={series} onChange={(e) => setSeries(e.target.value)} />
+
+          <details className="submenu-details entrada-receipt-section-full" open>
+            <summary className="submenu-summary">
+              Produtos / serviços ({receipt.items.length} item{receipt.items.length === 1 ? '' : 's'})
+            </summary>
+            <div className="submenu-body">
+              <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                Itens lançados nesta entrada (somente leitura).
+              </p>
+              <div className="table-wrap">
+                <table className="data-table entrada-items-table">
+                  <thead>
+                    <tr>
+                      <th>Cód. fornecedor</th>
+                      <th>Produto (interno)</th>
+                      <th>Descrição</th>
+                      <th>Un.</th>
+                      <th>NCM</th>
+                      <th>CFOP</th>
+                      <th className="num">Qtd</th>
+                      <th className="num">Custo unit.</th>
+                      <th className="num">Pr. Venda</th>
+                      <th className="num">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {receipt.items.length === 0 && (
+                      <tr>
+                        <td colSpan={10} className="empty">
+                          Nenhum item nesta entrada.
+                        </td>
+                      </tr>
+                    )}
+                    {receipt.items.map((it) => (
+                      <tr key={it.id}>
+                        <td>{it.supplierProductCode || '—'}</td>
+                        <td>
+                          {it.variant.sku} — {it.variant.product.name}
+                        </td>
+                        <td>{it.description || '—'}</td>
+                        <td>{it.invoiceUnit || '—'}</td>
+                        <td>{it.ncm || '—'}</td>
+                        <td>{it.cfop || '—'}</td>
+                        <td className="num">{it.quantity}</td>
+                        <td className="num">R$ {it.unitCost}</td>
+                        <td className="num">
+                          {it.variant.retailPrice != null ? `R$ ${it.variant.retailPrice}` : '—'}
+                        </td>
+                        <td className="num">
+                          R$ {(Number(it.quantity) * Number(it.unitCost)).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+
+          <div className="entrada-receipt-footer-split">
+            <details className="submenu-details" open>
+              <summary className="submenu-summary">Totais / observações</summary>
+              <div className="submenu-body">
+                <div className="form-row">
+                  <div className="field">
+                    <label htmlFor="edit-tot">Valor total informado no documento</label>
+                    <input id="edit-tot" value={totalValue} readOnly disabled />
+                  </div>
+                </div>
+                <div className="field">
+                  <label htmlFor="edit-notes">Informações complementares</label>
+                  <textarea
+                    id="edit-notes"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={3}
+                    disabled={cancelled}
+                  />
+                </div>
+              </div>
+            </details>
           </div>
-          <div className="field">
-            <label htmlFor="edit-dt">Emissão</label>
-            <input id="edit-dt" type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+        </div>
+
+        <div className="modal-actions" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div>
+            {!cancelled && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ color: '#b91c1c', borderColor: '#fecaca' }}
+                disabled={isPending || isCancelling}
+                onClick={onCancelReceipt}
+              >
+                {isCancelling ? 'Cancelando…' : 'Cancelar entrada'}
+              </button>
+            )}
           </div>
-        </div>
-        <div className="field">
-          <label htmlFor="edit-nat">Natureza da operação</label>
-          <input id="edit-nat" value={natureOperation} onChange={(e) => setNatureOperation(e.target.value)} />
-        </div>
-        <div className="field">
-          <label htmlFor="edit-notes">Observações</label>
-          <textarea id="edit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
-        </div>
-        <div className="modal-actions">
-          <button type="button" className="btn btn-secondary" onClick={onCancel}>
-            Cancelar
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={isPending}
-            onClick={() =>
-              onSubmit({
-                supplierId: supplierId || null,
-                documentNumber: documentNumber || null,
-                series: series || null,
-                issueDate: issueDate ? new Date(issueDate).toISOString() : null,
-                natureOperation: natureOperation || null,
-                notes: notes || null,
-              })
-            }
-          >
-            Salvar alterações
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button type="button" className="btn btn-secondary" onClick={onCancel}>
+              Fechar
+            </button>
+            {!cancelled && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={isPending || isCancelling}
+                onClick={() =>
+                  onSubmit({
+                    supplierId: supplierId || null,
+                    documentNumber: documentNumber || null,
+                    series: series || null,
+                    issueDate: issueDate ? new Date(issueDate).toISOString() : null,
+                    natureOperation: natureOperation || null,
+                    notes: notes || null,
+                  })
+                }
+              >
+                {isPending ? 'Salvando…' : 'Salvar alterações'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </FormModalBackdrop>

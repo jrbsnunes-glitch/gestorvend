@@ -67,6 +67,8 @@ export type SuggestedMatch = {
   label: string | null;
   confidence: 'supplier_link' | 'barcode' | 'sku' | 'none';
   supplierProductCode: string | null;
+  /** Preço de venda atual da variação (quando houve match). */
+  retailPrice: string | null;
 };
 
 export type InboundFetchResponse = {
@@ -1269,6 +1271,7 @@ export class InboundNfeService {
         id: true,
         sku: true,
         barcode: true,
+        retailPrice: true,
         product: { select: { name: true, ncm: true } },
       },
     });
@@ -1283,6 +1286,7 @@ export class InboundNfeService {
               id: true,
               sku: true,
               barcode: true,
+              retailPrice: true,
               product: { select: { name: true, ncm: true } },
             },
           },
@@ -1319,6 +1323,7 @@ export class InboundNfeService {
         label: match ? `${match.sku} — ${match.product.name}` : null,
         confidence,
         supplierProductCode: code || null,
+        retailPrice: match ? String(match.retailPrice) : null,
       };
     });
 
