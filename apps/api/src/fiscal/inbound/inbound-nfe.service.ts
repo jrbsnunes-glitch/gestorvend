@@ -975,6 +975,9 @@ export class InboundNfeService {
       eventoXml,
     });
     const endpoint = recepcaoEventoEndpoint(ctx.tpAmb === 1);
+    if (process.env.FISCAL_SOAP_DEBUG === '1') {
+      this.log.debug(`envEvento ${tpEvento} ${accessKey} -> ${endpoint}\n${envXml}`);
+    }
 
     let soapResponse: string;
     try {

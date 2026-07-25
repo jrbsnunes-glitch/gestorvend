@@ -138,19 +138,18 @@ export function buildRecepcaoEventoEnvXml(params: {
 }
 
 export function buildRecepcaoEventoSoapEnvelope(envEventoXml: string): string {
-  // No WSDL do Ambiente Nacional, nfeDadosMsg é xs:string.
-  // Enviar o envEvento como XML filho (sem CDATA) faz o ASP.NET da SEFAZ
-  // falhar com "Object reference not set to an instance of an object".
-  const cdata = `<![CDATA[${envEventoXml.replace(/]]>/g, ']]]]><![CDATA[>')}]]>`;
+  // No RecepcaoEvento4 o corpo é o próprio nfeDadosMsg (sem elemento da operação
+  // envolvendo). Envolver em <nfeRecepcaoEventoNF> deixa o parâmetro nulo no
+  // ASP.NET da SEFAZ e retorna HTTP 500 "Object reference not set".
   return (
     `<?xml version="1.0" encoding="UTF-8"?>` +
     `<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"` +
     ` xmlns:xsd="http://www.w3.org/2001/XMLSchema"` +
     ` xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">` +
     `<soap12:Body>` +
-    `<nfeRecepcaoEventoNF xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">` +
-    `<nfeDadosMsg>${cdata}</nfeDadosMsg>` +
-    `</nfeRecepcaoEventoNF>` +
+    `<nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">` +
+    envEventoXml +
+    `</nfeDadosMsg>` +
     `</soap12:Body>` +
     `</soap12:Envelope>`
   );
@@ -176,7 +175,6 @@ export function postRecepcaoEvento(
         agent,
         headers: {
           'Content-Type': `application/soap+xml; charset=utf-8; action="${soapAction}"`,
-          SOAPAction: `"${soapAction}"`,
           'Content-Length': Buffer.byteLength(soap),
         },
       },
