@@ -128,17 +128,20 @@ export function buildRecepcaoEventoEnvXml(params: {
   idLote: string;
   eventoXml: string;
 }): string {
+  const idLote = params.idLote.replace(/\D/g, '').slice(-15).padStart(15, '0');
   return (
     `<envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">` +
-    `<idLote>${xmlEscape(params.idLote)}</idLote>` +
+    `<idLote>${xmlEscape(idLote)}</idLote>` +
     params.eventoXml +
     `</envEvento>`
   );
 }
 
 export function buildRecepcaoEventoSoapEnvelope(envEventoXml: string): string {
-  // Ambiente Nacional (www.nfe.fazenda.gov.br) expõe a operação como nfeRecepcaoEventoNF.
-  // Usar nfeRecepcaoEvento gera soap:Sender "action was not recognized".
+  // No WSDL do Ambiente Nacional, nfeDadosMsg é xs:string.
+  // Enviar o envEvento como XML filho (sem CDATA) faz o ASP.NET da SEFAZ
+  // falhar com "Object reference not set to an instance of an object".
+  const cdata = `<![CDATA[${envEventoXml.replace(/]]>/g, ']]]]><![CDATA[>')}]]>`;
   return (
     `<?xml version="1.0" encoding="UTF-8"?>` +
     `<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"` +
@@ -146,7 +149,7 @@ export function buildRecepcaoEventoSoapEnvelope(envEventoXml: string): string {
     ` xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">` +
     `<soap12:Body>` +
     `<nfeRecepcaoEventoNF xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">` +
-    `<nfeDadosMsg>${envEventoXml}</nfeDadosMsg>` +
+    `<nfeDadosMsg>${cdata}</nfeDadosMsg>` +
     `</nfeRecepcaoEventoNF>` +
     `</soap12:Body>` +
     `</soap12:Envelope>`
