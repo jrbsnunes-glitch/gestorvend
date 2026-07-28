@@ -201,8 +201,11 @@ export class ProductsController {
 
   private parseProductControlSearch(term: string): number | null {
     if (!/^\d+$/.test(term)) return null;
+    // Product.controlNumber é INT4 — EANs/SKU numéricos longos não cabem e quebram o Prisma/PG.
+    if (term.length > 10) return null;
     const n = Number.parseInt(term, 10);
-    return Number.isFinite(n) && n > 0 ? n : null;
+    const INT4_MAX = 2_147_483_647;
+    return Number.isFinite(n) && n > 0 && n <= INT4_MAX ? n : null;
   }
 
   private mapProductSearchRows(

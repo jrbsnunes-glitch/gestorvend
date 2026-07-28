@@ -191,8 +191,17 @@ export class StockInventoryService {
 
     const controlRaw = body.controlNumber;
     if (controlRaw != null && String(controlRaw).trim() !== '') {
-      const controlNumber = Number(String(controlRaw).trim());
-      if (Number.isInteger(controlNumber) && controlNumber >= 1) {
+      const raw = String(controlRaw).trim();
+      // INT4: EANs numéricos longos não são código sequencial do produto
+      const INT4_MAX = 2_147_483_647;
+      const controlNumber = Number(raw);
+      if (
+        /^\d+$/.test(raw) &&
+        raw.length <= 10 &&
+        Number.isInteger(controlNumber) &&
+        controlNumber >= 1 &&
+        controlNumber <= INT4_MAX
+      ) {
         const variants = await db.productVariant.findMany({
           where: { product: { controlNumber } },
           orderBy: { sku: 'asc' },
