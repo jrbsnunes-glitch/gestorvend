@@ -28,7 +28,9 @@ export function syncDataTableCardLabels(root: ParentNode = document): void {
 
     const headers = headerLabels(table);
     table.querySelectorAll('tbody tr').forEach((tr) => {
-      const cells = Array.from(tr.querySelectorAll(':scope > td'));
+      const cells = Array.from(
+        tr.querySelectorAll(':scope > td'),
+      ) as HTMLTableCellElement[];
       if (cells.length === 0) return;
 
       const onlyColspan =
