@@ -1,5 +1,5 @@
 /**
- * Coletor mobile de inventário: bip (câmera / leitor / teclado) → quantidade → próximo.
+ * Coletor mobile de inventário: bip → pede quantidade → grava → próximo.
  * Reutiliza POST /stock-inventories/:id/items com barcode/sku e onDuplicate.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -44,7 +44,9 @@ type BarcodeDetectorLike = {
 
 function playBeep(ok: boolean) {
   try {
-    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const Ctx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new Ctx();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -69,17 +71,18 @@ export function StockInventarioCollectorPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const scanRef = useRef<HTMLInputElement>(null);
+  const qtyRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const detectingRef = useRef(false);
   const lastScanRef = useRef<{ code: string; at: number }>({ code: '', at: 0 });
+  const pendingRef = useRef(false);
 
   const [scanValue, setScanValue] = useState('');
-  const [mode, setMode] = useState<'increment' | 'qty'>('increment');
   const [err, setErr] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingProduct | null>(null);
-  const [qtyInput, setQtyInput] = useState('1');
+  const [qtyInput, setQtyInput] = useState('');
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraHint, setCameraHint] = useState<string | null>(null);
 
@@ -92,13 +95,25 @@ export function StockInventarioCollectorPage() {
 
   const inv = detail.data;
 
+  useEffect(() => {
+    pendingRef.current = pending != null;
+  }, [pending]);
+
   const focusScan = useCallback(() => {
     window.setTimeout(() => scanRef.current?.focus(), 50);
   }, []);
 
+  const focusQty = useCallback(() => {
+    window.setTimeout(() => {
+      qtyRef.current?.focus();
+      qtyRef.current?.select();
+    }, 50);
+  }, []);
+
   useEffect(() => {
-    focusScan();
-  }, [focusScan, pending, mode]);
+    if (pending) focusQty();
+    else focusScan();
+  }, [pending, focusQty, focusScan]);
 
   useEffect(() => {
     return () => {
@@ -107,62 +122,39 @@ export function StockInventarioCollectorPage() {
     };
   }, []);
 
-  const scanMut = useMutation({
-    mutationFn: (args: {
-      code?: string;
-      variantId?: string;
-      onDuplicate: 'increment' | 'set';
-      countedQty?: string;
-    }) => {
-      const json: Record<string, unknown> = {
-        onDuplicate: args.onDuplicate,
-      };
-      if (args.countedQty !== undefined) json.countedQty = args.countedQty;
-      if (args.variantId) {
-        json.variantId = args.variantId;
-      } else {
-        const code = (args.code ?? '').trim();
-        // Cascata no backend: barcode → sku → controlNumber
-        json.barcode = code;
-        json.sku = code;
-        if (/^\d{1,8}$/.test(code)) json.controlNumber = code;
-      }
-      return api<InventoryDetail>(`/stock-inventories/${id}/items`, {
+  const saveQtyMut = useMutation({
+    mutationFn: (args: { variantId: string; code: string; countedQty: string }) =>
+      api<InventoryDetail>(`/stock-inventories/${id}/items`, {
         method: 'POST',
-        json,
-      });
-    },
+        json: {
+          variantId: args.variantId,
+          countedQty: args.countedQty,
+          onDuplicate: 'set',
+        },
+      }),
     onSuccess: (row, vars) => {
       setErr(null);
       qc.setQueryData(['stock-inventories', id], row);
       playBeep(true);
-      const code = (vars.code ?? '').trim();
-      const item = row.items.find(
-        (it) =>
-          (vars.variantId && it.variant.id === vars.variantId) ||
-          it.variant.barcode === code ||
-          it.variant.sku.toLowerCase() === code.toLowerCase() ||
-          String(it.variant.product.controlNumber) === code,
-      );
-      const label = item?.variant.product.name ?? (code || 'OK');
-      const qty = item?.countedQty ?? vars.countedQty ?? '?';
-      setFlash(`${label} → ${qty}`);
+      const item = row.items.find((it) => it.variant.id === vars.variantId);
+      const label = item?.variant.product.name ?? vars.code;
+      setFlash(`${label} → ${vars.countedQty}`);
       window.setTimeout(() => setFlash(null), 1800);
-      setScanValue('');
       setPending(null);
+      setQtyInput('');
+      setScanValue('');
       focusScan();
     },
     onError: (e: Error) => {
       playBeep(false);
       setErr(e.message);
-      focusScan();
+      focusQty();
     },
   });
 
-  /** Resolve produto sem gravar (modo quantidade): busca via scan com set qty atual. */
-  const resolveForQty = useMutation({
+  /** Após o bip: resolve o produto e abre o campo de quantidade. */
+  const resolveAfterScan = useMutation({
     mutationFn: async (code: string) => {
-      // Usa search da API de produtos
       const rows = await api<
         Array<{
           variantId: string;
@@ -188,7 +180,8 @@ export function StockInventarioCollectorPage() {
     onSuccess: (p) => {
       setErr(null);
       setPending(p);
-      setQtyInput(p.currentCounted !== '' ? p.currentCounted : '1');
+      // Prefill com contagem atual se já existir; senão vazio para digitar logo
+      setQtyInput(p.currentCounted !== '' ? p.currentCounted : '');
       playBeep(true);
       setScanValue('');
     },
@@ -202,6 +195,9 @@ export function StockInventarioCollectorPage() {
   function submitCode(raw: string) {
     const code = raw.trim();
     if (!code || !id) return;
+    // Enquanto pede qty, ignora novos bips (evita sobrescrever o produto atual)
+    if (pendingRef.current) return;
+
     const now = Date.now();
     if (lastScanRef.current.code === code && now - lastScanRef.current.at < 900) {
       setScanValue('');
@@ -214,24 +210,21 @@ export function StockInventarioCollectorPage() {
       return;
     }
 
-    if (mode === 'increment') {
-      scanMut.mutate({ code, onDuplicate: 'increment', countedQty: '1' });
-    } else {
-      resolveForQty.mutate(code);
-    }
+    resolveAfterScan.mutate(code);
   }
 
   function confirmQty() {
     if (!pending) return;
-    const n = Number(qtyInput.replace(',', '.'));
-    if (!Number.isFinite(n) || n < 0) {
-      setErr('Quantidade inválida.');
+    const n = Number(String(qtyInput).replace(',', '.'));
+    if (!Number.isFinite(n) || n < 0 || String(qtyInput).trim() === '') {
+      setErr('Informe a quantidade contada.');
+      focusQty();
       return;
     }
-    scanMut.mutate({
+    setErr(null);
+    saveQtyMut.mutate({
       variantId: pending.variantId,
       code: pending.code,
-      onDuplicate: 'set',
       countedQty: String(n),
     });
   }
@@ -242,7 +235,7 @@ export function StockInventarioCollectorPage() {
       streamRef.current = null;
       setCameraOn(false);
       setCameraHint(null);
-      focusScan();
+      if (!pending) focusScan();
       return;
     }
     if (!hasBarcodeDetector()) {
@@ -288,7 +281,7 @@ export function StockInventarioCollectorPage() {
     }
 
     const tick = async () => {
-      if (cancelled || detectingRef.current) {
+      if (cancelled || detectingRef.current || pendingRef.current) {
         if (!cancelled) requestAnimationFrame(() => void tick());
         return;
       }
@@ -313,15 +306,16 @@ export function StockInventarioCollectorPage() {
     return () => {
       cancelled = true;
     };
-    // submitCode is stable enough via closure; avoid re-binding camera loop each render
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraOn, mode, id, inv?.status]);
+  }, [cameraOn, id, inv?.status]);
 
   const recent = (inv?.items ?? [])
     .slice()
     .reverse()
     .filter((it) => it.countedQty != null)
     .slice(0, 12);
+
+  const busy = resolveAfterScan.isPending || saveQtyMut.isPending;
 
   if (!id) {
     return <p className="alert alert-error">Inventário inválido.</p>;
@@ -338,9 +332,7 @@ export function StockInventarioCollectorPage() {
             Coletor #{inv?.controlNumber ?? '…'}
           </h2>
           <p className="inv-collector__sub">
-            {inv
-              ? `${inv.location.code} — ${inv.location.name}`
-              : 'Carregando…'}
+            {inv ? `${inv.location.code} — ${inv.location.name}` : 'Carregando…'}
             {inv && inv.status !== 'DRAFT' ? ` · ${inv.status}` : ''}
           </p>
         </div>
@@ -353,114 +345,120 @@ export function StockInventarioCollectorPage() {
         </button>
       </header>
 
-      {flash && <div className="inv-collector__flash" role="status">{flash}</div>}
+      <p className="inv-collector__hint-flow">
+        1. Bipe o código → 2. Informe a quantidade → Enter → próximo
+      </p>
+
+      {flash && (
+        <div className="inv-collector__flash" role="status">
+          {flash}
+        </div>
+      )}
       {err && <div className="alert alert-error inv-collector__err">{err}</div>}
       {cameraHint && <div className="alert inv-collector__hint">{cameraHint}</div>}
 
-      <div className="inv-collector__modes" role="group" aria-label="Modo de contagem">
-        <button
-          type="button"
-          className={mode === 'increment' ? 'active' : ''}
-          onClick={() => {
-            setMode('increment');
-            setPending(null);
-            focusScan();
-          }}
-        >
-          Somar +1 a cada bip
-        </button>
-        <button
-          type="button"
-          className={mode === 'qty' ? 'active' : ''}
-          onClick={() => {
-            setMode('qty');
-            focusScan();
-          }}
-        >
-          Informar quantidade
-        </button>
-      </div>
-
-      <div className="inv-collector__scan" onClick={() => scanRef.current?.focus()}>
-        <label htmlFor="inv-scan-input">Código / EAN / SKU</label>
-        <input
-          id="inv-scan-input"
-          ref={scanRef}
-          className="inv-collector__input"
-          inputMode="text"
-          autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
-          placeholder="Bipe ou digite e Enter"
-          value={scanValue}
-          disabled={inv?.status !== 'DRAFT' || scanMut.isPending || resolveForQty.isPending}
-          onChange={(e) => setScanValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              submitCode(scanValue);
-            }
-          }}
-        />
-        <div className="inv-collector__scan-actions">
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!scanValue.trim() || inv?.status !== 'DRAFT'}
-            onClick={() => submitCode(scanValue)}
-          >
-            Confirmar código
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={() => void toggleCamera()}>
-            {cameraOn ? 'Fechar câmera' : 'Câmera'}
-          </button>
-        </div>
-      </div>
-
-      {cameraOn && (
-        <div className="inv-collector__camera">
-          <video ref={videoRef} playsInline muted autoPlay />
-        </div>
-      )}
-
-      {pending && mode === 'qty' && (
-        <div className="inv-collector__pending">
+      {pending ? (
+        <div className="inv-collector__pending" role="dialog" aria-label="Informar quantidade">
+          <p className="inv-collector__pending-step">Produto identificado — informe a contagem</p>
           <strong>{pending.name}</strong>
           <span className="muted">
             SKU {pending.sku}
             {pending.barcode ? ` · EAN ${pending.barcode}` : ''}
-            {pending.currentCounted !== '' ? ` · atual: ${pending.currentCounted}` : ''}
+            {pending.currentCounted !== ''
+              ? ` · já contado: ${pending.currentCounted}`
+              : ''}
+            {pending.systemQty !== '' ? ` · saldo sist.: ${Number(pending.systemQty)}` : ''}
           </span>
-          <label htmlFor="inv-qty">Quantidade contada</label>
+          <label htmlFor="inv-qty">Quantidade contada *</label>
           <input
             id="inv-qty"
+            ref={qtyRef}
             className="inv-collector__qty"
             inputMode="decimal"
+            autoComplete="off"
+            placeholder="Ex.: 12"
             value={qtyInput}
-            autoFocus
+            disabled={busy}
             onChange={(e) => setQtyInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
                 confirmQty();
               }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setPending(null);
+                setQtyInput('');
+                setErr(null);
+                focusScan();
+              }
             }}
           />
           <div className="inv-collector__scan-actions">
-            <button type="button" className="btn btn-primary" onClick={confirmQty}>
-              Salvar quantidade
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy || String(qtyInput).trim() === ''}
+              onClick={confirmQty}
+            >
+              {saveQtyMut.isPending ? 'Salvando…' : 'Salvar e próximo'}
             </button>
             <button
               type="button"
               className="btn btn-secondary"
+              disabled={busy}
               onClick={() => {
                 setPending(null);
+                setQtyInput('');
+                setErr(null);
                 focusScan();
               }}
             >
               Cancelar
             </button>
           </div>
+        </div>
+      ) : (
+        <div className="inv-collector__scan" onClick={() => scanRef.current?.focus()}>
+          <label htmlFor="inv-scan-input">Código / EAN / SKU</label>
+          <input
+            id="inv-scan-input"
+            ref={scanRef}
+            className="inv-collector__input"
+            inputMode="text"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder="Bipe ou digite e Enter"
+            value={scanValue}
+            disabled={inv?.status !== 'DRAFT' || busy}
+            onChange={(e) => setScanValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                submitCode(scanValue);
+              }
+            }}
+          />
+          <div className="inv-collector__scan-actions">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!scanValue.trim() || inv?.status !== 'DRAFT' || busy}
+              onClick={() => submitCode(scanValue)}
+            >
+              {resolveAfterScan.isPending ? 'Buscando…' : 'Confirmar código'}
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={() => void toggleCamera()}>
+              {cameraOn ? 'Fechar câmera' : 'Câmera'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {cameraOn && !pending && (
+        <div className="inv-collector__camera">
+          <video ref={videoRef} playsInline muted autoPlay />
         </div>
       )}
 

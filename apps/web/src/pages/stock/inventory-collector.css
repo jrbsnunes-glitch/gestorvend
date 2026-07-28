@@ -61,27 +61,19 @@
   margin-bottom: 0.65rem;
 }
 
-.inv-collector__modes {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.4rem;
-  margin-bottom: 0.85rem;
-}
-
-.inv-collector__modes button {
-  border: 1px solid #c5d0cb;
-  background: #fff;
-  border-radius: 8px;
-  padding: 0.65rem 0.5rem;
+.inv-collector__hint-flow {
+  margin: 0 0 0.75rem;
   font-size: 0.85rem;
-  cursor: pointer;
+  opacity: 0.85;
 }
 
-.inv-collector__modes button.active {
-  background: var(--inv-accent);
-  border-color: var(--inv-accent);
-  color: #fff;
+.inv-collector__pending-step {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
   font-weight: 600;
+  color: var(--inv-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .inv-collector__scan {
