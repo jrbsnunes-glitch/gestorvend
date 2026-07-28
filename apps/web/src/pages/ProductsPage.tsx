@@ -1057,7 +1057,8 @@ export function ProductsPage() {
                       hintLabel={taxUnit || null}
                     />
                     <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Padrão <strong>UN</strong> (Unidade). Pesquise ou cadastre outra unidade se necessário.
+                      Padrão <strong>UN</strong> (Unidade). Use <strong>KG</strong> para venda a peso —
+                      no PDV a quantidade fica fracionada (ex.: 0,350 kg).
                     </span>
                   </div>
                   <div className="field">
@@ -1121,16 +1122,31 @@ export function ProductsPage() {
                       }}
                     >
                       <li>
-                        Cadastre antes o produto da <strong>unidade</strong>.
+                        Cadastre antes o produto da <strong>unidade</strong> (ex.: balde de gelo, peça de
+                        linguiça).
                       </li>
                       <li>
-                        Neste produto (caixa), informe a conversão <strong>igual à unidade da NF</strong>{' '}
-                        (ex.: CX) e quantos itens vêm em cada composto (ex.: 12).
+                        Neste produto (caixa/kg da NF), informe a conversão{' '}
+                        <strong>igual à unidade da NF</strong> (ex.: CX, KG) e quantos itens unitários
+                        equivalem a 1 da NF (ex.: 6 baldes/caixa, 20 peças/kg).
                       </li>
                       <li>
-                        Clique em <strong>Vincular produto</strong> e escolha o produto unitário.
+                        Clique em <strong>Vincular produto</strong> e escolha o produto unitário. O
+                        estoque sobe/baixa nele; inventarie o unitário.
                       </li>
                     </ol>
+                    <p
+                      style={{
+                        margin: '0 0 0.55rem',
+                        fontSize: '0.78rem',
+                        color: 'var(--color-text-muted)',
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      Exemplos: <strong>gelo</strong> = caixa → balde; <strong>linguiça</strong> em KG
+                      vendida em peças = composto KG + unitário. Dois preços de balde → dois unitários.
+                      Detalhes em <code>docs/ESTOQUE-COMPOSTOS-E-PESO.md</code>.
+                    </p>
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                       <input
                         readOnly
@@ -1388,7 +1404,8 @@ export function ProductsPage() {
                       hintLabel={taxUnit || null}
                     />
                     <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Padrão <strong>UN</strong> (Unidade). Pesquise ou cadastre outra unidade se necessário.
+                      Padrão <strong>UN</strong> (Unidade). Use <strong>KG</strong> para venda a peso —
+                      no PDV a quantidade fica fracionada (ex.: 0,350 kg).
                     </span>
                   </div>
                   <div className="field">
@@ -1452,16 +1469,31 @@ export function ProductsPage() {
                       }}
                     >
                       <li>
-                        Cadastre antes o produto da <strong>unidade</strong>.
+                        Cadastre antes o produto da <strong>unidade</strong> (ex.: balde de gelo, peça de
+                        linguiça).
                       </li>
                       <li>
-                        Neste produto (caixa), informe a conversão <strong>igual à unidade da NF</strong>{' '}
-                        (ex.: CX) e quantos itens vêm em cada composto (ex.: 12).
+                        Neste produto (caixa/kg da NF), informe a conversão{' '}
+                        <strong>igual à unidade da NF</strong> (ex.: CX, KG) e quantos itens unitários
+                        equivalem a 1 da NF (ex.: 6 baldes/caixa, 20 peças/kg).
                       </li>
                       <li>
-                        Clique em <strong>Vincular produto</strong> e escolha o produto unitário.
+                        Clique em <strong>Vincular produto</strong> e escolha o produto unitário. O
+                        estoque sobe/baixa nele; inventarie o unitário.
                       </li>
                     </ol>
+                    <p
+                      style={{
+                        margin: '0 0 0.55rem',
+                        fontSize: '0.78rem',
+                        color: 'var(--color-text-muted)',
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      Exemplos: <strong>gelo</strong> = caixa → balde; <strong>linguiça</strong> em KG
+                      vendida em peças = composto KG + unitário. Dois preços de balde → dois unitários.
+                      Detalhes em <code>docs/ESTOQUE-COMPOSTOS-E-PESO.md</code>.
+                    </p>
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                       <input
                         readOnly

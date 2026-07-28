@@ -390,6 +390,61 @@ export async function api<T>(
   return res.json() as Promise<T>;
 }
 
+/** Download autenticado (ex.: CSV de inventário) — dispara save no navegador. */
+export async function apiDownload(path: string, fallbackFilename: string): Promise<void> {
+  const buildHeaders = (): HeadersInit => {
+    const headers: HeadersInit = {};
+    const token = getToken();
+    if (token) {
+      (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  };
+
+  const request = () =>
+    fetch(resolveApiUrl(path), {
+      method: 'GET',
+      headers: buildHeaders(),
+    });
+
+  let res: Response;
+  try {
+    res = await request();
+  } catch (e) {
+    throw new Error(formatFetchNetworkError(e));
+  }
+
+  if (res.status === 401 && getRefreshToken()) {
+    const renewed = await refreshAccessToken();
+    if (renewed) {
+      try {
+        res = await request();
+      } catch (e) {
+        throw new Error(formatFetchNetworkError(e));
+      }
+    }
+  }
+
+  if (!res.ok) {
+    const text = await res.text();
+    if (res.status === 401 || (res.status === 403 && isLicenseDenied(res.status, text))) {
+      handleAuthFailure(res.status, res.statusText, text);
+    }
+    throw new Error(formatApiErrorBody(res.status, res.statusText, text));
+  }
+
+  const blob = await res.blob();
+  const cd = res.headers.get('Content-Disposition') ?? '';
+  const match = /filename="?([^";]+)"?/i.exec(cd);
+  const filename = match?.[1]?.trim() || fallbackFilename;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /** Upload multipart (ex.: logotipo da empresa, certificado A1). */
 export async function apiUpload<T>(
   path: string,

@@ -40,6 +40,7 @@ import { SaleReceiptPrintPage } from './pages/SaleReceiptPrintPage';
 import { SalesPage } from './pages/SalesPage';
 import { StockEntradaPage } from './pages/stock/StockEntradaPage';
 import { StockInventarioPage } from './pages/stock/StockInventarioPage';
+import { StockInventarioCollectorPage } from './pages/stock/StockInventarioCollectorPage';
 import { StockFechamentoPage } from './pages/stock/StockFechamentoPage';
 import { StockLocaisPage } from './pages/stock/StockLocaisPage';
 import { StockMovimentosPage } from './pages/stock/StockMovimentosPage';
@@ -188,6 +189,7 @@ function AppInner() {
             <Route path="locais" element={<StockLocaisPage />} />
             <Route path="transferencias" element={<StockTransferenciasPage />} />
             <Route path="inventario" element={<StockInventarioPage />} />
+            <Route path="inventario/:id/coletar" element={<StockInventarioCollectorPage />} />
             <Route path="movimentos" element={<StockMovimentosPage />} />
             <Route path="fechamento" element={<StockFechamentoPage />} />
           </Route>

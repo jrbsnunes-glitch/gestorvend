@@ -13,6 +13,7 @@ export type ProductSearchRow = {
   retailPrice: string;
   costAverage: string;
   stockTotal: string;
+  taxUnit?: string | null;
 };
 
 type Props = {

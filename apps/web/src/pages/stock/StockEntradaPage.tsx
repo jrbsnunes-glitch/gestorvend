@@ -761,6 +761,14 @@ export function StockEntradaPage() {
           <li>Lista de entradas por período (a implementar)</li>
           <li>Conferência NF-e × estoque recebido</li>
           <li>Exportação para contabilidade</li>
+          <li>
+            Caixa/pack (CX, PCT…): use <strong>Cadastrar caixa + unitário</strong> — o estoque sobe no
+            unitário (ex.: gelo caixa → baldes).
+          </li>
+          <li>
+            Compra em KG vendida em peças (ex.: linguiça): cadastre composto com conversão KG + fator e
+            vincule o unitário em Produtos (ver docs/ESTOQUE-COMPOSTOS-E-PESO.md).
+          </li>
         </ul>
       </ModuleReportsModal>
 
@@ -1725,8 +1733,9 @@ function PackFromInboundModal({
           <h2>Cadastrar caixa + unitário</h2>
           <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
             A NF veio em <strong>{line.invoiceUnit.trim().toUpperCase() || 'CX'}</strong>. O sistema cria o
-            produto composto (caixa) e o unitário; na entrada o estoque sobe no unitário (
-            qtd NF × itens por embalagem).
+            produto composto (caixa) e o unitário; na entrada o estoque sobe no unitário (qtd NF × itens).
+            Ex.: gelo caixa → baldes. Compra em KG vendida em peças: cadastre o composto em Produtos
+            (conversão KG + fator) — ver docs/ESTOQUE-COMPOSTOS-E-PESO.md.
           </p>
           {localErr && <div className="alert alert-error">{localErr}</div>}
           <div className="field">

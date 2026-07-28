@@ -97,6 +97,8 @@ type ProductSearchRow = {
   productName: string;
   description: string | null;
   productControlNumber?: number;
+  /** Unidade tributável (UN, KG, G, L…). */
+  taxUnit?: string | null;
   variantId: string;
   sku: string;
   barcode: string | null;
@@ -151,6 +153,8 @@ type CartLine = {
   quantity: number;
   stockTotal: number;
   minStock: number;
+  /** Unidade tributável — controla qty fracionada no PDV. */
+  taxUnit: string;
 };
 
 type PaymentKind = 'CASH' | 'CARD' | 'PIX' | 'CREDIT' | 'OTHER';
@@ -192,6 +196,65 @@ function parseDecimal(v: string | number | null | undefined): number {
   if (v == null) return 0;
   const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
   return Number.isFinite(n) ? n : 0;
+}
+
+/** Unidades que aceitam quantidade fracionada no PDV (peso/volume). */
+const FRACTIONAL_TAX_UNITS = new Set([
+  'KG',
+  'G',
+  'GR',
+  'MG',
+  'T',
+  'TON',
+  'L',
+  'LT',
+  'ML',
+]);
+
+function normalizeTaxUnit(taxUnit: string | null | undefined): string {
+  const u = (taxUnit ?? 'UN').trim().toUpperCase();
+  return u || 'UN';
+}
+
+function isFractionalTaxUnit(taxUnit: string | null | undefined): boolean {
+  return FRACTIONAL_TAX_UNITS.has(normalizeTaxUnit(taxUnit));
+}
+
+function qtyStepForUnit(taxUnit: string | null | undefined): number {
+  const u = normalizeTaxUnit(taxUnit);
+  if (u === 'G' || u === 'GR' || u === 'MG' || u === 'ML') return 1;
+  if (isFractionalTaxUnit(u)) return 0.1;
+  return 1;
+}
+
+function qtyUnitLabel(taxUnit: string | null | undefined): string {
+  const u = normalizeTaxUnit(taxUnit);
+  if (u === 'KG') return 'kg';
+  if (u === 'G' || u === 'GR') return 'g';
+  if (u === 'MG') return 'mg';
+  if (u === 'L' || u === 'LT') return 'L';
+  if (u === 'ML') return 'ml';
+  if (u === 'T' || u === 'TON') return 't';
+  return u.toLowerCase();
+}
+
+/** Arredonda qty: 3 casas p/ fracionados; inteiro p/ UN etc. */
+function roundCartQty(qty: number, taxUnit: string | null | undefined): number {
+  if (!Number.isFinite(qty) || qty < 0) return 0;
+  if (isFractionalTaxUnit(taxUnit)) {
+    return Math.round(qty * 1000) / 1000;
+  }
+  return Math.round(qty);
+}
+
+function formatCartQty(qty: number, taxUnit: string | null | undefined): string {
+  if (isFractionalTaxUnit(taxUnit)) {
+    return qty.toLocaleString('pt-BR', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 3,
+    });
+  }
+  return String(qty);
 }
 
 function classifyStock(stock: number, qtyInCart: number, minStock: number) {
@@ -789,6 +852,10 @@ function PosScreen({
 
   /* --- estado do carrinho atual --- */
   const [lines, setLines] = useState<CartLine[]>([]);
+  /** Rascunho de qty enquanto digita (permite "0," / "1,25"). */
+  const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
+  const [focusQtyVariantId, setFocusQtyVariantId] = useState<string | null>(null);
+  const qtyInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [discount, setDiscount] = useState(0);
   const [surcharge, setSurcharge] = useState(0);
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -1165,11 +1232,22 @@ function PosScreen({
     const promo = p.promoPrice ? parseDecimal(p.promoPrice) : 0;
     const retail = parseDecimal(p.retailPrice);
     const unitPrice = promo > 0 && promo < retail ? promo : retail;
+    const taxUnit = normalizeTaxUnit(p.taxUnit);
+    const fractional = isFractionalTaxUnit(taxUnit);
 
     setLines((prev) => {
       const idx = prev.findIndex((l) => l.variantId === p.variantId);
       if (idx >= 0) {
-        return prev.map((l, i) => (i === idx ? { ...l, quantity: l.quantity + 1 } : l));
+        if (fractional) {
+          // Peso/volume: não soma +1 automaticamente — operador ajusta a qty.
+          return prev;
+        }
+        const step = qtyStepForUnit(prev[idx]!.taxUnit);
+        return prev.map((l, i) =>
+          i === idx
+            ? { ...l, quantity: roundCartQty(l.quantity + step, l.taxUnit) }
+            : l,
+        );
       }
       return [
         ...prev,
@@ -1179,33 +1257,79 @@ function PosScreen({
           sku: p.sku,
           barcode: p.barcode,
           unitPrice,
-          quantity: 1,
+          quantity: fractional ? 1 : 1,
           stockTotal: parseDecimal(p.stockTotal),
           minStock: parseDecimal(p.minStock),
+          taxUnit,
         },
       ];
     });
     setScannerValue('');
     setSuggestOpen(false);
     setSuggestIdx(0);
+    if (fractional) {
+      setFocusQtyVariantId(p.variantId);
+      setToast({
+        kind: 'ok',
+        text: `Informe o peso/quantidade em ${qtyUnitLabel(taxUnit)}`,
+      });
+    }
   }, []);
 
+  useEffect(() => {
+    if (!focusQtyVariantId) return;
+    const el = qtyInputRefs.current[focusQtyVariantId];
+    if (el) {
+      el.focus();
+      el.select();
+    }
+    setFocusQtyVariantId(null);
+  }, [focusQtyVariantId, lines]);
+
   function updateLineQty(variantId: string, qty: number) {
-    if (qty <= 0) {
+    const line = lines.find((l) => l.variantId === variantId);
+    const rounded = roundCartQty(qty, line?.taxUnit);
+    if (rounded <= 0) {
       setLines((prev) => prev.filter((l) => l.variantId !== variantId));
+      setQtyDraft((d) => {
+        const next = { ...d };
+        delete next[variantId];
+        return next;
+      });
       return;
     }
     setLines((prev) =>
-      prev.map((l) => (l.variantId === variantId ? { ...l, quantity: qty } : l)),
+      prev.map((l) =>
+        l.variantId === variantId ? { ...l, quantity: roundCartQty(qty, l.taxUnit) } : l,
+      ),
     );
+    setQtyDraft((d) => {
+      if (d[variantId] === undefined) return d;
+      const next = { ...d };
+      delete next[variantId];
+      return next;
+    });
+  }
+
+  function commitQtyDraft(variantId: string) {
+    const raw = qtyDraft[variantId];
+    if (raw === undefined) return;
+    const n = parseDecimal(raw);
+    updateLineQty(variantId, n);
   }
 
   function removeLine(variantId: string) {
     setLines((prev) => prev.filter((l) => l.variantId !== variantId));
+    setQtyDraft((d) => {
+      const next = { ...d };
+      delete next[variantId];
+      return next;
+    });
   }
 
   function resetSale() {
     setLines([]);
+    setQtyDraft({});
     setDiscount(0);
     setSurcharge(0);
     setCustomer(null);
@@ -1457,12 +1581,22 @@ function PosScreen({
                           <div className="pos-suggest-meta">
                             Cód. {p.productControlNumber ?? '—'} · SKU {p.sku}
                             {p.barcode ? ` · EAN ${p.barcode}` : ''}
+                            {isFractionalTaxUnit(p.taxUnit)
+                              ? ` · ${qtyUnitLabel(p.taxUnit)}`
+                              : ''}
                           </div>
                         </div>
                         <div>
-                          <div className="pos-suggest-price">{formatBRL(p.retailPrice)}</div>
+                          <div className="pos-suggest-price">
+                            {formatBRL(p.retailPrice)}
+                            {isFractionalTaxUnit(p.taxUnit)
+                              ? `/${qtyUnitLabel(p.taxUnit)}`
+                              : ''}
+                          </div>
                           <div className={`pos-suggest-stock pos-stock-pill ${pillClass}`}>
-                            {stock <= 0 ? 'Sem estoque' : `Em estoque: ${stock}`}
+                            {stock <= 0
+                              ? 'Sem estoque'
+                              : `Em estoque: ${formatCartQty(stock, p.taxUnit)}`}
                           </div>
                         </div>
                       </div>
@@ -1518,6 +1652,13 @@ function PosScreen({
                           const status = classifyStock(l.stockTotal, l.quantity, l.minStock);
                           const rowClass =
                             status === 'out' ? 'is-out' : status === 'low' ? 'is-low' : '';
+                          const step = qtyStepForUnit(l.taxUnit);
+                          const unitLbl = qtyUnitLabel(l.taxUnit);
+                          const fractional = isFractionalTaxUnit(l.taxUnit);
+                          const qtyDisplay =
+                            qtyDraft[l.variantId] !== undefined
+                              ? qtyDraft[l.variantId]!
+                              : formatCartQty(l.quantity, l.taxUnit);
                           return (
                             <tr key={l.variantId} className={rowClass}>
                               <td>
@@ -1525,6 +1666,7 @@ function PosScreen({
                                 <span className="pos-item-sku">
                                   SKU {l.sku}
                                   {l.barcode ? ` · EAN ${l.barcode}` : ''}
+                                  {fractional ? ` · ${unitLbl}` : ''}
                                 </span>
                               </td>
                               <td>
@@ -1532,24 +1674,63 @@ function PosScreen({
                                   <button
                                     type="button"
                                     className="pos-qty-btn"
-                                    onClick={() => updateLineQty(l.variantId, l.quantity - 1)}
-                                    aria-label="Diminuir quantidade"
+                                    onClick={() =>
+                                      updateLineQty(
+                                        l.variantId,
+                                        roundCartQty(l.quantity - step, l.taxUnit),
+                                      )
+                                    }
+                                    aria-label={`Diminuir quantidade (${unitLbl})`}
                                   >
                                     −
                                   </button>
                                   <input
-                                    className="pos-qty-input"
-                                    value={String(l.quantity)}
+                                    ref={(el) => {
+                                      qtyInputRefs.current[l.variantId] = el;
+                                    }}
+                                    className={`pos-qty-input${fractional ? ' pos-qty-input--frac' : ''}`}
+                                    inputMode="decimal"
+                                    value={qtyDisplay}
+                                    aria-label={`Quantidade em ${unitLbl}`}
                                     onChange={(e) => {
-                                      const n = parseInt(e.target.value, 10);
-                                      if (!Number.isNaN(n) && n >= 0) updateLineQty(l.variantId, n);
+                                      const raw = e.target.value;
+                                      // Permite digitação intermediária (vírgula/ponto)
+                                      if (raw === '' || /^[\d.,]*$/.test(raw)) {
+                                        setQtyDraft((d) => ({ ...d, [l.variantId]: raw }));
+                                        const n = parseDecimal(raw);
+                                        if (raw !== '' && raw !== ',' && raw !== '.' && n > 0) {
+                                          setLines((prev) =>
+                                            prev.map((row) =>
+                                              row.variantId === l.variantId
+                                                ? {
+                                                    ...row,
+                                                    quantity: roundCartQty(n, row.taxUnit),
+                                                  }
+                                                : row,
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    }}
+                                    onBlur={() => commitQtyDraft(l.variantId)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        commitQtyDraft(l.variantId);
+                                        scannerRef.current?.focus();
+                                      }
                                     }}
                                   />
                                   <button
                                     type="button"
                                     className="pos-qty-btn"
-                                    onClick={() => updateLineQty(l.variantId, l.quantity + 1)}
-                                    aria-label="Aumentar quantidade"
+                                    onClick={() =>
+                                      updateLineQty(
+                                        l.variantId,
+                                        roundCartQty(l.quantity + step, l.taxUnit),
+                                      )
+                                    }
+                                    aria-label={`Aumentar quantidade (${unitLbl})`}
                                   >
                                     +
                                   </button>
@@ -1560,15 +1741,17 @@ function PosScreen({
                                   {status === 'out'
                                     ? 'Sem estoque'
                                     : status === 'low'
-                                      ? `Baixo (${l.stockTotal})`
-                                      : `OK (${l.stockTotal})`}
+                                      ? `Baixo (${formatCartQty(l.stockTotal, l.taxUnit)} ${unitLbl})`
+                                      : `OK (${formatCartQty(l.stockTotal, l.taxUnit)} ${unitLbl})`}
                                 </span>
                               </td>
                               <td>
                                 <div className="pos-line-money">
                                   {formatBRL(l.unitPrice * l.quantity)}
                                 </div>
-                                <span className="pos-line-unit">{formatBRL(l.unitPrice)} un</span>
+                                <span className="pos-line-unit">
+                                  {formatBRL(l.unitPrice)}/{unitLbl}
+                                </span>
                               </td>
                               <td>
                                 <button

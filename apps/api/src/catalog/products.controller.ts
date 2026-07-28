@@ -220,6 +220,7 @@ export class ProductsController {
         description: string | null;
         inventoryControlMin: Prisma.Decimal;
         controlNumber: number;
+        taxUnit: string | null;
       };
       stockBalances: Array<{ quantity: Prisma.Decimal }>;
     }>,
@@ -235,6 +236,7 @@ export class ProductsController {
         description: v.product.description,
         productControlNumber: v.product.controlNumber,
         productInventoryControlMin: String(v.product.inventoryControlMin),
+        taxUnit: v.product.taxUnit ?? 'UN',
         variantId: v.id,
         sku: v.sku,
         barcode: v.barcode,
@@ -274,6 +276,7 @@ export class ProductsController {
           description: true,
           inventoryControlMin: true,
           controlNumber: true,
+          taxUnit: true,
         },
       },
       stockBalances: { select: { quantity: true } },

@@ -33,6 +33,9 @@ export function StockShell() {
   const printTitle =
     PRINT_TITLE_BY_PATH[location.pathname] ||
     PRINT_TITLE_BY_PATH[location.pathname.replace(/\/$/, '')] ||
+    (location.pathname.includes('/inventario/') && location.pathname.endsWith('/coletar')
+      ? 'Coletor de inventário'
+      : null) ||
     'Estoque';
 
   const printHint = useMemo(

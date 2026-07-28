@@ -1372,6 +1372,10 @@
   font-variant-numeric: tabular-nums;
 }
 
+.pos-qty-input--frac {
+  width: 72px;
+}
+
 .pos-qty-input:focus {
   outline: none;
   background: var(--pos-info-soft);

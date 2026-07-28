@@ -1,15 +1,17 @@
 /**
  * Inventário físico: documento com 1 a N produtos no mesmo local.
  * Rascunho → incluir produtos → informar contagens → postar (gera ADJUST).
+ * Também: import/export CSV e coletor mobile (/estoque/inventario/:id/coletar).
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { CrudToolbar } from '../../components/CrudToolbar';
 import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
 import { ProductSearchModal, type ProductSearchRow } from '../../components/ProductSearchModal';
 import { RecordViewModal } from '../../components/RecordViewModal';
-import { api } from '../../lib/api';
+import { api, apiDownload, apiUpload } from '../../lib/api';
 import { formatDate } from '../../lib/format';
 
 type Location = { id: string; code: string; name: string };
@@ -35,7 +37,7 @@ type InventoryItem = {
     id: string;
     sku: string;
     barcode: string | null;
-    product: { id: string; name: string };
+    product: { id: string; name: string; controlNumber?: number };
   };
 };
 
@@ -51,6 +53,16 @@ type InventoryDetail = {
   items: InventoryItem[];
 };
 
+type CsvImportResult = {
+  inventory: InventoryDetail;
+  summary: {
+    created: number;
+    updated: number;
+    skipped: number;
+    errors: Array<{ line: number; reason: string; raw?: string }>;
+  };
+};
+
 function statusLabel(s: string): string {
   if (s === 'DRAFT') return 'Rascunho';
   if (s === 'POSTED') return 'Postado';
@@ -60,6 +72,7 @@ function statusLabel(s: string): string {
 
 export function StockInventarioPage() {
   const qc = useQueryClient();
+  const csvInputRef = useRef<HTMLInputElement>(null);
   const [reportsOpen, setReportsOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
@@ -70,12 +83,24 @@ export function StockInventarioPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [viewId, setViewId] = useState<string | null>(null);
   const [productSearchOpen, setProductSearchOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkScope, setBulkScope] = useState<'category' | 'all'>('category');
+  const [bulkCategoryId, setBulkCategoryId] = useState('');
+  const [bulkErr, setBulkErr] = useState<string | null>(null);
   const [editErr, setEditErr] = useState<string | null>(null);
   const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
+  const [importResult, setImportResult] = useState<CsvImportResult['summary'] | null>(null);
+  const [csvBusy, setCsvBusy] = useState(false);
 
   const locations = useQuery({
     queryKey: ['stock-locations'],
     queryFn: () => api<Location[]>('/stock-locations'),
+  });
+
+  const categories = useQuery({
+    queryKey: ['categories', 'inventory-bulk'],
+    queryFn: () => api<Array<{ id: string; name: string }>>('/categories'),
+    enabled: bulkOpen,
   });
 
   const listQs = statusFilter ? `?status=${statusFilter}` : '';
@@ -125,6 +150,45 @@ export function StockInventarioPage() {
       qc.invalidateQueries({ queryKey: ['stock-inventories', editId] });
     },
     onError: (e: Error) => setEditErr(e.message),
+  });
+
+  const bulkAddMut = useMutation({
+    mutationFn: (body: { scope: 'all' | 'category'; categoryId?: string }) =>
+      api<{
+        inventory: InventoryDetail;
+        summary: {
+          added: number;
+          skippedAlreadyInInventory: number;
+          candidates: number;
+        };
+      }>(`/stock-inventories/${editId}/items/bulk`, {
+        method: 'POST',
+        json: body,
+      }),
+    onSuccess: (res) => {
+      setBulkErr(null);
+      setBulkOpen(false);
+      setBulkCategoryId('');
+      setBulkScope('category');
+      qc.setQueryData(['stock-inventories', editId], res.inventory);
+      invalidate();
+      const { added, skippedAlreadyInInventory, candidates } = res.summary;
+      if (added === 0) {
+        alert(
+          candidates === 0
+            ? 'Nenhum produto elegível encontrado (ativos e unitários).'
+            : `Nenhum produto novo. ${skippedAlreadyInInventory} já estavam no inventário.`,
+        );
+      } else {
+        alert(
+          `Incluídos ${added} produto(s).` +
+            (skippedAlreadyInInventory > 0
+              ? ` ${skippedAlreadyInInventory} já estavam no inventário e foram ignorados.`
+              : ''),
+        );
+      }
+    },
+    onError: (e: Error) => setBulkErr(e.message),
   });
 
   const patchItemMut = useMutation({
@@ -215,6 +279,40 @@ export function StockInventarioPage() {
     return String(d);
   }
 
+  async function exportCsv(inventoryId: string, controlNumber: number) {
+    try {
+      setCsvBusy(true);
+      await apiDownload(
+        `/stock-inventories/${inventoryId}/export-csv`,
+        `inventario-${controlNumber}.csv`,
+      );
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Falha ao exportar CSV.');
+    } finally {
+      setCsvBusy(false);
+    }
+  }
+
+  async function onCsvSelected(file: File | undefined) {
+    if (!file || !editId) return;
+    try {
+      setCsvBusy(true);
+      setEditErr(null);
+      const result = await apiUpload<CsvImportResult>(
+        `/stock-inventories/${editId}/import-csv`,
+        file,
+      );
+      qc.setQueryData(['stock-inventories', editId], result.inventory);
+      invalidate();
+      setImportResult(result.summary);
+    } catch (e) {
+      setEditErr(e instanceof Error ? e.message : 'Falha ao importar CSV.');
+    } finally {
+      setCsvBusy(false);
+      if (csvInputRef.current) csvInputRef.current.value = '';
+    }
+  }
+
   return (
     <div>
       <CrudToolbar
@@ -230,14 +328,29 @@ export function StockInventarioPage() {
       <ModuleReportsModal open={reportsOpen} title="Inventário" onClose={() => setReportsOpen(false)}>
         <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
           <li>Inclua de 1 a N produtos no mesmo inventário (mesmo local).</li>
+          <li>
+            Em lote: <strong>Incluir categoria / todos</strong> — SKUs unitários ativos; compostos e
+            duplicados são ignorados.
+          </li>
+          <li>
+            Inventarie o <strong>unitário</strong> (balde, peça), nunca a caixa/pack. Composto só serve
+            para entrada/venda com conversão — ver docs/ESTOQUE-COMPOSTOS-E-PESO.md.
+          </li>
           <li>Ao postar, o sistema gera um acerto (ADJUST) por item.</li>
+          <li>
+            CSV: colunas <code>barcode</code>, <code>sku</code>, <code>controlNumber</code>,{' '}
+            <code>countedQty</code> (obrigatória). Aceita vírgula ou ponto-e-vírgula.
+          </li>
+          <li>
+            Coletor no celular: abra o rascunho → Coletar no celular (câmera ou leitor Bluetooth).
+          </li>
           <li>Use Movimentos → impressão para filtrar por período/tipo AJUSTE.</li>
         </ul>
       </ModuleReportsModal>
 
       <p className="page-desc">
-        Monte um inventário por local, adicione vários produtos, informe a contagem física e poste para
-        igualar os saldos.
+        Monte um inventário por local, adicione produtos (tela, CSV ou coletor no celular), informe a
+        contagem física e poste para igualar os saldos.
       </p>
 
       <div className="form-row no-print" style={{ marginBottom: '0.75rem', alignItems: 'flex-end' }}>
@@ -300,6 +413,22 @@ export function StockInventarioPage() {
                     >
                       Visualizar
                     </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-compact"
+                      disabled={csvBusy}
+                      onClick={() => void exportCsv(r.id, r.controlNumber)}
+                    >
+                      CSV
+                    </button>
+                    {r.status === 'DRAFT' && (
+                      <Link
+                        className="btn btn-secondary btn-compact"
+                        to={`/estoque/inventario/${r.id}/coletar`}
+                      >
+                        Coletar
+                      </Link>
+                    )}
                     {r.status === 'DRAFT' && (
                       <button
                         type="button"
@@ -400,19 +529,67 @@ export function StockInventarioPage() {
               {editing.location.code} {editing.location.name}
             </h2>
             <p className="page-desc" style={{ marginTop: 0 }}>
-              Inclua de 1 a N produtos, informe a quantidade física e poste para ajustar o estoque.
+              Inclua produtos (manual, CSV ou coletor no celular), informe a quantidade física e poste
+              para ajustar o estoque.
             </p>
             {editErr && <div className="alert alert-error">{editErr}</div>}
             {detail.isLoading && <p>Carregando…</p>}
+
+            <input
+              ref={csvInputRef}
+              type="file"
+              accept=".csv,text/csv,text/plain"
+              style={{ display: 'none' }}
+              onChange={(e) => void onCsvSelected(e.target.files?.[0])}
+            />
 
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={editing.status !== 'DRAFT' || addItemMut.isPending}
+                disabled={editing.status !== 'DRAFT' || addItemMut.isPending || bulkAddMut.isPending}
                 onClick={() => setProductSearchOpen(true)}
               >
                 + Incluir produto
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={editing.status !== 'DRAFT' || bulkAddMut.isPending}
+                onClick={() => {
+                  setBulkErr(null);
+                  setBulkScope('category');
+                  setBulkCategoryId('');
+                  setBulkOpen(true);
+                }}
+              >
+                Incluir categoria / todos
+              </button>
+              <Link
+                className="btn btn-secondary"
+                to={`/estoque/inventario/${editing.id}/coletar`}
+                style={{
+                  pointerEvents: editing.status !== 'DRAFT' ? 'none' : undefined,
+                  opacity: editing.status !== 'DRAFT' ? 0.5 : 1,
+                }}
+              >
+                Coletar no celular
+              </Link>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={editing.status !== 'DRAFT' || csvBusy}
+                onClick={() => csvInputRef.current?.click()}
+              >
+                {csvBusy ? 'CSV…' : 'Importar CSV'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={csvBusy}
+                onClick={() => void exportCsv(editing.id, editing.controlNumber)}
+              >
+                Exportar CSV
               </button>
               <button
                 type="button"
@@ -421,7 +598,6 @@ export function StockInventarioPage() {
                   editing.status !== 'DRAFT' || !canPost || postMut.isPending
                 }
                 onClick={() => {
-                  // Persiste drafts pendentes antes de postar
                   const pending = editing.items.filter((it) => qtyDraft[it.id] !== undefined);
                   const run = async () => {
                     for (const it of pending) {
@@ -533,6 +709,150 @@ export function StockInventarioPage() {
                 }}
               >
                 Fechar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {importResult && (
+        <FormModalBackdrop onClose={() => setImportResult(null)}>
+          <div className="modal" role="dialog">
+            <h2>Importação CSV</h2>
+            <p>
+              Criados: <strong>{importResult.created}</strong> · Atualizados:{' '}
+              <strong>{importResult.updated}</strong> · Ignorados:{' '}
+              <strong>{importResult.skipped}</strong>
+            </p>
+            {importResult.errors.length > 0 && (
+              <>
+                <p className="page-desc">Avisos / erros ({importResult.errors.length}):</p>
+                <div className="table-wrap" style={{ maxHeight: 240, overflow: 'auto' }}>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th className="num">Linha</th>
+                        <th>Motivo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importResult.errors.map((e, i) => (
+                        <tr key={`${e.line}-${i}`}>
+                          <td className="num">{e.line}</td>
+                          <td style={{ fontSize: '0.85rem' }}>{e.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setImportResult(null)}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {bulkOpen && (
+        <FormModalBackdrop
+          onClose={() => {
+            if (bulkAddMut.isPending) return;
+            setBulkOpen(false);
+            setBulkErr(null);
+          }}
+        >
+          <div className="modal" role="dialog">
+            <h2>Incluir vários produtos</h2>
+            <p className="page-desc" style={{ marginTop: 0 }}>
+              Inclui SKUs unitários ativos. Produtos compostos (caixa/pack) e itens já no inventário
+              são ignorados. A contagem fica em branco para você preencher depois.
+            </p>
+            {bulkErr && <div className="alert alert-error">{bulkErr}</div>}
+            <fieldset className="field" style={{ border: 'none', padding: 0, margin: 0 }}>
+              <legend style={{ fontWeight: 600, marginBottom: '0.5rem' }}>Escopo</legend>
+              <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.4rem' }}>
+                <input
+                  type="radio"
+                  name="inv-bulk-scope"
+                  checked={bulkScope === 'category'}
+                  onChange={() => setBulkScope('category')}
+                />
+                Todos os produtos de uma categoria
+              </label>
+              <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <input
+                  type="radio"
+                  name="inv-bulk-scope"
+                  checked={bulkScope === 'all'}
+                  onChange={() => setBulkScope('all')}
+                />
+                Todos os produtos cadastrados
+              </label>
+            </fieldset>
+            {bulkScope === 'category' && (
+              <div className="field" style={{ marginTop: '0.75rem' }}>
+                <label htmlFor="inv-bulk-cat">Categoria *</label>
+                <select
+                  id="inv-bulk-cat"
+                  value={bulkCategoryId}
+                  onChange={(e) => setBulkCategoryId(e.target.value)}
+                  disabled={categories.isLoading}
+                >
+                  <option value="">Selecione…</option>
+                  {(categories.data ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={bulkAddMut.isPending}
+                onClick={() => {
+                  setBulkOpen(false);
+                  setBulkErr(null);
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={
+                  bulkAddMut.isPending ||
+                  (bulkScope === 'category' && !bulkCategoryId)
+                }
+                onClick={() => {
+                  const label =
+                    bulkScope === 'all'
+                      ? 'todos os produtos cadastrados'
+                      : `a categoria selecionada`;
+                  if (
+                    !window.confirm(
+                      `Incluir ${label} neste inventário? Itens já presentes serão ignorados.`,
+                    )
+                  ) {
+                    return;
+                  }
+                  bulkAddMut.mutate(
+                    bulkScope === 'all'
+                      ? { scope: 'all' }
+                      : { scope: 'category', categoryId: bulkCategoryId },
+                  );
+                }}
+              >
+                {bulkAddMut.isPending ? 'Incluindo…' : 'Incluir'}
               </button>
             </div>
           </div>

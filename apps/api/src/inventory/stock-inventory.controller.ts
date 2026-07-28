@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -7,14 +8,25 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
-import { StockInventoryService } from './stock-inventory.service';
+import {
+  AddInventoryItemBody,
+  StockInventoryService,
+} from './stock-inventory.service';
+
+const CSV_UPLOAD_LIMIT = 2 * 1024 * 1024; // 2 MB
 
 @Controller('stock-inventories')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -25,6 +37,19 @@ export class StockInventoryController {
   @Roles('admin', 'manager', 'seller')
   list(@CurrentUser() user: JwtPayload, @Query('status') status?: string) {
     return this.inventories.list(user.tenantSlug, status);
+  }
+
+  @Get(':id/export-csv')
+  @Roles('admin', 'manager', 'seller')
+  async exportCsv(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const { filename, body } = await this.inventories.exportCsv(user.tenantSlug, id);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(body);
   }
 
   @Get(':id')
@@ -52,17 +77,47 @@ export class StockInventoryController {
     return this.inventories.updateHeader(user.tenantSlug, id, body);
   }
 
+  @Post(':id/import-csv')
+  @Roles('admin', 'manager')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: CSV_UPLOAD_LIMIT },
+    }),
+  )
+  async importCsv(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @UploadedFile()
+    file: { buffer: Buffer; originalname?: string; mimetype?: string } | undefined,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Envie o arquivo CSV.');
+    }
+    const name = (file.originalname ?? '').toLowerCase();
+    if (name && !name.endsWith('.csv') && !name.endsWith('.txt')) {
+      throw new BadRequestException('Envie um arquivo .csv');
+    }
+    const content = file.buffer.toString('utf8');
+    return this.inventories.importCsv(user.tenantSlug, id, content);
+  }
+
+  @Post(':id/items/bulk')
+  @Roles('admin', 'manager')
+  addItemsBulk(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: { scope?: 'all' | 'category'; categoryId?: string | null },
+  ) {
+    return this.inventories.addItemsBulk(user.tenantSlug, id, body);
+  }
+
   @Post(':id/items')
   @Roles('admin', 'manager')
   addItem(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
-    @Body()
-    body: {
-      variantId?: string;
-      countedQty?: string | number | null;
-      notes?: string | null;
-    },
+    @Body() body: AddInventoryItemBody,
   ) {
     return this.inventories.addItem(user.tenantSlug, id, body);
   }

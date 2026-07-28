@@ -1,0 +1,226 @@
+/* Coletor mobile de inventário — layout full-bleed dentro do shell de estoque */
+
+.inv-collector {
+  --inv-accent: #1a5f4a;
+  --inv-accent-soft: #e8f5f0;
+  --inv-warn: #8b3a1a;
+  max-width: 32rem;
+  margin: 0 auto;
+  padding: 0.25rem 0 2rem;
+}
+
+.inv-collector__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.inv-collector__back {
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  margin-top: 0.35rem;
+}
+
+.inv-collector__title {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.2;
+}
+
+.inv-collector__sub {
+  margin: 0.15rem 0 0;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.inv-collector__flash {
+  background: var(--inv-accent-soft);
+  color: var(--inv-accent);
+  border: 1px solid color-mix(in srgb, var(--inv-accent) 35%, transparent);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.65rem;
+  animation: inv-flash-in 0.2s ease-out;
+}
+
+@keyframes inv-flash-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.inv-collector__err,
+.inv-collector__hint {
+  margin-bottom: 0.65rem;
+}
+
+.inv-collector__modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+
+.inv-collector__modes button {
+  border: 1px solid #c5d0cb;
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.65rem 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.inv-collector__modes button.active {
+  background: var(--inv-accent);
+  border-color: var(--inv-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.inv-collector__scan {
+  background: #f4f7f6;
+  border-radius: 12px;
+  padding: 0.85rem;
+  margin-bottom: 0.85rem;
+}
+
+.inv-collector__scan label {
+  display: block;
+  font-size: 0.8rem;
+  margin-bottom: 0.35rem;
+  font-weight: 600;
+}
+
+.inv-collector__input {
+  width: 100%;
+  font-size: 1.25rem;
+  padding: 0.75rem 0.85rem;
+  border: 2px solid #b8c9c2;
+  border-radius: 10px;
+  box-sizing: border-box;
+}
+
+.inv-collector__input:focus {
+  outline: none;
+  border-color: var(--inv-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--inv-accent) 25%, transparent);
+}
+
+.inv-collector__scan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.inv-collector__camera {
+  margin-bottom: 0.85rem;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #111;
+  aspect-ratio: 4 / 3;
+}
+
+.inv-collector__camera video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.inv-collector__pending {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  background: #fff8ef;
+  border: 1px solid #e8c89a;
+  border-radius: 12px;
+  padding: 0.85rem;
+  margin-bottom: 0.85rem;
+}
+
+.inv-collector__pending .muted {
+  font-size: 0.85rem;
+  opacity: 0.75;
+  margin-bottom: 0.35rem;
+}
+
+.inv-collector__qty {
+  font-size: 1.5rem;
+  padding: 0.65rem;
+  text-align: right;
+  border-radius: 10px;
+  border: 2px solid #c9a66b;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.inv-collector__recent h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.inv-collector__recent ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.inv-collector__recent li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  background: #fff;
+  border: 1px solid #e2e8e5;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.inv-collector__recent li.muted {
+  border: none;
+  background: transparent;
+  justify-content: center;
+  opacity: 0.65;
+}
+
+.inv-collector__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inv-collector__qty-badge {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--inv-accent);
+}
+
+@media (max-width: 640px) {
+  .inv-collector__head {
+    flex-wrap: wrap;
+  }
+
+  .page:has(.inv-collector) .stock-subnav,
+  .page:has(.inv-collector) > .page-desc {
+    display: none;
+  }
+
+  .page:has(.inv-collector) > .page-title {
+    font-size: 1.1rem;
+    margin-bottom: 0.25rem;
+  }
+}
