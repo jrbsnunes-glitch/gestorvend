@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { api, apiUpload } from '../lib/api';
 import { resolveCompanyAssetUrl } from '../lib/company-branding';
 import { isManager } from '../lib/auth';
-import { digitsOnly, formatCnpj } from '../lib/format';
+import { digitsOnly, formatCep, formatCnpj } from '../lib/format';
+import { lookupCep } from '../lib/lookups';
 
 type Company = {
   id: string;
@@ -58,7 +59,7 @@ function toForm(c: Company): FormState {
     address: c.address ?? '',
     city: c.city ?? '',
     state: c.state ?? '',
-    zip: c.zip ?? '',
+    zip: c.zip ? formatCep(c.zip) : '',
     logoUrl: c.logoUrl ?? '',
     pdvDocumentMode: c.pdvDocumentMode ?? 'NON_FISCAL_RECEIPT',
     saleReceiptAutoPrint: Boolean(c.saleReceiptAutoPrint),
@@ -488,6 +489,7 @@ export function CompanyPage() {
   const [touched, setTouched] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
   const [logoPreviewKey, setLogoPreviewKey] = useState(0);
+  const [cepBusy, setCepBusy] = useState(false);
   const logoFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -540,6 +542,34 @@ export function CompanyPage() {
     setForm((prev) => ({ ...prev, [k]: v }));
   }
 
+  async function buscarCepEmpresa() {
+    setFeedback(null);
+    const digits = digitsOnly(form.zip, 8);
+    if (digits.length !== 8) {
+      setFeedback({ kind: 'err', msg: 'Informe um CEP com 8 dígitos.' });
+      return;
+    }
+    setCepBusy(true);
+    try {
+      const data = await lookupCep(digits);
+      setTouched(true);
+      setForm((f) => ({
+        ...f,
+        zip: formatCep(data.zip),
+        address: [data.street, data.district].filter(Boolean).join(' — ') || f.address,
+        city: data.city || f.city,
+        state: data.state || f.state,
+      }));
+    } catch (e) {
+      setFeedback({
+        kind: 'err',
+        msg: e instanceof Error ? e.message : 'Falha ao consultar CEP.',
+      });
+    } finally {
+      setCepBusy(false);
+    }
+  }
+
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const cnpjDigits = digitsOnly(form.cnpj, 14);
@@ -547,7 +577,11 @@ export function CompanyPage() {
       setFeedback({ kind: 'err', msg: 'CNPJ deve ter 14 dígitos (formato 00.000.000/0000-00).' });
       return;
     }
-    save.mutate({ ...form, cnpj: cnpjDigits });
+    save.mutate({
+      ...form,
+      cnpj: cnpjDigits,
+      zip: digitsOnly(form.zip, 8) || null,
+    });
   }
 
   return (
@@ -665,11 +699,26 @@ export function CompanyPage() {
               </div>
               <div className="field">
                 <label htmlFor="c-zip">CEP</label>
-                <input
-                  id="c-zip"
-                  value={form.zip ?? ''}
-                  onChange={(e) => update('zip', e.target.value)}
-                />
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                  <input
+                    id="c-zip"
+                    value={form.zip ?? ''}
+                    onChange={(e) => update('zip', formatCep(e.target.value))}
+                    onBlur={() => {
+                      if (digitsOnly(form.zip, 8).length === 8) void buscarCepEmpresa();
+                    }}
+                    inputMode="numeric"
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={cepBusy}
+                    onClick={() => void buscarCepEmpresa()}
+                  >
+                    {cepBusy ? '…' : 'Buscar'}
+                  </button>
+                </div>
               </div>
             </div>
           </section>

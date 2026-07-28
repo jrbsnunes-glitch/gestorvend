@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { AddressFormBlock, EMPTY_ADDRESS, type AddressFormFields } from '../components/AddressFormBlock';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination } from '../components/ListPagination';
@@ -8,6 +9,8 @@ import { RecordSelectionFooter } from '../components/RecordSelectionFooter';
 import { RecordViewModal } from '../components/RecordViewModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
+import { formatCep, formatCnpj, formatCpfCnpj } from '../lib/format';
+import { lookupCnpj } from '../lib/lookups';
 import { useListPagination } from '../hooks/useListPagination';
 
 type Supplier = {
@@ -17,7 +20,13 @@ type Supplier = {
   document: string | null;
   email: string | null;
   phone: string | null;
+  street?: string | null;
+  number?: string | null;
+  complement?: string | null;
+  district?: string | null;
   city: string | null;
+  state?: string | null;
+  zip?: string | null;
   segment: string | null;
 };
 
@@ -37,9 +46,10 @@ export function SuppliersPage() {
   const [document, setDocument] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [city, setCity] = useState('');
+  const [addr, setAddr] = useState<AddressFormFields>(EMPTY_ADDRESS);
   const [segment, setSegment] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [cnpjBusy, setCnpjBusy] = useState(false);
 
   const list = useQuery({
     queryKey: ['suppliers'],
@@ -67,7 +77,7 @@ export function SuppliersPage() {
     setDocument('');
     setEmail('');
     setPhone('');
-    setCity('');
+    setAddr(EMPTY_ADDRESS);
     setSegment('');
     setErr(null);
   }
@@ -75,28 +85,73 @@ export function SuppliersPage() {
   function loadForm(s: Supplier) {
     setLegalName(s.legalName);
     setTradeName(s.tradeName ?? '');
-    setDocument(s.document ?? '');
+    setDocument(s.document ? formatCpfCnpj(s.document) : '');
     setEmail(s.email ?? '');
     setPhone(s.phone ?? '');
-    setCity(s.city ?? '');
+    setAddr({
+      zip: s.zip ? formatCep(s.zip) : '',
+      street: s.street ?? '',
+      number: s.number ?? '',
+      complement: s.complement ?? '',
+      district: s.district ?? '',
+      city: s.city ?? '',
+      state: s.state ?? '',
+    });
     setSegment(s.segment ?? '');
     setErr(null);
   }
 
+  function payload() {
+    return {
+      legalName,
+      tradeName: tradeName || null,
+      document: document.replace(/\D/g, '') || null,
+      email: email || null,
+      phone: phone || null,
+      street: addr.street || null,
+      number: addr.number || null,
+      complement: addr.complement || null,
+      district: addr.district || null,
+      city: addr.city || null,
+      state: addr.state || null,
+      zip: addr.zip.replace(/\D/g, '') || null,
+      segment: segment || null,
+    };
+  }
+
+  async function buscarCnpj() {
+    setErr(null);
+    const digits = document.replace(/\D/g, '');
+    if (digits.length !== 14) {
+      setErr('Informe um CNPJ com 14 dígitos para buscar na BrasilAPI.');
+      return;
+    }
+    setCnpjBusy(true);
+    try {
+      const data = await lookupCnpj(digits);
+      setDocument(formatCnpj(data.document));
+      setLegalName(data.legalName || legalName);
+      setTradeName(data.tradeName || tradeName);
+      if (data.email) setEmail(data.email);
+      if (data.phone) setPhone(data.phone);
+      setAddr({
+        zip: data.zip ? formatCep(data.zip) : addr.zip,
+        street: data.street || addr.street,
+        number: data.number || addr.number,
+        complement: data.complement || addr.complement,
+        district: data.district || addr.district,
+        city: data.city || addr.city,
+        state: data.state || addr.state,
+      });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Falha ao consultar CNPJ.');
+    } finally {
+      setCnpjBusy(false);
+    }
+  }
+
   const create = useMutation({
-    mutationFn: () =>
-      api<Supplier>('/suppliers', {
-        method: 'POST',
-        json: {
-          legalName,
-          tradeName: tradeName || null,
-          document: document || null,
-          email: email || null,
-          phone: phone || null,
-          city: city || null,
-          segment: segment || null,
-        },
-      }),
+    mutationFn: () => api<Supplier>('/suppliers', { method: 'POST', json: payload() }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['suppliers'] });
       setCreateOpen(false);
@@ -107,18 +162,7 @@ export function SuppliersPage() {
 
   const update = useMutation({
     mutationFn: (id: string) =>
-      api<Supplier>(`/suppliers/${id}`, {
-        method: 'PATCH',
-        json: {
-          legalName,
-          tradeName: tradeName || null,
-          document: document || null,
-          email: email || null,
-          phone: phone || null,
-          city: city || null,
-          segment: segment || null,
-        },
-      }),
+      api<Supplier>(`/suppliers/${id}`, { method: 'PATCH', json: payload() }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['suppliers'] });
       setEditOpen(false);
@@ -147,10 +191,88 @@ export function SuppliersPage() {
   }
 
   function openEdit(s: Supplier) {
-    loadForm(s);
-    setEditSupplier(s);
-    setEditOpen(true);
+    void api<Supplier>(`/suppliers/${s.id}`)
+      .then((full) => {
+        loadForm(full);
+        setEditSupplier(full);
+        setEditOpen(true);
+      })
+      .catch(() => {
+        loadForm(s);
+        setEditSupplier(s);
+        setEditOpen(true);
+      });
   }
+
+  const formFields = (
+    <>
+      <div className="form-row" style={{ alignItems: 'flex-end' }}>
+        <div className="field">
+          <label htmlFor="s-doc">CNPJ/CPF</label>
+          <input
+            id="s-doc"
+            value={document}
+            onChange={(e) => setDocument(formatCpfCnpj(e.target.value))}
+            inputMode="numeric"
+          />
+        </div>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ marginBottom: '0.15rem' }}
+          disabled={cnpjBusy}
+          onClick={() => void buscarCnpj()}
+          title="Consulta pública BrasilAPI"
+        >
+          {cnpjBusy ? 'Buscando…' : 'Buscar CNPJ'}
+        </button>
+      </div>
+      <div className="field">
+        <label htmlFor="s-legal">Razão social *</label>
+        <input
+          id="s-legal"
+          value={legalName}
+          onChange={(e) => setLegalName(e.target.value)}
+          required
+        />
+      </div>
+      <div className="field">
+        <label htmlFor="s-trade">Nome fantasia</label>
+        <input id="s-trade" value={tradeName} onChange={(e) => setTradeName(e.target.value)} />
+      </div>
+      <div className="form-row">
+        <div className="field">
+          <label htmlFor="s-phone">Telefone</label>
+          <input id="s-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="s-email">E-mail</label>
+          <input
+            id="s-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </div>
+      </div>
+      <AddressFormBlock
+        idPrefix="s"
+        value={addr}
+        onChange={(patch) => setAddr((a) => ({ ...a, ...patch }))}
+        extra={
+          <div className="field">
+            <label htmlFor="s-seg">Grupo / segmento</label>
+            <input
+              id="s-seg"
+              value={segment}
+              onChange={(e) => setSegment(e.target.value)}
+              placeholder="Ex.: atacado, mats. construção"
+            />
+          </div>
+        }
+      />
+    </>
+  );
 
   return (
     <div className={`page print-area${selectedId ? ' page-with-record-footer' : ''}`}>
@@ -237,7 +359,7 @@ export function SuppliersPage() {
                   <strong>{s.legalName}</strong>
                 </td>
                 <td>{s.tradeName ?? '—'}</td>
-                <td>{s.document ?? '—'}</td>
+                <td>{s.document ? formatCpfCnpj(s.document) : '—'}</td>
                 <td>
                   {s.email || s.phone ? (
                     <>
@@ -284,49 +406,10 @@ export function SuppliersPage() {
 
       {createOpen && (
         <FormModalBackdrop className="no-print" onClose={() => setCreateOpen(false)}>
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Novo fornecedor</h2>
             {err && <div className="alert alert-error">{err}</div>}
-            <div className="field">
-              <label htmlFor="s-legal">Razão social *</label>
-              <input
-                id="s-legal"
-                value={legalName}
-                onChange={(e) => setLegalName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="s-trade">Nome fantasia</label>
-              <input id="s-trade" value={tradeName} onChange={(e) => setTradeName(e.target.value)} />
-            </div>
-            <div className="form-row">
-              <div className="field">
-                <label htmlFor="s-doc">CNPJ/CPF</label>
-                <input id="s-doc" value={document} onChange={(e) => setDocument(e.target.value)} />
-              </div>
-              <div className="field">
-                <label htmlFor="s-phone">Telefone</label>
-                <input id="s-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </div>
-            </div>
-            <div className="field">
-              <label htmlFor="s-email">E-mail</label>
-              <input id="s-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="s-city">Cidade</label>
-              <input id="s-city" value={city} onChange={(e) => setCity(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="s-seg">Grupo / segmento</label>
-              <input
-                id="s-seg"
-                value={segment}
-                onChange={(e) => setSegment(e.target.value)}
-                placeholder="Ex.: atacado, mats. construção"
-              />
-            </div>
+            {formFields}
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setCreateOpen(false)}>
                 Cancelar
@@ -346,44 +429,10 @@ export function SuppliersPage() {
 
       {editSupplier && editOpen && (
         <FormModalBackdrop className="no-print" onClose={() => setEditOpen(false)}>
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Alterar fornecedor</h2>
             {err && <div className="alert alert-error">{err}</div>}
-            <div className="field">
-              <label htmlFor="se-legal">Razão social *</label>
-              <input id="se-legal" value={legalName} onChange={(e) => setLegalName(e.target.value)} required />
-            </div>
-            <div className="field">
-              <label htmlFor="se-trade">Nome fantasia</label>
-              <input id="se-trade" value={tradeName} onChange={(e) => setTradeName(e.target.value)} />
-            </div>
-            <div className="form-row">
-              <div className="field">
-                <label htmlFor="se-doc">CNPJ/CPF</label>
-                <input id="se-doc" value={document} onChange={(e) => setDocument(e.target.value)} />
-              </div>
-              <div className="field">
-                <label htmlFor="se-phone">Telefone</label>
-                <input id="se-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </div>
-            </div>
-            <div className="field">
-              <label htmlFor="se-email">E-mail</label>
-              <input id="se-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="se-city">Cidade</label>
-              <input id="se-city" value={city} onChange={(e) => setCity(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="se-seg">Grupo / segmento</label>
-              <input
-                id="se-seg"
-                value={segment}
-                onChange={(e) => setSegment(e.target.value)}
-                placeholder="Ex.: atacado, mats. construção"
-              />
-            </div>
+            {formFields}
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setEditOpen(false)}>
                 Cancelar
@@ -415,10 +464,26 @@ export function SuppliersPage() {
                   fields: [
                     { label: 'Razão social', value: viewData.legalName },
                     { label: 'Nome fantasia', value: viewData.tradeName },
-                    { label: 'Documento', value: viewData.document },
+                    {
+                      label: 'Documento',
+                      value: viewData.document ? formatCpfCnpj(viewData.document) : null,
+                    },
                     { label: 'E-mail', value: viewData.email },
                     { label: 'Telefone', value: viewData.phone },
-                    { label: 'Cidade', value: viewData.city },
+                    {
+                      label: 'Endereço',
+                      value:
+                        [
+                          viewData.street,
+                          viewData.number,
+                          viewData.complement,
+                          viewData.district,
+                          [viewData.city, viewData.state].filter(Boolean).join('/'),
+                          viewData.zip ? `CEP ${formatCep(viewData.zip)}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(', ') || null,
+                    },
                     { label: 'Segmento', value: viewData.segment },
                   ],
                 },

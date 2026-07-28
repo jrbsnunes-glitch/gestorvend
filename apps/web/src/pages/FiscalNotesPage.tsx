@@ -204,6 +204,36 @@ export function FiscalNotesPage() {
     }) => api('/fiscal/documents/inutilizar', { method: 'POST', json: body }),
   });
 
+  const emitDoc = useMutation({
+    mutationFn: async (row: FiscalDocRow) => {
+      if (row.status === 'AUTHORIZED') return row;
+      return api<FiscalDocRow>('/fiscal/documents/queue', {
+        method: 'POST',
+        json: { saleId: row.saleId, kind: row.kind },
+      });
+    },
+    onSuccess: (_data, row) => {
+      qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
+      window.open(`/notas-fiscais/danfe/${encodeURIComponent(row.id)}`, '_blank', 'noopener');
+    },
+  });
+
+  const deleteUnsent = useMutation({
+    mutationFn: (id: string) =>
+      api(`/fiscal/documents/${id}/delete-unsent`, { method: 'POST', json: {} }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
+      setSelectedId(null);
+    },
+  });
+
+  const consultDoc = useMutation({
+    mutationFn: (id: string) =>
+      api<{ status: string; hint: string; accessKey: string | null; protocol: string | null }>(
+        `/fiscal/documents/${id}/consult`,
+      ),
+  });
+
   const [inutOpen, setInutOpen] = useState(false);
   const [inutForm, setInutForm] = useState({
     serie: '1',
@@ -248,8 +278,8 @@ export function FiscalNotesPage() {
     <div className="page print-area">
       <h1 className="page-title">Notas Fiscais</h1>
       <p className="page-desc">
-        NFC-e (modelo 65) e NF-e (modelo 55) emitidas a partir das vendas. Use o filtro para combinar período,
-        controle, cliente e situação (autorizadas / contingências). Contingências podem ser reenviadas à SEFAZ.
+        NFC-e (modelo 65) e NF-e (modelo 55). NF-e pode ser emitida pelo PDV (Vendas) ou pelo formulário
+        completo (Incluir nesta aba). Use o filtro para período, controle, cliente e situação.
       </p>
 
       <nav className="stock-subnav no-print" aria-label="Tipo de documento">
@@ -273,18 +303,36 @@ export function FiscalNotesPage() {
         onPrint={() => window.print()}
         onReports={() => setReportsOpen(true)}
         onInclude={() => {
+          if (tab === 'NF_E') {
+            navigate('/notas-fiscais/nfe/nova');
+            return;
+          }
           setInutMsg(null);
           setInutOpen(true);
         }}
-        includeLabel="Inutilizar numeração"
+        includeLabel={tab === 'NF_E' ? 'Incluir NF-e' : 'Inutilizar numeração'}
         leadingPrimary={
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => setFiltersOpen((o) => !o)}
-          >
-            {filtersOpen ? 'Ocultar filtro' : 'Filtro'}
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setFiltersOpen((o) => !o)}
+            >
+              {filtersOpen ? 'Ocultar filtro' : 'Filtro'}
+            </button>
+            {tab === 'NF_E' && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setInutMsg(null);
+                  setInutOpen(true);
+                }}
+              >
+                Inutilizar
+              </button>
+            )}
+          </>
         }
       />
 
@@ -502,6 +550,91 @@ export function FiscalNotesPage() {
                     >
                       Visualizar
                     </button>
+                    {tab === 'NF_E' && (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-compact"
+                          disabled={emitDoc.isPending}
+                          title="Enfileira (se necessário) e abre DANFE"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            emitDoc.mutate(r);
+                          }}
+                        >
+                          Emitir
+                        </button>
+                        {['QUEUED', 'ERROR', 'REJECTED', 'BUILDING_XML'].includes(r.status) && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-compact"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/notas-fiscais/nfe/${encodeURIComponent(r.id)}/editar`);
+                            }}
+                          >
+                            Editar
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-compact"
+                          disabled={consultDoc.isPending}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            consultDoc.mutate(r.id, {
+                              onSuccess: (res) => {
+                                window.alert(
+                                  `${res.hint}\n\nSituação: ${res.status}${
+                                    res.protocol ? `\nProtocolo: ${res.protocol}` : ''
+                                  }${res.accessKey ? `\nChave: ${res.accessKey}` : ''}`,
+                                );
+                                qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
+                              },
+                              onError: (err: Error) => window.alert(err.message),
+                            });
+                          }}
+                        >
+                          Consultar
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-compact"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.open(
+                              `/notas-fiscais/danfe/${encodeURIComponent(r.id)}`,
+                              '_blank',
+                              'noopener',
+                            );
+                          }}
+                        >
+                          2ª via
+                        </button>
+                        {['QUEUED', 'ERROR', 'REJECTED', 'BUILDING_XML'].includes(r.status) && (
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-compact"
+                            disabled={deleteUnsent.isPending}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (
+                                !window.confirm(
+                                  `Excluir NF-e do controle #${r.sale.number}? A venda será estornada (estoque).`,
+                                )
+                              ) {
+                                return;
+                              }
+                              deleteUnsent.mutate(r.id, {
+                                onError: (err: Error) => window.alert(err.message),
+                              });
+                            }}
+                          >
+                            Excluir
+                          </button>
+                        )}
+                      </>
+                    )}
                     {r.status === 'CONTINGENCY' && (
                       <button
                         type="button"
@@ -571,9 +704,23 @@ export function FiscalNotesPage() {
                   cancelDoc.mutate({ id: detail.data!.id, xJust: xJust.trim() });
                 }}
                 cancelling={cancelDoc.isPending}
-                onPrintSecondCopy={() =>
-                  navigate(`/vendas/impressao?id=${encodeURIComponent(detail.data!.saleId)}`)
+                onPrintSecondCopy={() => {
+                  if (detail.data!.kind === 'NF_E') {
+                    window.open(
+                      `/notas-fiscais/danfe/${encodeURIComponent(detail.data!.id)}`,
+                      '_blank',
+                      'noopener',
+                    );
+                    return;
+                  }
+                  navigate(`/vendas/impressao?id=${encodeURIComponent(detail.data!.saleId)}`);
+                }}
+                onEmitNfe={
+                  detail.data.kind === 'NF_E'
+                    ? () => emitDoc.mutate(detail.data!)
+                    : undefined
                 }
+                emitting={emitDoc.isPending}
               />
             )}
             <div className="modal-actions">
@@ -743,6 +890,8 @@ function FiscalNoteDetail({
   onCancel,
   cancelling,
   onPrintSecondCopy,
+  onEmitNfe,
+  emitting,
 }: {
   doc: FiscalDocDetail;
   editable: boolean;
@@ -751,6 +900,8 @@ function FiscalNoteDetail({
   onCancel: () => void;
   cancelling: boolean;
   onPrintSecondCopy: () => void;
+  onEmitNfe?: () => void;
+  emitting?: boolean;
 }) {
   return (
     <div>
@@ -768,6 +919,16 @@ function FiscalNoteDetail({
               {sending ? 'Enfileirando…' : 'Enviar contingência à SEFAZ'}
             </button>
           )}
+          {onEmitNfe && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={emitting}
+              onClick={onEmitNfe}
+            >
+              {emitting ? 'Emitindo…' : 'Emitir (DANFE)'}
+            </button>
+          )}
           {doc.status !== 'CANCELLED' && (
             <button
               type="button"
@@ -779,7 +940,7 @@ function FiscalNoteDetail({
             </button>
           )}
           <button type="button" className="btn btn-secondary" onClick={onPrintSecondCopy}>
-            Segunda via (cupom)
+            {doc.kind === 'NF_E' ? 'Segunda via (DANFE)' : 'Segunda via (cupom)'}
           </button>
         </div>
       )}

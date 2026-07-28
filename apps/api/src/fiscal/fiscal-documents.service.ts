@@ -27,6 +27,7 @@ import {
   parseInutilizacaoResponse,
   postInutilizacao,
 } from './sefaz/nfe-inutilizacao.soap';
+import { SalesService } from '../sales/sales.service';
 
 export type FiscalDocumentListQuery = {
   kind?: FiscalDocumentKind;
@@ -54,6 +55,7 @@ export class FiscalDocumentsService {
     private readonly userPermissions: UserPermissionsService,
     private readonly config: ConfigService,
     private readonly issuerSvc: FiscalIssuerSettingsService,
+    private readonly sales: SalesService,
   ) {}
 
   async queue(tenantSlug: string, saleId: string, kind: FiscalDocumentKind) {
@@ -360,12 +362,16 @@ export class FiscalDocumentsService {
     sefazEnvironment: string | null;
     tpEmis: number;
     lastError: string | null;
+    xmlPath?: string | null;
     createdAt: Date;
     updatedAt: Date;
     sale: {
       id: string;
       number: number;
       total: Prisma.Decimal | string;
+      discount?: Prisma.Decimal | string;
+      surcharge?: Prisma.Decimal | string;
+      notes?: string | null;
       createdAt: Date;
       customerId: string | null;
       customer?: {
@@ -388,12 +394,16 @@ export class FiscalDocumentsService {
       sefazEnvironment: doc.sefazEnvironment,
       tpEmis: doc.tpEmis,
       lastError: doc.lastError,
+      xmlPath: doc.xmlPath ?? null,
       createdAt: doc.createdAt.toISOString(),
       updatedAt: doc.updatedAt.toISOString(),
       sale: {
         id: doc.sale.id,
         number: doc.sale.number,
         total: doc.sale.total.toString(),
+        discount: doc.sale.discount != null ? String(doc.sale.discount) : '0',
+        surcharge: doc.sale.surcharge != null ? String(doc.sale.surcharge) : '0',
+        notes: doc.sale.notes ?? null,
         createdAt: doc.sale.createdAt.toISOString(),
         customerId: doc.sale.customerId,
         customer: doc.sale.customer
@@ -559,5 +569,108 @@ export class FiscalDocumentsService {
       throw new BadRequestException(parsed.xMotivo);
     }
     return parsed;
+  }
+
+  /**
+   * Exclui documento ainda não enviado/autorizado e estorna a venda vinculada.
+   * Status permitidos: QUEUED, ERROR, REJECTED, BUILDING_XML.
+   */
+  async deleteUnsent(
+    tenantSlug: string,
+    documentId: string,
+    userId: string,
+    userRoles: string[],
+    permissionPassword?: string,
+  ) {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const doc = await db.fiscalDocument.findUnique({ where: { id: documentId } });
+    if (!doc) throw new NotFoundException('Documento fiscal não encontrado.');
+
+    const deletable: FiscalDocumentStatus[] = [
+      FiscalDocumentStatus.QUEUED,
+      FiscalDocumentStatus.ERROR,
+      FiscalDocumentStatus.REJECTED,
+      FiscalDocumentStatus.BUILDING_XML,
+    ];
+    if (!deletable.includes(doc.status)) {
+      throw new BadRequestException(
+        'Só é possível excluir notas ainda não enviadas/autorizadas. Use cancelamento SEFAZ se já autorizada.',
+      );
+    }
+
+    await this.sales.cancel(tenantSlug, doc.saleId, userId, userRoles, permissionPassword);
+    // Cancelamento da venda não remove o FiscalDocument — apaga explicitamente.
+    try {
+      await db.fiscalDocument.delete({ where: { id: documentId } });
+    } catch {
+      // Já ausente (corrida / limpeza prévia)
+    }
+    return { ok: true, saleId: doc.saleId };
+  }
+
+  /** Consulta status local (base) da nota — base para futura ConsSit SEFAZ. */
+  async consultStatus(tenantSlug: string, documentId: string) {
+    const doc = await this.getById(tenantSlug, documentId);
+    let hint = 'Status conforme cadastro local.';
+    switch (doc.status) {
+      case FiscalDocumentStatus.AUTHORIZED:
+        hint = 'Nota autorizada. Use DANFE / 2ª via para impressão.';
+        break;
+      case FiscalDocumentStatus.QUEUED:
+      case FiscalDocumentStatus.BUILDING_XML:
+      case FiscalDocumentStatus.SENT:
+        hint = 'Emissão em andamento na fila. Atualize em alguns segundos.';
+        break;
+      case FiscalDocumentStatus.CONTINGENCY:
+        hint = 'Em contingência — reenvie à SEFAZ quando a conexão estiver ok.';
+        break;
+      case FiscalDocumentStatus.REJECTED:
+      case FiscalDocumentStatus.ERROR:
+        hint = doc.lastError
+          ? `Falha: ${doc.lastError}`
+          : 'Rejeitada/erro — corrija e reenfileire (Emitir).';
+        break;
+      case FiscalDocumentStatus.CANCELLED:
+        hint = 'Nota cancelada.';
+        break;
+      default:
+        break;
+    }
+    return {
+      id: doc.id,
+      kind: doc.kind,
+      status: doc.status,
+      accessKey: doc.accessKey,
+      protocol: doc.protocol,
+      lastError: doc.lastError,
+      tpEmis: doc.tpEmis,
+      saleId: doc.saleId,
+      saleNumber: doc.sale.number,
+      hint,
+      consultedAt: new Date().toISOString(),
+    };
+  }
+
+  /** Payload para DANFE (HTML/PDF via navegador). */
+  async danfePayload(tenantSlug: string, documentId: string) {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const doc = await this.getById(tenantSlug, documentId);
+    const company = await db.company.findFirst({ orderBy: { createdAt: 'asc' } });
+    return {
+      document: doc,
+      company: company
+        ? {
+            legalName: company.legalName,
+            tradeName: company.tradeName,
+            cnpj: company.cnpj,
+            ie: company.ie,
+            address: company.address,
+            city: company.city,
+            state: company.state,
+            zip: company.zip,
+            phone: company.phone,
+          }
+        : null,
+    };
   }
 }

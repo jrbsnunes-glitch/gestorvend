@@ -34,6 +34,8 @@ export class SalesController {
       discount?: number;
       surcharge?: number;
       permissionPassword?: string;
+      /** PDV | WHATSAPP | NFE_FORM */
+      source?: 'PDV' | 'WHATSAPP' | 'NFE_FORM';
       items: Array<{
         variantId: string;
         quantity: number;
@@ -58,6 +60,10 @@ export class SalesController {
       notes: body.notes,
       discount: body.discount,
       surcharge: body.surcharge,
+      source:
+        body.source === 'NFE_FORM' || body.source === 'WHATSAPP' || body.source === 'PDV'
+          ? body.source
+          : undefined,
       items: body.items,
       payments: body.payments,
     });

@@ -8,6 +8,7 @@ import { PaymentFormsController } from './payment-forms.controller';
 import { CardTransactionsController } from './card-transactions.controller';
 import { ProductsController } from './products.controller';
 import { SuppliersController } from './suppliers.controller';
+import { LookupsController } from './lookups.controller';
 
 @Module({
   controllers: [
@@ -20,6 +21,7 @@ import { SuppliersController } from './suppliers.controller';
     PaymentFormsController,
     CardTransactionsController,
     ProductsController,
+    LookupsController,
   ],
 })
 export class CatalogModule {}

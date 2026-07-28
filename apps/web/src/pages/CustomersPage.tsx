@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { AddressFormBlock, EMPTY_ADDRESS, type AddressFormFields } from '../components/AddressFormBlock';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination } from '../components/ListPagination';
@@ -9,7 +10,8 @@ import { RecordSelectionFooter } from '../components/RecordSelectionFooter';
 import { RecordViewModal } from '../components/RecordViewModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
-import { formatBRL } from '../lib/format';
+import { validateDocumentIfCpf } from '../lib/cpf';
+import { formatBRL, formatCep, formatCpfCnpj } from '../lib/format';
 import { useListPagination } from '../hooks/useListPagination';
 
 type Customer = {
@@ -19,10 +21,21 @@ type Customer = {
   email: string | null;
   phone: string | null;
   creditLimit: string;
+  street?: string | null;
+  number?: string | null;
+  complement?: string | null;
+  district?: string | null;
   city: string | null;
   state: string | null;
+  zip?: string | null;
   segment?: string | null;
+  birthDate?: string | null;
 };
+
+function birthDateInput(iso: string | null | undefined): string {
+  if (!iso) return '';
+  return String(iso).slice(0, 10);
+}
 
 export function CustomersPage() {
   const qc = useQueryClient();
@@ -39,8 +52,8 @@ export function CustomersPage() {
   const [document, setDocument] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [city, setCity] = useState('');
-  const [stateUf, setStateUf] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [addr, setAddr] = useState<AddressFormFields>(EMPTY_ADDRESS);
   const [creditLimit, setCreditLimit] = useState('0');
   const [segment, setSegment] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -70,8 +83,8 @@ export function CustomersPage() {
     setDocument('');
     setEmail('');
     setPhone('');
-    setCity('');
-    setStateUf('');
+    setBirthDate('');
+    setAddr(EMPTY_ADDRESS);
     setCreditLimit('0');
     setSegment('');
     setErr(null);
@@ -79,31 +92,47 @@ export function CustomersPage() {
 
   function loadSelectedToForm(c: Customer) {
     setName(c.name);
-    setDocument(c.document ?? '');
+    setDocument(c.document ? formatCpfCnpj(c.document) : '');
     setEmail(c.email ?? '');
     setPhone(c.phone ?? '');
-    setCity(c.city ?? '');
-    setStateUf(c.state ?? '');
+    setBirthDate(birthDateInput(c.birthDate));
+    setAddr({
+      zip: c.zip ? formatCep(c.zip) : '',
+      street: c.street ?? '',
+      number: c.number ?? '',
+      complement: c.complement ?? '',
+      district: c.district ?? '',
+      city: c.city ?? '',
+      state: c.state ?? '',
+    });
     setCreditLimit(c.creditLimit ?? '0');
     setSegment(c.segment ?? '');
     setErr(null);
   }
 
+  function payload() {
+    const docErr = validateDocumentIfCpf(document);
+    if (docErr) throw new Error(docErr);
+    return {
+      name,
+      document: document.replace(/\D/g, '') || null,
+      email: email || null,
+      phone: phone || null,
+      birthDate: birthDate || null,
+      street: addr.street || null,
+      number: addr.number || null,
+      complement: addr.complement || null,
+      district: addr.district || null,
+      city: addr.city || null,
+      state: addr.state || null,
+      zip: addr.zip.replace(/\D/g, '') || null,
+      creditLimit: creditLimit.replace(',', '.'),
+      segment: segment || null,
+    };
+  }
+
   const create = useMutation({
-    mutationFn: () =>
-      api<Customer>('/customers', {
-        method: 'POST',
-        json: {
-          name,
-          document: document || null,
-          email: email || null,
-          phone: phone || null,
-          city: city || null,
-          state: stateUf || null,
-          creditLimit: creditLimit.replace(',', '.'),
-          segment: segment || null,
-        },
-      }),
+    mutationFn: () => api<Customer>('/customers', { method: 'POST', json: payload() }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customers'] });
       setCreateOpen(false);
@@ -114,19 +143,7 @@ export function CustomersPage() {
 
   const update = useMutation({
     mutationFn: (id: string) =>
-      api<Customer>(`/customers/${id}`, {
-        method: 'PATCH',
-        json: {
-          name,
-          document: document || null,
-          email: email || null,
-          phone: phone || null,
-          city: city || null,
-          state: stateUf || null,
-          creditLimit: creditLimit.replace(',', '.'),
-          segment: segment || null,
-        },
-      }),
+      api<Customer>(`/customers/${id}`, { method: 'PATCH', json: payload() }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customers'] });
       setEditOpen(false);
@@ -155,10 +172,84 @@ export function CustomersPage() {
   }
 
   function openEdit(c: Customer) {
-    loadSelectedToForm(c);
-    setEditCustomer(c);
-    setEditOpen(true);
+    // Prefer detail for full address if list is partial
+    void api<Customer>(`/customers/${c.id}`)
+      .then((full) => {
+        loadSelectedToForm(full);
+        setEditCustomer(full);
+        setEditOpen(true);
+      })
+      .catch(() => {
+        loadSelectedToForm(c);
+        setEditCustomer(c);
+        setEditOpen(true);
+      });
   }
+
+  const formFields = (
+    <>
+      <div className="field">
+        <label htmlFor="c-name">Nome *</label>
+        <input id="c-name" value={name} onChange={(e) => setName(e.target.value)} required />
+      </div>
+      <div className="form-row">
+        <div className="field">
+          <label htmlFor="c-doc">CPF/CNPJ</label>
+          <input
+            id="c-doc"
+            value={document}
+            onChange={(e) => setDocument(formatCpfCnpj(e.target.value))}
+            inputMode="numeric"
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="c-birth">Data de nascimento</label>
+          <input
+            id="c-birth"
+            type="date"
+            value={birthDate}
+            onChange={(e) => setBirthDate(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="field">
+          <label htmlFor="c-phone">Telefone</label>
+          <input id="c-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="c-email">E-mail</label>
+          <input
+            id="c-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </div>
+      </div>
+      <AddressFormBlock
+        idPrefix="c"
+        value={addr}
+        onChange={(patch) => setAddr((a) => ({ ...a, ...patch }))}
+        extra={
+          <>
+            <div className="field">
+              <label htmlFor="c-limit">Limite de crédito</label>
+              <input
+                id="c-limit"
+                value={creditLimit}
+                onChange={(e) => setCreditLimit(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="c-seg">Grupo</label>
+              <CustomerGroupSearchCombo id="c-seg" value={segment} onChange={setSegment} />
+            </div>
+          </>
+        }
+      />
+    </>
+  );
 
   return (
     <div className={`page print-area${selectedId ? ' page-with-record-footer' : ''}`}>
@@ -243,7 +334,7 @@ export function CustomersPage() {
                 <td>
                   <strong>{c.name}</strong>
                 </td>
-                <td>{c.document ?? '—'}</td>
+                <td>{c.document ? formatCpfCnpj(c.document) : '—'}</td>
                 <td>
                   {c.email || c.phone ? (
                     <>
@@ -254,9 +345,7 @@ export function CustomersPage() {
                     '—'
                   )}
                 </td>
-                <td>
-                  {c.city || c.state ? `${c.city ?? ''} ${c.state ?? ''}`.trim() : '—'}
-                </td>
+                <td>{c.city || c.state ? `${c.city ?? ''} ${c.state ?? ''}`.trim() : '—'}</td>
                 <td>{formatBRL(c.creditLimit)}</td>
                 <td className="col-actions">
                   <RowRecordActions
@@ -299,45 +388,10 @@ export function CustomersPage() {
             setErr(null);
           }}
         >
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Novo cliente</h2>
             {err && <div className="alert alert-error">{err}</div>}
-            <div className="field">
-              <label htmlFor="c-name">Nome *</label>
-              <input id="c-name" value={name} onChange={(e) => setName(e.target.value)} required />
-            </div>
-            <div className="form-row">
-              <div className="field">
-                <label htmlFor="c-doc">CPF/CNPJ</label>
-                <input id="c-doc" value={document} onChange={(e) => setDocument(e.target.value)} />
-              </div>
-              <div className="field">
-                <label htmlFor="c-phone">Telefone</label>
-                <input id="c-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </div>
-            </div>
-            <div className="field">
-              <label htmlFor="c-email">E-mail</label>
-              <input id="c-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </div>
-            <div className="form-row">
-              <div className="field">
-                <label htmlFor="c-city">Cidade</label>
-                <input id="c-city" value={city} onChange={(e) => setCity(e.target.value)} />
-              </div>
-              <div className="field">
-                <label htmlFor="c-uf">UF</label>
-                <input id="c-uf" value={stateUf} onChange={(e) => setStateUf(e.target.value)} maxLength={2} />
-              </div>
-            </div>
-            <div className="field">
-              <label htmlFor="c-limit">Limite de crédito</label>
-              <input id="c-limit" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="c-seg">Grupo</label>
-              <CustomerGroupSearchCombo id="c-seg" value={segment} onChange={setSegment} />
-            </div>
+            {formFields}
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setCreateOpen(false)}>
                 Cancelar
@@ -346,7 +400,13 @@ export function CustomersPage() {
                 type="button"
                 className="btn btn-primary"
                 disabled={!name.trim() || create.isPending}
-                onClick={() => create.mutate()}
+                onClick={() => {
+                  try {
+                    create.mutate();
+                  } catch (e) {
+                    setErr(e instanceof Error ? e.message : 'Erro');
+                  }
+                }}
               >
                 Salvar
               </button>
@@ -357,45 +417,10 @@ export function CustomersPage() {
 
       {editCustomer && editOpen && (
         <FormModalBackdrop className="no-print" onClose={() => setEditOpen(false)}>
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Alterar cliente</h2>
             {err && <div className="alert alert-error">{err}</div>}
-            <div className="field">
-              <label htmlFor="ce-name">Nome *</label>
-              <input id="ce-name" value={name} onChange={(e) => setName(e.target.value)} required />
-            </div>
-            <div className="form-row">
-              <div className="field">
-                <label htmlFor="ce-doc">CPF/CNPJ</label>
-                <input id="ce-doc" value={document} onChange={(e) => setDocument(e.target.value)} />
-              </div>
-              <div className="field">
-                <label htmlFor="ce-phone">Telefone</label>
-                <input id="ce-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </div>
-            </div>
-            <div className="field">
-              <label htmlFor="ce-email">E-mail</label>
-              <input id="ce-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </div>
-            <div className="form-row">
-              <div className="field">
-                <label htmlFor="ce-city">Cidade</label>
-                <input id="ce-city" value={city} onChange={(e) => setCity(e.target.value)} />
-              </div>
-              <div className="field">
-                <label htmlFor="ce-uf">UF</label>
-                <input id="ce-uf" value={stateUf} onChange={(e) => setStateUf(e.target.value)} maxLength={2} />
-              </div>
-            </div>
-            <div className="field">
-              <label htmlFor="ce-limit">Limite de crédito</label>
-              <input id="ce-limit" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="ce-seg">Grupo</label>
-              <CustomerGroupSearchCombo id="ce-seg" value={segment} onChange={setSegment} />
-            </div>
+            {formFields}
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setEditOpen(false)}>
                 Cancelar
@@ -404,7 +429,13 @@ export function CustomersPage() {
                 type="button"
                 className="btn btn-primary"
                 disabled={!name.trim() || update.isPending}
-                onClick={() => update.mutate(editCustomer.id)}
+                onClick={() => {
+                  try {
+                    update.mutate(editCustomer.id);
+                  } catch (e) {
+                    setErr(e instanceof Error ? e.message : 'Erro');
+                  }
+                }}
               >
                 Salvar
               </button>
@@ -426,12 +457,29 @@ export function CustomersPage() {
                   title: 'Dados do cliente',
                   fields: [
                     { label: 'Nome', value: viewData.name },
-                    { label: 'Documento', value: viewData.document },
+                    {
+                      label: 'Documento',
+                      value: viewData.document ? formatCpfCnpj(viewData.document) : null,
+                    },
+                    {
+                      label: 'Nascimento',
+                      value: birthDateInput(viewData.birthDate) || null,
+                    },
                     { label: 'E-mail', value: viewData.email },
                     { label: 'Telefone', value: viewData.phone },
                     {
-                      label: 'Cidade / UF',
-                      value: [viewData.city, viewData.state].filter(Boolean).join(' / ') || null,
+                      label: 'Endereço',
+                      value:
+                        [
+                          viewData.street,
+                          viewData.number,
+                          viewData.complement,
+                          viewData.district,
+                          [viewData.city, viewData.state].filter(Boolean).join('/'),
+                          viewData.zip ? `CEP ${formatCep(viewData.zip)}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(', ') || null,
                     },
                     { label: 'Limite', value: formatBRL(viewData.creditLimit) },
                     { label: 'Segmento', value: viewData.segment },

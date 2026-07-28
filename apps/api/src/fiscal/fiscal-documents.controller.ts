@@ -103,6 +103,18 @@ export class FiscalDocumentsController {
     return this.docs.findBySaleId(user.tenantSlug, saleId);
   }
 
+  @Get(':id/danfe')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  danfe(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.docs.danfePayload(user.tenantSlug, id);
+  }
+
+  @Get(':id/consult')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  consult(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.docs.consultStatus(user.tenantSlug, id);
+  }
+
   @Get(':id')
   @Roles('admin', 'manager', 'seller', 'finance')
   getById(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
@@ -185,6 +197,23 @@ export class FiscalDocumentsController {
       user.roles,
       body?.permissionPassword,
       body?.xJust,
+    );
+  }
+
+  /** Exclui NF ainda não enviada/autorizada e estorna a venda. */
+  @Post(':id/delete-unsent')
+  @Roles('admin', 'manager')
+  remove(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body?: { permissionPassword?: string },
+  ) {
+    return this.docs.deleteUnsent(
+      user.tenantSlug,
+      id,
+      user.sub,
+      user.roles,
+      body?.permissionPassword,
     );
   }
 }

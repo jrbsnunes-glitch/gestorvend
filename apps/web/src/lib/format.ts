@@ -15,6 +15,29 @@ export function formatCnpj(value: string | undefined | null): string {
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
 }
 
+/** Máscara CPF: 000.000.000-00 */
+export function formatCpf(value: string | undefined | null): string {
+  const d = digitsOnly(value, 11);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
+  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+}
+
+/** CPF (11) ou CNPJ (14) com máscara conforme o tamanho digitado. */
+export function formatCpfCnpj(value: string | undefined | null): string {
+  const d = digitsOnly(value, 14);
+  if (d.length <= 11) return formatCpf(d);
+  return formatCnpj(d);
+}
+
+/** CEP: 00000-000 */
+export function formatCep(value: string | undefined | null): string {
+  const d = digitsOnly(value, 8);
+  if (d.length <= 5) return d;
+  return `${d.slice(0, 5)}-${d.slice(5)}`;
+}
+
 export function formatBRL(value: number | string | undefined | null): string {
   const n = typeof value === 'string' ? parseFloat(value) : Number(value ?? 0);
   if (Number.isNaN(n)) return '—';

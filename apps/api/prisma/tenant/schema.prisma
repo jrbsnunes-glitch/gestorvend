@@ -239,6 +239,8 @@ model Customer {
   /// Nome do grupo (espelha CustomerGroup.name quando escolhido no cadastro).
   segment      String?
   notes        String?
+  /// Data de nascimento (PF) — usada na validação cadastral; não há consulta automática de nome.
+  birthDate    DateTime? @db.Date
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   sales        Sale[]
@@ -649,6 +651,8 @@ enum PaymentMethod {
 enum SaleSource {
   PDV
   WHATSAPP
+  /// Formulário de inclusão NF-e modelo 55 (tela Notas Fiscais).
+  NFE_FORM
 }
 
 model Sale {

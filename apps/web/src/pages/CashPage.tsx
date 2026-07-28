@@ -543,17 +543,8 @@ export function CashPage() {
   });
 
   return (
-    <div className="page">
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
-          gap: '1rem',
-          marginBottom: '1rem',
-          flexWrap: 'wrap',
-        }}
-      >
+    <div className="page page-cash">
+      <div className="cash-page-toolbar">
         <div>
           <h1 className="page-title">Caixa</h1>
           <p className="page-desc" style={{ marginBottom: 0 }}>
@@ -562,22 +553,18 @@ export function CashPage() {
               : 'Consulte seus caixas abertos e fechados, abra detalhes para conferir as vendas.'}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ display: 'inline-flex', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--color-border-strong)' }}>
+        <div className="cash-page-toolbar__actions">
+          <div className="cash-status-filters">
             {STATUS_FILTERS.map((f) => (
               <button
                 key={f.value || 'ALL'}
                 type="button"
                 onClick={() => setStatusFilter(f.value)}
-                style={{
-                  border: 'none',
-                  padding: '0.45rem 0.85rem',
-                  background: statusFilter === f.value ? 'var(--color-primary)' : 'var(--color-surface)',
-                  color: statusFilter === f.value ? '#fff' : 'var(--color-text)',
-                  fontWeight: 600,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                }}
+                className={
+                  statusFilter === f.value
+                    ? 'cash-status-filters__btn is-active'
+                    : 'cash-status-filters__btn'
+                }
               >
                 {f.label}
               </button>
@@ -585,15 +572,10 @@ export function CashPage() {
           </div>
           {manager && (
             <input
+              className="cash-page-search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Pesquisar por operador…"
-              style={{
-                padding: '0.45rem 0.75rem',
-                border: '1px solid var(--color-border-strong)',
-                borderRadius: 'var(--radius-md)',
-                minWidth: 220,
-              }}
             />
           )}
           <button
@@ -693,8 +675,8 @@ export function CashPage() {
                   </tr>
                 )}
                 {filtered.map((s) => (
-                  <tr key={s.id}>
-                    <td className="cash-ss-num">
+                  <tr key={s.id} className="cash-ss-row">
+                    <td className="cash-ss-num" data-label="Nº">
                       <span
                         style={{
                           display: 'inline-block',
@@ -711,11 +693,15 @@ export function CashPage() {
                         #{s.controlNumber}
                       </span>
                     </td>
-                    <td className="cash-ss-col-operator" title={[s.user?.name, s.user?.email].filter(Boolean).join(' · ') || undefined}>
+                    <td
+                      className="cash-ss-col-operator"
+                      data-label="Operador"
+                      title={[s.user?.name, s.user?.email].filter(Boolean).join(' · ') || undefined}
+                    >
                       <span className="cash-ss-operator-name">{s.user?.name ?? '—'}</span>
                       {s.user?.email ? <span className="cash-ss-operator-mail">{s.user.email}</span> : null}
                     </td>
-                    <td>
+                    <td data-label="Estado">
                       <span
                         className="cash-ss-chip"
                         style={{
@@ -747,7 +733,7 @@ export function CashPage() {
                         )}
                       </span>
                     </td>
-                    <td style={{ fontSize: '0.75rem', lineHeight: 1.2 }}>
+                    <td style={{ fontSize: '0.75rem', lineHeight: 1.2 }} data-label="Conferência">
                       {s.status === 'OPEN' ? (
                         <span style={{ color: 'var(--color-text-muted)' }}>—</span>
                       ) : s.reconciledAt ? (
@@ -802,32 +788,36 @@ export function CashPage() {
                         </span>
                       )}
                     </td>
-                    <td className="cash-ss-num" style={{ fontWeight: 600 }}>
+                    <td className="cash-ss-num" style={{ fontWeight: 600 }} data-label="Tot. vendas">
                       {formatBRL(s.totalCompletedSales)}
                     </td>
-                    <td className="cash-ss-num">{listReconciliationDiffCell(s.reconciliationDifference)}</td>
-                    <td>
+                    <td className="cash-ss-num" data-label="Dif. conf.">
+                      {listReconciliationDiffCell(s.reconciliationDifference)}
+                    </td>
+                    <td data-label="Aberto em">
                       <CompactSessionDatetime iso={s.openedAt} />
                     </td>
-                    <td>
+                    <td data-label="Fechado em">
                       <CompactSessionDatetime iso={s.closedAt} />
                     </td>
-                    <td className="cash-ss-num">{formatBRL(s.openingBalance)}</td>
-                    <td className="cash-ss-num cash-ss-movements-cell">
+                    <td className="cash-ss-num" data-label="Sd. inicial">
+                      {formatBRL(s.openingBalance)}
+                    </td>
+                    <td className="cash-ss-num cash-ss-movements-cell" data-label="+/- cx.">
                       <span style={{ color: '#15803d' }}>+{formatBRL(s.movementsIn)}</span>
                       <br />
                       <span style={{ color: '#b91c1c' }}>−{formatBRL(s.movementsOut)}</span>
                     </td>
-                    <td className="cash-ss-num">
+                    <td className="cash-ss-num" data-label="Sd. final">
                       {(() => {
                         const total = presentedTotalFromSession(s.closingByMethod, s.closingBalance);
                         return total != null ? formatBRL(total) : '—';
                       })()}
                     </td>
-                    <td className="col-actions cash-ss-num">
+                    <td className="col-actions cash-ss-num" data-label="">
                       <button
                         type="button"
-                        className="btn btn-ghost"
+                        className="btn btn-ghost cash-ss-details-btn"
                         title="Ver detalhes da sessão"
                         style={{ padding: '0.26rem 0.45rem', fontSize: '0.74rem', whiteSpace: 'nowrap' }}
                         onClick={() => setDetailId(s.id)}

@@ -27,6 +27,8 @@ import { FinancePrintPage } from './pages/FinancePrintPage';
 import { PartyFiscalPage } from './pages/PartyFiscalPage';
 import { FiscalNotesPage } from './pages/FiscalNotesPage';
 import { FiscalNotesPrintPage } from './pages/FiscalNotesPrintPage';
+import { NfeFormPage } from './pages/NfeFormPage';
+import { DanfePrintPage } from './pages/DanfePrintPage';
 import { CardsPage } from './pages/CardsPage';
 import { CardsPrintPage } from './pages/CardsPrintPage';
 import { PaymentFormsPage } from './pages/PaymentFormsPage';
@@ -54,6 +56,7 @@ import { StockTransferenciasPage } from './pages/stock/StockTransferenciasPage';
 import { SuppliersPage } from './pages/SuppliersPage';
 import { UsersPage } from './pages/UsersPage';
 import { LogsPage } from './pages/LogsPage';
+import { ResponsiveTablesBootstrap } from './components/ResponsiveTablesBootstrap';
 import './index.css';
 import './styles/ui.css';
 import './styles/reports-document.css';
@@ -159,6 +162,7 @@ function AppInner() {
         <Route path="balanco/impressao" element={<FinancialOverviewPrintPage />} />
         <Route path="balanco/rentabilidade" element={<ProfitabilityReportPage />} />
         <Route path="notas-fiscais/impressao" element={<FiscalNotesPrintPage />} />
+        <Route path="notas-fiscais/danfe/:id" element={<DanfePrintPage />} />
         <Route path="cartoes/impressao" element={<CardsPrintPage />} />
 
         <Route
@@ -196,6 +200,8 @@ function AppInner() {
           <Route path="caixa" element={<CashPage />} />
           <Route path="cartoes" element={<CardsPage />} />
           <Route path="notas-fiscais" element={<FiscalNotesPage />} />
+          <Route path="notas-fiscais/nfe/nova" element={<NfeFormPage />} />
+          <Route path="notas-fiscais/nfe/:documentId/editar" element={<NfeFormPage />} />
           <Route path="notas-fiscais/parceiro" element={<PartyFiscalPage />} />
           <Route path="financeiro" element={<FinancePage />} />
           <Route path="balanco" element={<FinancialOverviewPage />} />
@@ -221,6 +227,7 @@ function AppInner() {
 export default function App() {
   return (
     <QueryClientProvider client={qc}>
+      <ResponsiveTablesBootstrap />
       <AppInner />
     </QueryClientProvider>
   );
