@@ -693,51 +693,283 @@
   }
 
   /*
-   * Detalhe do caixa (drawer): manter tabela clássica com scroll horizontal.
-   * O layout em cards embaralha linhas com muitas colunas / vendas expandíveis.
+   * Detalhe do caixa (drawer): painel full-bleed, conteúdo empilhado
+   * (sem tabela larga / scroll horizontal que corta campos).
    */
-  .cash-session-detail {
-    overflow-x: auto;
+  .pos-history-drawer .cash-session-detail.pos-history-panel {
+    width: 100% !important;
+    max-width: 100vw;
+    height: 100dvh;
+    height: 100vh;
+  }
+
+  .cash-session-detail .pos-history-header {
+    padding: 0.75rem 0.85rem;
+    gap: 0.35rem;
+  }
+
+  .cash-session-detail .pos-history-list,
+  .cash-session-detail__body {
+    padding: 0.75rem 0.85rem 1.5rem !important;
+    overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
   }
 
-  .cash-session-detail table.data-table {
-    min-width: 32rem;
-    display: table !important;
+  .cash-session-detail .cash-detail-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cash-session-detail .mgr-recon-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .cash-session-detail .mgr-recon-row input {
     width: 100%;
   }
 
-  .cash-session-detail table.data-table thead {
-    display: table-header-group !important;
-  }
-
-  .cash-session-detail table.data-table tbody {
-    display: table-row-group !important;
-  }
-
-  .cash-session-detail table.data-table tbody tr,
-  .cash-session-detail table.data-table tbody tr.data-table-card-row,
-  .cash-session-detail table.data-table tbody tr.data-table-empty-row {
-    display: table-row !important;
-    grid-template-columns: none !important;
-    border: none !important;
-    border-radius: 0 !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    background: transparent !important;
-    box-shadow: none !important;
-  }
-
-  .cash-session-detail table.data-table tbody tr > td,
-  .cash-session-detail table.data-table tbody tr.data-table-card-row > td {
-    display: table-cell !important;
-    padding: 0.45rem 0.55rem !important;
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .cash-session-detail table.data-table tbody tr.data-table-card-row > td::before {
+  .cash-session-detail .mgr-expense-head {
     display: none !important;
-    content: none !important;
+  }
+
+  .cash-session-detail .mgr-expense-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+    padding: 0.55rem;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-surface);
+  }
+
+  .cash-session-detail .btn {
+    max-width: 100%;
+    white-space: normal;
+  }
+}
+
+/* Detalhe do caixa — layout empilhado (desktop e mobile) */
+.cash-session-detail {
+  max-width: 100vw;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.cash-session-detail .pos-history-list,
+.cash-session-detail__body {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-width: 0;
+}
+
+.cash-session-detail .card {
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.cash-detail-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 1rem;
+}
+
+.cash-detail-kpis .card {
+  min-width: 0;
+}
+
+.cash-detail-kpis .card > div:last-child {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.25;
+}
+
+.cash-detail-meta {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.cash-detail-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-bottom: 0.25rem;
+}
+
+.cash-detail-card {
+  border: 1px solid var(--color-border-strong);
+  border-radius: 10px;
+  padding: 0.7rem 0.8rem;
+  background: var(--color-surface);
+  min-width: 0;
+}
+
+.cash-detail-card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.cash-detail-card__title {
+  font-weight: 700;
+  font-size: 0.92rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cash-detail-card__value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cash-detail-card__sub {
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.cash-detail-kv {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+}
+
+.cash-detail-kv__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem 0.75rem;
+  align-items: baseline;
+  font-size: 0.82rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cash-detail-kv__row:last-child {
+  border-bottom: none;
+}
+
+.cash-detail-kv__label {
+  color: var(--color-text-secondary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cash-detail-kv__value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.cash-detail-sale {
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 10px;
+  padding: 0.7rem 0.8rem;
+  background: var(--color-surface);
+  color: inherit;
+  font: inherit;
+  min-width: 0;
+}
+
+.cash-detail-sale__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.cash-detail-sale__expand {
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px dashed var(--color-border-strong);
+}
+
+.cash-detail-item {
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.82rem;
+}
+
+.cash-detail-item:last-child {
+  border-bottom: none;
+}
+
+.cash-detail-item__name {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.cash-detail-item__meta {
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  margin-top: 0.15rem;
+  overflow-wrap: anywhere;
+}
+
+.cash-detail-item__nums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.85rem;
+  margin-top: 0.3rem;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+}
+
+.cash-detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.55rem;
+}
+
+.cash-detail-chip {
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: var(--color-primary-muted);
+  color: var(--color-primary);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.cash-detail-recon-row {
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cash-detail-recon-row:last-child {
+  border-bottom: none;
+}
+
+.cash-detail-recon-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem 0.5rem;
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-detail-recon-grid span {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+@media screen and (max-width: 720px) {
+  .cash-detail-recon-grid {
+    grid-template-columns: 1fr;
   }
 }
 

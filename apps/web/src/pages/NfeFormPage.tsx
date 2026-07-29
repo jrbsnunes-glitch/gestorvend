@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { validateDocumentIfCpf } from '../lib/cpf';
 import { formatBRL, formatCpfCnpj } from '../lib/format';
 
 type CustomerRow = {
@@ -75,6 +76,8 @@ export function NfeFormPage() {
 
   const [customerId, setCustomerId] = useState('');
   const [customerQ, setCustomerQ] = useState('');
+  const [showCustomerQuick, setShowCustomerQuick] = useState(false);
+  const [customerQuick, setCustomerQuick] = useState({ name: '', document: '' });
   const [productQ, setProductQ] = useState('');
   const [lines, setLines] = useState<Line[]>([]);
   const [discount, setDiscount] = useState('0');
@@ -211,6 +214,35 @@ export function NfeFormPage() {
     onError: (e: Error) => setErr(e.message),
   });
 
+  const createCustomerQuick = useMutation({
+    mutationFn: () => {
+      const docErr = validateDocumentIfCpf(customerQuick.document);
+      if (docErr) throw new Error(docErr);
+      const name = customerQuick.name.trim();
+      if (!name) throw new Error('Informe o nome do cliente.');
+      const digits = customerQuick.document.replace(/\D/g, '');
+      if (digits.length !== 11 && digits.length !== 14) {
+        throw new Error('NF-e exige CPF (11) ou CNPJ (14 dígitos).');
+      }
+      return api<CustomerRow>('/customers', {
+        method: 'POST',
+        json: {
+          name,
+          document: digits,
+        },
+      });
+    },
+    onSuccess: (row) => {
+      qc.invalidateQueries({ queryKey: ['customers'] });
+      setCustomerId(row.id);
+      setCustomerQ(row.name);
+      setShowCustomerQuick(false);
+      setCustomerQuick({ name: '', document: '' });
+      setInfo(`Cliente “${row.name}” incluído e selecionado.`);
+    },
+    onError: (e: Error) => setErr(e.message),
+  });
+
   const saveMut = useMutation({
     mutationFn: async (andEmit: boolean) => {
       if (!customerId) throw new Error('Selecione o destinatário (cliente com CPF/CNPJ).');
@@ -288,38 +320,125 @@ export function NfeFormPage() {
 
       <section className="card" style={{ marginBottom: '1rem' }}>
         <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Destinatário</h2>
-        <div className="field">
-          <label htmlFor="nfe-cli-q">Buscar cliente</label>
-          <input
-            id="nfe-cli-q"
-            value={customerQ}
-            onChange={(e) => setCustomerQ(e.target.value)}
-            placeholder="Nome ou CPF/CNPJ"
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="nfe-cli">Cliente *</label>
-          <select id="nfe-cli" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-            <option value="">— Selecione —</option>
-            {customerHits.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-                {c.document ? ` — ${formatCpfCnpj(c.document)}` : ' (sem documento)'}
-              </option>
-            ))}
-          </select>
+        <div
+          className="form-row"
+          style={{ alignItems: 'flex-end', gap: '0.65rem', flexWrap: 'wrap' }}
+        >
+          <div className="field" style={{ flex: '1 1 14rem', minWidth: '12rem' }}>
+            <label htmlFor="nfe-cli-q">Buscar cliente</label>
+            <input
+              id="nfe-cli-q"
+              value={customerQ}
+              onChange={(e) => setCustomerQ(e.target.value)}
+              placeholder="Nome ou CPF/CNPJ"
+            />
+          </div>
+          <div className="field" style={{ flex: '1.4 1 16rem', minWidth: '12rem' }}>
+            <label htmlFor="nfe-cli">Cliente *</label>
+            <select id="nfe-cli" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+              <option value="">— Selecione —</option>
+              {customerHits.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {c.document ? ` — ${formatCpfCnpj(c.document)}` : ' (sem documento)'}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field" style={{ flex: '0 0 auto', marginBottom: 0 }}>
+            <label htmlFor="nfe-cli-add" style={{ visibility: 'hidden' }}>
+              Incluir
+            </label>
+            <button
+              id="nfe-cli-add"
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                setShowCustomerQuick((v) => !v);
+                if (!showCustomerQuick && customerQ.trim()) {
+                  const digits = customerQ.replace(/\D/g, '');
+                  setCustomerQuick((d) => ({
+                    name: digits.length >= 11 ? d.name : customerQ.trim(),
+                    document: digits.length >= 11 ? formatCpfCnpj(digits) : d.document,
+                  }));
+                }
+              }}
+            >
+              {showCustomerQuick ? 'Fechar inclusão' : '+ Incluir cliente'}
+            </button>
+          </div>
         </div>
         {selectedCustomer && (
-          <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-            Documento: {selectedCustomer.document ? formatCpfCnpj(selectedCustomer.document) : '—'}
+          <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginBottom: 0 }}>
+            Selecionado: <strong>{selectedCustomer.name}</strong>
+            {selectedCustomer.document
+              ? ` · ${formatCpfCnpj(selectedCustomer.document)}`
+              : ''}
           </p>
+        )}
+        {showCustomerQuick && (
+          <div
+            style={{
+              marginTop: '0.75rem',
+              padding: '0.75rem',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--color-surface-elevated, transparent)',
+            }}
+          >
+            <p className="page-desc" style={{ marginTop: 0, marginBottom: '0.55rem' }}>
+              Cadastro rápido na própria tela (nome + CPF/CNPJ). Depois você pode completar o endereço
+              em Clientes.
+            </p>
+            <div className="form-row" style={{ alignItems: 'flex-end', gap: '0.65rem' }}>
+              <div className="field" style={{ flex: 2 }}>
+                <label htmlFor="cq-name">Nome *</label>
+                <input
+                  id="cq-name"
+                  value={customerQuick.name}
+                  onChange={(e) => setCustomerQuick((d) => ({ ...d, name: e.target.value }))}
+                />
+              </div>
+              <div className="field" style={{ flex: 1.2 }}>
+                <label htmlFor="cq-doc">CPF/CNPJ *</label>
+                <input
+                  id="cq-doc"
+                  value={customerQuick.document}
+                  onChange={(e) =>
+                    setCustomerQuick((d) => ({ ...d, document: formatCpfCnpj(e.target.value) }))
+                  }
+                  inputMode="numeric"
+                />
+              </div>
+              <div className="field" style={{ flex: '0 0 auto', marginBottom: 0 }}>
+                <label htmlFor="cq-save" style={{ visibility: 'hidden' }}>
+                  Salvar
+                </label>
+                <button
+                  id="cq-save"
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={createCustomerQuick.isPending}
+                  onClick={() => {
+                    setErr(null);
+                    createCustomerQuick.mutate();
+                  }}
+                >
+                  {createCustomerQuick.isPending ? 'Salvando…' : 'Salvar cliente'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>
         <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Natureza da operação *</h2>
-        <div className="form-row" style={{ alignItems: 'flex-end' }}>
-          <div className="field" style={{ flex: 1 }}>
+        <div
+          className="form-row"
+          style={{ alignItems: 'flex-end', gap: '0.65rem', flexWrap: 'wrap' }}
+        >
+          <div className="field" style={{ flex: '1 1 18rem', minWidth: '14rem' }}>
             <label htmlFor="nfe-nat">Natureza</label>
             <select id="nfe-nat" value={natureId} onChange={(e) => setNatureId(e.target.value)}>
               <option value="">— Selecione —</option>
@@ -330,29 +449,38 @@ export function NfeFormPage() {
               ))}
             </select>
           </div>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            style={{ marginBottom: '0.15rem' }}
-            onClick={() => setShowNatureQuick((v) => !v)}
-          >
-            {showNatureQuick ? 'Fechar inclusão' : '+ Incluir natureza'}
-          </button>
+          <div className="field" style={{ flex: '0 0 auto', marginBottom: 0 }}>
+            <label htmlFor="nfe-nat-add" style={{ visibility: 'hidden' }}>
+              Incluir
+            </label>
+            <button
+              id="nfe-nat-add"
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowNatureQuick((v) => !v)}
+            >
+              {showNatureQuick ? 'Fechar inclusão' : '+ Incluir natureza'}
+            </button>
+          </div>
         </div>
         {showNatureQuick && (
           <div
             style={{
-              marginTop: '0.65rem',
+              marginTop: '0.75rem',
               padding: '0.75rem',
               border: '1px solid var(--color-border)',
               borderRadius: 'var(--radius-md)',
+              background: 'var(--color-surface-elevated, transparent)',
             }}
           >
-            <p className="page-desc" style={{ marginTop: 0 }}>
-              Inclusão rápida (também disponível em Cadastros Gerais → Natureza da Operação).
+            <p className="page-desc" style={{ marginTop: 0, marginBottom: '0.55rem' }}>
+              Inclusão rápida (também em Cadastros Gerais → Natureza da Operação).
             </p>
-            <div className="form-row form-row--3">
-              <div className="field">
+            <div
+              className="form-row"
+              style={{ alignItems: 'flex-end', gap: '0.65rem', flexWrap: 'wrap' }}
+            >
+              <div className="field" style={{ flex: '0 1 8rem' }}>
                 <label htmlFor="nq-code">Código</label>
                 <input
                   id="nq-code"
@@ -360,7 +488,7 @@ export function NfeFormPage() {
                   onChange={(e) => setNatureQuick((d) => ({ ...d, code: e.target.value }))}
                 />
               </div>
-              <div className="field">
+              <div className="field" style={{ flex: '0 1 6rem' }}>
                 <label htmlFor="nq-cfop">CFOP</label>
                 <input
                   id="nq-cfop"
@@ -373,7 +501,7 @@ export function NfeFormPage() {
                   }
                 />
               </div>
-              <div className="field">
+              <div className="field" style={{ flex: '1 1 12rem' }}>
                 <label htmlFor="nq-desc">Descrição (natOp)</label>
                 <input
                   id="nq-desc"
@@ -382,46 +510,66 @@ export function NfeFormPage() {
                   onChange={(e) => setNatureQuick((d) => ({ ...d, description: e.target.value }))}
                 />
               </div>
+              <div className="field" style={{ flex: '0 0 auto', marginBottom: 0 }}>
+                <label htmlFor="nq-save" style={{ visibility: 'hidden' }}>
+                  Salvar
+                </label>
+                <button
+                  id="nq-save"
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={createNatureQuick.isPending}
+                  onClick={() => {
+                    setErr(null);
+                    createNatureQuick.mutate();
+                  }}
+                >
+                  {createNatureQuick.isPending ? 'Salvando…' : 'Salvar natureza'}
+                </button>
+              </div>
             </div>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={createNatureQuick.isPending}
-              onClick={() => {
-                setErr(null);
-                createNatureQuick.mutate();
-              }}
-            >
-              Salvar natureza
-            </button>
           </div>
         )}
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1rem', marginTop: 0, marginBottom: '0.65rem' }}>Itens</h2>
         <div
           style={{
             display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: '0.75rem',
-            flexWrap: 'wrap',
-            marginBottom: '0.5rem',
+            alignItems: 'flex-start',
+            gap: '0.55rem',
+            marginBottom: '0.85rem',
+            padding: '0.55rem 0.7rem',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-surface-elevated, transparent)',
+            maxWidth: '36rem',
           }}
         >
-          <h2 style={{ fontSize: '1rem', margin: 0 }}>Itens</h2>
-          <label className="inline-checks" style={{ margin: 0 }}>
-            <input
-              type="checkbox"
-              checked={deductStock}
-              onChange={(e) => setDeductStock(e.target.checked)}
-            />
-            Baixar estoque
+          <input
+            id="nfe-deduct-stock"
+            type="checkbox"
+            checked={deductStock}
+            onChange={(e) => setDeductStock(e.target.checked)}
+            style={{ marginTop: '0.2rem' }}
+          />
+          <label htmlFor="nfe-deduct-stock" style={{ margin: 0, cursor: 'pointer' }}>
+            <strong style={{ display: 'block', fontSize: '0.9rem' }}>Baixar estoque</strong>
+            <span
+              style={{
+                display: 'block',
+                fontSize: '0.8rem',
+                color: 'var(--color-text-muted)',
+                lineHeight: 1.35,
+                marginTop: '0.15rem',
+              }}
+            >
+              Marque para debitar os itens do saldo e registrar a saída nos movimentos de estoque
+              (igual ao PDV). Desmarcado = só emite a NF, sem alterar estoque.
+            </span>
           </label>
         </div>
-        <p className="page-desc" style={{ marginTop: 0, fontSize: '0.82rem' }}>
-          Se marcado, a conclusão gera saída de estoque (movimentos / saldos), como no PDV.
-        </p>
         <div className="field">
           <label htmlFor="nfe-prod">Produto (busca)</label>
           <input

@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Fragment,
   useEffect,
   useMemo,
   useState,
@@ -234,48 +233,41 @@ function SessionCardPaymentsEditor({
       <p style={{ margin: '0 0 0.5rem', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
         Se houver erro na captura, edite a forma/valor antes de marcar a conferência.
       </p>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Venda</th>
-            <th>Forma</th>
-            <th className="num">Valor</th>
-            <th className="col-actions">Ações</th>
-          </tr>
-        </thead>
-        <tbody>
-          {cards.map((c) => (
-            <tr key={c.id}>
-              <td>#{c.saleNumber}</td>
-              <td>
-                {c.paymentFormName ?? 'Cartão'}
-                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                  {cardBrandLabel(c.cardBrand)} · {cardOperationLabel(c.cardOperation)}
+      <div className="cash-detail-stack">
+        {cards.map((c) => (
+          <div key={c.id} className="cash-detail-card">
+            <div className="cash-detail-card__top">
+              <div className="cash-detail-card__title">
+                Venda #{c.saleNumber}
+                <div className="cash-detail-card__sub" style={{ fontWeight: 500 }}>
+                  {c.paymentFormName ?? 'Cartão'} · {cardBrandLabel(c.cardBrand)} ·{' '}
+                  {cardOperationLabel(c.cardOperation)}
                 </div>
-              </td>
-              <td className="num">{formatBRL(c.amount)}</td>
-              <td className="col-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-compact"
-                  onClick={() => {
-                    setEdit(c);
-                    setForm({
-                      paymentFormId: c.paymentFormId ?? '',
-                      amount: String(c.amount),
-                      installments: String(c.installments),
-                      authCode: c.authCode ?? '',
-                    });
-                    setErr(null);
-                  }}
-                >
-                  Editar
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              </div>
+              <div className="cash-detail-card__value">{formatBRL(c.amount)}</div>
+            </div>
+            <div style={{ marginTop: '0.5rem' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-compact"
+                style={{ width: '100%' }}
+                onClick={() => {
+                  setEdit(c);
+                  setForm({
+                    paymentFormId: c.paymentFormId ?? '',
+                    amount: String(c.amount),
+                    installments: String(c.installments),
+                    authCode: c.authCode ?? '',
+                  });
+                  setErr(null);
+                }}
+              >
+                Editar
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
 
       {edit && (
         <FormModalBackdrop onClose={() => setEdit(null)}>
@@ -1627,6 +1619,7 @@ function ManagerCashReconciliation({
           return (
             <div
               key={key}
+              className="mgr-recon-row"
               style={{
                 display: 'grid',
                 gridTemplateColumns: isManualExtra ? 'minmax(0,1fr) auto 118px' : 'minmax(0,1fr) 118px',
@@ -1728,6 +1721,7 @@ function ManagerCashReconciliation({
         {expenseLineDrafts.length > 0 ? (
           <div style={{ display: 'grid', gap: '0.45rem' }}>
             <div
+              className="mgr-expense-head"
               style={{
                 display: 'grid',
                 gridTemplateColumns: 'minmax(72px, 88px) minmax(0, 1fr) minmax(0, 1fr) auto',
@@ -1745,6 +1739,7 @@ function ManagerCashReconciliation({
             {expenseLineDrafts.map((row) => (
               <div
                 key={row.uid}
+                className="mgr-expense-row"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'minmax(72px, 88px) minmax(0, 1fr) minmax(0, 1fr) auto',
@@ -1975,13 +1970,13 @@ function SessionDetailDrawer({
         style={{ width: 'min(720px, 100%)' }}
       >
         <div className="pos-history-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '0.4rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ margin: 0, fontSize: '1.05rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+            <h2 style={{ margin: 0, fontSize: '1.05rem', minWidth: 0, overflowWrap: 'anywhere' }}>
               Detalhe do caixa{' '}
               {s && (
                 <span
                   style={{
-                    marginLeft: '0.4rem',
+                    display: 'inline-block',
                     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
                     fontSize: '0.95rem',
                     color: 'var(--color-primary, #1d4ed8)',
@@ -1991,21 +1986,21 @@ function SessionDetailDrawer({
                 </span>
               )}
             </h2>
-            <button type="button" className="pos-btn pos-btn-ghost" onClick={onClose}>
+            <button type="button" className="pos-btn pos-btn-ghost" onClick={onClose} style={{ flexShrink: 0 }}>
               Fechar
             </button>
           </div>
           {s && (
-            <div style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
+            <div className="cash-detail-meta">
               Operador: <strong style={{ color: 'var(--color-text)' }}>{s.user?.name ?? '—'}</strong>
-              {' · '}
+              <br />
               Status:{' '}
               <strong style={{ color: s.status === 'OPEN' ? '#15803d' : '#64748b' }}>
                 {s.status === 'OPEN' ? 'Aberto' : 'Fechado'}
               </strong>
               <span
                 style={{
-                  marginLeft: '0.6rem',
+                  marginLeft: '0.45rem',
                   fontSize: '0.72rem',
                   color: 'var(--color-text-muted)',
                   fontFamily: 'ui-monospace, monospace',
@@ -2018,12 +2013,12 @@ function SessionDetailDrawer({
           )}
         </div>
 
-        <div className="pos-history-list" style={{ padding: '1rem 1.25rem' }}>
+        <div className="pos-history-list cash-session-detail__body">
           {loading && <div className="pos-items-empty">Carregando…</div>}
           {error && <div className="alert alert-error">{error}</div>}
           {!loading && !error && s && sum && (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.65rem', marginBottom: '1rem' }}>
+              <div className="cash-detail-kpis">
                 <KpiCard label="Aberto em" value={fmtDateTime(s.openedAt)} small />
                 <KpiCard label="Fechado em" value={fmtDateTime(s.closedAt)} small />
                 <KpiCard label="Vendas concluídas" value={String(sum.completedCount)} />
@@ -2056,24 +2051,16 @@ function SessionDetailDrawer({
                   <strong style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
                     Vendas por forma cadastrada
                   </strong>
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Forma</th>
-                        <th className="num">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(sum.salesByPaymentForm)
-                        .sort((a, b) => b[1] - a[1])
-                        .map(([name, amt]) => (
-                          <tr key={name}>
-                            <td>{name}</td>
-                            <td className="num">{formatBRL(amt)}</td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
+                  <div className="cash-detail-kv">
+                    {Object.entries(sum.salesByPaymentForm)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([name, amt]) => (
+                        <div key={name} className="cash-detail-kv__row">
+                          <span className="cash-detail-kv__label">{name}</span>
+                          <span className="cash-detail-kv__value">{formatBRL(amt)}</span>
+                        </div>
+                      ))}
+                  </div>
                 </div>
               )}
 
@@ -2106,22 +2093,11 @@ function SessionDetailDrawer({
                   <strong style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.88rem' }}>
                     Suprimentos, sangrias e despesas
                   </strong>
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Data</th>
-                        <th>Tipo</th>
-                        <th>Forma</th>
-                        <th style={{ textAlign: 'right' }}>Valor</th>
-                        <th>Centro de custo</th>
-                        <th>Observações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {s.movements.map((m) => (
-                        <tr key={m.id}>
-                          <td style={{ fontSize: '0.82rem' }}>{fmtDateTime(m.createdAt)}</td>
-                          <td>
+                  <div className="cash-detail-stack">
+                    {s.movements.map((m) => (
+                      <div key={m.id} className="cash-detail-card">
+                        <div className="cash-detail-card__top">
+                          <div className="cash-detail-card__title" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
                             <span
                               style={{
                                 padding: '0.1rem 0.5rem',
@@ -2138,23 +2114,22 @@ function SessionDetailDrawer({
                                   ? 'Despesa'
                                   : 'Sangria'}
                             </span>
-                          </td>
-                          <td style={{ fontSize: '0.8rem' }}>
-                            {m.method ? PAYMENT_LABELS[m.method] ?? m.method : '—'}
-                          </td>
-                          <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                            {formatBRL(m.amount)}
-                          </td>
-                          <td style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>
-                            {m.referentialAccount
-                              ? `${m.referentialAccount.code} — ${m.referentialAccount.description}`
-                              : '—'}
-                          </td>
-                          <td style={{ fontSize: '0.82rem' }}>{m.reason ?? '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                            <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
+                              {m.method ? PAYMENT_LABELS[m.method] ?? m.method : '—'}
+                            </span>
+                          </div>
+                          <div className="cash-detail-card__value">{formatBRL(m.amount)}</div>
+                        </div>
+                        <div className="cash-detail-card__sub">
+                          {fmtDateTime(m.createdAt)}
+                          {m.referentialAccount
+                            ? ` · ${m.referentialAccount.code} — ${m.referentialAccount.description}`
+                            : ''}
+                          {m.reason ? ` · ${m.reason}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -2165,150 +2140,150 @@ function SessionDetailDrawer({
               {sales.length === 0 ? (
                 <div className="pos-items-empty">Nenhuma venda no período.</div>
               ) : (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: 60 }}>#</th>
-                      <th>Data</th>
-                      <th>Cliente</th>
-                      <th>Status</th>
-                      <th style={{ textAlign: 'right' }}>Total</th>
-                      <th style={{ width: 40 }} />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sales.map((sale) => {
-                      const expanded = expandedSale === sale.id;
-                      return (
-                        <Fragment key={sale.id}>
-                          <tr style={{ cursor: 'pointer' }} onClick={() => setExpandedSale(expanded ? null : sale.id)}>
-                            <td><strong>#{sale.number}</strong></td>
-                            <td style={{ fontSize: '0.82rem' }}>{fmtDateTime(sale.createdAt)}</td>
-                            <td>{sale.customer?.name ?? 'Balcão'}</td>
-                            <td>
-                              <span
-                                style={{
-                                  padding: '0.1rem 0.5rem',
-                                  borderRadius: '999px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 700,
-                                  background:
-                                    sale.status === 'COMPLETED'
-                                      ? 'rgba(22,163,74,0.12)'
-                                      : sale.status === 'CANCELLED'
-                                        ? 'rgba(220,38,38,0.12)'
-                                        : 'rgba(245,158,11,0.12)',
-                                  color:
-                                    sale.status === 'COMPLETED'
-                                      ? '#15803d'
-                                      : sale.status === 'CANCELLED'
-                                        ? '#b91c1c'
-                                        : '#b45309',
-                                }}
-                              >
-                                {sale.status === 'COMPLETED' ? 'Concluída' : sale.status === 'CANCELLED' ? 'Cancelada' : 'Rascunho'}
-                              </span>
-                            </td>
-                            <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatBRL(sale.total)}</td>
-                            <td style={{ textAlign: 'right', color: 'var(--color-text-muted)' }}>{expanded ? '▾' : '▸'}</td>
-                          </tr>
-                          {expanded && (
-                            <tr>
-                              <td colSpan={6} style={{ background: 'var(--color-surface-elevated)', padding: '0.85rem 1.1rem' }}>
-                                <strong style={{ fontSize: '0.82rem', display: 'block', marginBottom: '0.4rem' }}>
-                                  Itens vendidos
-                                </strong>
-                                <table className="data-table" style={{ background: 'var(--color-surface)' }}>
-                                  <thead>
-                                    <tr>
-                                      <th>Produto</th>
-                                      <th>Descrição</th>
-                                      <th style={{ textAlign: 'right' }}>Qtd</th>
-                                      <th style={{ textAlign: 'right' }}>Preço venda</th>
-                                      <th style={{ textAlign: 'right' }}>Unit. praticado</th>
-                                      <th style={{ textAlign: 'right' }}>Total</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {sale.items.map((it) => {
-                                      const list = Number(it.variant.retailPrice ?? 0);
-                                      const paid = Number(it.unitPrice ?? 0);
-                                      const delta = paid - list;
-                                      const showDelta = Math.abs(delta) > 0.005;
-                                      return (
-                                        <tr key={it.id}>
-                                          <td>
-                                            <strong>{it.variant.product.name}</strong>
-                                            <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                                              SKU {it.variant.sku}
-                                              {it.variant.barcode ? ` · EAN ${it.variant.barcode}` : ''}
-                                            </span>
-                                          </td>
-                                          <td style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)', maxWidth: 280 }}>
-                                            {it.variant.product.description ?? '—'}
-                                          </td>
-                                          <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                                            {Number(it.quantity).toLocaleString('pt-BR')}
-                                          </td>
-                                          <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-muted)' }}>
-                                            {formatBRL(it.variant.retailPrice)}
-                                          </td>
-                                          <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                                            <strong>{formatBRL(it.unitPrice)}</strong>
-                                            {showDelta && (
-                                              <div
-                                                style={{
-                                                  fontSize: '0.7rem',
-                                                  color: delta < 0 ? '#b91c1c' : '#15803d',
-                                                }}
-                                              >
-                                                {delta < 0 ? '▼' : '▲'} {formatBRL(Math.abs(delta))}
-                                              </div>
-                                            )}
-                                          </td>
-                                          <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                                            {formatBRL(it.totalLine)}
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </table>
-                                {sale.payments.length > 0 && (
-                                  <div style={{ marginTop: '0.6rem', display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                                    {sale.payments.map((p, i) => (
-                                      <span
-                                        key={i}
-                                        style={{
-                                          padding: '0.15rem 0.55rem',
-                                          borderRadius: '999px',
-                                          background: 'var(--color-primary-muted)',
-                                          color: 'var(--color-primary)',
-                                          fontSize: '0.78rem',
-                                          fontWeight: 600,
-                                        }}
-                                      >
-                                        {PAYMENT_LABELS[p.method] ?? p.method}
-                                        {p.installments > 1 ? ` ${p.installments}×` : ''}: {formatBRL(p.amount)}
-                                      </span>
-                                    ))}
+                <div className="cash-detail-stack">
+                  {sales.map((sale) => {
+                    const expanded = expandedSale === sale.id;
+                    const statusLabel =
+                      sale.status === 'COMPLETED'
+                        ? 'Concluída'
+                        : sale.status === 'CANCELLED'
+                          ? 'Cancelada'
+                          : 'Rascunho';
+                    const statusBg =
+                      sale.status === 'COMPLETED'
+                        ? 'rgba(22,163,74,0.12)'
+                        : sale.status === 'CANCELLED'
+                          ? 'rgba(220,38,38,0.12)'
+                          : 'rgba(245,158,11,0.12)';
+                    const statusColor =
+                      sale.status === 'COMPLETED'
+                        ? '#15803d'
+                        : sale.status === 'CANCELLED'
+                          ? '#b91c1c'
+                          : '#b45309';
+                    return (
+                      <div key={sale.id}>
+                        <button
+                          type="button"
+                          className="cash-detail-sale"
+                          style={
+                            expanded
+                              ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }
+                              : undefined
+                          }
+                          onClick={() => setExpandedSale(expanded ? null : sale.id)}
+                          aria-expanded={expanded}
+                        >
+                          <div className="cash-detail-sale__head">
+                            <div style={{ minWidth: 0 }}>
+                              <div className="cash-detail-card__title">
+                                #{sale.number}{' '}
+                                <span
+                                  style={{
+                                    padding: '0.1rem 0.45rem',
+                                    borderRadius: '999px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    background: statusBg,
+                                    color: statusColor,
+                                    marginLeft: '0.25rem',
+                                  }}
+                                >
+                                  {statusLabel}
+                                </span>
+                              </div>
+                              <div className="cash-detail-card__sub" style={{ marginTop: '0.2rem' }}>
+                                {fmtDateTime(sale.createdAt)} · {sale.customer?.name ?? 'Balcão'}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                              <div className="cash-detail-card__value">{formatBRL(sale.total)}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                {expanded ? '▾ detalhes' : '▸ detalhes'}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                        {expanded && (
+                          <div
+                            className="cash-detail-sale__expand"
+                            style={{
+                              marginTop: '-0.15rem',
+                              padding: '0.65rem 0.8rem 0.75rem',
+                              border: '1px solid var(--color-border-strong)',
+                              borderTop: 'none',
+                              borderRadius: '0 0 10px 10px',
+                              background: 'var(--color-surface-elevated)',
+                            }}
+                          >
+                            <strong style={{ fontSize: '0.82rem', display: 'block', marginBottom: '0.35rem' }}>
+                              Itens vendidos
+                            </strong>
+                            {sale.items.map((it) => {
+                              const list = Number(it.variant.retailPrice ?? 0);
+                              const paid = Number(it.unitPrice ?? 0);
+                              const delta = paid - list;
+                              const showDelta = Math.abs(delta) > 0.005;
+                              return (
+                                <div key={it.id} className="cash-detail-item">
+                                  <div className="cash-detail-item__name">{it.variant.product.name}</div>
+                                  <div className="cash-detail-item__meta">
+                                    SKU {it.variant.sku}
+                                    {it.variant.barcode ? ` · EAN ${it.variant.barcode}` : ''}
+                                    {it.variant.product.description
+                                      ? ` · ${it.variant.product.description}`
+                                      : ''}
                                   </div>
-                                )}
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                                  <div className="cash-detail-item__nums">
+                                    <span>Qtd {Number(it.quantity).toLocaleString('pt-BR')}</span>
+                                    <span style={{ color: 'var(--color-text-muted)' }}>
+                                      Lista {formatBRL(it.variant.retailPrice)}
+                                    </span>
+                                    <span>
+                                      Unit. <strong>{formatBRL(it.unitPrice)}</strong>
+                                      {showDelta && (
+                                        <span
+                                          style={{
+                                            marginLeft: '0.25rem',
+                                            color: delta < 0 ? '#b91c1c' : '#15803d',
+                                            fontSize: '0.72rem',
+                                          }}
+                                        >
+                                          ({delta < 0 ? '▼' : '▲'} {formatBRL(Math.abs(delta))})
+                                        </span>
+                                      )}
+                                    </span>
+                                    <span>
+                                      Total <strong>{formatBRL(it.totalLine)}</strong>
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {sale.payments.length > 0 && (
+                              <div className="cash-detail-chips">
+                                {sale.payments.map((p, i) => (
+                                  <span key={i} className="cash-detail-chip">
+                                    {PAYMENT_LABELS[p.method] ?? p.method}
+                                    {p.installments > 1 ? ` ${p.installments}×` : ''}: {formatBRL(p.amount)}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
 
               {s.status === 'OPEN' && (
-                <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+                <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'stretch' }}>
                   <button
                     type="button"
                     className="btn btn-secondary"
+                    style={{ width: '100%' }}
                     onClick={() => onOpenMovement(s.id)}
                   >
                     Lançar movimento (sangria / despesa / suprimento)
@@ -2352,10 +2327,10 @@ function PaymentReconciliation({
       : null;
 
   return (
-    <div className="card" style={{ marginBottom: '1rem', padding: 0, overflow: 'hidden' }}>
-      <div style={{ padding: '0.85rem 1rem 0.4rem', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <strong style={{ fontSize: '0.92rem' }}>Conciliação por forma de pagamento</strong>
-        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+    <div className="card" style={{ marginBottom: '1rem', padding: 0, overflow: 'visible' }}>
+      <div style={{ padding: '0.85rem 1rem 0.4rem' }}>
+        <strong style={{ fontSize: '0.92rem', display: 'block' }}>Conciliação por forma de pagamento</strong>
+        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', display: 'block', marginTop: '0.25rem' }}>
           {session.reconciledAt
             ? 'Conferência registrada — apresentados conferidos pelo gerente'
             : declared
@@ -2363,161 +2338,149 @@ function PaymentReconciliation({
               : 'Esperado (caixa ainda não fechado)'}
         </span>
       </div>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Forma</th>
-            <th style={{ textAlign: 'right' }}>Esperado</th>
-            <th style={{ textAlign: 'right' }}>Apresentado</th>
-            <th style={{ textAlign: 'right' }}>Diferença</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map((r) => {
-            const label = PAYMENT_LABELS[r.key] ?? r.key;
-            const diffClass =
-              r.diff == null
-                ? ''
-                : Math.abs(r.diff) < 0.005
-                  ? 'is-ok'
-                  : r.diff > 0
-                    ? 'is-over'
-                    : 'is-short';
-            return (
-              <Fragment key={r.key}>
-                <tr>
-                  <td>
-                    <strong>{label}</strong>
-                    {r.key === 'CASH' && (
-                      <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-                        {formatCashExpectedHint(opening, movementBreakdown)}
-                      </span>
-                    )}
-                    {r.key === 'EXPENSE' && (
-                      <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-                        analítico — não entra no total apresentado
-                        {reconExpenseLines ? ' · detalhes abaixo' : ''}
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                    {formatBRL(r.expectedFinal)}
-                  </td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                    {r.declaredVal == null ? '—' : formatBRL(r.declaredVal)}
-                  </td>
-                  <td
-                    style={{
-                      textAlign: 'right',
-                      fontVariantNumeric: 'tabular-nums',
-                      fontWeight: 700,
-                    }}
-                  >
-                    {r.diff == null ? (
-                      '—'
-                    ) : (
-                      <span
+      <div>
+        {visible.map((r) => {
+          const label = PAYMENT_LABELS[r.key] ?? r.key;
+          const diffClass =
+            r.diff == null
+              ? ''
+              : Math.abs(r.diff) < 0.005
+                ? 'is-ok'
+                : r.diff > 0
+                  ? 'is-over'
+                  : 'is-short';
+          return (
+            <div key={r.key} className="cash-detail-recon-row">
+              <strong style={{ fontSize: '0.88rem' }}>{label}</strong>
+              {r.key === 'CASH' && (
+                <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                  {formatCashExpectedHint(opening, movementBreakdown)}
+                </span>
+              )}
+              {r.key === 'EXPENSE' && (
+                <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                  analítico — não entra no total apresentado
+                  {reconExpenseLines ? ' · detalhes abaixo' : ''}
+                </span>
+              )}
+              <div className="cash-detail-recon-grid">
+                <div>
+                  <span>Esperado</span>
+                  {formatBRL(r.expectedFinal)}
+                </div>
+                <div>
+                  <span>Apresentado</span>
+                  {r.declaredVal == null ? '—' : formatBRL(r.declaredVal)}
+                </div>
+                <div>
+                  <span>Diferença</span>
+                  {r.diff == null ? (
+                    '—'
+                  ) : (
+                    <span
+                      style={{
+                        padding: '0.1rem 0.45rem',
+                        borderRadius: '999px',
+                        background:
+                          diffClass === 'is-ok'
+                            ? 'rgba(22,163,74,0.12)'
+                            : diffClass === 'is-over'
+                              ? 'rgba(37,99,235,0.12)'
+                              : 'rgba(220,38,38,0.12)',
+                        color:
+                          diffClass === 'is-ok'
+                            ? '#15803d'
+                            : diffClass === 'is-over'
+                              ? '#1d4ed8'
+                              : '#b91c1c',
+                        fontWeight: 700,
+                        fontSize: '0.85rem',
+                      }}
+                    >
+                      {Math.abs(r.diff) < 0.005
+                        ? 'OK'
+                        : (r.diff > 0 ? '+' : '') + formatBRL(r.diff)}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {r.key === 'EXPENSE' && reconExpenseLines
+                ? reconExpenseLines.map((line, ix) => {
+                    const cc = line.referentialAccount
+                      ? `${line.referentialAccount.code} — ${line.referentialAccount.description}`
+                      : line.referentialAccountId
+                        ? `Conta (${line.referentialAccountId.slice(0, 8)}…)`
+                        : '—';
+                    const amt =
+                      typeof line.amount === 'number' && Number.isFinite(line.amount)
+                        ? line.amount
+                        : parseFloat(String(line.amount ?? '').replace(',', '.'));
+                    return (
+                      <div
+                        key={`${r.key}-recon-detail-${ix}`}
                         style={{
-                          padding: '0.15rem 0.55rem',
-                          borderRadius: '999px',
-                          background:
-                            diffClass === 'is-ok'
-                              ? 'rgba(22,163,74,0.12)'
-                              : diffClass === 'is-over'
-                                ? 'rgba(37,99,235,0.12)'
-                                : 'rgba(220,38,38,0.12)',
-                          color:
-                            diffClass === 'is-ok'
-                              ? '#15803d'
-                              : diffClass === 'is-over'
-                                ? '#1d4ed8'
-                                : '#b91c1c',
-                          fontSize: '0.85rem',
+                          marginTop: '0.45rem',
+                          padding: '0.4rem 0.55rem',
+                          background: 'var(--color-surface-elevated)',
+                          borderRadius: 8,
+                          fontSize: '0.78rem',
+                          border: '1px dashed var(--color-border-strong)',
                         }}
                       >
-                        {Math.abs(r.diff) < 0.005
-                          ? 'OK'
-                          : (r.diff > 0 ? '+' : '') + formatBRL(r.diff)}
-                      </span>
-                    )}
-                  </td>
-                </tr>
-                {r.key === 'EXPENSE' && reconExpenseLines
-                  ? reconExpenseLines.map((line, ix) => {
-                      const cc = line.referentialAccount
-                        ? `${line.referentialAccount.code} — ${line.referentialAccount.description}`
-                        : line.referentialAccountId
-                          ? `Conta (${line.referentialAccountId.slice(0, 8)}…)`
-                          : '—';
-                      const amt =
-                        typeof line.amount === 'number' && Number.isFinite(line.amount)
-                          ? line.amount
-                          : parseFloat(String(line.amount ?? '').replace(',', '.'));
-                      return (
-                        <tr key={`${r.key}-recon-detail-${ix}`}>
-                          <td
-                            colSpan={4}
+                        <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{formatBRL(amt)}</strong>
+                        <span style={{ color: 'var(--color-text-muted)', marginLeft: '0.5rem' }}>· {cc}</span>
+                        {line.notes ? (
+                          <span
                             style={{
-                              background: 'var(--color-surface-elevated)',
-                              padding: '0.4rem 0.85rem',
-                              borderTop: '1px dashed var(--color-border-strong)',
-                              fontSize: '0.78rem',
+                              display: 'block',
+                              marginTop: '0.2rem',
+                              color: 'var(--color-text-secondary)',
+                              whiteSpace: 'pre-wrap',
                             }}
                           >
-                            <strong style={{ fontVariantNumeric: 'tabular-nums' }}>
-                              {formatBRL(amt)}
-                            </strong>
-                            <span style={{ color: 'var(--color-text-muted)', marginLeft: '0.5rem' }}>· {cc}</span>
-                            {line.notes ? (
-                              <span
-                                style={{
-                                  display: 'block',
-                                  marginTop: '0.2rem',
-                                  color: 'var(--color-text-secondary)',
-                                  whiteSpace: 'pre-wrap',
-                                }}
-                              >
-                                {line.notes}
-                              </span>
-                            ) : null}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  : null}
-              </Fragment>
-            );
-          })}
-        </tbody>
-        <tfoot>
-          <tr style={{ background: 'var(--color-surface-elevated)' }}>
-            <td style={{ fontWeight: 800 }}>
-              Total (meios)
-              <span
-                style={{
-                  display: 'block',
-                  fontSize: '0.68rem',
-                  fontWeight: 500,
-                  color: 'var(--color-text-muted)',
-                }}
-              >
-                sem linha de despesas
-              </span>
-            </td>
-            <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 800 }}>
+                            {line.notes}
+                          </span>
+                        ) : null}
+                      </div>
+                    );
+                  })
+                : null}
+            </div>
+          );
+        })}
+        <div
+          className="cash-detail-recon-row"
+          style={{ background: 'var(--color-surface-elevated)', fontWeight: 800 }}
+        >
+          <div>
+            Total (meios)
+            <span
+              style={{
+                display: 'block',
+                fontSize: '0.68rem',
+                fontWeight: 500,
+                color: 'var(--color-text-muted)',
+              }}
+            >
+              sem linha de despesas
+            </span>
+          </div>
+          <div className="cash-detail-recon-grid">
+            <div>
+              <span>Esperado</span>
               {formatBRL(totalExpected)}
-            </td>
-            <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 800 }}>
+            </div>
+            <div>
+              <span>Apresentado</span>
               {declared ? formatBRL(totalDeclared) : '—'}
-            </td>
-            <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 800 }}>
-              {totalDiff == null
-                ? '—'
-                : (totalDiff > 0 ? '+' : '') + formatBRL(totalDiff)}
-            </td>
-          </tr>
-        </tfoot>
-      </table>
+            </div>
+            <div>
+              <span>Diferença</span>
+              {totalDiff == null ? '—' : (totalDiff > 0 ? '+' : '') + formatBRL(totalDiff)}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
