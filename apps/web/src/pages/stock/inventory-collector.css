@@ -118,6 +118,11 @@
   overflow: hidden;
   background: #111;
   aspect-ratio: 4 / 3;
+  position: relative;
+}
+
+.inv-collector__camera[hidden] {
+  display: none !important;
 }
 
 .inv-collector__camera video {
@@ -125,6 +130,9 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  background: #000;
+  /* iOS/Safari: evita vídeo “preto” com transformação 3D */
+  transform: translateZ(0);
 }
 
 .inv-collector__pending {

@@ -122,6 +122,32 @@ export function StockInventarioCollectorPage() {
     };
   }, []);
 
+  /** Liga o stream ao <video> depois que o elemento monta (senão a área fica preta). */
+  useEffect(() => {
+    if (!cameraOn) return;
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!video || !stream) return;
+
+    video.muted = true;
+    video.setAttribute('playsinline', 'true');
+    video.setAttribute('webkit-playsinline', 'true');
+    video.srcObject = stream;
+
+    const tryPlay = () => {
+      void video.play().catch(() => {
+        setCameraHint('Toque na área da câmera para iniciar o vídeo.');
+      });
+    };
+
+    if (video.readyState >= 2) tryPlay();
+    else video.addEventListener('loadedmetadata', tryPlay, { once: true });
+
+    return () => {
+      video.removeEventListener('loadedmetadata', tryPlay);
+    };
+  }, [cameraOn]);
+
   const saveQtyMut = useMutation({
     mutationFn: (args: { variantId: string; code: string; countedQty: string }) =>
       api<InventoryDetail>(`/stock-inventories/${id}/items`, {
@@ -233,6 +259,7 @@ export function StockInventarioCollectorPage() {
     if (cameraOn) {
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
+      if (videoRef.current) videoRef.current.srcObject = null;
       setCameraOn(false);
       setCameraHint(null);
       if (!pending) focusScan();
@@ -244,21 +271,28 @@ export function StockInventarioCollectorPage() {
       );
       return;
     }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraHint('Este navegador não permite acesso à câmera.');
+      return;
+    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      setCameraOn(true);
-      setCameraHint(null);
-      const video = videoRef.current;
-      if (video) {
-        video.srcObject = stream;
-        await video.play();
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
       }
+      streamRef.current = stream;
+      setCameraHint(null);
+      setCameraOn(true);
     } catch {
-      setCameraHint('Não foi possível acessar a câmera. Verifique a permissão.');
+      setCameraHint('Não foi possível acessar a câmera. Verifique a permissão do navegador.');
       setCameraOn(false);
     }
   }
@@ -456,8 +490,15 @@ export function StockInventarioCollectorPage() {
         </div>
       )}
 
-      {cameraOn && !pending && (
-        <div className="inv-collector__camera">
+      {cameraOn && (
+        <div
+          className="inv-collector__camera"
+          hidden={Boolean(pending)}
+          onClick={() => {
+            const v = videoRef.current;
+            if (v?.paused) void v.play().catch(() => undefined);
+          }}
+        >
           <video ref={videoRef} playsInline muted autoPlay />
         </div>
       )}
