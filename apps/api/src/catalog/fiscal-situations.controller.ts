@@ -57,6 +57,10 @@ export class FiscalSituationsController {
       cfopInterstate?: string | null;
       ibsTestRate?: number | string;
       cbsTestRate?: number | string;
+      aliqIcms?: number | string;
+      aliqIpi?: number | string;
+      aliqPis?: number | string;
+      aliqCofins?: number | string;
       regulationNotes?: string | null;
     },
   ) {
@@ -87,6 +91,11 @@ export class FiscalSituationsController {
         cfopInterstate: body.cfopInterstate?.trim()
           ? String(body.cfopInterstate).trim().slice(0, 5)
           : null,
+        aliqIcms: body.aliqIcms !== undefined ? this.dec(body.aliqIcms, 'Alíquota ICMS') : undefined,
+        aliqIpi: body.aliqIpi !== undefined ? this.dec(body.aliqIpi, 'Alíquota IPI') : undefined,
+        aliqPis: body.aliqPis !== undefined ? this.dec(body.aliqPis, 'Alíquota PIS') : undefined,
+        aliqCofins:
+          body.aliqCofins !== undefined ? this.dec(body.aliqCofins, 'Alíquota COFINS') : undefined,
         ibsTestRate:
           body.ibsTestRate !== undefined ? this.dec(body.ibsTestRate, 'Alíquota teste IBS') : undefined,
         cbsTestRate:
@@ -134,6 +143,11 @@ export class FiscalSituationsController {
       data.ibsTestRate = this.dec(body.ibsTestRate, 'Alíquota teste IBS');
     if (body.cbsTestRate !== undefined)
       data.cbsTestRate = this.dec(body.cbsTestRate, 'Alíquota teste CBS');
+    if (body.aliqIcms !== undefined) data.aliqIcms = this.dec(body.aliqIcms, 'Alíquota ICMS');
+    if (body.aliqIpi !== undefined) data.aliqIpi = this.dec(body.aliqIpi, 'Alíquota IPI');
+    if (body.aliqPis !== undefined) data.aliqPis = this.dec(body.aliqPis, 'Alíquota PIS');
+    if (body.aliqCofins !== undefined)
+      data.aliqCofins = this.dec(body.aliqCofins, 'Alíquota COFINS');
     if (body.regulationNotes !== undefined) {
       data.regulationNotes = body.regulationNotes
         ? String(body.regulationNotes).trim()

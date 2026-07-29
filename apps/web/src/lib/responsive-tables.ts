@@ -7,7 +7,7 @@
  */
 
 const SKIP_CLOSEST =
-  '.data-table--no-cards, .table-wrap--no-cards, [data-no-table-cards], .pos-root, .pos-screen';
+  '.data-table--no-cards, .table-wrap--no-cards, [data-no-table-cards], .pos-root, .pos-screen, .cash-session-detail';
 
 function headerLabels(table: HTMLTableElement): string[] {
   return Array.from(table.querySelectorAll('thead th')).map((th) =>

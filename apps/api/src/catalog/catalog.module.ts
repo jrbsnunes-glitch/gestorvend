@@ -9,6 +9,7 @@ import { CardTransactionsController } from './card-transactions.controller';
 import { ProductsController } from './products.controller';
 import { SuppliersController } from './suppliers.controller';
 import { LookupsController } from './lookups.controller';
+import { OperationNaturesController } from './operation-natures.controller';
 
 @Module({
   controllers: [
@@ -18,6 +19,7 @@ import { LookupsController } from './lookups.controller';
     CategoriesController,
     FiscalCodesController,
     FiscalSituationsController,
+    OperationNaturesController,
     PaymentFormsController,
     CardTransactionsController,
     ProductsController,

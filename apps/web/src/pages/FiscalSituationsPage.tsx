@@ -23,6 +23,10 @@ type FiscalSituation = {
   cstCofins: string | null;
   cfopInternal: string | null;
   cfopInterstate: string | null;
+  aliqIcms: string;
+  aliqIpi: string;
+  aliqPis: string;
+  aliqCofins: string;
   ibsTestRate: string;
   cbsTestRate: string;
   regulationNotes: string | null;
@@ -41,6 +45,10 @@ const emptyDraft = (): Record<string, string> => ({
   cstCofins: '',
   cfopInternal: '',
   cfopInterstate: '',
+  aliqIcms: '0',
+  aliqIpi: '0',
+  aliqPis: '0',
+  aliqCofins: '0',
   ibsTestRate: '0.1',
   cbsTestRate: '0.9',
   regulationNotes: '',
@@ -59,6 +67,10 @@ function rowToDraft(row: FiscalSituation): Record<string, string> {
     cstCofins: row.cstCofins ?? '',
     cfopInternal: row.cfopInternal ?? '',
     cfopInterstate: row.cfopInterstate ?? '',
+    aliqIcms: String(row.aliqIcms ?? '0'),
+    aliqIpi: String(row.aliqIpi ?? '0'),
+    aliqPis: String(row.aliqPis ?? '0'),
+    aliqCofins: String(row.aliqCofins ?? '0'),
     ibsTestRate: String(row.ibsTestRate ?? '0'),
     cbsTestRate: String(row.cbsTestRate ?? '0'),
     regulationNotes: row.regulationNotes ?? '',
@@ -158,6 +170,40 @@ function FiscalSituationFormFields({
           />
         </div>
       </div>
+      <div className="form-row form-row--4">
+        <div className="field">
+          <label htmlFor={`${idPrefix}-alicms`}>Alíq. ICMS %</label>
+          <input
+            id={`${idPrefix}-alicms`}
+            value={draft.aliqIcms}
+            onChange={(e) => setDraft((d) => ({ ...d, aliqIcms: e.target.value }))}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={`${idPrefix}-alipi`}>Alíq. IPI %</label>
+          <input
+            id={`${idPrefix}-alipi`}
+            value={draft.aliqIpi}
+            onChange={(e) => setDraft((d) => ({ ...d, aliqIpi: e.target.value }))}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={`${idPrefix}-alpis`}>Alíq. PIS %</label>
+          <input
+            id={`${idPrefix}-alpis`}
+            value={draft.aliqPis}
+            onChange={(e) => setDraft((d) => ({ ...d, aliqPis: e.target.value }))}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={`${idPrefix}-alcofins`}>Alíq. COFINS %</label>
+          <input
+            id={`${idPrefix}-alcofins`}
+            value={draft.aliqCofins}
+            onChange={(e) => setDraft((d) => ({ ...d, aliqCofins: e.target.value }))}
+          />
+        </div>
+      </div>
       <div className="form-row">
         <div className="field">
           <label htmlFor={`${idPrefix}-cfopi`}>CFOP interno</label>
@@ -238,6 +284,10 @@ export function FiscalSituationsPage() {
           cstCofins: draft.cstCofins.trim() || null,
           cfopInternal: draft.cfopInternal.trim() || null,
           cfopInterstate: draft.cfopInterstate.trim() || null,
+          aliqIcms: parseFloat(draft.aliqIcms.replace(',', '.')) || 0,
+          aliqIpi: parseFloat(draft.aliqIpi.replace(',', '.')) || 0,
+          aliqPis: parseFloat(draft.aliqPis.replace(',', '.')) || 0,
+          aliqCofins: parseFloat(draft.aliqCofins.replace(',', '.')) || 0,
           ibsTestRate: parseFloat(draft.ibsTestRate.replace(',', '.')) || 0,
           cbsTestRate: parseFloat(draft.cbsTestRate.replace(',', '.')) || 0,
           regulationNotes: draft.regulationNotes.trim() || null,
@@ -268,6 +318,10 @@ export function FiscalSituationsPage() {
           cstCofins: editDraft.cstCofins.trim() || null,
           cfopInternal: editDraft.cfopInternal.trim() || null,
           cfopInterstate: editDraft.cfopInterstate.trim() || null,
+          aliqIcms: parseFloat(editDraft.aliqIcms.replace(',', '.')) || 0,
+          aliqIpi: parseFloat(editDraft.aliqIpi.replace(',', '.')) || 0,
+          aliqPis: parseFloat(editDraft.aliqPis.replace(',', '.')) || 0,
+          aliqCofins: parseFloat(editDraft.aliqCofins.replace(',', '.')) || 0,
           ibsTestRate: parseFloat(editDraft.ibsTestRate.replace(',', '.')) || 0,
           cbsTestRate: parseFloat(editDraft.cbsTestRate.replace(',', '.')) || 0,
           regulationNotes: editDraft.regulationNotes.trim() || null,
@@ -473,6 +527,10 @@ export function FiscalSituationsPage() {
                     {
                       label: 'CFOP interno / interestadual',
                       value: `${viewRow.cfopInternal ?? '—'} / ${viewRow.cfopInterstate ?? '—'}`,
+                    },
+                    {
+                      label: 'Alíq. ICMS / IPI / PIS / COFINS',
+                      value: `${viewRow.aliqIcms ?? 0}% / ${viewRow.aliqIpi ?? 0}% / ${viewRow.aliqPis ?? 0}% / ${viewRow.aliqCofins ?? 0}%`,
                     },
                     {
                       label: 'IBS / CBS % teste',

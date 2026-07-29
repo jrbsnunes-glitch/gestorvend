@@ -20,6 +20,7 @@ import { FinancePage } from './pages/FinancePage';
 import { FinancialOverviewPage } from './pages/FinancialOverviewPage';
 import { FinancialOverviewPrintPage } from './pages/FinancialOverviewPrintPage';
 import { FiscalSituationsPage } from './pages/FiscalSituationsPage';
+import { OperationNaturesPage } from './pages/OperationNaturesPage';
 import { FinancialOverviewReportsPage } from './pages/FinancialOverviewReportsPage';
 import { GeneralRegistersShell } from './pages/GeneralRegistersShell';
 import { ReferentialChartPage } from './pages/ReferentialChartPage';
@@ -182,6 +183,7 @@ function AppInner() {
           <Route path="cadastros" element={<GeneralRegistersShell />}>
             <Route index element={<Navigate to="situacao-fiscal" replace />} />
             <Route path="situacao-fiscal" element={<FiscalSituationsPage />} />
+            <Route path="natureza-operacao" element={<OperationNaturesPage />} />
             <Route path="formas-pagamento" element={<PaymentFormsPage />} />
           </Route>
           <Route path="estoque" element={<StockShell />}>

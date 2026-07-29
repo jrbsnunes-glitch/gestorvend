@@ -91,6 +91,15 @@ export type CreateSaleInput = {
   discount?: string | number;
   /** Acréscimo no total (R$) — espelha vOutro do leiaute NF-e/NFC-e. */
   surcharge?: string | number;
+  /** Frete (vFrete) — soma no total da NF. */
+  freightAmount?: string | number;
+  /** modFrete: 0=emitente, 1=destinatário, 9=sem frete. */
+  freightMod?: number;
+  operationNatureId?: string | null;
+  deliveryVehiclePlate?: string | null;
+  deliveryDriverName?: string | null;
+  /** Se false, não baixa estoque (formulário NF-e). Default true. */
+  deductStock?: boolean;
   /** Origem da venda (PDV físico, WhatsApp via GestorVendChat, etc.). */
   source?: SaleSource;
   /** Referência externa (ex.: ID do pedido no GestorVendChat) para conciliação. */
@@ -223,6 +232,21 @@ export class SalesService {
     if (surcharge < 0 || !Number.isFinite(surcharge)) {
       throw new BadRequestException('Acréscimo inválido');
     }
+    const freightAmount = Number(input.freightAmount ?? 0);
+    if (freightAmount < 0 || !Number.isFinite(freightAmount)) {
+      throw new BadRequestException('Frete inválido');
+    }
+    let freightMod = Number(input.freightMod ?? 9);
+    if (![0, 1, 2, 3, 4, 9].includes(freightMod)) freightMod = 9;
+    if (freightMod === 9) {
+      // Sem ocorrência de transporte: valor de frete deve ser zero
+      if (freightAmount > 0.009) {
+        throw new BadRequestException(
+          'Com frete “sem transporte” (modFrete 9), o valor do frete deve ser zero. Escolha emitente ou destinatário.',
+        );
+      }
+    }
+    const deductStock = input.deductStock !== false;
 
     if (discount > 0) {
       await this.permissions.assertPermission(
@@ -247,8 +271,8 @@ export class SalesService {
     if (discount > subtotal + 0.009) {
       throw new BadRequestException('Desconto não pode ser maior que o subtotal dos produtos.');
     }
-    // MOC NF-e/NFC-e: vNF ≈ vProd − vDesc + vOutro (+ frete/seguro/impostos).
-    const total = roundMoney2(Math.max(0, subtotal - discount + surcharge));
+    // MOC NF-e/NFC-e: vNF ≈ vProd − vDesc + vFrete + vOutro (+ seguro/impostos).
+    const total = roundMoney2(Math.max(0, subtotal - discount + surcharge + freightAmount));
     if (!input.payments?.length) {
       throw new BadRequestException('Informe ao menos uma forma de pagamento');
     }
@@ -309,8 +333,20 @@ export class SalesService {
     });
 
     const defaultLoc = await getDefaultStockLocation(db);
-    if (!defaultLoc) {
+    if (deductStock && !defaultLoc) {
       throw new BadRequestException('Cadastre um local de estoque padrão');
+    }
+    if (!deductStock && !defaultLoc) {
+      // ok — sem baixa de estoque
+    }
+
+    if (input.operationNatureId) {
+      const nat = await db.operationNature.findUnique({
+        where: { id: input.operationNatureId },
+      });
+      if (!nat || !nat.isActive) {
+        throw new BadRequestException('Natureza da operação inválida ou inativa.');
+      }
     }
 
     return db.$transaction(async (tx) => {
@@ -324,6 +360,16 @@ export class SalesService {
           subtotal: String(subtotal.toFixed(2)),
           discount: String(discount.toFixed(2)),
           surcharge: String(surcharge.toFixed(2)),
+          freightAmount: String(freightAmount.toFixed(2)),
+          freightMod,
+          operationNatureId: input.operationNatureId ?? null,
+          deliveryVehiclePlate: input.deliveryVehiclePlate?.trim()
+            ? String(input.deliveryVehiclePlate).trim().toUpperCase().slice(0, 10)
+            : null,
+          deliveryDriverName: input.deliveryDriverName?.trim()
+            ? String(input.deliveryDriverName).trim().slice(0, 120)
+            : null,
+          deductStock,
           total: String(total.toFixed(2)),
           notes: input.notes ?? null,
           items: {
@@ -361,6 +407,7 @@ export class SalesService {
       });
 
       for (const it of input.items) {
+        if (!deductStock || !defaultLoc) continue;
         const q = Number(it.quantity);
         const {
           stockVariantId,
@@ -644,39 +691,41 @@ export class SalesService {
       }
 
       const defaultLoc = await getDefaultStockLocation(tx);
-      if (!defaultLoc) throw new BadRequestException('Local padrão não encontrado');
+      if (sale.deductStock) {
+        if (!defaultLoc) throw new BadRequestException('Local padrão não encontrado');
 
-      for (const it of sale.items) {
-        const q = Number(it.quantity);
-        const { stockVariantId, stockQty } = await resolveSaleStockTarget(tx, it.variantId, q);
-        const bal = await tx.stockBalance.findUnique({
-          where: {
-            variantId_locationId: { variantId: stockVariantId, locationId: defaultLoc.id },
-          },
-        });
-        const current = bal ? Number(bal.quantity) : 0;
-        await tx.stockBalance.upsert({
-          where: {
-            variantId_locationId: { variantId: stockVariantId, locationId: defaultLoc.id },
-          },
-          create: {
-            variantId: stockVariantId,
-            locationId: defaultLoc.id,
-            quantity: String(current + stockQty),
-          },
-          update: { quantity: String(current + stockQty) },
-        });
-        await tx.stockMovement.create({
-          data: {
-            type: StockMovementType.IN,
-            source: StockMovementSource.OTHER,
-            variantId: stockVariantId,
-            locationId: defaultLoc.id,
-            quantity: String(stockQty),
-            reference: `Estorno venda #${sale.number}`,
-            userId,
-          },
-        });
+        for (const it of sale.items) {
+          const q = Number(it.quantity);
+          const { stockVariantId, stockQty } = await resolveSaleStockTarget(tx, it.variantId, q);
+          const bal = await tx.stockBalance.findUnique({
+            where: {
+              variantId_locationId: { variantId: stockVariantId, locationId: defaultLoc.id },
+            },
+          });
+          const current = bal ? Number(bal.quantity) : 0;
+          await tx.stockBalance.upsert({
+            where: {
+              variantId_locationId: { variantId: stockVariantId, locationId: defaultLoc.id },
+            },
+            create: {
+              variantId: stockVariantId,
+              locationId: defaultLoc.id,
+              quantity: String(current + stockQty),
+            },
+            update: { quantity: String(current + stockQty) },
+          });
+          await tx.stockMovement.create({
+            data: {
+              type: StockMovementType.IN,
+              source: StockMovementSource.OTHER,
+              variantId: stockVariantId,
+              locationId: defaultLoc.id,
+              quantity: String(stockQty),
+              reference: `Estorno venda #${sale.number}`,
+              userId,
+            },
+          });
+        }
       }
 
       await tx.accountReceivable.deleteMany({ where: { saleId } });

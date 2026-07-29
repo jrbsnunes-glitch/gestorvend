@@ -371,6 +371,12 @@ export class FiscalDocumentsService {
       total: Prisma.Decimal | string;
       discount?: Prisma.Decimal | string;
       surcharge?: Prisma.Decimal | string;
+      freightAmount?: Prisma.Decimal | string;
+      freightMod?: number;
+      operationNatureId?: string | null;
+      deliveryVehiclePlate?: string | null;
+      deliveryDriverName?: string | null;
+      deductStock?: boolean;
       notes?: string | null;
       createdAt: Date;
       customerId: string | null;
@@ -403,6 +409,12 @@ export class FiscalDocumentsService {
         total: doc.sale.total.toString(),
         discount: doc.sale.discount != null ? String(doc.sale.discount) : '0',
         surcharge: doc.sale.surcharge != null ? String(doc.sale.surcharge) : '0',
+        freightAmount: doc.sale.freightAmount != null ? String(doc.sale.freightAmount) : '0',
+        freightMod: doc.sale.freightMod ?? 9,
+        operationNatureId: doc.sale.operationNatureId ?? null,
+        deliveryVehiclePlate: doc.sale.deliveryVehiclePlate ?? null,
+        deliveryDriverName: doc.sale.deliveryDriverName ?? null,
+        deductStock: doc.sale.deductStock !== false,
         notes: doc.sale.notes ?? null,
         createdAt: doc.sale.createdAt.toISOString(),
         customerId: doc.sale.customerId,
@@ -654,10 +666,89 @@ export class FiscalDocumentsService {
   /** Payload para DANFE (HTML/PDF via navegador). */
   async danfePayload(tenantSlug: string, documentId: string) {
     const db = await this.tenantPrisma.getClient(tenantSlug);
-    const doc = await this.getById(tenantSlug, documentId);
+    const raw = await db.fiscalDocument.findUnique({
+      where: { id: documentId },
+      include: {
+        sale: {
+          include: {
+            customer: {
+              select: { id: true, name: true, document: true, segment: true },
+            },
+            operationNature: true,
+            items: {
+              include: {
+                variant: {
+                  include: {
+                    product: {
+                      select: {
+                        id: true,
+                        name: true,
+                        fiscalSituation: {
+                          select: {
+                            code: true,
+                            name: true,
+                            aliqIcms: true,
+                            aliqIpi: true,
+                            aliqPis: true,
+                            aliqCofins: true,
+                            cfopInternal: true,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            payments: true,
+          },
+        },
+      },
+    });
+    if (!raw) throw new NotFoundException('Documento fiscal não encontrado.');
+    const doc = this.mapListItem(raw);
     const company = await db.company.findFirst({ orderBy: { createdAt: 'asc' } });
+
+    const aliqMap = new Map<
+      string,
+      { code: string; name: string; aliqIcms: string; aliqIpi: string; aliqPis: string; aliqCofins: string }
+    >();
+    for (const it of raw.sale.items) {
+      const fs = it.variant.product.fiscalSituation;
+      if (!fs) continue;
+      if (!aliqMap.has(fs.code)) {
+        aliqMap.set(fs.code, {
+          code: fs.code,
+          name: fs.name,
+          aliqIcms: String(fs.aliqIcms),
+          aliqIpi: String(fs.aliqIpi),
+          aliqPis: String(fs.aliqPis),
+          aliqCofins: String(fs.aliqCofins),
+        });
+      }
+    }
+
     return {
-      document: doc,
+      document: {
+        ...doc,
+        sale: {
+          ...doc.sale,
+          freightAmount: String(raw.sale.freightAmount ?? 0),
+          freightMod: raw.sale.freightMod ?? 9,
+          deliveryVehiclePlate: raw.sale.deliveryVehiclePlate,
+          deliveryDriverName: raw.sale.deliveryDriverName,
+          notes: raw.sale.notes,
+          operationNature: raw.sale.operationNature
+            ? {
+                id: raw.sale.operationNature.id,
+                code: raw.sale.operationNature.code,
+                description: raw.sale.operationNature.description,
+                cfop: raw.sale.operationNature.cfop,
+              }
+            : null,
+        },
+      },
+      aliquots: [...aliqMap.values()],
       company: company
         ? {
             legalName: company.legalName,

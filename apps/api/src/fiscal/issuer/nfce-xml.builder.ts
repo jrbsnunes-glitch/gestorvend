@@ -156,7 +156,7 @@ export function buildNfceInfNFeXml(opts: {
   };
   dest?: DestInput;
   items: NfceItemInput[];
-  totals: { vNF: number; vProd: number; vDesc: number; vOutro: number };
+  totals: { vNF: number; vProd: number; vDesc: number; vOutro: number; vFrete?: number };
   payments: Array<{ tPag: string; vPag: number }>;
   modelo: number;
   serie: number;
@@ -165,6 +165,11 @@ export function buildNfceInfNFeXml(opts: {
   tpEmis?: number;
   dhContIso?: string | null;
   xJustCont?: string | null;
+  /** modFrete SEFAZ (0 emitente, 1 destinatário, 9 sem frete…). */
+  modFrete?: number;
+  deliveryVehiclePlate?: string | null;
+  deliveryDriverName?: string | null;
+  infCplExtra?: string | null;
 }): { xmlNfeEnvelope: string; infNFeId: string } {
   const ch = onlyDigits(opts.chave44, 44);
   if (ch.length !== 44) {
@@ -215,6 +220,32 @@ export function buildNfceInfNFeXml(opts: {
   const pagXml = opts.payments
     .map((p) => `<detPag><tPag>${p.tPag}</tPag><vPag>${fmt2(p.vPag)}</vPag></detPag>`)
     .join('');
+
+  const vFrete = Math.max(0, Number(opts.totals.vFrete ?? 0));
+  const modFrete = [0, 1, 2, 3, 4, 9].includes(Number(opts.modFrete))
+    ? Number(opts.modFrete)
+    : 9;
+  const plate = (opts.deliveryVehiclePlate ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const driver = (opts.deliveryDriverName ?? '').trim();
+  let transpXml = `<transp><modFrete>${modFrete}</modFrete>`;
+  if (plate || driver) {
+    transpXml += `<veicTransp>`;
+    if (plate) transpXml += `<placa>${xmlEscape(plate.slice(0, 7))}</placa>`;
+    transpXml += `</veicTransp>`;
+    if (driver) {
+      transpXml += `<vol><qVol>0</qVol></vol>`;
+      // Nome do motorista em info complementar se não houver tag dedicada simples
+    }
+  }
+  transpXml += `</transp>`;
+
+  const cplParts = [
+    'Documento emitido pelo GestorVend.',
+    driver ? `Motorista: ${driver}` : '',
+    plate ? `Placa: ${plate}` : '',
+    (opts.infCplExtra ?? '').trim(),
+  ].filter(Boolean);
+  const infCpl = xmlEscape(cplParts.join(' | ').slice(0, 5000));
 
   const emit = opts.emit;
   const contXml =
@@ -271,7 +302,7 @@ export function buildNfceInfNFeXml(opts: {
     `<vBC>0.00</vBC><vICMS>0.00</vICMS><vICMSDeson>0.00</vICMSDeson><vFCP>0.00</vFCP>` +
     `<vBCST>0.00</vBCST><vST>0.00</vST><vFCPST>0.00</vFCPST><vFCPSTRet>0.00</vFCPSTRet>` +
     `<vProd>${fmt2(opts.totals.vProd)}</vProd>` +
-    `<vFrete>0.00</vFrete><vSeg>0.00</vSeg>` +
+    `<vFrete>${fmt2(vFrete)}</vFrete><vSeg>0.00</vSeg>` +
     `<vDesc>${fmt2(opts.totals.vDesc)}</vDesc>` +
     `<vII>0.00</vII><vIPI>0.00</vIPI><vIPIDevol>0.00</vIPIDevol>` +
     `<vPIS>0.00</vPIS><vCOFINS>0.00</vCOFINS>` +
@@ -280,9 +311,9 @@ export function buildNfceInfNFeXml(opts: {
     `<vTotTrib>0.00</vTotTrib>` +
     `</ICMSTot>` +
     `</total>` +
-    `<transp><modFrete>9</modFrete></transp>` +
+    transpXml +
     `<pag>${pagXml}<vTroco>0.00</vTroco></pag>` +
-    `<infAdic><infCpl>Documento emitido pelo GestorVend.</infCpl></infAdic>` +
+    `<infAdic><infCpl>${infCpl}</infCpl></infAdic>` +
     `</infNFe>`;
 
   const xmlNfeEnvelope = `<NFe xmlns="${NS}">` + infNFe + `</NFe>`;

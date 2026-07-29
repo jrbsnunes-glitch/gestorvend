@@ -241,6 +241,7 @@ export class FiscalEmissionProcessorService {
       include: {
         customer: true,
         payments: true,
+        operationNature: true,
         items: {
           include: {
             variant: { include: { product: { include: { fiscalSituation: true } } } },
@@ -393,6 +394,8 @@ export class FiscalEmissionProcessorService {
 
     const vDescTotal = Math.max(0, Number(sale.discount ?? 0));
     const vOutroTotal = Math.max(0, Number(sale.surcharge ?? 0));
+    const vFreteTotal = Math.max(0, Number(sale.freightAmount ?? 0));
+    const natureCfop = (sale.operationNature?.cfop ?? '').replace(/\D/g, '').slice(0, 4);
     const lineWeights = sale.items.map((it) => Math.max(0, Number(it.totalLine)));
     const descParts = allocateMoneyByWeights(vDescTotal, lineWeights);
     const outroParts = allocateMoneyByWeights(vOutroTotal, lineWeights);
@@ -400,7 +403,13 @@ export class FiscalEmissionProcessorService {
     const itemsXml: NfceItemInput[] = sale.items.map((it, idx) => {
       const p = it.variant.product;
       const fs = p.fiscalSituation;
-      const cfop = (fs?.cfopInternal ?? '5102').replace(/\D/g, '').padStart(4, '0').slice(-4);
+      const cfop = (
+        natureCfop ||
+        (fs?.cfopInternal ?? '5102')
+      )
+        .replace(/\D/g, '')
+        .padStart(4, '0')
+        .slice(-4);
       const ncm = (p.ncm ?? '00000000').replace(/\D/g, '').padStart(8, '0').slice(-8);
       const csosnRaw = (fs?.csosn ?? '102').replace(/\D/g, '');
       const csosn = csosnRaw.slice(-3).padStart(3, '0');
@@ -466,6 +475,7 @@ export class FiscalEmissionProcessorService {
     const { xmlNfeEnvelope, infNFeId } = buildNfceInfNFeXml({
       chave44,
       cNF,
+      natOp: sale.operationNature?.description?.trim() || 'VENDA',
       tpAmb,
       dhEmiIso,
       crt: settings.crt,
@@ -494,8 +504,18 @@ export class FiscalEmissionProcessorService {
       },
       dest,
       items: itemsXml,
-      totals: { vNF, vProd, vDesc: vDescTotal, vOutro: vOutroTotal },
+      totals: {
+        vNF,
+        vProd,
+        vDesc: vDescTotal,
+        vOutro: vOutroTotal,
+        vFrete: vFreteTotal,
+      },
       payments: payRows.length ? payRows : [{ tPag: '01', vPag: vNF }],
+      modFrete: sale.freightMod ?? 9,
+      deliveryVehiclePlate: sale.deliveryVehiclePlate,
+      deliveryDriverName: sale.deliveryDriverName,
+      infCplExtra: sale.notes,
     });
 
     const { privateKeyPem, certificatePem } = loadPfxMaterial(certPath, certPassword);

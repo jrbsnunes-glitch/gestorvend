@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 
 const links = [
   { to: '/cadastros/situacao-fiscal', label: 'Situação fiscal', end: true },
+  { to: '/cadastros/natureza-operacao', label: 'Natureza da Operação' },
   { to: '/cadastros/formas-pagamento', label: 'Formas de Pagamento' },
 ] as const;
 

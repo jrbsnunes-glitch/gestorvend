@@ -1969,7 +1969,7 @@ function SessionDetailDrawer({
   return (
     <div className="pos-history-drawer" role="presentation" onClick={onClose}>
       <div
-        className="pos-history-panel"
+        className="pos-history-panel cash-session-detail"
         role="dialog"
         onClick={(e) => e.stopPropagation()}
         style={{ width: 'min(720px, 100%)' }}

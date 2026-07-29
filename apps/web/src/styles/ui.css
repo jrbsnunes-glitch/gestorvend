@@ -691,6 +691,54 @@
     margin-left: -0.15rem;
     margin-right: -0.15rem;
   }
+
+  /*
+   * Detalhe do caixa (drawer): manter tabela clássica com scroll horizontal.
+   * O layout em cards embaralha linhas com muitas colunas / vendas expandíveis.
+   */
+  .cash-session-detail {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .cash-session-detail table.data-table {
+    min-width: 32rem;
+    display: table !important;
+    width: 100%;
+  }
+
+  .cash-session-detail table.data-table thead {
+    display: table-header-group !important;
+  }
+
+  .cash-session-detail table.data-table tbody {
+    display: table-row-group !important;
+  }
+
+  .cash-session-detail table.data-table tbody tr,
+  .cash-session-detail table.data-table tbody tr.data-table-card-row,
+  .cash-session-detail table.data-table tbody tr.data-table-empty-row {
+    display: table-row !important;
+    grid-template-columns: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .cash-session-detail table.data-table tbody tr > td,
+  .cash-session-detail table.data-table tbody tr.data-table-card-row > td {
+    display: table-cell !important;
+    padding: 0.45rem 0.55rem !important;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .cash-session-detail table.data-table tbody tr.data-table-card-row > td::before {
+    display: none !important;
+    content: none !important;
+  }
 }
 
 .badge {

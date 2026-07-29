@@ -124,6 +124,11 @@ model FiscalSituation {
   cstCofins       String?   @db.VarChar(4)
   cfopInternal    String?   @db.VarChar(5)
   cfopInterstate  String?   @db.VarChar(5)
+  /// Alíquotas % para DANFE / info complementar (cadastro SEFAZ).
+  aliqIcms        Decimal   @default(0) @db.Decimal(8, 4)
+  aliqIpi         Decimal   @default(0) @db.Decimal(8, 4)
+  aliqPis         Decimal   @default(0) @db.Decimal(8, 4)
+  aliqCofins      Decimal   @default(0) @db.Decimal(8, 4)
   ibsTestRate     Decimal   @default(0.1) @db.Decimal(8, 4)
   cbsTestRate     Decimal   @default(0.9) @db.Decimal(8, 4)
   regulationNotes String?   @db.Text
@@ -133,6 +138,23 @@ model FiscalSituation {
   updatedAt       DateTime  @updatedAt
 
   @@index([isActive])
+}
+
+/// Natureza da operação (natOp + CFOP) — cadastro mestre para NF-e.
+model OperationNature {
+  id          String   @id @default(uuid())
+  code        String   @unique @db.VarChar(20)
+  /// Texto natOp (SEFAZ, máx. 60 caracteres).
+  description String   @db.VarChar(60)
+  cfop        String   @db.VarChar(4)
+  notes       String?  @db.Text
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  sales       Sale[]
+
+  @@index([isActive])
+  @@index([cfop])
 }
 
 // --- Auth / RBAC ---
@@ -670,6 +692,17 @@ model Sale {
   discount      Decimal        @default(0) @db.Decimal(14, 2)
   /// Acréscimo comercial no total da venda (NFC-e/NF-e: vOutro — outras despesas acessórias).
   surcharge     Decimal        @default(0) @db.Decimal(14, 2)
+  /// Frete (vFrete) — soma no total da NF conforme regras do leiaute.
+  freightAmount Decimal        @default(0) @db.Decimal(14, 2)
+  /// modFrete SEFAZ: 0=emitente (CIF), 1=destinatário (FOB), 9=sem frete.
+  freightMod    Int            @default(9)
+  /// Natureza da operação (natOp) — formulário NF-e.
+  operationNatureId String?
+  operationNature   OperationNature? @relation(fields: [operationNatureId], references: [id], onDelete: SetNull)
+  deliveryVehiclePlate String? @db.VarChar(10)
+  deliveryDriverName   String? @db.VarChar(120)
+  /// Se false (ex.: NF-e formulário), não movimenta estoque na conclusão.
+  deductStock   Boolean        @default(true)
   total         Decimal        @db.Decimal(14, 2)
   notes         String?
   createdAt     DateTime       @default(now())
@@ -681,6 +714,8 @@ model Sale {
   items                  SaleItem[]
   payments               SalePayment[]
   receivables            AccountReceivable[]
+
+  @@index([operationNatureId])
 }
 
 /// Metadados da fila de emissão DFe por venda (próximo passo: XML, assinatura, SEFAZ).

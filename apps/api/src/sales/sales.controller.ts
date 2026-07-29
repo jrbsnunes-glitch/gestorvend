@@ -33,6 +33,12 @@ export class SalesController {
       notes?: string | null;
       discount?: number;
       surcharge?: number;
+      freightAmount?: number;
+      freightMod?: number;
+      operationNatureId?: string | null;
+      deliveryVehiclePlate?: string | null;
+      deliveryDriverName?: string | null;
+      deductStock?: boolean;
       permissionPassword?: string;
       /** PDV | WHATSAPP | NFE_FORM */
       source?: 'PDV' | 'WHATSAPP' | 'NFE_FORM';
@@ -60,6 +66,12 @@ export class SalesController {
       notes: body.notes,
       discount: body.discount,
       surcharge: body.surcharge,
+      freightAmount: body.freightAmount,
+      freightMod: body.freightMod,
+      operationNatureId: body.operationNatureId,
+      deliveryVehiclePlate: body.deliveryVehiclePlate,
+      deliveryDriverName: body.deliveryDriverName,
+      deductStock: body.deductStock,
       source:
         body.source === 'NFE_FORM' || body.source === 'WHATSAPP' || body.source === 'PDV'
           ? body.source

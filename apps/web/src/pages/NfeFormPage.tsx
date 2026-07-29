@@ -22,6 +22,14 @@ type ProductSearchRow = {
   taxUnit?: string | null;
 };
 
+type NatureRow = {
+  id: string;
+  code: string;
+  description: string;
+  cfop: string;
+  isActive: boolean;
+};
+
 type Line = {
   key: string;
   variantId: string;
@@ -42,6 +50,12 @@ type FiscalDetail = {
     notes: string | null;
     discount: string;
     surcharge: string;
+    freightAmount?: string;
+    freightMod?: number;
+    operationNatureId?: string | null;
+    deliveryVehiclePlate?: string | null;
+    deliveryDriverName?: string | null;
+    deductStock?: boolean;
     items: Array<{
       variantId: string;
       quantity: string;
@@ -65,6 +79,14 @@ export function NfeFormPage() {
   const [lines, setLines] = useState<Line[]>([]);
   const [discount, setDiscount] = useState('0');
   const [surcharge, setSurcharge] = useState('0');
+  const [freightMod, setFreightMod] = useState<0 | 1 | 9>(9);
+  const [freightAmount, setFreightAmount] = useState('0');
+  const [natureId, setNatureId] = useState('');
+  const [natureQuick, setNatureQuick] = useState({ code: '', description: '', cfop: '' });
+  const [showNatureQuick, setShowNatureQuick] = useState(false);
+  const [plate, setPlate] = useState('');
+  const [driver, setDriver] = useState('');
+  const [deductStock, setDeductStock] = useState(true);
   const [notes, setNotes] = useState('');
   const [payMethod, setPayMethod] = useState<'CASH' | 'PIX' | 'CARD' | 'CREDIT' | 'OTHER'>('CASH');
   const [err, setErr] = useState<string | null>(null);
@@ -76,12 +98,14 @@ export function NfeFormPage() {
     enabled: isEdit && !!documentId,
   });
 
+  const natures = useQuery({
+    queryKey: ['operation-natures'],
+    queryFn: () => api<NatureRow[]>('/operation-natures'),
+  });
+
   useEffect(() => {
     const d = existing.data;
     if (!d) return;
-    if (!DELETABLE.has(d.status) && d.status !== 'QUEUED') {
-      // ainda permite carregar se deletável; senão avisa
-    }
     if (!DELETABLE.has(d.status)) {
       setErr('Esta nota não pode ser editada (já enviada/autorizada). Exclua só se ainda não enviada.');
     }
@@ -89,6 +113,13 @@ export function NfeFormPage() {
     setNotes(d.sale.notes ?? '');
     setDiscount(String(d.sale.discount ?? '0'));
     setSurcharge(String(d.sale.surcharge ?? '0'));
+    setFreightAmount(String(d.sale.freightAmount ?? '0'));
+    const fm = Number(d.sale.freightMod ?? 9);
+    setFreightMod(fm === 0 || fm === 1 ? fm : 9);
+    setNatureId(d.sale.operationNatureId ?? '');
+    setPlate(d.sale.deliveryVehiclePlate ?? '');
+    setDriver(d.sale.deliveryDriverName ?? '');
+    setDeductStock(d.sale.deductStock !== false);
     setLines(
       (d.sale.items ?? []).map((it, i) => ({
         key: `${it.variantId}-${i}`,
@@ -120,6 +151,7 @@ export function NfeFormPage() {
   }, [customers.data, customerQ]);
 
   const selectedCustomer = (customers.data ?? []).find((c) => c.id === customerId) ?? null;
+  const activeNatures = (natures.data ?? []).filter((n) => n.isActive);
 
   const productSearch = useQuery({
     queryKey: ['products', 'search', productQ],
@@ -131,7 +163,9 @@ export function NfeFormPage() {
   const subtotal = lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
   const disc = Number(String(discount).replace(',', '.')) || 0;
   const sur = Number(String(surcharge).replace(',', '.')) || 0;
-  const total = Math.max(0, Math.round((subtotal - disc + sur) * 100) / 100);
+  const freight =
+    freightMod === 9 ? 0 : Number(String(freightAmount).replace(',', '.')) || 0;
+  const total = Math.max(0, Math.round((subtotal - disc + sur + freight) * 100) / 100);
 
   function addProduct(p: ProductSearchRow) {
     setLines((prev) => {
@@ -156,6 +190,27 @@ export function NfeFormPage() {
     setProductQ('');
   }
 
+  const createNatureQuick = useMutation({
+    mutationFn: () =>
+      api<NatureRow>('/operation-natures', {
+        method: 'POST',
+        json: {
+          code: natureQuick.code,
+          description: natureQuick.description,
+          cfop: natureQuick.cfop,
+          isActive: true,
+        },
+      }),
+    onSuccess: (row) => {
+      qc.invalidateQueries({ queryKey: ['operation-natures'] });
+      setNatureId(row.id);
+      setShowNatureQuick(false);
+      setNatureQuick({ code: '', description: '', cfop: '' });
+      setInfo(`Natureza “${row.code}” incluída.`);
+    },
+    onError: (e: Error) => setErr(e.message),
+  });
+
   const saveMut = useMutation({
     mutationFn: async (andEmit: boolean) => {
       if (!customerId) throw new Error('Selecione o destinatário (cliente com CPF/CNPJ).');
@@ -164,10 +219,10 @@ export function NfeFormPage() {
       if (docDigits.length !== 11 && docDigits.length !== 14) {
         throw new Error('NF-e exige cliente com CPF ou CNPJ válido no cadastro.');
       }
+      if (!natureId) throw new Error('Selecione a natureza da operação.');
       if (!lines.length) throw new Error('Inclua ao menos um item.');
       if (total <= 0) throw new Error('Total da nota deve ser maior que zero.');
 
-      // Edição: remove rascunho anterior (estorna estoque)
       if (isEdit && documentId && existing.data && DELETABLE.has(existing.data.status)) {
         await api(`/fiscal/documents/${documentId}/delete-unsent`, {
           method: 'POST',
@@ -184,6 +239,12 @@ export function NfeFormPage() {
           notes: notes || null,
           discount: disc,
           surcharge: sur,
+          freightAmount: freight,
+          freightMod,
+          operationNatureId: natureId,
+          deliveryVehiclePlate: plate || null,
+          deliveryDriverName: driver || null,
+          deductStock,
           source: 'NFE_FORM',
           items: lines.map((l) => ({
             variantId: l.variantId,
@@ -238,11 +299,7 @@ export function NfeFormPage() {
         </div>
         <div className="field">
           <label htmlFor="nfe-cli">Cliente *</label>
-          <select
-            id="nfe-cli"
-            value={customerId}
-            onChange={(e) => setCustomerId(e.target.value)}
-          >
+          <select id="nfe-cli" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
             <option value="">— Selecione —</option>
             {customerHits.map((c) => (
               <option key={c.id} value={c.id}>
@@ -260,7 +317,111 @@ export function NfeFormPage() {
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Itens</h2>
+        <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Natureza da operação *</h2>
+        <div className="form-row" style={{ alignItems: 'flex-end' }}>
+          <div className="field" style={{ flex: 1 }}>
+            <label htmlFor="nfe-nat">Natureza</label>
+            <select id="nfe-nat" value={natureId} onChange={(e) => setNatureId(e.target.value)}>
+              <option value="">— Selecione —</option>
+              {activeNatures.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.code} · CFOP {n.cfop} — {n.description}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ marginBottom: '0.15rem' }}
+            onClick={() => setShowNatureQuick((v) => !v)}
+          >
+            {showNatureQuick ? 'Fechar inclusão' : '+ Incluir natureza'}
+          </button>
+        </div>
+        {showNatureQuick && (
+          <div
+            style={{
+              marginTop: '0.65rem',
+              padding: '0.75rem',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-md)',
+            }}
+          >
+            <p className="page-desc" style={{ marginTop: 0 }}>
+              Inclusão rápida (também disponível em Cadastros Gerais → Natureza da Operação).
+            </p>
+            <div className="form-row form-row--3">
+              <div className="field">
+                <label htmlFor="nq-code">Código</label>
+                <input
+                  id="nq-code"
+                  value={natureQuick.code}
+                  onChange={(e) => setNatureQuick((d) => ({ ...d, code: e.target.value }))}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="nq-cfop">CFOP</label>
+                <input
+                  id="nq-cfop"
+                  value={natureQuick.cfop}
+                  onChange={(e) =>
+                    setNatureQuick((d) => ({
+                      ...d,
+                      cfop: e.target.value.replace(/\D/g, '').slice(0, 4),
+                    }))
+                  }
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="nq-desc">Descrição (natOp)</label>
+                <input
+                  id="nq-desc"
+                  maxLength={60}
+                  value={natureQuick.description}
+                  onChange={(e) => setNatureQuick((d) => ({ ...d, description: e.target.value }))}
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={createNatureQuick.isPending}
+              onClick={() => {
+                setErr(null);
+                createNatureQuick.mutate();
+              }}
+            >
+              Salvar natureza
+            </button>
+          </div>
+        )}
+      </section>
+
+      <section className="card" style={{ marginBottom: '1rem' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '0.75rem',
+            flexWrap: 'wrap',
+            marginBottom: '0.5rem',
+          }}
+        >
+          <h2 style={{ fontSize: '1rem', margin: 0 }}>Itens</h2>
+          <label className="inline-checks" style={{ margin: 0 }}>
+            <input
+              type="checkbox"
+              checked={deductStock}
+              onChange={(e) => setDeductStock(e.target.checked)}
+            />
+            Baixar estoque
+          </label>
+        </div>
+        <p className="page-desc" style={{ marginTop: 0, fontSize: '0.82rem' }}>
+          Se marcado, a conclusão gera saída de estoque (movimentos / saldos), como no PDV.
+        </p>
         <div className="field">
           <label htmlFor="nfe-prod">Produto (busca)</label>
           <input
@@ -287,7 +448,7 @@ export function NfeFormPage() {
         )}
 
         <div className="table-wrap">
-          <table className="data-table">
+          <table className="data-table data-table--no-cards">
             <thead>
               <tr>
                 <th>Produto</th>
@@ -361,7 +522,7 @@ export function NfeFormPage() {
             <input id="nfe-sur" value={surcharge} onChange={(e) => setSurcharge(e.target.value)} />
           </div>
           <div className="field">
-            <label>Total</label>
+            <label>Total (produtos − desc. + acrésc. + frete)</label>
             <div style={{ fontWeight: 700, fontSize: '1.1rem', paddingTop: '0.35rem' }}>
               {formatBRL(total)}
             </div>
@@ -370,26 +531,91 @@ export function NfeFormPage() {
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Pagamento e observações</h2>
+        <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Frete</h2>
         <div className="form-row form-row--2">
           <div className="field">
-            <label htmlFor="nfe-pay">Forma</label>
+            <label htmlFor="nfe-fmod">Por conta de</label>
             <select
-              id="nfe-pay"
-              value={payMethod}
-              onChange={(e) => setPayMethod(e.target.value as typeof payMethod)}
+              id="nfe-fmod"
+              value={freightMod}
+              onChange={(e) => {
+                const v = Number(e.target.value) as 0 | 1 | 9;
+                setFreightMod(v);
+                if (v === 9) setFreightAmount('0');
+              }}
             >
-              <option value="CASH">Dinheiro</option>
-              <option value="PIX">Pix</option>
-              <option value="CARD">Cartão</option>
-              <option value="CREDIT">Crediário</option>
-              <option value="OTHER">Outro</option>
+              <option value={9}>Sem frete (modFrete 9)</option>
+              <option value={0}>Emitente / CIF (modFrete 0)</option>
+              <option value={1}>Destinatário / FOB (modFrete 1)</option>
             </select>
           </div>
           <div className="field">
-            <label htmlFor="nfe-notes">Observações</label>
-            <input id="nfe-notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <label htmlFor="nfe-fval">Valor do frete (vFrete)</label>
+            <input
+              id="nfe-fval"
+              value={freightAmount}
+              disabled={freightMod === 9}
+              onChange={(e) => setFreightAmount(e.target.value)}
+            />
           </div>
+        </div>
+        <p className="page-desc" style={{ marginBottom: 0, fontSize: '0.8rem' }}>
+          O valor entra no total da NF (vNF = produtos − desconto + frete + outras despesas), conforme
+          leiaute NF-e.
+        </p>
+      </section>
+
+      <section className="card" style={{ marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Entrega / transporte</h2>
+        <div className="form-row form-row--2">
+          <div className="field">
+            <label htmlFor="nfe-plate">Placa do veículo</label>
+            <input
+              id="nfe-plate"
+              value={plate}
+              onChange={(e) => setPlate(e.target.value.toUpperCase())}
+              maxLength={10}
+              placeholder="ABC1D23"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="nfe-driver">Nome do motorista</label>
+            <input
+              id="nfe-driver"
+              value={driver}
+              onChange={(e) => setDriver(e.target.value)}
+              maxLength={120}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="card" style={{ marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Pagamento e observações</h2>
+        <div className="field">
+          <label htmlFor="nfe-pay">Forma</label>
+          <select
+            id="nfe-pay"
+            value={payMethod}
+            onChange={(e) => setPayMethod(e.target.value as typeof payMethod)}
+          >
+            <option value="CASH">Dinheiro</option>
+            <option value="PIX">Pix</option>
+            <option value="CARD">Cartão</option>
+            <option value="CREDIT">Crediário</option>
+            <option value="OTHER">Outro</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="nfe-notes">Observações</label>
+          <textarea
+            id="nfe-notes"
+            rows={5}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            style={{ width: '100%', minHeight: '7rem' }}
+            placeholder="Informações complementares da nota (infCpl)…"
+          />
         </div>
       </section>
 
