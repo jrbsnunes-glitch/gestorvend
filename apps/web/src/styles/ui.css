@@ -129,6 +129,67 @@
   gap: 0 1rem;
 }
 
+/**
+ * Linha com campos + botão de ação alinhados pela base dos inputs
+ * (evita desalinhamento do .form-row em grid + margin-bottom).
+ */
+.nfe-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.nfe-field-row > .field {
+  margin-bottom: 0;
+  min-width: 0;
+}
+
+.nfe-field-row > .field--grow {
+  flex: 1 1 12rem;
+}
+
+.nfe-field-row > .field--grow-lg {
+  flex: 1.4 1 14rem;
+}
+
+.nfe-field-row > .field--sm {
+  flex: 0 1 7rem;
+}
+
+.nfe-field-row > .field--md {
+  flex: 0 1 9rem;
+}
+
+.nfe-field-row > .field--action {
+  flex: 0 0 auto;
+}
+
+.nfe-field-row > .field--action .btn {
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  height: 2.5rem;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.nfe-field-row > .field input,
+.nfe-field-row > .field select {
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  height: 2.5rem;
+}
+
+.nfe-field-row > .field--action .field-label-spacer {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.2;
+  visibility: hidden;
+  user-select: none;
+}
+
 .table-wrap {
   overflow: auto;
   border: 1px solid var(--color-border);

@@ -320,11 +320,8 @@ export function NfeFormPage() {
 
       <section className="card" style={{ marginBottom: '1rem' }}>
         <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Destinatário</h2>
-        <div
-          className="form-row"
-          style={{ alignItems: 'flex-end', gap: '0.65rem', flexWrap: 'wrap' }}
-        >
-          <div className="field" style={{ flex: '1 1 14rem', minWidth: '12rem' }}>
+        <div className="nfe-field-row">
+          <div className="field field--grow">
             <label htmlFor="nfe-cli-q">Buscar cliente</label>
             <input
               id="nfe-cli-q"
@@ -333,7 +330,7 @@ export function NfeFormPage() {
               placeholder="Nome ou CPF/CNPJ"
             />
           </div>
-          <div className="field" style={{ flex: '1.4 1 16rem', minWidth: '12rem' }}>
+          <div className="field field--grow-lg">
             <label htmlFor="nfe-cli">Cliente *</label>
             <select id="nfe-cli" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
               <option value="">— Selecione —</option>
@@ -345,10 +342,10 @@ export function NfeFormPage() {
               ))}
             </select>
           </div>
-          <div className="field" style={{ flex: '0 0 auto', marginBottom: 0 }}>
-            <label htmlFor="nfe-cli-add" style={{ visibility: 'hidden' }}>
+          <div className="field field--action">
+            <span className="field-label-spacer" aria-hidden="true">
               Incluir
-            </label>
+            </span>
             <button
               id="nfe-cli-add"
               type="button"
@@ -390,8 +387,8 @@ export function NfeFormPage() {
               Cadastro rápido na própria tela (nome + CPF/CNPJ). Depois você pode completar o endereço
               em Clientes.
             </p>
-            <div className="form-row" style={{ alignItems: 'flex-end', gap: '0.65rem' }}>
-              <div className="field" style={{ flex: 2 }}>
+            <div className="nfe-field-row" style={{ marginBottom: 0 }}>
+              <div className="field field--grow">
                 <label htmlFor="cq-name">Nome *</label>
                 <input
                   id="cq-name"
@@ -399,7 +396,7 @@ export function NfeFormPage() {
                   onChange={(e) => setCustomerQuick((d) => ({ ...d, name: e.target.value }))}
                 />
               </div>
-              <div className="field" style={{ flex: 1.2 }}>
+              <div className="field field--grow">
                 <label htmlFor="cq-doc">CPF/CNPJ *</label>
                 <input
                   id="cq-doc"
@@ -410,10 +407,10 @@ export function NfeFormPage() {
                   inputMode="numeric"
                 />
               </div>
-              <div className="field" style={{ flex: '0 0 auto', marginBottom: 0 }}>
-                <label htmlFor="cq-save" style={{ visibility: 'hidden' }}>
+              <div className="field field--action">
+                <span className="field-label-spacer" aria-hidden="true">
                   Salvar
-                </label>
+                </span>
                 <button
                   id="cq-save"
                   type="button"
@@ -434,11 +431,8 @@ export function NfeFormPage() {
 
       <section className="card" style={{ marginBottom: '1rem' }}>
         <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Natureza da operação *</h2>
-        <div
-          className="form-row"
-          style={{ alignItems: 'flex-end', gap: '0.65rem', flexWrap: 'wrap' }}
-        >
-          <div className="field" style={{ flex: '1 1 18rem', minWidth: '14rem' }}>
+        <div className="nfe-field-row">
+          <div className="field field--grow">
             <label htmlFor="nfe-nat">Natureza</label>
             <select id="nfe-nat" value={natureId} onChange={(e) => setNatureId(e.target.value)}>
               <option value="">— Selecione —</option>
@@ -449,10 +443,10 @@ export function NfeFormPage() {
               ))}
             </select>
           </div>
-          <div className="field" style={{ flex: '0 0 auto', marginBottom: 0 }}>
-            <label htmlFor="nfe-nat-add" style={{ visibility: 'hidden' }}>
+          <div className="field field--action">
+            <span className="field-label-spacer" aria-hidden="true">
               Incluir
-            </label>
+            </span>
             <button
               id="nfe-nat-add"
               type="button"
@@ -476,11 +470,8 @@ export function NfeFormPage() {
             <p className="page-desc" style={{ marginTop: 0, marginBottom: '0.55rem' }}>
               Inclusão rápida (também em Cadastros Gerais → Natureza da Operação).
             </p>
-            <div
-              className="form-row"
-              style={{ alignItems: 'flex-end', gap: '0.65rem', flexWrap: 'wrap' }}
-            >
-              <div className="field" style={{ flex: '0 1 8rem' }}>
+            <div className="nfe-field-row" style={{ marginBottom: 0 }}>
+              <div className="field field--md">
                 <label htmlFor="nq-code">Código</label>
                 <input
                   id="nq-code"
@@ -488,7 +479,7 @@ export function NfeFormPage() {
                   onChange={(e) => setNatureQuick((d) => ({ ...d, code: e.target.value }))}
                 />
               </div>
-              <div className="field" style={{ flex: '0 1 6rem' }}>
+              <div className="field field--sm">
                 <label htmlFor="nq-cfop">CFOP</label>
                 <input
                   id="nq-cfop"
@@ -501,7 +492,7 @@ export function NfeFormPage() {
                   }
                 />
               </div>
-              <div className="field" style={{ flex: '1 1 12rem' }}>
+              <div className="field field--grow">
                 <label htmlFor="nq-desc">Descrição (natOp)</label>
                 <input
                   id="nq-desc"
@@ -510,10 +501,10 @@ export function NfeFormPage() {
                   onChange={(e) => setNatureQuick((d) => ({ ...d, description: e.target.value }))}
                 />
               </div>
-              <div className="field" style={{ flex: '0 0 auto', marginBottom: 0 }}>
-                <label htmlFor="nq-save" style={{ visibility: 'hidden' }}>
+              <div className="field field--action">
+                <span className="field-label-spacer" aria-hidden="true">
                   Salvar
-                </label>
+                </span>
                 <button
                   id="nq-save"
                   type="button"
