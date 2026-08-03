@@ -67,6 +67,12 @@ export class GoodsReceiptController {
         include: {
           supplier: true,
           items: { include: { variant: { include: { product: true } } } },
+          movements: {
+            take: 1,
+            select: {
+              location: { select: { id: true, code: true, name: true } },
+            },
+          },
         },
       });
     } catch (e) {
@@ -84,6 +90,12 @@ export class GoodsReceiptController {
         include: {
           supplier: true,
           items: { include: { variant: { include: { product: true } } } },
+          movements: {
+            take: 1,
+            select: {
+              location: { select: { id: true, code: true, name: true } },
+            },
+          },
         },
       });
     } catch (e) {
@@ -154,6 +166,12 @@ export class GoodsReceiptController {
         include: {
           supplier: true,
           items: { include: { variant: { include: { product: true } } } },
+          movements: {
+            take: 1,
+            select: {
+              location: { select: { id: true, code: true, name: true } },
+            },
+          },
         },
       });
     } catch (e) {

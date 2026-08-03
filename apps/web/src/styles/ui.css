@@ -1474,6 +1474,54 @@
   border-bottom-color: var(--color-primary, #2563eb);
 }
 
+/* Abas de formulário (cadastro de produtos — estilo pills / prosecretaria) */
+.form-modal-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  width: 100%;
+  margin: 0 0 1rem;
+  padding: 0.25rem;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-elevated, #f1f5f9);
+  box-sizing: border-box;
+}
+
+.form-modal-tab {
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 7rem;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 0.5rem 0.75rem;
+  border-radius: calc(var(--radius-md) - 2px);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.86rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.form-modal-tab:hover {
+  color: var(--color-text);
+}
+
+.form-modal-tab.is-active {
+  background: var(--color-surface, #fff);
+  color: var(--color-primary, #2563eb);
+  border-color: var(--color-border);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.form-modal-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
 .user-permissions-list {
   display: flex;
   flex-direction: column;
@@ -1865,6 +1913,10 @@
   .entrada-receipt-header-grid__doc {
     grid-column: 1 / -1;
   }
+
+  .entrada-receipt-header-grid__totals {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (min-width: 1100px) {
@@ -1873,6 +1925,10 @@
   }
 
   .entrada-receipt-header-grid__doc {
+    grid-column: auto;
+  }
+
+  .entrada-receipt-header-grid__totals {
     grid-column: auto;
   }
 }
@@ -1895,7 +1951,7 @@
 
 @media (min-width: 900px) {
   .entrada-receipt-footer-split {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     align-items: start;
   }
 }

@@ -66,6 +66,10 @@ type GoodsReceiptRow = {
   totalValue: string | null;
   supplier: { id: string; legalName: string } | null;
   supplierId: string | null;
+  /** Local de estoque usado no lançamento (via movimento; leitura). */
+  movements?: Array<{
+    location: { id: string; code: string; name: string } | null;
+  }>;
   items: Array<{
     id: string;
     quantity: string;
@@ -1202,17 +1206,11 @@ export function StockEntradaPage() {
                         </p>
                       ) : null}
                     </div>
-                  </div>
-                </details>
-
-                <details className="submenu-details entrada-receipt-header-grid__dest" open>
-                  <summary className="submenu-summary">Destinatário (seu estabelecimento)</summary>
-                  <div className="submenu-body">
-                    <p className="muted entrada-receipt-dest-hint">
-                      Local onde a mercadoria será lançada ao confirmar.
-                    </p>
-                    <div className="field">
-                      <label htmlFor="ent-loc">Local de recebimento *</label>
+                    <div className="field" style={{ marginTop: '0.75rem' }}>
+                      <label htmlFor="ent-loc">Destinatário — local de recebimento *</label>
+                      <p className="muted entrada-receipt-dest-hint">
+                        Local onde a mercadoria será lançada ao confirmar.
+                      </p>
                       <select id="ent-loc" value={locationId} onChange={(e) => setLocationId(e.target.value)} required>
                         <option value="">— Selecione —</option>
                         {locations.data?.map((l) => (
@@ -1221,6 +1219,31 @@ export function StockEntradaPage() {
                           </option>
                         ))}
                       </select>
+                    </div>
+                  </div>
+                </details>
+
+                <details className="submenu-details entrada-receipt-header-grid__totals" open>
+                  <summary className="submenu-summary">Totais / observações</summary>
+                  <div className="submenu-body">
+                    <div className="field">
+                      <label htmlFor="ent-tot">Valor total informado no documento (opcional)</label>
+                      <input
+                        id="ent-tot"
+                        value={totalValue}
+                        onChange={(e) => setTotalValue(e.target.value)}
+                        type="number"
+                        step="0.01"
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="ent-notes">Informações complementares</label>
+                      <textarea
+                        id="ent-notes"
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        rows={3}
+                      />
                     </div>
                   </div>
                 </details>
@@ -1489,28 +1512,6 @@ export function StockEntradaPage() {
               </details>
 
               <div className="entrada-receipt-footer-split">
-              <details className="submenu-details" open>
-                <summary className="submenu-summary">Totais / observações</summary>
-                <div className="submenu-body">
-                  <div className="form-row">
-                    <div className="field">
-                      <label htmlFor="ent-tot">Valor total informado no documento (opcional)</label>
-                      <input
-                        id="ent-tot"
-                        value={totalValue}
-                        onChange={(e) => setTotalValue(e.target.value)}
-                        type="number"
-                        step="0.01"
-                      />
-                    </div>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="ent-notes">Informações complementares</label>
-                    <textarea id="ent-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
-                  </div>
-                </div>
-              </details>
-
               <details className="submenu-details" open>
                 <summary className="submenu-summary">Contas a pagar (opcional)</summary>
                 <div className="submenu-body">
@@ -1999,6 +2000,41 @@ function EditReceiptModal({
                     }}
                   />
                 </div>
+                <div className="field" style={{ marginTop: '0.75rem' }}>
+                  <label htmlFor="edit-loc">Destinatário — local de estoque</label>
+                  <input
+                    id="edit-loc"
+                    value={(() => {
+                      const loc = receipt.movements?.[0]?.location;
+                      return loc ? `${loc.code} — ${loc.name}` : '— Não identificado —';
+                    })()}
+                    readOnly
+                    disabled
+                  />
+                  <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                    Definido no lançamento; não pode ser alterado na edição (o estoque já foi creditado neste local).
+                  </span>
+                </div>
+              </div>
+            </details>
+
+            <details className="submenu-details entrada-receipt-header-grid__totals" open>
+              <summary className="submenu-summary">Totais / observações</summary>
+              <div className="submenu-body">
+                <div className="field">
+                  <label htmlFor="edit-tot">Valor total informado no documento</label>
+                  <input id="edit-tot" value={totalValue} readOnly disabled />
+                </div>
+                <div className="field">
+                  <label htmlFor="edit-notes">Informações complementares</label>
+                  <textarea
+                    id="edit-notes"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={3}
+                    disabled={cancelled}
+                  />
+                </div>
               </div>
             </details>
           </div>
@@ -2060,30 +2096,6 @@ function EditReceiptModal({
               </div>
             </div>
           </details>
-
-          <div className="entrada-receipt-footer-split">
-            <details className="submenu-details" open>
-              <summary className="submenu-summary">Totais / observações</summary>
-              <div className="submenu-body">
-                <div className="form-row">
-                  <div className="field">
-                    <label htmlFor="edit-tot">Valor total informado no documento</label>
-                    <input id="edit-tot" value={totalValue} readOnly disabled />
-                  </div>
-                </div>
-                <div className="field">
-                  <label htmlFor="edit-notes">Informações complementares</label>
-                  <textarea
-                    id="edit-notes"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={3}
-                    disabled={cancelled}
-                  />
-                </div>
-              </div>
-            </details>
-          </div>
         </div>
 
         <div className="modal-actions" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>

@@ -33,6 +33,39 @@ import {
 /** Unidade tributária padrão em produtos novos (código em TaxUnitCode). */
 const DEFAULT_PRODUCT_TAX_UNIT = 'UN';
 
+type ProductFormTab = 'identificacao' | 'fiscal' | 'fornecedores';
+
+const PRODUCT_FORM_TABS: Array<{ id: ProductFormTab; label: string }> = [
+  { id: 'identificacao', label: 'Identificação' },
+  { id: 'fiscal', label: 'Fiscal e composto' },
+  { id: 'fornecedores', label: 'Fornecedores' },
+];
+
+function ProductFormTabNav({
+  tab,
+  onChange,
+}: {
+  tab: ProductFormTab;
+  onChange: (t: ProductFormTab) => void;
+}) {
+  return (
+    <div className="form-modal-tabs" role="tablist" aria-label="Seções do cadastro de produto">
+      {PRODUCT_FORM_TABS.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          role="tab"
+          aria-selected={tab === t.id}
+          className={'form-modal-tab' + (tab === t.id ? ' is-active' : '')}
+          onClick={() => onChange(t.id)}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 type ProductSearchRow = {
   productId: string;
   productName: string;
@@ -154,6 +187,7 @@ export function ProductsPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [productFormTab, setProductFormTab] = useState<ProductFormTab>('identificacao');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [searchActionErr, setSearchActionErr] = useState<string | null>(null);
@@ -327,6 +361,7 @@ export function ProductsPage() {
     setSupplierLinks([]);
     setIsActive(true);
     setErr(null);
+    setProductFormTab('identificacao');
   }
 
   function loadEditFromProduct(p: Product) {
@@ -482,6 +517,10 @@ export function ProductsPage() {
         fields: [
           { label: 'Código', value: formatProductCode(viewProduct.controlNumber) },
           { label: 'Nome', value: viewProduct.name },
+          {
+            label: 'Código de barras',
+            value: viewProduct.defaultBarcode?.trim() ? viewProduct.defaultBarcode : null,
+          },
           { label: 'Categoria', value: viewProduct.category?.name },
           {
             label: 'Descrição',
@@ -592,6 +631,7 @@ export function ProductsPage() {
   function openEdit(p: Product) {
     loadEditFromProduct(p);
     setEditProduct(p);
+    setProductFormTab('identificacao');
     setEditOpen(true);
   }
 
@@ -862,373 +902,380 @@ export function ProductsPage() {
               Primeira variação (SKU) pode ser ajustada depois. O <strong>código sequencial</strong> do produto é gerado automaticamente ao salvar.
             </p>
             {err && <div className="alert alert-error">{err}</div>}
+            <ProductFormTabNav tab={productFormTab} onChange={setProductFormTab} />
             <div className="product-form">
-              <section className="product-form__section" aria-label="Identificação e preços">
-                <p className="product-form__section-title">Identificação e preços</p>
-                <div className="field product-form__name">
-                  <label htmlFor="p-name">Nome *</label>
-                  <input id="p-name" value={name} onChange={(e) => setName(e.target.value)} required />
-                </div>
-                <div className="product-form__grid product-form__grid--4">
-                  <div className="field">
-                    <label htmlFor="p-sku">SKU</label>
-                    <input id="p-sku" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Auto se vazio" />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="p-ean">Código de barras</label>
-                    <input
-                      id="p-ean"
-                      value={defaultBarcode}
-                      onChange={(e) => setDefaultBarcode(e.target.value.trim())}
-                      placeholder="EAN (ex.: 7891000000000)"
-                      inputMode="numeric"
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="p-price">Preço de venda (varejo) *</label>
-                    <input
-                      id="p-price"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={retailPrice}
-                      onChange={(e) => setRetailPrice(e.target.value)}
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="p-cost">Preço de custo</label>
-                    <input
-                      id="p-cost"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={costPrice}
-                      onChange={(e) => setCostPrice(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="product-form__grid product-form__grid--2">
-                  <div className="field">
-                    <span className="field-label-text">Lucro (automático)</span>
-                    <div className="product-form__profit">
-                      {profitBRL(retailPrice, costPrice)}
-                      <span className="product-form__profit-meta">
-                        Margem sobre venda: {marginOnSalePct(retailPrice, costPrice)}
-                      </span>
+              {productFormTab === 'identificacao' && (
+                <div className="form-modal-tab-panel" role="tabpanel">
+                  <section className="product-form__section" aria-label="Identificação">
+                    <p className="product-form__section-title">Identificação</p>
+                    <div className="field product-form__name">
+                      <label htmlFor="p-name">Nome *</label>
+                      <input id="p-name" value={name} onChange={(e) => setName(e.target.value)} required />
                     </div>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="p-minstock">Estoque mínimo (ponto de reposição)</label>
-                    <input
-                      id="p-minstock"
-                      type="number"
-                      step="1"
-                      min="1"
-                      value={minStockInput}
-                      onChange={(e) => setMinStockInput(e.target.value)}
-                    />
-                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Cadastro mínimo 1. PDV avisa quando o saldo ficar abaixo deste valor.
-                    </span>
-                  </div>
-                </div>
-              </section>
-
-              <div className="modal-wide-split product-form__split">
-                <div className="product-form__col">
-                  <p className="product-form__section-title">Classificação</p>
-                  <details className="submenu-details" open>
-                    <summary className="submenu-summary">Categoria</summary>
-                    <div className="submenu-body">
+                    <div className="product-form__grid product-form__grid--2">
                       <div className="field">
-                        <span className="field-label-text">Pesquisar ou incluir</span>
-                        <CategorySearchCombo
-                          id="p-cat"
-                          value={categoryId}
-                          onChange={(id, picked) => {
-                            setCategoryId(id);
-                            if (picked) setCategoryNameHint(picked);
-                            if (!id) setCategoryNameHint('');
-                          }}
-                          hintName={categoryNameHint}
+                        <label htmlFor="p-sku">SKU</label>
+                        <input id="p-sku" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Auto se vazio" />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="p-ean">Código de barras</label>
+                        <input
+                          id="p-ean"
+                          value={defaultBarcode}
+                          onChange={(e) => setDefaultBarcode(e.target.value.trim())}
+                          placeholder="EAN (ex.: 7891000000000)"
+                          inputMode="numeric"
                         />
                       </div>
                     </div>
-                  </details>
-                  <div className="field field--grow">
-                    <label htmlFor="p-desc-c">Descrição</label>
-                    <textarea
-                      id="p-desc-c"
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      rows={4}
-                      placeholder="Descrição complementar (aparece em recibos e relatórios)"
-                    />
-                  </div>
+                  </section>
+
+                  <section className="product-form__section" aria-label="Descrição">
+                    <p className="product-form__section-title">Descrição</p>
+                    <div className="field field--grow">
+                      <label htmlFor="p-desc-c">Descrição</label>
+                      <textarea
+                        id="p-desc-c"
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        rows={4}
+                        placeholder="Descrição complementar (aparece em recibos e relatórios)"
+                      />
+                    </div>
+                  </section>
+
+                  <section className="product-form__section" aria-label="Classificação">
+                    <p className="product-form__section-title">Classificação</p>
+                    <div className="field">
+                      <span className="field-label-text">Categoria — pesquisar ou incluir</span>
+                      <CategorySearchCombo
+                        id="p-cat"
+                        value={categoryId}
+                        onChange={(id, picked) => {
+                          setCategoryId(id);
+                          if (picked) setCategoryNameHint(picked);
+                          if (!id) setCategoryNameHint('');
+                        }}
+                        hintName={categoryNameHint}
+                      />
+                    </div>
+                  </section>
+
+                  <section className="product-form__section" aria-label="Preços por variação">
+                    <p className="product-form__section-title">Preços por variação</p>
+                    <div className="product-form__grid product-form__grid--4">
+                      <div className="field">
+                        <label htmlFor="p-price">Preço de venda (varejo) *</label>
+                        <input
+                          id="p-price"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={retailPrice}
+                          onChange={(e) => setRetailPrice(e.target.value)}
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="p-cost">Preço de custo</label>
+                        <input
+                          id="p-cost"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={costPrice}
+                          onChange={(e) => setCostPrice(e.target.value)}
+                        />
+                      </div>
+                      <div className="field">
+                        <span className="field-label-text">Lucro (automático)</span>
+                        <div className="product-form__profit">
+                          {profitBRL(retailPrice, costPrice)}
+                          <span className="product-form__profit-meta">
+                            Margem sobre venda: {marginOnSalePct(retailPrice, costPrice)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="field">
+                        <label htmlFor="p-minstock">Estoque mínimo (ponto de reposição)</label>
+                        <input
+                          id="p-minstock"
+                          type="number"
+                          step="1"
+                          min="1"
+                          value={minStockInput}
+                          onChange={(e) => setMinStockInput(e.target.value)}
+                        />
+                        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                          Cadastro mínimo 1. PDV avisa quando o saldo ficar abaixo deste valor.
+                        </span>
+                      </div>
+                    </div>
+                  </section>
                 </div>
-                <div className="product-form__col">
-                  <p className="product-form__section-title">Fiscal</p>
-                  <details className="submenu-details">
-                    <summary className="submenu-summary">Dados fiscais</summary>
-                    <div className="submenu-body">
-                  <div className="field">
-                    <label htmlFor="p-fiscal-sit-create">Situação fiscal (cadastro mestre)</label>
-                    <select
-                      id="p-fiscal-sit-create"
-                      value={fiscalSituationId}
-                      onChange={(e) => setFiscalSituationId(e.target.value)}
-                    >
-                      <option value="">— Apenas campos locais abaixo —</option>
-                      {(fiscalSituationsQ.data ?? [])
-                        .filter((s) => s.isActive)
-                        .map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.code} — {s.name}
-                          </option>
-                        ))}
-                    </select>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Opcional — <strong>Cadastros gerais → Situação fiscal</strong>.
-                    </span>
-                  </div>
-                  <div className="form-row">
+              )}
+
+              {productFormTab === 'fiscal' && (
+                <div className="form-modal-tab-panel" role="tabpanel">
+                  <section className="product-form__section" aria-label="Fiscal">
+                    <p className="product-form__section-title">Fiscal</p>
                     <div className="field">
-                      <span className="field-label-text">NCM</span>
-                      <FiscalCodeSearchCombo
-                        kind="ncm"
-                        id="p-ncm"
-                        label="NCM"
-                        value={ncm}
-                        onChange={setNcm}
-                        hintLabel={ncm || null}
-                      />
-                    </div>
-                    <div className="field">
-                      <span className="field-label-text">CEST</span>
-                      <FiscalCodeSearchCombo
-                        kind="cest"
-                        id="p-cest"
-                        label="CEST"
-                        value={cest}
-                        onChange={setCest}
-                        hintLabel={cest || null}
-                        ncmHint={ncm || null}
-                      />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="field">
-                      <label htmlFor="p-extipi">EX TIPI</label>
-                      <input
-                        id="p-extipi"
-                        value={exTipi}
-                        onChange={(e) => setExTipi(e.target.value)}
-                        placeholder="Opcional"
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="p-origin">Origem da mercadoria (ICMS)</label>
+                      <label htmlFor="p-fiscal-sit-create">Situação fiscal (cadastro mestre)</label>
                       <select
-                        id="p-origin"
-                        value={fiscalOrigin}
-                        onChange={(e) => setFiscalOrigin(e.target.value)}
+                        id="p-fiscal-sit-create"
+                        value={fiscalSituationId}
+                        onChange={(e) => setFiscalSituationId(e.target.value)}
                       >
-                        <option value="">— Não informado —</option>
-                        {FISCAL_ORIGIN_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
+                        <option value="">— Apenas campos locais abaixo —</option>
+                        {(fiscalSituationsQ.data ?? [])
+                          .filter((s) => s.isActive)
+                          .map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.code} — {s.name}
+                            </option>
+                          ))}
                       </select>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                        Opcional — <strong>Cadastros gerais → Situação fiscal</strong>.
+                      </span>
                     </div>
-                  </div>
+                    <div className="form-row">
+                      <div className="field">
+                        <span className="field-label-text">NCM</span>
+                        <FiscalCodeSearchCombo
+                          kind="ncm"
+                          id="p-ncm"
+                          label="NCM"
+                          value={ncm}
+                          onChange={setNcm}
+                          hintLabel={ncm || null}
+                        />
+                      </div>
+                      <div className="field">
+                        <span className="field-label-text">CEST</span>
+                        <FiscalCodeSearchCombo
+                          kind="cest"
+                          id="p-cest"
+                          label="CEST"
+                          value={cest}
+                          onChange={setCest}
+                          hintLabel={cest || null}
+                          ncmHint={ncm || null}
+                        />
+                      </div>
                     </div>
-                  </details>
-                  <div className="product-form__subsection" aria-label="Unidade tributável e conversão NF-e">
+                    <div className="form-row">
+                      <div className="field">
+                        <label htmlFor="p-extipi">EX TIPI</label>
+                        <input
+                          id="p-extipi"
+                          value={exTipi}
+                          onChange={(e) => setExTipi(e.target.value)}
+                          placeholder="Opcional"
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="p-origin">Origem da mercadoria (ICMS)</label>
+                        <select
+                          id="p-origin"
+                          value={fiscalOrigin}
+                          onChange={(e) => setFiscalOrigin(e.target.value)}
+                        >
+                          <option value="">— Não informado —</option>
+                          {FISCAL_ORIGIN_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="product-form__section" aria-label="Unidade, conversão e produto composto">
                     <p className="product-form__section-title">Unidade, conversão e produto composto</p>
-                  <div className="field">
-                    <span className="field-label-text">Unidade tributável</span>
-                    <FiscalCodeSearchCombo
-                      kind="tax-units"
-                      id="p-taxunit"
-                      label="Unidade tributável"
-                      value={taxUnit}
-                      onChange={setTaxUnit}
-                      hintLabel={taxUnit || null}
-                    />
-                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Padrão <strong>UN</strong> (Unidade). Use <strong>KG</strong> para venda a peso —
-                      no PDV a quantidade fica fracionada (ex.: 0,350 kg).
-                    </span>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="p-conversion">Conversão (entrada NF-e)</label>
-                    <input
-                      id="p-conversion"
-                      value={conversion}
-                      onChange={(e) => {
-                        const next = e.target.value.toUpperCase();
-                        setConversion(next);
-                        if (!parseProductConversion(next)) {
-                          setStockComponentVariantId(null);
-                          setStockComponentLabel('');
-                        }
-                      }}
-                      onBlur={() => {
-                        const n = normalizeProductConversion(conversion);
-                        if (n) setConversion(n);
-                      }}
-                      placeholder="Ex.: CX, CX-12, PCT, PCT-10"
-                    />
-                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Digite a <strong>unidade como vem na NF-e</strong> (uCom). Exemplos: CX, PCT,
-                      CX-12. O sistema confere com a unidade da nota.
-                    </span>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="p-pack-qty">Itens por produto composto</label>
-                    <input
-                      id="p-pack-qty"
-                      type="number"
-                      min={1}
-                      step="1"
-                      inputMode="decimal"
-                      value={packItemQty}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        setPackItemQty(next);
-                        if (resolveConversionFactor(conversion, next) <= 1) {
-                          setStockComponentVariantId(null);
-                          setStockComponentLabel('');
-                        }
-                      }}
-                      placeholder="Ex.: 12, 50"
-                    />
-                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Quantos itens unitários vêm em cada caixa/pack (ex.: 12 latas por caixa). Na
-                      entrada da NF, <strong>qtd da nota × este valor</strong> = saldo no estoque
-                      unitário.
-                    </span>
-                  </div>
-                  <div className="field">
-                    <span className="field-label-text">Produto composto</span>
-                    <ol
-                      style={{
-                        margin: '0 0 0.55rem',
-                        paddingLeft: '1.2rem',
-                        fontSize: '0.82rem',
-                        color: 'var(--color-text-secondary)',
-                        lineHeight: 1.45,
-                      }}
-                    >
-                      <li>
-                        Cadastre antes o produto da <strong>unidade</strong> (ex.: balde de gelo, peça de
-                        linguiça).
-                      </li>
-                      <li>
-                        Neste produto (caixa/kg da NF), informe a conversão{' '}
-                        <strong>igual à unidade da NF</strong> (ex.: CX, KG) e quantos itens unitários
-                        equivalem a 1 da NF (ex.: 6 baldes/caixa, 20 peças/kg).
-                      </li>
-                      <li>
-                        Clique em <strong>Vincular produto</strong> e escolha o produto unitário. O
-                        estoque sobe/baixa nele; inventarie o unitário.
-                      </li>
-                    </ol>
-                    <p
-                      style={{
-                        margin: '0 0 0.55rem',
-                        fontSize: '0.78rem',
-                        color: 'var(--color-text-muted)',
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      Exemplos: <strong>gelo</strong> = caixa → balde; <strong>linguiça</strong> em KG
-                      vendida em peças = composto KG + unitário. Dois preços de balde → dois unitários.
-                      Detalhes em <code>docs/ESTOQUE-COMPOSTOS-E-PESO.md</code>.
-                    </p>
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                      <input
-                        readOnly
-                        value={stockComponentLabel || 'Não — estoque neste próprio produto'}
-                        style={{ flex: '1 1 220px' }}
-                        aria-label="Produto unitário vinculado ao composto"
+                    <div className="field">
+                      <span className="field-label-text">Unidade tributável</span>
+                      <FiscalCodeSearchCombo
+                        kind="tax-units"
+                        id="p-taxunit"
+                        label="Unidade tributável"
+                        value={taxUnit}
+                        onChange={setTaxUnit}
+                        hintLabel={taxUnit || null}
                       />
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={() => {
-                          if (!parseProductConversion(conversion)) {
-                            setErr(
-                              'Informe a Conversão como na NF-e (ex.: CX, CX-12, PCT) antes de vincular o produto.',
-                            );
-                            document.getElementById('p-conversion')?.focus();
-                            return;
+                      <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                        Padrão <strong>UN</strong> (Unidade). Use <strong>KG</strong> para venda a peso —
+                        no PDV a quantidade fica fracionada (ex.: 0,350 kg).
+                      </span>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="p-conversion">Conversão (entrada NF-e)</label>
+                      <input
+                        id="p-conversion"
+                        value={conversion}
+                        onChange={(e) => {
+                          const next = e.target.value.toUpperCase();
+                          setConversion(next);
+                          if (!parseProductConversion(next)) {
+                            setStockComponentVariantId(null);
+                            setStockComponentLabel('');
                           }
-                          if (resolveConversionFactor(conversion, packItemQty) <= 1) {
-                            setErr(
-                              'Informe quantos itens vêm em cada produto composto (ex.: 12, 50) antes de vincular.',
-                            );
-                            document.getElementById('p-pack-qty')?.focus();
-                            return;
+                        }}
+                        onBlur={() => {
+                          const n = normalizeProductConversion(conversion);
+                          if (n) setConversion(n);
+                        }}
+                        placeholder="Ex.: CX, CX-12, PCT, PCT-10"
+                      />
+                      <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                        Digite a <strong>unidade como vem na NF-e</strong> (uCom). Exemplos: CX, PCT,
+                        CX-12. O sistema confere com a unidade da nota.
+                      </span>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="p-pack-qty">Itens por produto composto</label>
+                      <input
+                        id="p-pack-qty"
+                        type="number"
+                        min={1}
+                        step="1"
+                        inputMode="decimal"
+                        value={packItemQty}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setPackItemQty(next);
+                          if (resolveConversionFactor(conversion, next) <= 1) {
+                            setStockComponentVariantId(null);
+                            setStockComponentLabel('');
                           }
-                          setErr(null);
-                          setComponentSearchOpen(true);
+                        }}
+                        placeholder="Ex.: 12, 50"
+                      />
+                      <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                        Quantos itens unitários vêm em cada caixa/pack (ex.: 12 latas por caixa). Na
+                        entrada da NF, <strong>qtd da nota × este valor</strong> = saldo no estoque
+                        unitário.
+                      </span>
+                    </div>
+                    <div className="field">
+                      <span className="field-label-text">Produto composto</span>
+                      <ol
+                        style={{
+                          margin: '0 0 0.55rem',
+                          paddingLeft: '1.2rem',
+                          fontSize: '0.82rem',
+                          color: 'var(--color-text-secondary)',
+                          lineHeight: 1.45,
                         }}
                       >
-                        Vincular produto
-                      </button>
-                      {stockComponentVariantId && (
+                        <li>
+                          Cadastre antes o produto da <strong>unidade</strong> (ex.: balde de gelo, peça de
+                          linguiça).
+                        </li>
+                        <li>
+                          Neste produto (caixa/kg da NF), informe a conversão{' '}
+                          <strong>igual à unidade da NF</strong> (ex.: CX, KG) e quantos itens unitários
+                          equivalem a 1 da NF (ex.: 6 baldes/caixa, 20 peças/kg).
+                        </li>
+                        <li>
+                          Clique em <strong>Vincular produto</strong> e escolha o produto unitário. O
+                          estoque sobe/baixa nele; inventarie o unitário.
+                        </li>
+                      </ol>
+                      <p
+                        style={{
+                          margin: '0 0 0.55rem',
+                          fontSize: '0.78rem',
+                          color: 'var(--color-text-muted)',
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        Exemplos: <strong>gelo</strong> = caixa → balde; <strong>linguiça</strong> em KG
+                        vendida em peças = composto KG + unitário. Dois preços de balde → dois unitários.
+                        Detalhes em <code>docs/ESTOQUE-COMPOSTOS-E-PESO.md</code>.
+                      </p>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <input
+                          readOnly
+                          value={stockComponentLabel || 'Não — estoque neste próprio produto'}
+                          style={{ flex: '1 1 220px' }}
+                          aria-label="Produto unitário vinculado ao composto"
+                        />
                         <button
                           type="button"
                           className="btn btn-secondary"
                           onClick={() => {
-                            setStockComponentVariantId(null);
-                            setStockComponentLabel('');
+                            if (!parseProductConversion(conversion)) {
+                              setErr(
+                                'Informe a Conversão como na NF-e (ex.: CX, CX-12, PCT) antes de vincular o produto.',
+                              );
+                              document.getElementById('p-conversion')?.focus();
+                              return;
+                            }
+                            if (resolveConversionFactor(conversion, packItemQty) <= 1) {
+                              setErr(
+                                'Informe quantos itens vêm em cada produto composto (ex.: 12, 50) antes de vincular.',
+                              );
+                              document.getElementById('p-pack-qty')?.focus();
+                              return;
+                            }
+                            setErr(null);
+                            setComponentSearchOpen(true);
                           }}
                         >
-                          Limpar
+                          Vincular produto
                         </button>
-                      )}
-                    </div>
-                    {!parseProductConversion(conversion) && (
-                      <span style={{ fontSize: '0.78rem', color: 'var(--color-danger, #b91c1c)' }}>
-                        Digite a conversão (como na nota) para liberar o vínculo do produto.
-                      </span>
-                    )}
-                    {parseProductConversion(conversion) &&
-                      resolveConversionFactor(conversion, packItemQty) <= 1 && (
+                        {stockComponentVariantId && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => {
+                              setStockComponentVariantId(null);
+                              setStockComponentLabel('');
+                            }}
+                          >
+                            Limpar
+                          </button>
+                        )}
+                      </div>
+                      {!parseProductConversion(conversion) && (
                         <span style={{ fontSize: '0.78rem', color: 'var(--color-danger, #b91c1c)' }}>
-                          Informe a quantidade de itens por composto (ex.: 12) para liberar o vínculo.
+                          Digite a conversão (como na nota) para liberar o vínculo do produto.
                         </span>
                       )}
-                    {parseProductConversion(conversion) &&
-                      resolveConversionFactor(conversion, packItemQty) > 1 &&
-                      !stockComponentVariantId && (
-                        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                          Pronto. Agora vincule o produto para a entrada/venda da caixa baixar o estoque
-                          unitário (
-                          {resolveConversionFactor(conversion, packItemQty)} un. por 1 da NF).
-                        </span>
-                      )}
-                  </div>
-                  </div>
+                      {parseProductConversion(conversion) &&
+                        resolveConversionFactor(conversion, packItemQty) <= 1 && (
+                          <span style={{ fontSize: '0.78rem', color: 'var(--color-danger, #b91c1c)' }}>
+                            Informe a quantidade de itens por composto (ex.: 12) para liberar o vínculo.
+                          </span>
+                        )}
+                      {parseProductConversion(conversion) &&
+                        resolveConversionFactor(conversion, packItemQty) > 1 &&
+                        !stockComponentVariantId && (
+                          <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                            Pronto. Agora vincule o produto para a entrada/venda da caixa baixar o estoque
+                            unitário (
+                            {resolveConversionFactor(conversion, packItemQty)} un. por 1 da NF).
+                          </span>
+                        )}
+                    </div>
+                  </section>
                 </div>
-              </div>
+              )}
 
-              <section className="product-form__section product-form__section--full" aria-label="Vínculos fornecedor">
-                <details className="submenu-details" open>
-                  <summary className="submenu-summary">Vínculos com fornecedores (entrada NF-e)</summary>
-                  <div className="submenu-body">
+              {productFormTab === 'fornecedores' && (
+                <div className="form-modal-tab-panel" role="tabpanel">
+                  <section className="product-form__section product-form__section--full" aria-label="Vínculos fornecedor">
+                    <p className="product-form__section-title">Vínculo com Fornecedores (Entrada NF-e)</p>
                     <ProductSupplierLinksSection
                       idPrefix="p-create"
                       variants={[{ id: '__new__', sku: sku.trim() || '(gerado ao salvar)' }]}
                       links={supplierLinks}
                       onChange={setSupplierLinks}
                     />
-                  </div>
-                </details>
-              </section>
+                  </section>
+                </div>
+              )}
             </div>
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setCreateOpen(false)}>
@@ -1260,313 +1307,408 @@ export function ProductsPage() {
               </p>
             )}
             {err && <div className="alert alert-error">{err}</div>}
+            <ProductFormTabNav tab={productFormTab} onChange={setProductFormTab} />
             <div className="product-form">
-              <section className="product-form__section" aria-label="Identificação">
-                <p className="product-form__section-title">Identificação</p>
-                <div className="product-form__grid product-form__grid--4">
-                  <div className="field" style={{ gridColumn: 'span 2' }}>
-                    <label htmlFor="pe-name">Nome *</label>
-                    <input id="pe-name" value={name} onChange={(e) => setName(e.target.value)} required />
-                  </div>
-                  <div className="field" style={{ gridColumn: 'span 2' }}>
-                    <label htmlFor="pe-bar">Código de barras</label>
-                    <input
-                      id="pe-bar"
-                      value={defaultBarcode}
-                      onChange={(e) => setDefaultBarcode(e.target.value.trim())}
-                      placeholder="EAN do produto"
-                      inputMode="numeric"
-                    />
-                  </div>
-                </div>
-              </section>
-
-              <div className="modal-wide-split product-form__split">
-                <div className="product-form__col">
-                  <p className="product-form__section-title">Classificação</p>
-                  <details className="submenu-details" open>
-                    <summary className="submenu-summary">Categoria</summary>
-                    <div className="submenu-body">
-                      <div className="field">
-                        <span className="field-label-text">Pesquisar ou incluir</span>
-                        <CategorySearchCombo
-                          id="pe-cat"
-                          value={categoryId}
-                          onChange={(id, picked) => {
-                            setCategoryId(id);
-                            if (picked) setCategoryNameHint(picked);
-                            if (!id) setCategoryNameHint('');
-                          }}
-                          hintName={categoryNameHint}
-                        />
-                      </div>
-                    </div>
-                  </details>
-                  <div className="field field--grow">
-                    <label htmlFor="pe-desc">Descrição</label>
-                    <textarea
-                      id="pe-desc"
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      rows={4}
-                      placeholder="Descrição complementar (aparece em recibos e relatórios)"
-                    />
-                  </div>
-                </div>
-                <div className="product-form__col">
-                  <p className="product-form__section-title">Fiscal</p>
-                  <details className="submenu-details">
-                    <summary className="submenu-summary">Dados fiscais</summary>
-                    <div className="submenu-body">
-                  <div className="field">
-                    <label htmlFor="p-fiscal-sit-edit">Situação fiscal (cadastro mestre)</label>
-                    <select
-                      id="p-fiscal-sit-edit"
-                      value={fiscalSituationId}
-                      onChange={(e) => setFiscalSituationId(e.target.value)}
-                    >
-                      <option value="">— Apenas campos locais abaixo —</option>
-                      {(fiscalSituationsQ.data ?? [])
-                        .filter((s) => s.isActive)
-                        .map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.code} — {s.name}
-                          </option>
-                        ))}
-                    </select>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Opcional — <strong>Cadastros gerais → Situação fiscal</strong>.
-                    </span>
-                  </div>
-                  <div className="form-row">
-                    <div className="field">
-                      <span className="field-label-text">NCM</span>
-                      <FiscalCodeSearchCombo
-                        kind="ncm"
-                        id="pe-ncm"
-                        label="NCM"
-                        value={ncm}
-                        onChange={setNcm}
-                        hintLabel={ncm || null}
-                      />
+              {productFormTab === 'identificacao' && (
+                <div className="form-modal-tab-panel" role="tabpanel">
+                  <section className="product-form__section" aria-label="Identificação">
+                    <p className="product-form__section-title">Identificação</p>
+                    <div className="field product-form__name">
+                      <label htmlFor="pe-name">Nome *</label>
+                      <input id="pe-name" value={name} onChange={(e) => setName(e.target.value)} required />
                     </div>
                     <div className="field">
-                      <span className="field-label-text">CEST</span>
-                      <FiscalCodeSearchCombo
-                        kind="cest"
-                        id="pe-cest"
-                        label="CEST"
-                        value={cest}
-                        onChange={setCest}
-                        hintLabel={cest || null}
-                        ncmHint={ncm || null}
-                      />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="field">
-                      <label htmlFor="pe-extipi">EX TIPI</label>
+                      <label htmlFor="pe-bar">Código de barras</label>
                       <input
-                        id="pe-extipi"
-                        value={exTipi}
-                        onChange={(e) => setExTipi(e.target.value)}
-                        placeholder="Opcional"
+                        id="pe-bar"
+                        value={defaultBarcode}
+                        onChange={(e) => setDefaultBarcode(e.target.value.trim())}
+                        placeholder="EAN do produto"
+                        inputMode="numeric"
                       />
                     </div>
+                  </section>
+
+                  <section className="product-form__section" aria-label="Descrição">
+                    <p className="product-form__section-title">Descrição</p>
+                    <div className="field field--grow">
+                      <label htmlFor="pe-desc">Descrição</label>
+                      <textarea
+                        id="pe-desc"
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        rows={4}
+                        placeholder="Descrição complementar (aparece em recibos e relatórios)"
+                      />
+                    </div>
+                  </section>
+
+                  <section className="product-form__section" aria-label="Classificação">
+                    <p className="product-form__section-title">Classificação</p>
                     <div className="field">
-                      <label htmlFor="pe-origin">Origem da mercadoria (ICMS)</label>
-                      <select
-                        id="pe-origin"
-                        value={fiscalOrigin}
-                        onChange={(e) => setFiscalOrigin(e.target.value)}
-                      >
-                        <option value="">— Não informado —</option>
-                        {FISCAL_ORIGIN_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
+                      <span className="field-label-text">Categoria — pesquisar ou incluir</span>
+                      <CategorySearchCombo
+                        id="pe-cat"
+                        value={categoryId}
+                        onChange={(id, picked) => {
+                          setCategoryId(id);
+                          if (picked) setCategoryNameHint(picked);
+                          if (!id) setCategoryNameHint('');
+                        }}
+                        hintName={categoryNameHint}
+                      />
                     </div>
-                  </div>
-                    </div>
-                  </details>
-                  <div className="product-form__subsection" aria-label="Unidade tributável e conversão NF-e">
-                    <p className="product-form__section-title">Unidade, conversão e produto composto</p>
-                  <div className="field">
-                    <span className="field-label-text">Unidade tributável</span>
-                    <FiscalCodeSearchCombo
-                      kind="tax-units"
-                      id="pe-taxunit"
-                      label="Unidade tributável"
-                      value={taxUnit}
-                      onChange={setTaxUnit}
-                      hintLabel={taxUnit || null}
-                    />
-                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Padrão <strong>UN</strong> (Unidade). Use <strong>KG</strong> para venda a peso —
-                      no PDV a quantidade fica fracionada (ex.: 0,350 kg).
-                    </span>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="pe-conversion">Conversão (entrada NF-e)</label>
-                    <input
-                      id="pe-conversion"
-                      value={conversion}
-                      onChange={(e) => {
-                        const next = e.target.value.toUpperCase();
-                        setConversion(next);
-                        if (!parseProductConversion(next)) {
-                          setStockComponentVariantId(null);
-                          setStockComponentLabel('');
-                        }
-                      }}
-                      onBlur={() => {
-                        const n = normalizeProductConversion(conversion);
-                        if (n) setConversion(n);
-                      }}
-                      placeholder="Ex.: CX, CX-12, PCT, PCT-10"
-                    />
-                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Digite a <strong>unidade como vem na NF-e</strong> (uCom). Exemplos: CX, PCT,
-                      CX-12. O sistema confere com a unidade da nota.
-                    </span>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="pe-pack-qty">Itens por produto composto</label>
-                    <input
-                      id="pe-pack-qty"
-                      type="number"
-                      min={1}
-                      step="1"
-                      inputMode="decimal"
-                      value={packItemQty}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        setPackItemQty(next);
-                        if (resolveConversionFactor(conversion, next) <= 1) {
-                          setStockComponentVariantId(null);
-                          setStockComponentLabel('');
-                        }
-                      }}
-                      placeholder="Ex.: 12, 50"
-                    />
-                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                      Quantos itens unitários vêm em cada caixa/pack (ex.: 12 latas por caixa). Na
-                      entrada da NF, <strong>qtd da nota × este valor</strong> = saldo no estoque
-                      unitário.
-                    </span>
-                  </div>
-                  <div className="field">
-                    <span className="field-label-text">Produto composto</span>
-                    <ol
+                  </section>
+
+                  <section className="product-form__section" aria-label="Preços por variação">
+                    <p className="product-form__section-title">Preços por variação</p>
+                    <p
                       style={{
-                        margin: '0 0 0.55rem',
-                        paddingLeft: '1.2rem',
                         fontSize: '0.82rem',
-                        color: 'var(--color-text-secondary)',
+                        color: 'var(--color-text-muted)',
+                        margin: '0 0 0.65rem',
                         lineHeight: 1.45,
                       }}
                     >
-                      <li>
-                        Cadastre antes o produto da <strong>unidade</strong> (ex.: balde de gelo, peça de
-                        linguiça).
-                      </li>
-                      <li>
-                        Neste produto (caixa/kg da NF), informe a conversão{' '}
-                        <strong>igual à unidade da NF</strong> (ex.: CX, KG) e quantos itens unitários
-                        equivalem a 1 da NF (ex.: 6 baldes/caixa, 20 peças/kg).
-                      </li>
-                      <li>
-                        Clique em <strong>Vincular produto</strong> e escolha o produto unitário. O
-                        estoque sobe/baixa nele; inventarie o unitário.
-                      </li>
-                    </ol>
-                    <p
-                      style={{
-                        margin: '0 0 0.55rem',
-                        fontSize: '0.78rem',
-                        color: 'var(--color-text-muted)',
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      Exemplos: <strong>gelo</strong> = caixa → balde; <strong>linguiça</strong> em KG
-                      vendida em peças = composto KG + unitário. Dois preços de balde → dois unitários.
-                      Detalhes em <code>docs/ESTOQUE-COMPOSTOS-E-PESO.md</code>.
+                      <strong>Controle produto</strong> gravado (menor mínimo entre SKUs){' '}
+                      <strong>{formatStockQty(editProduct.inventoryControlMin ?? '1')}</strong>. Prévia conforme
+                      formulário{' '}
+                      <strong>
+                        {formatStockQty(String(minMinStockFromVariantForm(editProduct.variants, variantPrices)))}
+                      </strong>
+                      .
                     </p>
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                      <input
-                        readOnly
-                        value={stockComponentLabel || 'Não — estoque neste próprio produto'}
-                        style={{ flex: '1 1 220px' }}
-                        aria-label="Produto unitário vinculado ao composto"
+                    <div className="product-form__variants">
+                      {editProduct.variants.map((v) => {
+                        const row = variantPrices[v.id] ?? {
+                          retail: String(v.retailPrice),
+                          cost: String(v.costAverage ?? '0'),
+                          minStock: String(v.minStock ?? '1'),
+                        };
+                        return (
+                          <div key={v.id} className="product-form__variant-row">
+                            <div className="field">
+                              <span className="field-label-text">SKU</span>
+                              <div className="product-form__sku-readonly">{v.sku}</div>
+                            </div>
+                            <div className="field">
+                              <label htmlFor={`pe-r-${v.id}`}>Preço de venda</label>
+                              <input
+                                id={`pe-r-${v.id}`}
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={row.retail}
+                                onChange={(e) =>
+                                  setVariantPrices((st) => ({
+                                    ...st,
+                                    [v.id]: { ...row, retail: e.target.value },
+                                  }))
+                                }
+                              />
+                            </div>
+                            <div className="field">
+                              <label htmlFor={`pe-c-${v.id}`}>Preço de custo</label>
+                              <input
+                                id={`pe-c-${v.id}`}
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={row.cost}
+                                onChange={(e) =>
+                                  setVariantPrices((st) => ({
+                                    ...st,
+                                    [v.id]: { ...row, cost: e.target.value },
+                                  }))
+                                }
+                              />
+                            </div>
+                            <div className="field">
+                              <label htmlFor={`pe-m-${v.id}`}>Estoque mínimo</label>
+                              <input
+                                id={`pe-m-${v.id}`}
+                                type="number"
+                                step="1"
+                                min="1"
+                                value={row.minStock}
+                                onChange={(e) =>
+                                  setVariantPrices((st) => ({
+                                    ...st,
+                                    [v.id]: { ...row, minStock: e.target.value },
+                                  }))
+                                }
+                              />
+                            </div>
+                            <div className="field">
+                              <span className="field-label-text">Lucro</span>
+                              <div className="product-form__profit">
+                                {profitBRL(row.retail, row.cost)}
+                                <span className="product-form__profit-meta">
+                                  Margem: {marginOnSalePct(row.retail, row.cost)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                </div>
+              )}
+
+              {productFormTab === 'fiscal' && (
+                <div className="form-modal-tab-panel" role="tabpanel">
+                  <section className="product-form__section" aria-label="Fiscal">
+                    <p className="product-form__section-title">Fiscal</p>
+                    <div className="field">
+                      <label htmlFor="p-fiscal-sit-edit">Situação fiscal (cadastro mestre)</label>
+                      <select
+                        id="p-fiscal-sit-edit"
+                        value={fiscalSituationId}
+                        onChange={(e) => setFiscalSituationId(e.target.value)}
+                      >
+                        <option value="">— Apenas campos locais abaixo —</option>
+                        {(fiscalSituationsQ.data ?? [])
+                          .filter((s) => s.isActive)
+                          .map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.code} — {s.name}
+                            </option>
+                          ))}
+                      </select>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                        Opcional — <strong>Cadastros gerais → Situação fiscal</strong>.
+                      </span>
+                    </div>
+                    <div className="form-row">
+                      <div className="field">
+                        <span className="field-label-text">NCM</span>
+                        <FiscalCodeSearchCombo
+                          kind="ncm"
+                          id="pe-ncm"
+                          label="NCM"
+                          value={ncm}
+                          onChange={setNcm}
+                          hintLabel={ncm || null}
+                        />
+                      </div>
+                      <div className="field">
+                        <span className="field-label-text">CEST</span>
+                        <FiscalCodeSearchCombo
+                          kind="cest"
+                          id="pe-cest"
+                          label="CEST"
+                          value={cest}
+                          onChange={setCest}
+                          hintLabel={cest || null}
+                          ncmHint={ncm || null}
+                        />
+                      </div>
+                    </div>
+                    <div className="form-row">
+                      <div className="field">
+                        <label htmlFor="pe-extipi">EX TIPI</label>
+                        <input
+                          id="pe-extipi"
+                          value={exTipi}
+                          onChange={(e) => setExTipi(e.target.value)}
+                          placeholder="Opcional"
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="pe-origin">Origem da mercadoria (ICMS)</label>
+                        <select
+                          id="pe-origin"
+                          value={fiscalOrigin}
+                          onChange={(e) => setFiscalOrigin(e.target.value)}
+                        >
+                          <option value="">— Não informado —</option>
+                          {FISCAL_ORIGIN_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="product-form__section" aria-label="Unidade, conversão e produto composto">
+                    <p className="product-form__section-title">Unidade, conversão e produto composto</p>
+                    <div className="field">
+                      <span className="field-label-text">Unidade tributável</span>
+                      <FiscalCodeSearchCombo
+                        kind="tax-units"
+                        id="pe-taxunit"
+                        label="Unidade tributável"
+                        value={taxUnit}
+                        onChange={setTaxUnit}
+                        hintLabel={taxUnit || null}
                       />
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={() => {
-                          if (!parseProductConversion(conversion)) {
-                            setErr(
-                              'Informe a Conversão como na NF-e (ex.: CX, CX-12, PCT) antes de vincular o produto.',
-                            );
-                            document.getElementById('pe-conversion')?.focus();
-                            return;
+                      <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                        Padrão <strong>UN</strong> (Unidade). Use <strong>KG</strong> para venda a peso —
+                        no PDV a quantidade fica fracionada (ex.: 0,350 kg).
+                      </span>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="pe-conversion">Conversão (entrada NF-e)</label>
+                      <input
+                        id="pe-conversion"
+                        value={conversion}
+                        onChange={(e) => {
+                          const next = e.target.value.toUpperCase();
+                          setConversion(next);
+                          if (!parseProductConversion(next)) {
+                            setStockComponentVariantId(null);
+                            setStockComponentLabel('');
                           }
-                          if (resolveConversionFactor(conversion, packItemQty) <= 1) {
-                            setErr(
-                              'Informe quantos itens vêm em cada produto composto (ex.: 12, 50) antes de vincular.',
-                            );
-                            document.getElementById('pe-pack-qty')?.focus();
-                            return;
+                        }}
+                        onBlur={() => {
+                          const n = normalizeProductConversion(conversion);
+                          if (n) setConversion(n);
+                        }}
+                        placeholder="Ex.: CX, CX-12, PCT, PCT-10"
+                      />
+                      <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                        Digite a <strong>unidade como vem na NF-e</strong> (uCom). Exemplos: CX, PCT,
+                        CX-12. O sistema confere com a unidade da nota.
+                      </span>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="pe-pack-qty">Itens por produto composto</label>
+                      <input
+                        id="pe-pack-qty"
+                        type="number"
+                        min={1}
+                        step="1"
+                        inputMode="decimal"
+                        value={packItemQty}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setPackItemQty(next);
+                          if (resolveConversionFactor(conversion, next) <= 1) {
+                            setStockComponentVariantId(null);
+                            setStockComponentLabel('');
                           }
-                          setErr(null);
-                          setComponentSearchOpen(true);
+                        }}
+                        placeholder="Ex.: 12, 50"
+                      />
+                      <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                        Quantos itens unitários vêm em cada caixa/pack (ex.: 12 latas por caixa). Na
+                        entrada da NF, <strong>qtd da nota × este valor</strong> = saldo no estoque
+                        unitário.
+                      </span>
+                    </div>
+                    <div className="field">
+                      <span className="field-label-text">Produto composto</span>
+                      <ol
+                        style={{
+                          margin: '0 0 0.55rem',
+                          paddingLeft: '1.2rem',
+                          fontSize: '0.82rem',
+                          color: 'var(--color-text-secondary)',
+                          lineHeight: 1.45,
                         }}
                       >
-                        Vincular produto
-                      </button>
-                      {stockComponentVariantId && (
+                        <li>
+                          Cadastre antes o produto da <strong>unidade</strong> (ex.: balde de gelo, peça de
+                          linguiça).
+                        </li>
+                        <li>
+                          Neste produto (caixa/kg da NF), informe a conversão{' '}
+                          <strong>igual à unidade da NF</strong> (ex.: CX, KG) e quantos itens unitários
+                          equivalem a 1 da NF (ex.: 6 baldes/caixa, 20 peças/kg).
+                        </li>
+                        <li>
+                          Clique em <strong>Vincular produto</strong> e escolha o produto unitário. O
+                          estoque sobe/baixa nele; inventarie o unitário.
+                        </li>
+                      </ol>
+                      <p
+                        style={{
+                          margin: '0 0 0.55rem',
+                          fontSize: '0.78rem',
+                          color: 'var(--color-text-muted)',
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        Exemplos: <strong>gelo</strong> = caixa → balde; <strong>linguiça</strong> em KG
+                        vendida em peças = composto KG + unitário. Dois preços de balde → dois unitários.
+                        Detalhes em <code>docs/ESTOQUE-COMPOSTOS-E-PESO.md</code>.
+                      </p>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <input
+                          readOnly
+                          value={stockComponentLabel || 'Não — estoque neste próprio produto'}
+                          style={{ flex: '1 1 220px' }}
+                          aria-label="Produto unitário vinculado ao composto"
+                        />
                         <button
                           type="button"
                           className="btn btn-secondary"
                           onClick={() => {
-                            setStockComponentVariantId(null);
-                            setStockComponentLabel('');
+                            if (!parseProductConversion(conversion)) {
+                              setErr(
+                                'Informe a Conversão como na NF-e (ex.: CX, CX-12, PCT) antes de vincular o produto.',
+                              );
+                              document.getElementById('pe-conversion')?.focus();
+                              return;
+                            }
+                            if (resolveConversionFactor(conversion, packItemQty) <= 1) {
+                              setErr(
+                                'Informe quantos itens vêm em cada produto composto (ex.: 12, 50) antes de vincular.',
+                              );
+                              document.getElementById('pe-pack-qty')?.focus();
+                              return;
+                            }
+                            setErr(null);
+                            setComponentSearchOpen(true);
                           }}
                         >
-                          Limpar
+                          Vincular produto
                         </button>
-                      )}
-                    </div>
-                    {!parseProductConversion(conversion) && (
-                      <span style={{ fontSize: '0.78rem', color: 'var(--color-danger, #b91c1c)' }}>
-                        Digite a conversão (como na nota) para liberar o vínculo do produto.
-                      </span>
-                    )}
-                    {parseProductConversion(conversion) &&
-                      resolveConversionFactor(conversion, packItemQty) <= 1 && (
+                        {stockComponentVariantId && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => {
+                              setStockComponentVariantId(null);
+                              setStockComponentLabel('');
+                            }}
+                          >
+                            Limpar
+                          </button>
+                        )}
+                      </div>
+                      {!parseProductConversion(conversion) && (
                         <span style={{ fontSize: '0.78rem', color: 'var(--color-danger, #b91c1c)' }}>
-                          Informe a quantidade de itens por composto (ex.: 12) para liberar o vínculo.
+                          Digite a conversão (como na nota) para liberar o vínculo do produto.
                         </span>
                       )}
-                    {parseProductConversion(conversion) &&
-                      resolveConversionFactor(conversion, packItemQty) > 1 &&
-                      !stockComponentVariantId && (
-                        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                          Pronto. Agora vincule o produto para a entrada/venda da caixa baixar o estoque
-                          unitário (
-                          {resolveConversionFactor(conversion, packItemQty)} un. por 1 da NF).
-                        </span>
-                      )}
-                  </div>
-                  </div>
+                      {parseProductConversion(conversion) &&
+                        resolveConversionFactor(conversion, packItemQty) <= 1 && (
+                          <span style={{ fontSize: '0.78rem', color: 'var(--color-danger, #b91c1c)' }}>
+                            Informe a quantidade de itens por composto (ex.: 12) para liberar o vínculo.
+                          </span>
+                        )}
+                      {parseProductConversion(conversion) &&
+                        resolveConversionFactor(conversion, packItemQty) > 1 &&
+                        !stockComponentVariantId && (
+                          <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                            Pronto. Agora vincule o produto para a entrada/venda da caixa baixar o estoque
+                            unitário (
+                            {resolveConversionFactor(conversion, packItemQty)} un. por 1 da NF).
+                          </span>
+                        )}
+                    </div>
+                  </section>
                 </div>
-              </div>
+              )}
 
-              <section className="product-form__section product-form__section--full" aria-label="Vínculos fornecedor">
-                <details className="submenu-details" open>
-                  <summary className="submenu-summary">Vínculos com fornecedores (entrada NF-e)</summary>
-                  <div className="submenu-body">
+              {productFormTab === 'fornecedores' && (
+                <div className="form-modal-tab-panel" role="tabpanel">
+                  <section className="product-form__section product-form__section--full" aria-label="Vínculos fornecedor">
+                    <p className="product-form__section-title">Vínculo com Fornecedores (Entrada NF-e)</p>
                     {editSupplierLinksQ.isLoading && (
                       <p className="muted" style={{ margin: '0 0 0.5rem', fontSize: '0.85rem' }}>
                         Carregando vínculos…
@@ -1578,91 +1720,9 @@ export function ProductsPage() {
                       links={supplierLinks}
                       onChange={setSupplierLinks}
                     />
-                  </div>
-                </details>
-              </section>
-
-              <p
-                style={{
-                  fontSize: '0.82rem',
-                  color: 'var(--color-text-muted)',
-                  margin: 0,
-                  lineHeight: 1.45,
-                }}
-              >
-                <strong>Controle produto</strong> gravado no cadastro (menor mínimo entre SKUs){' '}
-                <strong>{formatStockQty(editProduct.inventoryControlMin ?? '1')}</strong>. Atualiza ao salvar; prévia conforme formulário{' '}
-                <strong>{formatStockQty(String(minMinStockFromVariantForm(editProduct.variants, variantPrices)))}</strong>.
-              </p>
-
-              <section className="product-form__section" aria-label="Preços por variação">
-                <p className="product-form__section-title">Preços por variação (SKU)</p>
-                <div className="product-form__variants">
-            {editProduct.variants.map((v) => {
-              const row = variantPrices[v.id] ?? {
-                retail: String(v.retailPrice),
-                cost: String(v.costAverage ?? '0'),
-                minStock: String(v.minStock ?? '1'),
-              };
-              return (
-                <div key={v.id} className="product-form__variant-row">
-                  <div className="field">
-                    <span className="field-label-text">SKU</span>
-                    <div className="product-form__sku-readonly">{v.sku}</div>
-                  </div>
-                  <div className="field">
-                    <label htmlFor={`pe-r-${v.id}`}>Preço de venda</label>
-                    <input
-                      id={`pe-r-${v.id}`}
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={row.retail}
-                      onChange={(e) =>
-                        setVariantPrices((s) => ({ ...s, [v.id]: { ...row, retail: e.target.value } }))
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor={`pe-c-${v.id}`}>Preço de custo</label>
-                    <input
-                      id={`pe-c-${v.id}`}
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={row.cost}
-                      onChange={(e) =>
-                        setVariantPrices((s) => ({ ...s, [v.id]: { ...row, cost: e.target.value } }))
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor={`pe-m-${v.id}`}>Estoque mínimo</label>
-                    <input
-                      id={`pe-m-${v.id}`}
-                      type="number"
-                      step="1"
-                      min="1"
-                      value={row.minStock}
-                      onChange={(e) =>
-                        setVariantPrices((s) => ({ ...s, [v.id]: { ...row, minStock: e.target.value } }))
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <span className="field-label-text">Lucro</span>
-                    <div className="product-form__profit">
-                      {profitBRL(row.retail, row.cost)}
-                      <span className="product-form__profit-meta">
-                        Margem: {marginOnSalePct(row.retail, row.cost)}
-                      </span>
-                    </div>
-                  </div>
+                  </section>
                 </div>
-              );
-            })}
-                </div>
-              </section>
+              )}
             </div>
             <div className="field">
               <label style={{ flexDirection: 'row', alignItems: 'center', gap: '0.5rem' }}>
