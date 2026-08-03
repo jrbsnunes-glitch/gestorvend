@@ -169,18 +169,18 @@ export function createScaleController(opts: UsePosScaleOptions) {
       closed = false;
       status = 'online';
       emit();
-      const textDecoder = new TextDecoderStream();
-      const readable = port.readable?.pipeThrough(textDecoder);
-      if (!readable) throw new Error('Porta sem stream legível.');
-      reader = readable.getReader() as unknown as ReadableStreamDefaultReader<Uint8Array>;
-      // Leitura contínua via TextDecoder — rebind tipado frouxo
-      const r = (readable as ReadableStream<string>).getReader();
+      const stream = port.readable;
+      if (!stream) throw new Error('Porta sem stream legível.');
+      const r = stream.getReader();
+      reader = r;
+      const decoder = new TextDecoder();
       (async () => {
         try {
           while (!closed) {
             const { value, done } = await r.read();
             if (done) break;
-            buffer += value ?? '';
+            if (!value) continue;
+            buffer += decoder.decode(value, { stream: true });
             const parts = buffer.split(/[\r\n]+/);
             buffer = parts.pop() ?? '';
             for (const line of parts) {
@@ -239,9 +239,11 @@ export function createScaleController(opts: UsePosScaleOptions) {
     emit();
   }
 
-  function subscribe(fn: () => void) {
+  function subscribe(fn: () => void): () => void {
     listeners.add(fn);
-    return () => listeners.delete(fn);
+    return () => {
+      listeners.delete(fn);
+    };
   }
 
   return {
