@@ -20,6 +20,7 @@ import { TenantModule } from './tenant/tenant.module';
 import { UsersModule } from './users/users.module';
 import { WaChatModule } from './wachat/wachat.module';
 import { ActivityLogsModule } from './activity-logs/activity-logs.module';
+import { RestaurantModule } from './restaurant/restaurant.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { ActivityLogsModule } from './activity-logs/activity-logs.module';
     PortalModule,
     UsersModule,
     WaChatModule,
+    RestaurantModule,
     ActivityLogsModule,
   ],
   controllers: [HealthController],

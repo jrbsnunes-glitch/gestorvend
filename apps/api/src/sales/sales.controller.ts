@@ -40,8 +40,8 @@ export class SalesController {
       deliveryDriverName?: string | null;
       deductStock?: boolean;
       permissionPassword?: string;
-      /** PDV | WHATSAPP | NFE_FORM */
-      source?: 'PDV' | 'WHATSAPP' | 'NFE_FORM';
+      /** PDV | WHATSAPP | NFE_FORM | RESTAURANT */
+      source?: 'PDV' | 'WHATSAPP' | 'NFE_FORM' | 'RESTAURANT';
       items: Array<{
         variantId: string;
         quantity: number;
@@ -73,7 +73,10 @@ export class SalesController {
       deliveryDriverName: body.deliveryDriverName,
       deductStock: body.deductStock,
       source:
-        body.source === 'NFE_FORM' || body.source === 'WHATSAPP' || body.source === 'PDV'
+        body.source === 'NFE_FORM' ||
+        body.source === 'WHATSAPP' ||
+        body.source === 'PDV' ||
+        body.source === 'RESTAURANT'
           ? body.source
           : undefined,
       items: body.items,

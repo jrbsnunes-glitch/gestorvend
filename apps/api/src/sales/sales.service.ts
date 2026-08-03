@@ -409,6 +409,71 @@ export class SalesService {
       for (const it of input.items) {
         if (!deductStock || !defaultLoc) continue;
         const q = Number(it.quantity);
+        const soldVariant = await tx.productVariant.findUnique({
+          where: { id: it.variantId },
+          include: {
+            product: {
+              include: {
+                recipe: { include: { items: true } },
+              },
+            },
+          },
+        });
+        const recipeItems = soldVariant?.product.recipe?.items ?? [];
+
+        if (recipeItems.length > 0) {
+          // Ficha técnica (BOM): baixa insumos = qty_venda × qty_receita.
+          for (const ri of recipeItems) {
+            const stockQty = Math.round(q * Number(ri.quantity) * 10_000) / 10_000;
+            if (stockQty <= 0) continue;
+            const bal = await tx.stockBalance.findUnique({
+              where: {
+                variantId_locationId: {
+                  variantId: ri.ingredientVariantId,
+                  locationId: defaultLoc.id,
+                },
+              },
+            });
+            const current = bal ? Number(bal.quantity) : 0;
+            if (current < stockQty) {
+              const ing = await tx.productVariant.findUnique({
+                where: { id: ri.ingredientVariantId },
+                include: { product: { select: { name: true } } },
+              });
+              throw new BadRequestException(
+                `Estoque insuficiente do insumo "${ing?.product.name ?? ri.ingredientVariantId}" (ficha técnica de "${soldVariant?.product.name}"): disponível ${current}, necessário ${stockQty}.`,
+              );
+            }
+            const next = current - stockQty;
+            await tx.stockBalance.upsert({
+              where: {
+                variantId_locationId: {
+                  variantId: ri.ingredientVariantId,
+                  locationId: defaultLoc.id,
+                },
+              },
+              create: {
+                variantId: ri.ingredientVariantId,
+                locationId: defaultLoc.id,
+                quantity: String(next),
+              },
+              update: { quantity: String(next) },
+            });
+            await tx.stockMovement.create({
+              data: {
+                type: StockMovementType.OUT,
+                source: StockMovementSource.SALE,
+                variantId: ri.ingredientVariantId,
+                locationId: defaultLoc.id,
+                quantity: String(stockQty),
+                reference: `Venda ${sale.number} (BOM)`,
+                userId: input.userId,
+              },
+            });
+          }
+          continue;
+        }
+
         const {
           stockVariantId,
           stockQty,

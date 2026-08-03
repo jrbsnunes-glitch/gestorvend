@@ -25,6 +25,13 @@ type Company = {
   pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED';
   saleReceiptAutoPrint?: boolean;
   saleReceiptPrinterHint?: string | null;
+  restaurantModuleEnabled?: boolean;
+  scaleMode?: 'MANUAL' | 'SERIAL_DIRECT' | 'AGENT' | 'BARCODE_LABEL';
+  scaleProfile?: string | null;
+  barcodeWeightPattern?: string | null;
+  scaleAutoConfirmMs?: number;
+  scaleHint?: string | null;
+  kitchenPrinterHint?: string | null;
 };
 
 type FormState = Omit<Company, 'id'>;
@@ -45,6 +52,13 @@ const EMPTY_FORM: FormState = {
   pdvDocumentMode: 'NON_FISCAL_RECEIPT',
   saleReceiptAutoPrint: false,
   saleReceiptPrinterHint: '',
+  restaurantModuleEnabled: false,
+  scaleMode: 'MANUAL',
+  scaleProfile: '',
+  barcodeWeightPattern: '2PPPPPWWWWWC',
+  scaleAutoConfirmMs: 700,
+  scaleHint: '',
+  kitchenPrinterHint: '',
 };
 
 function toForm(c: Company): FormState {
@@ -64,6 +78,13 @@ function toForm(c: Company): FormState {
     pdvDocumentMode: c.pdvDocumentMode ?? 'NON_FISCAL_RECEIPT',
     saleReceiptAutoPrint: Boolean(c.saleReceiptAutoPrint),
     saleReceiptPrinterHint: c.saleReceiptPrinterHint ?? '',
+    restaurantModuleEnabled: Boolean(c.restaurantModuleEnabled),
+    scaleMode: c.scaleMode ?? 'MANUAL',
+    scaleProfile: c.scaleProfile ?? '',
+    barcodeWeightPattern: c.barcodeWeightPattern ?? '2PPPPPWWWWWC',
+    scaleAutoConfirmMs: c.scaleAutoConfirmMs ?? 700,
+    scaleHint: c.scaleHint ?? '',
+    kitchenPrinterHint: c.kitchenPrinterHint ?? '',
   };
 }
 
@@ -782,6 +803,99 @@ export function CompanyPage() {
                   value={form.saleReceiptPrinterHint ?? ''}
                   onChange={(e) => update('saleReceiptPrinterHint', e.target.value)}
                   placeholder="Ex.: Epson TM-T20 · USB001 · IP 192.168.0.50"
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="card">
+            <h2 className="company-form__h">Restaurante</h2>
+            <p className="company-form__hint">
+              Requer plano <strong>RESTAURANT</strong> no portal. Ativa salão/comandas, pesagem e
+              impressão de cozinha.
+            </p>
+            <div className="field">
+              <label htmlFor="c-rest-enabled" style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                <input
+                  id="c-rest-enabled"
+                  type="checkbox"
+                  checked={Boolean(form.restaurantModuleEnabled)}
+                  onChange={(e) => update('restaurantModuleEnabled', e.target.checked)}
+                  style={{ marginTop: '0.15rem' }}
+                />
+                <span>
+                  Ativar módulo restaurante neste estabelecimento
+                  <span className="sub" style={{ fontWeight: 400 }}>
+                    Exibe o menu Salão / Comandas quando o plano permitir.
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="form-row form-row--2">
+              <div className="field">
+                <label htmlFor="c-scale-mode">Captura de peso (self-service)</label>
+                <select
+                  id="c-scale-mode"
+                  value={form.scaleMode ?? 'MANUAL'}
+                  onChange={(e) =>
+                    update('scaleMode', e.target.value as NonNullable<FormState['scaleMode']>)
+                  }
+                >
+                  <option value="MANUAL">Digitação manual</option>
+                  <option value="SERIAL_DIRECT">Balança serial (Web Serial)</option>
+                  <option value="AGENT">Agente local (localhost)</option>
+                  <option value="BARCODE_LABEL">Etiqueta EAN-13 com peso</option>
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="c-scale-ms">Auto-confirmar peso estável (ms)</label>
+                <input
+                  id="c-scale-ms"
+                  type="number"
+                  min={0}
+                  max={30000}
+                  value={form.scaleAutoConfirmMs ?? 700}
+                  onChange={(e) => update('scaleAutoConfirmMs', Number(e.target.value) || 0)}
+                />
+              </div>
+            </div>
+            <div className="form-row form-row--2">
+              <div className="field">
+                <label htmlFor="c-scale-profile">Perfil / protocolo da balança</label>
+                <input
+                  id="c-scale-profile"
+                  value={form.scaleProfile ?? ''}
+                  onChange={(e) => update('scaleProfile', e.target.value)}
+                  placeholder="Ex.: GENERIC_STREAM"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="c-barcode-weight">Padrão EAN com peso</label>
+                <input
+                  id="c-barcode-weight"
+                  value={form.barcodeWeightPattern ?? ''}
+                  onChange={(e) => update('barcodeWeightPattern', e.target.value)}
+                  placeholder="2PPPPPWWWWWC"
+                />
+              </div>
+            </div>
+            <div className="form-row form-row--2">
+              <div className="field">
+                <label htmlFor="c-scale-hint">Referência da balança (opcional)</label>
+                <input
+                  id="c-scale-hint"
+                  value={form.scaleHint ?? ''}
+                  onChange={(e) => update('scaleHint', e.target.value)}
+                  placeholder="Ex.: Toledo Prix · COM3 · 9600"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="c-kitchen-hint">Impressora de cozinha (opcional)</label>
+                <input
+                  id="c-kitchen-hint"
+                  value={form.kitchenPrinterHint ?? ''}
+                  onChange={(e) => update('kitchenPrinterHint', e.target.value)}
+                  placeholder="Ex.: Epson cozinha · USB"
                 />
               </div>
             </div>

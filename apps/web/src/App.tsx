@@ -10,7 +10,13 @@ import {
   scheduleAccessTokenRefresh,
 } from './lib/api';
 import { isAdmin } from './lib/auth';
+import { hasRestaurantPlan } from './lib/auth';
 import { CashPage } from './pages/CashPage';
+import { RestaurantFloorPage } from './pages/restaurant/RestaurantFloorPage';
+import { RestaurantTabPage } from './pages/restaurant/RestaurantTabPage';
+import { RestaurantKitchenPrintPage } from './pages/restaurant/RestaurantKitchenPrintPage';
+import { RestaurantRecipesPage } from './pages/restaurant/RestaurantRecipesPage';
+import './pages/restaurant/restaurant.css';
 import { CashPrintPage } from './pages/CashPrintPage';
 import { CashPrintItemsPage } from './pages/CashPrintItemsPage';
 import { CompanyPage } from './pages/CompanyPage';
@@ -71,6 +77,12 @@ const qc = new QueryClient({
 
 function RequireAdmin({ children }: { children: ReactNode }) {
   const allowed = useMemo(() => isAdmin(), []);
+  if (!allowed) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+function RequireRestaurant({ children }: { children: ReactNode }) {
+  const allowed = useMemo(() => hasRestaurantPlan(), []);
   if (!allowed) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
@@ -145,6 +157,14 @@ function AppInner() {
         */}
         <Route path="vendas" element={<SalesPage />} />
         <Route path="vendas/impressao" element={<SaleReceiptPrintPage />} />
+        <Route
+          path="salao/comanda/:tabId/cozinha"
+          element={
+            <RequireRestaurant>
+              <RestaurantKitchenPrintPage />
+            </RequireRestaurant>
+          }
+        />
 
         {/*
           /caixa/impressao também fica fora do AppLayout para apresentar um
@@ -177,6 +197,30 @@ function AppInner() {
           }
         >
           <Route index element={<DashboardPage />} />
+          <Route
+            path="salao"
+            element={
+              <RequireRestaurant>
+                <RestaurantFloorPage />
+              </RequireRestaurant>
+            }
+          />
+          <Route
+            path="salao/comanda/:tabId"
+            element={
+              <RequireRestaurant>
+                <RestaurantTabPage />
+              </RequireRestaurant>
+            }
+          />
+          <Route
+            path="salao/fichas-tecnicas"
+            element={
+              <RequireRestaurant>
+                <RestaurantRecipesPage />
+              </RequireRestaurant>
+            }
+          />
           <Route path="clientes" element={<CustomersPage />} />
           <Route path="fornecedores" element={<SuppliersPage />} />
           <Route path="produtos" element={<ProductsPage />} />

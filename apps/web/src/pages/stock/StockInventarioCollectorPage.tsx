@@ -191,7 +191,12 @@ export function StockInventarioCollectorPage() {
         }>
       >(`/products/search?q=${encodeURIComponent(code)}`);
       if (!rows.length) throw new Error(`Produto não encontrado: ${code}`);
-      const row = rows[0]!;
+      const normalized = code.trim().toLowerCase();
+      const row =
+        rows.find((r) => (r.barcode ?? '').trim().toLowerCase() === normalized) ??
+        rows.find((r) => String(r.productControlNumber ?? '') === code.trim()) ??
+        rows.find((r) => (r.sku ?? '').trim().toLowerCase() === normalized) ??
+        rows[0]!;
       const current = inv?.items.find((it) => it.variant.id === row.variantId);
       return {
         code,

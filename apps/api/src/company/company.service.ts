@@ -20,6 +20,13 @@ type CompanyInput = {
   saleReceiptAutoPrint?: boolean;
   saleReceiptPrinterHint?: string | null;
   pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED' | string;
+  restaurantModuleEnabled?: boolean;
+  scaleMode?: 'MANUAL' | 'SERIAL_DIRECT' | 'AGENT' | 'BARCODE_LABEL' | string;
+  scaleProfile?: string | null;
+  barcodeWeightPattern?: string | null;
+  scaleAutoConfirmMs?: number;
+  scaleHint?: string | null;
+  kitchenPrinterHint?: string | null;
 };
 
 /**
@@ -96,6 +103,10 @@ export class CompanyService {
       'zip',
       'logoUrl',
       'saleReceiptPrinterHint',
+      'scaleProfile',
+      'barcodeWeightPattern',
+      'scaleHint',
+      'kitchenPrinterHint',
     ];
     for (const k of optional) {
       const v = trimOrNull(body[k]);
@@ -104,6 +115,26 @@ export class CompanyService {
 
     if (body.saleReceiptAutoPrint !== undefined) {
       data.saleReceiptAutoPrint = Boolean(body.saleReceiptAutoPrint);
+    }
+
+    if (body.restaurantModuleEnabled !== undefined) {
+      data.restaurantModuleEnabled = Boolean(body.restaurantModuleEnabled);
+    }
+
+    if (body.scaleAutoConfirmMs !== undefined) {
+      const n = Number(body.scaleAutoConfirmMs);
+      if (!Number.isFinite(n) || n < 0 || n > 30_000) {
+        throw new BadRequestException('scaleAutoConfirmMs inválido (0–30000).');
+      }
+      data.scaleAutoConfirmMs = Math.round(n);
+    }
+
+    if (body.scaleMode !== undefined) {
+      const m = String(body.scaleMode).trim();
+      if (!['MANUAL', 'SERIAL_DIRECT', 'AGENT', 'BARCODE_LABEL'].includes(m)) {
+        throw new BadRequestException('Modo de balança inválido.');
+      }
+      data.scaleMode = m;
     }
 
     if (body.pdvDocumentMode !== undefined) {

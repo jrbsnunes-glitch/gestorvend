@@ -9,6 +9,8 @@ export type JwtPayload = {
   email: string;
   tenantSlug: string;
   roles: string[];
+  /** Plano contratado no banco central (STANDARD | WHATSAPP | RESTAURANT). */
+  planCode?: string;
 };
 
 @Injectable()

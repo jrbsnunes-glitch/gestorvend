@@ -6,7 +6,7 @@ import { ConnectionStatusBanner } from './ConnectionStatusBanner';
 import { NavIcon, type NavIconName } from './nav-icons';
 import { api } from '../lib/api';
 import { companyDisplayName } from '../lib/company-branding';
-import { getIdentity, isAdmin, profileFromRoles, profileLabel } from '../lib/auth';
+import { getIdentity, hasRestaurantPlan, isAdmin, profileFromRoles, profileLabel } from '../lib/auth';
 import { APP_VERSION } from '../version';
 import './layout.css';
 
@@ -23,11 +23,14 @@ type NavItem = {
   allowFinanceRole?: boolean;
   /** Quando true, o item só aparece para usuários com role interna `admin`. */
   adminOnly?: boolean;
+  /** Exige plano RESTAURANT no JWT. */
+  restaurantPlan?: boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Início', icon: 'home', end: true },
   { to: '/vendas', label: 'Vendas', icon: 'sales' },
+  { to: '/salao', label: 'Salão / Comandas', icon: 'restaurant', restaurantPlan: true },
   { to: '/clientes', label: 'Clientes', icon: 'customers', managerOnly: true },
   { to: '/produtos', label: 'Produtos', icon: 'products', managerOnly: true },
   { to: '/fornecedores', label: 'Fornecedores', icon: 'suppliers', managerOnly: true },
@@ -62,6 +65,7 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
   const isManager = localProfile === 'manager';
   const hasFinance = identity?.roles.includes('finance') ?? false;
   const userIsAdmin = isAdmin();
+  const restaurantOk = hasRestaurantPlan();
 
   const [collapsed, setCollapsed] = useState(readCollapsedPref);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -75,12 +79,21 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
   const company = useQuery({
     queryKey: ['company'],
     queryFn: () =>
-      api<{ tradeName: string; legalName: string; logoUrl?: string | null }>('/company'),
+      api<{
+        tradeName: string;
+        legalName: string;
+        logoUrl?: string | null;
+        restaurantModuleEnabled?: boolean;
+      }>('/company'),
     staleTime: 10 * 60_000,
   });
 
   const items = NAV_ITEMS.filter((it) => {
     if (it.adminOnly && !userIsAdmin) return false;
+    if (it.restaurantPlan) {
+      if (!restaurantOk) return false;
+      if (company.isSuccess && company.data.restaurantModuleEnabled !== true) return false;
+    }
     if (it.managerOnly) {
       const ok = isManager || (it.allowFinanceRole === true && hasFinance);
       if (!ok) return false;

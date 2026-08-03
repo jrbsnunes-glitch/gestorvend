@@ -224,6 +224,8 @@ export class ProductsController {
         inventoryControlMin: Prisma.Decimal;
         controlNumber: number;
         taxUnit: string | null;
+        tareKg: Prisma.Decimal | null;
+        defaultBarcode?: string | null;
       };
       stockBalances: Array<{ quantity: Prisma.Decimal }>;
     }>,
@@ -240,9 +242,10 @@ export class ProductsController {
         productControlNumber: v.product.controlNumber,
         productInventoryControlMin: String(v.product.inventoryControlMin),
         taxUnit: v.product.taxUnit ?? 'UN',
+        tareKg: v.product.tareKg != null ? String(v.product.tareKg) : null,
         variantId: v.id,
         sku: v.sku,
-        barcode: v.barcode,
+        barcode: v.barcode ?? v.product.defaultBarcode ?? null,
         retailPrice: String(v.retailPrice),
         promoPrice: v.promoPrice ? String(v.promoPrice) : null,
         costAverage: String(v.costAverage),
@@ -270,7 +273,6 @@ export class ProductsController {
     const term = (q ?? '').trim();
     if (term.length < 1) return [];
 
-    const controlNumber = this.parseProductControlSearch(term);
     const include = {
       product: {
         select: {
@@ -280,11 +282,33 @@ export class ProductsController {
           inventoryControlMin: true,
           controlNumber: true,
           taxUnit: true,
+          tareKg: true,
+          defaultBarcode: true,
         },
       },
       stockBalances: { select: { quantity: true } },
     } as const;
 
+    // 1) Match exato de código de barras (variante OU padrão do produto).
+    //    Inventário/coleta e PDV bipam EAN — prioridade sobre controlNumber
+    //    (evita EAN curto colidir com código sequencial de outro produto).
+    const exactBarcode = await db.productVariant.findMany({
+      where: {
+        OR: [
+          { barcode: { equals: term, mode: 'insensitive' } },
+          { product: { defaultBarcode: { equals: term, mode: 'insensitive' } } },
+        ],
+      },
+      take: 80,
+      orderBy: [{ sku: 'asc' }],
+      include,
+    });
+    if (exactBarcode.length) {
+      return this.mapProductSearchRows(exactBarcode);
+    }
+
+    // 2) Código sequencial do produto (somente se for número “curto” de controle).
+    const controlNumber = this.parseProductControlSearch(term);
     if (controlNumber != null) {
       const exactByCode = await db.productVariant.findMany({
         where: { product: { controlNumber } },
@@ -297,11 +321,13 @@ export class ProductsController {
       }
     }
 
+    // 3) Busca parcial (nome, descrição, SKU, EAN variante e EAN padrão).
     const variants = await db.productVariant.findMany({
       where: {
         OR: [
           { product: { name: { contains: term, mode: 'insensitive' } } },
           { product: { description: { contains: term, mode: 'insensitive' } } },
+          { product: { defaultBarcode: { contains: term, mode: 'insensitive' } } },
           { sku: { contains: term, mode: 'insensitive' } },
           { barcode: { contains: term, mode: 'insensitive' } },
         ],
@@ -927,6 +953,25 @@ export class ProductsController {
           }),
         },
       });
+
+      // Mantém a 1ª variante alinhada ao EAN padrão (pesquisa/PDV/inventário usam variant.barcode).
+      if (body.defaultBarcode !== undefined) {
+        const synced =
+          body.defaultBarcode != null && String(body.defaultBarcode).trim()
+            ? String(body.defaultBarcode).trim().slice(0, 32)
+            : null;
+        const primary = await tx.productVariant.findFirst({
+          where: { productId: id },
+          orderBy: [{ sku: 'asc' }],
+          select: { id: true },
+        });
+        if (primary) {
+          await tx.productVariant.update({
+            where: { id: primary.id },
+            data: { barcode: synced },
+          });
+        }
+      }
 
       if (variantPrices.length) {
         await this.applyVariantPriceUpdates(tx, id, variantPrices);

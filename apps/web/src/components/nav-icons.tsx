@@ -18,6 +18,7 @@ export type NavIconName =
   | 'company'
   | 'users'
   | 'logs'
+  | 'restaurant'
   | 'menu'
   | 'close'
   | 'collapse'
@@ -176,6 +177,14 @@ export function NavIcon({ name, title }: { name: NavIconName; title?: string }) 
         <Svg title={title}>
           <path d="M8 6h12M8 12h12M8 18h12" />
           <path d="M4 6h.01M4 12h.01M4 18h.01" />
+        </Svg>
+      );
+    case 'restaurant':
+      return (
+        <Svg title={title}>
+          <path d="M4 20h16" />
+          <path d="M7 20V10a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v10" />
+          <path d="M15 20V4h1a3 3 0 0 1 3 3v3h-4" />
         </Svg>
       );
     case 'menu':

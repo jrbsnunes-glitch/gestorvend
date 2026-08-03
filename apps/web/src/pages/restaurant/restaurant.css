@@ -1,0 +1,263 @@
+.restaurant-page__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.restaurant-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.restaurant-tab-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.restaurant-tab-chip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface, #fff);
+  text-decoration: none;
+  color: inherit;
+}
+
+.restaurant-tab-chip__total {
+  margin-left: auto;
+  font-weight: 700;
+}
+
+.restaurant-table-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: 0.65rem;
+}
+
+.restaurant-table-tile {
+  appearance: none;
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: var(--radius-md, 8px);
+  padding: 0.85rem 0.5rem;
+  background: #f8fafc;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: center;
+  min-height: 4.5rem;
+}
+
+.restaurant-table-tile--busy {
+  background: #fef3c7;
+  border-color: #f59e0b;
+}
+
+.restaurant-table-tile--free {
+  background: #ecfdf5;
+  border-color: #34d399;
+}
+
+.restaurant-table-tile__code {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.restaurant-table-tile__status {
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #64748b);
+}
+
+.restaurant-inline-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.restaurant-inline-form--wrap {
+  flex-wrap: wrap;
+}
+
+.restaurant-inline-form input,
+.restaurant-inline-form select {
+  flex: 1 1 6rem;
+  min-width: 0;
+}
+
+.restaurant-launch__form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: flex-end;
+}
+
+.restaurant-launch__form .field {
+  flex: 1 1 8rem;
+  margin-bottom: 0;
+  position: relative;
+}
+
+.restaurant-suggest {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 8px;
+  max-height: 14rem;
+  overflow: auto;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+.restaurant-suggest button {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 0.55rem 0.75rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.restaurant-suggest button:hover {
+  background: #f1f5f9;
+}
+
+.restaurant-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.restaurant-item-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+}
+
+.restaurant-item-row__right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.restaurant-total {
+  margin-top: 0.75rem;
+  text-align: right;
+  font-size: 1.15rem;
+}
+
+.restaurant-scale-chip {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.restaurant-scale-chip--online {
+  background: #d1fae5;
+}
+
+.restaurant-scale-chip--unstable {
+  background: #fef3c7;
+}
+
+.restaurant-scale-chip--offline,
+.restaurant-scale-chip--unsupported {
+  background: #fee2e2;
+}
+
+.restaurant-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 80;
+  padding: 1rem;
+}
+
+.restaurant-modal {
+  width: min(28rem, 100%);
+}
+
+.kitchen-ticket {
+  max-width: 320px;
+  margin: 0 auto;
+  padding: 1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+}
+
+.kitchen-ticket h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  text-align: center;
+}
+
+.kitchen-ticket ul {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+}
+
+.kitchen-ticket li {
+  padding: 0.5rem 0;
+  border-top: 1px dashed #94a3b8;
+}
+
+.kitchen-ticket__notes {
+  font-weight: 700;
+  margin-top: 0.2rem;
+}
+
+.kitchen-ticket__time {
+  text-align: center;
+  font-size: 0.85rem;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .kitchen-ticket,
+  .kitchen-ticket * {
+    visibility: visible;
+  }
+  .kitchen-ticket {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .restaurant-launch__form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .restaurant-page__header {
+    flex-direction: column;
+  }
+}

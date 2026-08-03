@@ -9,7 +9,7 @@ type Client = {
   slug: string;
   cnpj: string;
   companyName: string;
-  planCode: 'STANDARD' | 'WHATSAPP';
+  planCode: 'STANDARD' | 'WHATSAPP' | 'RESTAURANT';
   licenseStatus: 'trial' | 'active' | 'suspended' | 'expired';
   licenseValidFrom: string | null;
   licenseExpiresAt: string | null;
@@ -48,6 +48,7 @@ const STATUS_LABEL: Record<Client['licenseStatus'], string> = {
 const PLAN_LABEL: Record<Client['planCode'], string> = {
   STANDARD: 'Padrão',
   WHATSAPP: 'WhatsApp',
+  RESTAURANT: 'Restaurante',
 };
 
 const PROVISIONING_LABEL: Record<Client['provisioningStatus'], string> = {
@@ -655,6 +656,7 @@ export function PortalClientsPage() {
                 >
                   <option value="STANDARD">Padrão</option>
                   <option value="WHATSAPP">WhatsApp</option>
+                  <option value="RESTAURANT">Restaurante</option>
                 </select>
               </div>
               <div className="field">
@@ -793,6 +795,7 @@ export function PortalClientsPage() {
                 >
                   <option value="STANDARD">Padrão</option>
                   <option value="WHATSAPP">WhatsApp</option>
+                  <option value="RESTAURANT">Restaurante</option>
                 </select>
               </div>
               <div className="field">

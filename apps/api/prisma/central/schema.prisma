@@ -21,6 +21,8 @@ enum PlanCode {
   STANDARD
   /// GestorVend + integração GestorVendChat (vendas via WhatsApp)
   WHATSAPP
+  /// GestorVend + módulo restaurante (salão, comandas, self-service)
+  RESTAURANT
 }
 
 /// Estado do provisionamento físico (PostgreSQL + migrações + seed mínimo).

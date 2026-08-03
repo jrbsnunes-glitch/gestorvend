@@ -7,11 +7,14 @@ import { getToken } from './api';
  */
 export type UserProfile = 'manager' | 'cashier';
 
+export type PlanCode = 'STANDARD' | 'WHATSAPP' | 'RESTAURANT';
+
 export type JwtIdentity = {
   sub: string;
   email: string;
   tenantSlug: string;
   roles: string[];
+  planCode?: PlanCode;
 };
 
 /**
@@ -33,6 +36,10 @@ function decodeJwt(token: string): JwtIdentity | null {
       email: typeof obj.email === 'string' ? obj.email : '',
       tenantSlug: typeof obj.tenantSlug === 'string' ? obj.tenantSlug : '',
       roles: Array.isArray(obj.roles) ? obj.roles.filter((r): r is string => typeof r === 'string') : [],
+      planCode:
+        obj.planCode === 'STANDARD' || obj.planCode === 'WHATSAPP' || obj.planCode === 'RESTAURANT'
+          ? obj.planCode
+          : undefined,
     };
   } catch {
     return null;
@@ -65,4 +72,15 @@ export function isAdmin(): boolean {
   const id = getIdentity();
   if (!id) return false;
   return id.roles.includes('admin');
+}
+
+/** Plano contratado (JWT). Sem planCode no token antigo → STANDARD. */
+export function getPlanCode(): PlanCode {
+  const id = getIdentity();
+  return id?.planCode ?? 'STANDARD';
+}
+
+/** Menu/rotas do módulo restaurante: plano RESTAURANT (flag da empresa é checada nas APIs). */
+export function hasRestaurantPlan(): boolean {
+  return getPlanCode() === 'RESTAURANT';
 }

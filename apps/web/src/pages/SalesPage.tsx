@@ -37,6 +37,8 @@ import {
   setPosAutoPrintMode,
   type PosAutoPrintMode,
 } from '../lib/sale-receipt-print';
+import { parseBarcodeWeight, type ScaleMode } from '../lib/pos-scale';
+import { usePosScale } from '../lib/use-pos-scale';
 import {
   calcAdminFee,
   cardBrandLabel,
@@ -958,8 +960,18 @@ function PosScreen({
         saleReceiptAutoPrint?: boolean;
         saleReceiptPrinterHint?: string | null;
         pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED';
+        scaleMode?: ScaleMode;
+        scaleAutoConfirmMs?: number;
+        barcodeWeightPattern?: string | null;
       }>('/company'),
     staleTime: 60_000,
+  });
+
+  const scaleMode = (companyQ.data?.scaleMode ?? 'MANUAL') as ScaleMode;
+  const scale = usePosScale({
+    mode: scaleMode === 'BARCODE_LABEL' ? 'MANUAL' : scaleMode,
+    autoConfirmMs: companyQ.data?.scaleAutoConfirmMs ?? 700,
+    enabled: true,
   });
 
   const sales = useQuery({
@@ -1228,17 +1240,28 @@ function PosScreen({
 
   /* --- ações do carrinho --- */
 
-  const addLineFromProduct = useCallback((p: ProductSearchRow) => {
+  const addLineFromProduct = useCallback((p: ProductSearchRow, qtyOverride?: number) => {
     const promo = p.promoPrice ? parseDecimal(p.promoPrice) : 0;
     const retail = parseDecimal(p.retailPrice);
     const unitPrice = promo > 0 && promo < retail ? promo : retail;
     const taxUnit = normalizeTaxUnit(p.taxUnit);
     const fractional = isFractionalTaxUnit(taxUnit);
+    const initialQty =
+      qtyOverride != null && qtyOverride > 0
+        ? roundCartQty(qtyOverride, taxUnit)
+        : fractional
+          ? 1
+          : 1;
 
     setLines((prev) => {
       const idx = prev.findIndex((l) => l.variantId === p.variantId);
       if (idx >= 0) {
         if (fractional) {
+          if (qtyOverride != null && qtyOverride > 0) {
+            return prev.map((l, i) =>
+              i === idx ? { ...l, quantity: roundCartQty(qtyOverride, l.taxUnit) } : l,
+            );
+          }
           // Peso/volume: não soma +1 automaticamente — operador ajusta a qty.
           return prev;
         }
@@ -1257,7 +1280,7 @@ function PosScreen({
           sku: p.sku,
           barcode: p.barcode,
           unitPrice,
-          quantity: fractional ? 1 : 1,
+          quantity: initialQty,
           stockTotal: parseDecimal(p.stockTotal),
           minStock: parseDecimal(p.minStock),
           taxUnit,
@@ -1267,7 +1290,7 @@ function PosScreen({
     setScannerValue('');
     setSuggestOpen(false);
     setSuggestIdx(0);
-    if (fractional) {
+    if (fractional && (qtyOverride == null || qtyOverride <= 0)) {
       setFocusQtyVariantId(p.variantId);
       setToast({
         kind: 'ok',
@@ -1409,20 +1432,32 @@ function PosScreen({
 
   async function resolveByCode(code: string) {
     try {
+      const weightParsed =
+        scaleMode === 'BARCODE_LABEL' || code.startsWith('2')
+          ? parseBarcodeWeight(code, companyQ.data?.barcodeWeightPattern ?? undefined)
+          : null;
+      const searchCode = weightParsed?.plu ?? code;
       const matches = await qc.fetchQuery({
-        queryKey: ['products', 'search', code],
-        queryFn: () => api<ProductSearchRow[]>(`/products/search?q=${encodeURIComponent(code)}`),
+        queryKey: ['products', 'search', searchCode],
+        queryFn: () =>
+          api<ProductSearchRow[]>(`/products/search?q=${encodeURIComponent(searchCode)}`),
         staleTime: 2_000,
       });
       const exact =
         matches.find(
           (m) =>
             m.barcode === code ||
-            m.sku === code ||
-            (m.productControlNumber != null && String(m.productControlNumber) === code),
+            m.barcode === searchCode ||
+            m.sku === searchCode ||
+            (m.productControlNumber != null && String(m.productControlNumber) === searchCode),
         ) ?? matches[0];
       if (exact) {
-        addLineFromProduct(exact);
+        const qtyFromScale =
+          weightParsed?.weightKg ??
+          (isFractionalTaxUnit(exact.taxUnit) && scale.weightKg != null && scale.stable
+            ? scale.weightKg
+            : undefined);
+        addLineFromProduct(exact, qtyFromScale);
       } else {
         setToast({ kind: 'err', text: `Nenhum produto para "${code}"` });
         setSuggestOpen(true);
@@ -1553,6 +1588,22 @@ function PosScreen({
                 }}
               />
               <span className="pos-scanner-hint">Enter = adicionar · ↓ = pesquisa</span>
+              <span className="pos-scanner-hint" title={scale.lastError ?? scale.mode}>
+                · Balança: {scaleMode === 'MANUAL' ? 'manual' : scale.status}
+                {scale.weightKg != null ? ` ${scale.weightKg.toFixed(3)}kg` : ''}
+              </span>
+              {scaleMode === 'SERIAL_DIRECT' ? (
+                <button
+                  type="button"
+                  className="pos-btn pos-btn-ghost"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void scale.connectSerial();
+                  }}
+                >
+                  Conectar
+                </button>
+              ) : null}
 
               {suggestOpen && scannerValue.trim().length >= 1 && (
                 <div className="pos-suggest" role="listbox">
@@ -1734,6 +1785,16 @@ function PosScreen({
                                   >
                                     +
                                   </button>
+                                  {fractional && scale.weightKg != null ? (
+                                    <button
+                                      type="button"
+                                      className="pos-qty-btn"
+                                      title="Usar peso da balança"
+                                      onClick={() => updateLineQty(l.variantId, scale.weightKg!)}
+                                    >
+                                      ⚖
+                                    </button>
+                                  ) : null}
                                 </div>
                               </td>
                               <td>
