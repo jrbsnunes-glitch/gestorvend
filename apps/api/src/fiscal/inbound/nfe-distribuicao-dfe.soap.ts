@@ -228,12 +228,22 @@ export function parseDistribuicaoDfeBatch(soapText: string): DistribuicaoDfeBatc
     return {
       ok: false,
       cStat,
-      xMotivo: xMotivo || 'SEFAZ retornou cStat 138 sem docZip utilizável.',
+      xMotivo: explainSefazMotivo(xMotivo, 'a resposta não trouxe nenhum docZip utilizável'),
       rawSnippet,
     };
   }
 
   return { ok: true, cStat, xMotivo, ultNSU, maxNSU, docs };
+}
+
+/**
+ * Completa o xMotivo da SEFAZ com o que realmente faltou. O motivo puro engana:
+ * cStat 138 devolve "Documento localizado" mesmo quando o XML não veio.
+ */
+function explainSefazMotivo(xMotivo: string | undefined, detail: string): string {
+  const raw = (xMotivo ?? '').trim().replace(/[.\s]+$/, '');
+  if (!raw) return `${detail.charAt(0).toUpperCase()}${detail.slice(1)}.`;
+  return `${raw}, mas ${detail}.`;
 }
 
 /**
@@ -254,7 +264,7 @@ export function parseDistribuicaoDfeResponse(soapText: string): DistribuicaoDfeR
     return {
       ok: false,
       cStat: batch.cStat,
-      xMotivo: batch.xMotivo || 'Nenhum documento retornado pela SEFAZ.',
+      xMotivo: explainSefazMotivo(batch.xMotivo, 'nenhum documento foi retornado nesta consulta'),
       rawSnippet: soapText.slice(0, 4000),
     };
   }
@@ -276,9 +286,10 @@ export function parseDistribuicaoDfeResponse(soapText: string): DistribuicaoDfeR
     return {
       ok: false,
       cStat: batch.cStat,
-      xMotivo:
-        batch.xMotivo ||
-        'SEFAZ retornou apenas o resumo da NF-e. É necessário registrar Ciência da Operação para liberar o XML completo.',
+      xMotivo: explainSefazMotivo(
+        batch.xMotivo,
+        'a SEFAZ liberou apenas o resumo (resNFe) — o XML completo não veio nesta consulta',
+      ),
       rawSnippet: soapText.slice(0, 4000),
       isSummaryOnly: true,
     };

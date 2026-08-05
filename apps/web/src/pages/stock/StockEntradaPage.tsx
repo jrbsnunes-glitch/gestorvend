@@ -9,7 +9,7 @@ import { SupplierSearchCombo } from '../../components/ProductCatalogCombos';
 import { ProductSearchModal, type ProductSearchRow } from '../../components/ProductSearchModal';
 import { api, apiUpload, ApiHttpError } from '../../lib/api';
 import { formatCnpj } from '../../lib/format';
-import { isPortalXmlFallbackCStat, openPortalNfeConsulta } from '../../lib/portal-nfe';
+import { openPortalNfeConsulta, shouldOfferPortalXmlFallback } from '../../lib/portal-nfe';
 import { formatConversionHint, isPackInvoiceUnit, suggestPackItemQtyFromText } from '../../lib/product-conversion';
 
 type Line = {
@@ -181,10 +181,12 @@ export function StockEntradaPage() {
   const [duplicateInfo, setDuplicateInfo] = useState<DuplicateReceiptInfo | null>(null);
   const [nfeWarnings, setNfeWarnings] = useState<string[]>([]);
   const [nfeFetchMsg, setNfeFetchMsg] = useState<string | null>(null);
-  /** Quando o WS recusa (640/137/632), oferece abrir Portal + Importar XML. */
-  const [portalFallback, setPortalFallback] = useState<{ accessKey: string; copied: boolean } | null>(
-    null,
-  );
+  /** Quando o WS não entrega o XML, oferece abrir Portal + Importar XML. */
+  const [portalFallback, setPortalFallback] = useState<{
+    accessKey: string;
+    copied: boolean;
+    opened: boolean;
+  } | null>(null);
   const [productSearchLine, setProductSearchLine] = useState<number | null>(null);
   const [creatingLine, setCreatingLine] = useState<number | null>(null);
   const [packWizardLine, setPackWizardLine] = useState<number | null>(null);
@@ -408,9 +410,9 @@ export function StockEntradaPage() {
       setDuplicateInfo(null);
       setErr(e.message);
       const key = ((accessKeyOverride ?? nfeKey) || '').replace(/\D/g, '');
-      if (isPortalXmlFallbackCStat(e.message) && key.length === 44) {
-        void openPortalNfeConsulta(key).then(({ copied }) => {
-          setPortalFallback({ accessKey: key, copied });
+      if (shouldOfferPortalXmlFallback(e.message) && key.length === 44) {
+        void openPortalNfeConsulta(key).then(({ copied, opened }) => {
+          setPortalFallback({ accessKey: key, copied, opened });
         });
       } else {
         setPortalFallback(null);
@@ -1064,8 +1066,8 @@ export function StockEntradaPage() {
                               disabled={nfeKey.replace(/\D/g, '').length !== 44}
                               onClick={() => {
                                 const key = nfeKey.replace(/\D/g, '');
-                                void openPortalNfeConsulta(key).then(({ copied }) => {
-                                  setPortalFallback({ accessKey: key, copied });
+                                void openPortalNfeConsulta(key).then(({ copied, opened }) => {
+                                  setPortalFallback({ accessKey: key, copied, opened });
                                 });
                               }}
                               title="Abre o Portal Nacional em nova aba e copia a chave"
@@ -1074,18 +1076,29 @@ export function StockEntradaPage() {
                             </button>
                           </div>
                           <p className="muted entrada-nfe-key-hint">
-                            <strong>Buscar NF-e</strong> consulta o webservice SEFAZ. Se retornar cStat 137/640
-                            (sem permissão ou documento), o Portal abre automaticamente — cole a chave (já
-                            copiada), baixe o XML e use <strong>Importar XML</strong>.
+                            <strong>Buscar NF-e</strong> consulta o webservice SEFAZ. Quando o webservice não
+                            entrega o XML (cStat 137/138/632/633/640, certificado sem permissão etc.), o Portal
+                            Nacional abre automaticamente — cole a chave (já copiada), baixe o XML e use{' '}
+                            <strong>Importar XML</strong>.
                           </p>
                           {portalFallback && (
                             <div className="alert alert-warn" style={{ marginTop: '0.5rem' }}>
                               <p style={{ margin: '0 0 0.5rem' }}>
-                                O webservice não liberou esta NF-e. O{' '}
-                                <strong>Portal Nacional</strong> foi aberto em nova aba
-                                {portalFallback.copied
-                                  ? ' e a chave foi copiada — cole no campo da consulta.'
-                                  : '.'}{' '}
+                                O webservice não liberou o XML desta NF-e.{' '}
+                                {portalFallback.opened ? (
+                                  <>
+                                    O <strong>Portal Nacional</strong> foi aberto em nova aba
+                                    {portalFallback.copied
+                                      ? ' e a chave foi copiada — cole no campo da consulta.'
+                                      : '.'}
+                                  </>
+                                ) : (
+                                  <>
+                                    O navegador bloqueou a nova aba — clique em{' '}
+                                    <strong>Abrir Portal novamente</strong>
+                                    {portalFallback.copied ? ' (a chave já foi copiada).' : '.'}
+                                  </>
+                                )}{' '}
                                 Após baixar o XML, volte aqui e clique em <strong>Importar XML</strong>.
                               </p>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -1093,9 +1106,15 @@ export function StockEntradaPage() {
                                   type="button"
                                   className="btn btn-secondary btn-compact"
                                   onClick={() => {
-                                    void openPortalNfeConsulta(portalFallback.accessKey).then(({ copied }) => {
-                                      setPortalFallback({ accessKey: portalFallback.accessKey, copied });
-                                    });
+                                    void openPortalNfeConsulta(portalFallback.accessKey).then(
+                                      ({ copied, opened }) => {
+                                        setPortalFallback({
+                                          accessKey: portalFallback.accessKey,
+                                          copied,
+                                          opened,
+                                        });
+                                      },
+                                    );
                                   }}
                                 >
                                   Abrir Portal novamente

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { api } from '../../lib/api';
 import { formatBRL, formatDate } from '../../lib/format';
+import { openPortalNfeConsulta, shouldOfferPortalXmlFallback } from '../../lib/portal-nfe';
 
 type InboxDoc = {
   id: string;
@@ -361,7 +362,20 @@ export function StockNfeInboxPage() {
             </p>
             {preview.isLoading && <p>Carregando…</p>}
             {preview.isError && (
-              <div className="alert alert-error">{(preview.error as Error).message}</div>
+              <div className="alert alert-error">
+                <p style={{ margin: 0 }}>{(preview.error as Error).message}</p>
+                {shouldOfferPortalXmlFallback((preview.error as Error).message) && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-compact"
+                    style={{ marginTop: '0.5rem' }}
+                    onClick={() => void openPortalNfeConsulta(previewKey)}
+                    title="Abre o Portal Nacional em nova aba e copia a chave para colar na consulta"
+                  >
+                    Baixar XML no Portal Nacional
+                  </button>
+                )}
+              </div>
             )}
             {preview.data && (
               <>

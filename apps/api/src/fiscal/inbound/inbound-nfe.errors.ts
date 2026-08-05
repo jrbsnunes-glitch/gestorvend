@@ -105,7 +105,7 @@ export function parseNfeAccessKeyParts(accessKey: string): {
   };
 }
 
-/** Enriquece retorno da SEFAZ quando cStat ≠ 138 */
+/** Enriquece o retorno da SEFAZ com contexto e o que fazer para cada cStat */
 export function formatSefazBusinessError(
   xMotivo: string,
   cStat: string | undefined,
@@ -125,6 +125,10 @@ export function formatSefazBusinessError(
       ? ' A SEFAZ só mantém o XML disponível por ~90 dias após receber a NF-e no Ambiente Nacional. Notas antigas não podem mais ser baixadas por este serviço — peça o XML ao fornecedor, use backup interno ou lance a entrada manualmente (sem chave).'
       : cStat === '633'
       ? ' É necessário manifestação do destinatário (Ciência ou Confirmação da Operação) antes do download do XML completo.'
+      : cStat === '138'
+      ? ' O documento existe na base da SEFAZ, mas o webservice não entregou o XML completo (procNFe) nesta consulta — normalmente porque só o resumo foi liberado ou a manifestação ainda está sendo processada.' +
+        emitHint +
+        ' Tente novamente em alguns minutos; se persistir, baixe o XML no Portal Nacional da NF-e (cole a chave) e use Importar XML na Entrada.'
       : cStat === '640'
         ? ' O CNPJ do certificado A1 não é destinatário, transportador nem autorizado (autXML) desta NF-e — o webservice bloqueia a consulta.' +
           emitHint +

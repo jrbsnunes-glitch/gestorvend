@@ -878,7 +878,8 @@ export class InboundNfeService {
 
     if (first.kind !== 'procNFe' && !/<nfeProc\b/i.test(first.xml) && !/<NFe\b/i.test(first.xml)) {
       throw new BadRequestException(
-        'A SEFAZ ainda não liberou o XML completo desta NF-e. Aguarde alguns minutos após a Ciência da Operação e tente novamente.',
+        'A SEFAZ ainda não liberou o XML completo desta NF-e. Aguarde alguns minutos após a Ciência da Operação e tente novamente. ' +
+          'Se continuar indisponível, baixe o XML no Portal Nacional da NF-e (cole a chave) e use Importar XML na Entrada.',
       );
     }
 
