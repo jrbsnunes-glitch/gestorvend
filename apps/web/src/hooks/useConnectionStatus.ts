@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { pingHealth } from '../lib/api';
 
 export type ConnectionStatus = 'online' | 'offline' | 'api-unreachable';
 
-const DEFAULT_INTERVAL_MS = 45_000;
+const DEFAULT_INTERVAL_MS = 90_000;
 
 export function useConnectionStatus(intervalMs = DEFAULT_INTERVAL_MS) {
   const [browserOnline, setBrowserOnline] = useState(() =>
@@ -11,15 +11,21 @@ export function useConnectionStatus(intervalMs = DEFAULT_INTERVAL_MS) {
   );
   const [apiOk, setApiOk] = useState(true);
   const [checking, setChecking] = useState(false);
+  const apiOkRef = useRef(apiOk);
+  apiOkRef.current = apiOk;
 
   const checkApi = useCallback(async () => {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       setApiOk(false);
       return false;
     }
+    // Não competir com a navegação: só pinga com a aba visível.
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      return apiOkRef.current;
+    }
     setChecking(true);
     try {
-      const ok = await pingHealth();
+      const ok = await pingHealth(4_000);
       setApiOk(ok);
       return ok;
     } finally {

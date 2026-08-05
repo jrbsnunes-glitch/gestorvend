@@ -2,8 +2,22 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { LicenseStatus, PlanCode, Tenant } from '../generated/central-client';
 import { CentralPrismaService } from '../prisma/central-prisma.service';
 
+type LicenseCacheEntry =
+  | { ok: true; checkedAt: number; planCode: PlanCode }
+  | { ok: false; checkedAt: number; message: string };
+
+/** Evita SELECT+UPDATE no banco central a cada request JWT. */
+const LICENSE_CACHE_TTL_MS = 60_000;
+/** Carimbo licenseLastValidatedAt no máximo a cada 5 min por tenant. */
+const LICENSE_STAMP_MIN_MS = 5 * 60_000;
+const PLAN_CACHE_TTL_MS = 60_000;
+
 @Injectable()
 export class TenantService {
+  private readonly licenseCache = new Map<string, LicenseCacheEntry>();
+  private readonly lastStampAt = new Map<string, number>();
+  private readonly planCache = new Map<string, { planCode: PlanCode; checkedAt: number }>();
+
   constructor(private readonly central: CentralPrismaService) {}
 
   /** Busca o tenant pelo slug ou lança 404 — usado por guards e bridge. */
@@ -24,6 +38,7 @@ export class TenantService {
       (tenant.licenseStatus === LicenseStatus.active ||
         tenant.licenseStatus === LicenseStatus.trial)
     ) {
+      this.invalidateCaches(tenant.slug);
       return this.central.tenant.update({
         where: { id: tenant.id },
         data: { licenseStatus: LicenseStatus.expired },
@@ -32,31 +47,64 @@ export class TenantService {
     return tenant;
   }
 
+  invalidateCaches(slug: string): void {
+    this.licenseCache.delete(slug);
+    this.planCache.delete(slug);
+  }
+
   async assertLicenseActive(slug: string): Promise<void> {
+    const now = Date.now();
+    const cached = this.licenseCache.get(slug);
+    if (cached && now - cached.checkedAt < LICENSE_CACHE_TTL_MS) {
+      if (!cached.ok) throw new ForbiddenException(cached.message);
+      return;
+    }
+
     let tenant = await this.central.tenant.findUnique({ where: { slug } });
     if (!tenant) {
+      this.licenseCache.set(slug, {
+        ok: false,
+        checkedAt: now,
+        message: 'Tenant inválido',
+      });
       throw new ForbiddenException('Tenant inválido');
     }
 
     tenant = await this.syncLicenseExpiryStatus(tenant);
 
-    const now = new Date();
-    const ok: LicenseStatus[] = [LicenseStatus.active, LicenseStatus.trial];
-    if (!ok.includes(tenant.licenseStatus)) {
-      if (tenant.licenseStatus === LicenseStatus.suspended) {
-        throw new ForbiddenException('Licença suspensa. Entre em contato com o suporte.');
-      }
-      throw new ForbiddenException('Licença inativa ou expirada para este CNPJ');
+    const okStatuses: LicenseStatus[] = [LicenseStatus.active, LicenseStatus.trial];
+    if (!okStatuses.includes(tenant.licenseStatus)) {
+      const message =
+        tenant.licenseStatus === LicenseStatus.suspended
+          ? 'Licença suspensa. Entre em contato com o suporte.'
+          : 'Licença inativa ou expirada para este CNPJ';
+      this.licenseCache.set(slug, { ok: false, checkedAt: now, message });
+      throw new ForbiddenException(message);
     }
-    if (tenant.licenseExpiresAt && tenant.licenseExpiresAt < now) {
-      throw new ForbiddenException('Licença expirada');
+    if (tenant.licenseExpiresAt && tenant.licenseExpiresAt < new Date()) {
+      const message = 'Licença expirada';
+      this.licenseCache.set(slug, { ok: false, checkedAt: now, message });
+      throw new ForbiddenException(message);
     }
 
-    // Carimbo de validação — usado pelo portal para auditoria de uso.
-    await this.central.tenant.update({
-      where: { id: tenant.id },
-      data: { licenseLastValidatedAt: new Date() },
+    this.licenseCache.set(slug, {
+      ok: true,
+      checkedAt: now,
+      planCode: tenant.planCode,
     });
+    this.planCache.set(slug, { planCode: tenant.planCode, checkedAt: now });
+
+    // Carimbo de auditoria — throttle (não em toda request).
+    const lastStamp = this.lastStampAt.get(slug) ?? 0;
+    if (now - lastStamp >= LICENSE_STAMP_MIN_MS) {
+      this.lastStampAt.set(slug, now);
+      void this.central.tenant
+        .update({
+          where: { id: tenant.id },
+          data: { licenseLastValidatedAt: new Date() },
+        })
+        .catch(() => undefined);
+    }
   }
 
   /**
@@ -64,13 +112,31 @@ export class TenantService {
    * funcionalidades opcionais (ex.: módulo WhatsApp).
    */
   async assertPlan(slug: string, allowed: PlanCode[]): Promise<PlanCode> {
-    const tenant = await this.getBySlug(slug);
-    if (!allowed.includes(tenant.planCode)) {
+    const now = Date.now();
+    const cached = this.planCache.get(slug);
+    let planCode: PlanCode;
+    if (cached && now - cached.checkedAt < PLAN_CACHE_TTL_MS) {
+      planCode = cached.planCode;
+    } else {
+      const licenseHit = this.licenseCache.get(slug);
+      if (
+        licenseHit?.ok &&
+        now - licenseHit.checkedAt < LICENSE_CACHE_TTL_MS
+      ) {
+        planCode = licenseHit.planCode;
+      } else {
+        const tenant = await this.getBySlug(slug);
+        planCode = tenant.planCode;
+        this.planCache.set(slug, { planCode, checkedAt: now });
+      }
+    }
+
+    if (!allowed.includes(planCode)) {
       throw new ForbiddenException(
-        `Funcionalidade não incluída no plano "${tenant.planCode}". Planos com acesso: ${allowed.join(', ')}.`,
+        `Funcionalidade não incluída no plano "${planCode}". Planos com acesso: ${allowed.join(', ')}.`,
       );
     }
-    return tenant.planCode;
+    return planCode;
   }
 
   /**

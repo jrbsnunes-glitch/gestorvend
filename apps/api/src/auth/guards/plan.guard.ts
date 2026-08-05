@@ -47,6 +47,12 @@ export class PlanGuard implements CanActivate {
       );
     }
 
+    // JWT já traz planCode no login/refresh — evita hit no banco central em toda rota do salão.
+    const fromJwt = req.user?.planCode as PlanCode | undefined;
+    if (fromJwt && required.includes(fromJwt)) {
+      return true;
+    }
+
     await this.tenants.assertPlan(slug, required);
     return true;
   }

@@ -49,26 +49,28 @@ export class DashboardController {
     const next7End = endOfDay(new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000));
 
     const [
-      salesToday,
-      salesMonth,
+      salesTodayAgg,
+      salesMonthAgg,
       topItems,
       openSessions,
       payablesSoon,
       receivablesSoon,
     ] = await Promise.all([
-      db.sale.findMany({
+      db.sale.aggregate({
         where: {
           status: SaleStatus.COMPLETED,
           createdAt: { gte: todayStart, lte: todayEnd },
         },
-        select: { total: true },
+        _sum: { total: true },
+        _count: { _all: true },
       }),
-      db.sale.findMany({
+      db.sale.aggregate({
         where: {
           status: SaleStatus.COMPLETED,
           createdAt: { gte: monthStart, lte: todayEnd },
         },
-        select: { total: true },
+        _sum: { total: true },
+        _count: { _all: true },
       }),
       db.saleItem.groupBy({
         by: ['variantId'],
@@ -108,13 +110,10 @@ export class DashboardController {
       }),
     ]);
 
-    const sumTotals = (rows: Array<{ total: { toString(): string } }>) =>
-      rows.reduce((acc, r) => acc + Number(r.total), 0);
-
-    const revenueToday = sumTotals(salesToday);
-    const revenueMonth = sumTotals(salesMonth);
-    const countToday = salesToday.length;
-    const countMonth = salesMonth.length;
+    const revenueToday = Number(salesTodayAgg._sum.total ?? 0);
+    const revenueMonth = Number(salesMonthAgg._sum.total ?? 0);
+    const countToday = salesTodayAgg._count._all;
+    const countMonth = salesMonthAgg._count._all;
     const avgTicketMonth = countMonth > 0 ? revenueMonth / countMonth : 0;
 
     // Carrega nomes/SKUs dos top 5 produtos em paralelo

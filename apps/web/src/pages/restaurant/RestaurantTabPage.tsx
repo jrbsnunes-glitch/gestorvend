@@ -96,7 +96,9 @@ export function RestaurantTabPage() {
     queryKey: ['restaurant', 'tab', tabId],
     queryFn: () => api<Tab>(`/restaurant/tabs/${encodeURIComponent(tabId)}`),
     enabled: Boolean(tabId),
-    refetchInterval: 5_000,
+    refetchInterval: () =>
+      typeof document !== 'undefined' && document.visibilityState === 'hidden' ? false : 12_000,
+    staleTime: 5_000,
   });
 
   const searchQ = useQuery({

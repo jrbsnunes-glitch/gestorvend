@@ -66,13 +66,42 @@ export function startDataTableCardLabelsObserver(): () => void {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = null;
-      syncDataTableCardLabels(document);
-    }, 60);
+      // Só sincroniza em viewport estreita (cards mobile); evita trabalho no desktop.
+      if (window.matchMedia('(max-width: 900px)').matches) {
+        syncDataTableCardLabels(document);
+      }
+    }, 200);
   };
 
   run();
 
-  const obs = new MutationObserver(run);
+  const obs = new MutationObserver((mutations) => {
+    // Ignora mudanças triviais de atributos/texto sem tabela envolvida.
+    for (const m of mutations) {
+      const t = m.target;
+      if (t instanceof Element && (t.closest('table.data-table') || t.querySelector?.('table.data-table'))) {
+        run();
+        return;
+      }
+      if (m.addedNodes.length || m.removedNodes.length) {
+        for (const n of m.addedNodes) {
+          if (
+            n instanceof Element &&
+            (n.matches?.('table.data-table') || n.querySelector?.('table.data-table'))
+          ) {
+            run();
+            return;
+          }
+        }
+        for (const n of m.removedNodes) {
+          if (n instanceof Element && n.matches?.('table.data-table')) {
+            run();
+            return;
+          }
+        }
+      }
+    }
+  });
   obs.observe(document.body, {
     childList: true,
     subtree: true,

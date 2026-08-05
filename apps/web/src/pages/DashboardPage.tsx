@@ -272,8 +272,11 @@ export function DashboardPage() {
   const overview = useQuery({
     queryKey: ['dashboard', 'overview'],
     queryFn: () => api<Overview>('/dashboard/overview'),
-    refetchOnMount: 'always',
-    refetchInterval: 60_000,
+    staleTime: 60_000,
+    refetchInterval: () =>
+      typeof document !== 'undefined' && document.visibilityState === 'hidden'
+        ? false
+        : 120_000,
   });
 
   const data = overview.data;

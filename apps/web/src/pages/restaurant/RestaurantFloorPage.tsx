@@ -59,20 +59,25 @@ export function RestaurantFloorPage() {
   const companyQ = useQuery({
     queryKey: ['company'],
     queryFn: () => api<{ restaurantModuleEnabled?: boolean }>('/company'),
+    staleTime: 10 * 60_000,
   });
 
   const areasQ = useQuery({
     queryKey: ['restaurant', 'areas'],
     queryFn: () => api<DiningArea[]>('/restaurant/areas'),
     enabled: planOk && companyQ.data?.restaurantModuleEnabled === true,
-    refetchInterval: 8_000,
+    refetchInterval: () =>
+      typeof document !== 'undefined' && document.visibilityState === 'hidden' ? false : 15_000,
+    staleTime: 8_000,
   });
 
   const tabsQ = useQuery({
     queryKey: ['restaurant', 'tabs'],
     queryFn: () => api<OpenTab[]>('/restaurant/tabs'),
     enabled: planOk && companyQ.data?.restaurantModuleEnabled === true,
-    refetchInterval: 8_000,
+    refetchInterval: () =>
+      typeof document !== 'undefined' && document.visibilityState === 'hidden' ? false : 15_000,
+    staleTime: 8_000,
   });
 
   useEffect(() => {
