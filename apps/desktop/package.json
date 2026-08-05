@@ -22,8 +22,7 @@
     "productName": "GestorVend",
     "electronVersion": "33.4.11",
     "directories": {
-      "output": "out",
-      "buildResources": "build"
+      "output": "out"
     },
     "files": [
       "dist/**/*",
@@ -31,7 +30,7 @@
       "package.json"
     ],
     "win": {
-      "icon": "build/icon.png",
+      "icon": "renderer/logo.png",
       "target": [
         {
           "target": "nsis",
@@ -47,8 +46,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "GestorVend",
-      "installerIcon": "build/icon.png",
-      "uninstallerIcon": "build/icon.png"
+      "installerIcon": "renderer/logo.png",
+      "uninstallerIcon": "renderer/logo.png"
     }
   }
 }
