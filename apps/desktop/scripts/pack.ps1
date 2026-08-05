@@ -47,6 +47,10 @@ foreach ($old in @("dist-installer", "release")) {
   [void](Try-Clear (Join-Path $root $old))
 }
 
+Write-Host "==> Icone NSIS (.ico)..."
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "make-icon.ps1")
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Host "==> TypeScript..."
 npm run build
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

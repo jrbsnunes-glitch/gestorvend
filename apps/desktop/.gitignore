@@ -13,3 +13,6 @@ node_modules/
 *.blockmap
 builder-effective-config.yaml
 builder-debug.yml
+
+# Gerado por scripts/make-icon.ps1 a cada build
+resources/icon.ico

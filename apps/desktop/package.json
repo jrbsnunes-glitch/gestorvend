@@ -9,7 +9,8 @@
     "build": "tsc -p tsconfig.json",
     "dev": "npm run build && electron .",
     "pack": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/pack.ps1",
-    "dist": "npm run pack"
+    "dist": "npm run pack",
+    "icons": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/make-icon.ps1"
   },
   "devDependencies": {
     "@types/node": "20.17.57",
@@ -22,7 +23,8 @@
     "productName": "GestorVend",
     "electronVersion": "33.4.11",
     "directories": {
-      "output": "out"
+      "output": "out",
+      "buildResources": "resources"
     },
     "files": [
       "dist/**/*",
@@ -30,7 +32,7 @@
       "package.json"
     ],
     "win": {
-      "icon": "renderer/logo.png",
+      "icon": "resources/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -46,8 +48,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "GestorVend",
-      "installerIcon": "renderer/logo.png",
-      "uninstallerIcon": "renderer/logo.png"
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico"
     }
   }
 }
