@@ -1,0 +1,20 @@
+# electron-builder — espelho da config em package.json
+appId: br.com.gestorvend.desktop
+productName: GestorVend
+directories:
+  output: release
+files:
+  - dist/**/*
+  - renderer/**/*
+  - package.json
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: GestorVend

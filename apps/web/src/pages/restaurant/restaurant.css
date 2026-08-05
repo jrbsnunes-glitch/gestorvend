@@ -28,11 +28,12 @@
   gap: 0.5rem 1rem;
   align-items: center;
   padding: 0.75rem 1rem;
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius-lg, 16px);
   border: 1px solid var(--color-border, #e2e8f0);
   background: var(--color-surface, #fff);
   text-decoration: none;
   color: inherit;
+  box-shadow: var(--shadow-sm);
 }
 
 .restaurant-tab-chip__total {
@@ -49,9 +50,9 @@
 .restaurant-table-tile {
   appearance: none;
   border: 1px solid var(--color-border, #cbd5e1);
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius-lg, 16px);
   padding: 0.85rem 0.5rem;
-  background: #f8fafc;
+  background: var(--color-surface-elevated, #f8fafc);
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -61,13 +62,13 @@
 }
 
 .restaurant-table-tile--busy {
-  background: #fef3c7;
+  background: var(--color-warning-bg, #fef3c7);
   border-color: #f59e0b;
 }
 
 .restaurant-table-tile--free {
-  background: #ecfdf5;
-  border-color: #34d399;
+  background: var(--color-accent-soft, #ecfdf5);
+  border-color: var(--color-accent, #34d399);
 }
 
 .restaurant-table-tile__code {

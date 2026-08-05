@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { CompanyLogo } from './CompanyLogo';
 import { ConnectionStatusBanner } from './ConnectionStatusBanner';
@@ -12,10 +12,13 @@ import './layout.css';
 
 const SIDEBAR_COLLAPSED_KEY = 'gv-sidebar-collapsed';
 
+type NavGroup = 'vendas' | 'catalogo' | 'gestao' | 'sistema';
+
 type NavItem = {
   to: string;
   label: string;
   icon: NavIconName;
+  group: NavGroup;
   end?: boolean;
   /** Quando true, o item só aparece para usuários com perfil de gerente. */
   managerOnly?: boolean;
@@ -29,24 +32,33 @@ type NavItem = {
   waiterAllowed?: boolean;
 };
 
+const GROUP_LABEL: Record<NavGroup, string> = {
+  vendas: 'VENDAS',
+  catalogo: 'CATÁLOGO',
+  gestao: 'GESTÃO',
+  sistema: 'SISTEMA',
+};
+
 const NAV_ITEMS: NavItem[] = [
-  { to: '/', label: 'Início', icon: 'home', end: true },
-  { to: '/vendas', label: 'Vendas', icon: 'sales' },
-  { to: '/salao', label: 'Salão / Comandas', icon: 'restaurant', restaurantPlan: true, waiterAllowed: true },
-  { to: '/clientes', label: 'Clientes', icon: 'customers', managerOnly: true },
-  { to: '/produtos', label: 'Produtos', icon: 'products', managerOnly: true },
-  { to: '/fornecedores', label: 'Fornecedores', icon: 'suppliers', managerOnly: true },
-  { to: '/estoque', label: 'Estoque', icon: 'stock', managerOnly: true },
-  { to: '/caixa', label: 'Caixa', icon: 'cash' },
-  { to: '/cartoes', label: 'Cartões', icon: 'cards' },
-  { to: '/notas-fiscais', label: 'Notas Fiscais', icon: 'fiscal' },
-  { to: '/financeiro', label: 'Financeiro', icon: 'finance', managerOnly: true, allowFinanceRole: true },
-  { to: '/balanco', label: 'Balanço', icon: 'balance', managerOnly: true, allowFinanceRole: true },
-  { to: '/cadastros', label: 'Cadastros Gerais', icon: 'registers', managerOnly: true },
-  { to: '/empresa', label: 'Empresa', icon: 'company', managerOnly: true },
-  { to: '/usuarios', label: 'Usuários', icon: 'users', managerOnly: true },
-  { to: '/logs', label: 'Logs', icon: 'logs', adminOnly: true },
+  { to: '/', label: 'Início', icon: 'home', group: 'vendas', end: true },
+  { to: '/salao', label: 'Salão / Comandas', icon: 'restaurant', group: 'vendas', restaurantPlan: true, waiterAllowed: true },
+  { to: '/clientes', label: 'Clientes', icon: 'customers', group: 'catalogo', managerOnly: true },
+  { to: '/produtos', label: 'Produtos', icon: 'products', group: 'catalogo', managerOnly: true },
+  { to: '/fornecedores', label: 'Fornecedores', icon: 'suppliers', group: 'catalogo', managerOnly: true },
+  { to: '/estoque', label: 'Estoque', icon: 'stock', group: 'catalogo', managerOnly: true },
+  { to: '/caixa', label: 'Caixa', icon: 'cash', group: 'gestao' },
+  { to: '/cartoes', label: 'Cartões', icon: 'cards', group: 'gestao' },
+  { to: '/notas-fiscais', label: 'Notas Fiscais', icon: 'fiscal', group: 'gestao' },
+  { to: '/financeiro', label: 'Financeiro', icon: 'finance', group: 'gestao', managerOnly: true, allowFinanceRole: true },
+  { to: '/balanco', label: 'Balanço', icon: 'balance', group: 'gestao', managerOnly: true, allowFinanceRole: true },
+  { to: '/cadastros', label: 'Cadastros Gerais', icon: 'registers', group: 'sistema', managerOnly: true },
+  { to: '/empresa', label: 'Empresa', icon: 'company', group: 'sistema', managerOnly: true },
+  { to: '/usuarios', label: 'Usuários', icon: 'users', group: 'sistema', managerOnly: true },
+  { to: '/logs', label: 'Logs', icon: 'logs', group: 'sistema', adminOnly: true },
 ];
+
+/** Preferência de abas inferiores no mobile (completar com próximas permitidas). */
+const MOBILE_TAB_PREF = ['/', '/estoque', '/caixa', '/financeiro'];
 
 type Me = { name: string; email: string; profile: 'manager' | 'cashier' | 'waiter' };
 
@@ -58,10 +70,14 @@ function readCollapsedPref(): boolean {
   }
 }
 
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 export function AppLayout({ onLogout }: { onLogout: () => void }) {
-  // Identidade local (decodificada do JWT) para decidir o menu sem precisar
-  // esperar a resposta da API. Em paralelo carregamos os dados reais (`/users/me`)
-  // para mostrar nome do operador no rodapé.
   const identity = useMemo(() => getIdentity(), []);
   const localProfile = identity ? profileFromRoles(identity.roles) : 'cashier';
   const isManager = localProfile === 'manager';
@@ -73,6 +89,8 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
 
   const [collapsed, setCollapsed] = useState(readCollapsedPref);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
 
   const me = useQuery({
     queryKey: ['users', 'me'],
@@ -107,13 +125,40 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
     }
     return true;
   });
+
+  const grouped = useMemo(() => {
+    const order: NavGroup[] = ['vendas', 'catalogo', 'gestao', 'sistema'];
+    return order
+      .map((g) => ({ group: g, label: GROUP_LABEL[g], items: items.filter((i) => i.group === g) }))
+      .filter((g) => g.items.length > 0);
+  }, [items]);
+
+  const mobileTabs = useMemo(() => {
+    if (waiterOnly) {
+      return items.filter((i) => i.to === '/salao').slice(0, 4);
+    }
+    const byTo = new Map(items.map((i) => [i.to, i]));
+    const preferred: NavItem[] = [];
+    for (const to of MOBILE_TAB_PREF) {
+      const hit = byTo.get(to);
+      if (hit) preferred.push(hit);
+    }
+    if (preferred.length < 4) {
+      for (const it of items) {
+        if (preferred.length >= 4) break;
+        if (!preferred.some((p) => p.to === it.to) && it.to !== '/vendas') preferred.push(it);
+      }
+    }
+    return preferred.slice(0, 4);
+  }, [items, waiterOnly]);
+
   const profile = me.data?.profile ?? localProfile;
 
   useEffect(() => {
     try {
       localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
     } catch {
-      /* ignore quota / private mode */
+      /* ignore */
     }
   }, [collapsed]);
 
@@ -134,6 +179,15 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
       document.body.style.overflow = prev;
     };
   }, [mobileNavOpen]);
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      const t = e.target as Node;
+      if (profileRef.current && !profileRef.current.contains(t)) setProfileOpen(false);
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
 
   if (waiterOnly && !location.pathname.startsWith('/salao')) {
     return <Navigate to="/salao" replace />;
@@ -157,6 +211,52 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
     (collapsed ? ' sidebar--collapsed' : '') +
     (mobileNavOpen ? ' sidebar--mobile-open' : '');
 
+  const showNovaVenda = !waiterOnly;
+
+  const profileMenu = (
+    <div className="topbar-profile" ref={profileRef}>
+      <button
+        type="button"
+        className="topbar-avatar-btn"
+        aria-expanded={profileOpen}
+        aria-haspopup="menu"
+        onClick={() => setProfileOpen((v) => !v)}
+      >
+        <span className="topbar-avatar">{initials(me.data?.name ?? 'U')}</span>
+        <span className="topbar-avatar-meta">
+          <strong>{me.data?.name ?? 'Usuário'}</strong>
+          <span>{profileLabel(profile)}</span>
+        </span>
+        <NavIcon name="chevron-down" />
+      </button>
+      {profileOpen && (
+        <div className="topbar-profile-menu" role="menu">
+          {isManager ? (
+            <>
+              <Link
+                to="/usuarios"
+                role="menuitem"
+                onClick={() => setProfileOpen(false)}
+              >
+                <NavIcon name="user" /> Meu Perfil
+              </Link>
+              <Link
+                to="/empresa"
+                role="menuitem"
+                onClick={() => setProfileOpen(false)}
+              >
+                <NavIcon name="settings" /> Configurações
+              </Link>
+            </>
+          ) : null}
+          <button type="button" role="menuitem" onClick={onLogout}>
+            <NavIcon name="logout" /> Sair
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className={shellClass}>
       {mobileNavOpen && (
@@ -175,6 +275,7 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
               className="sidebar-brand-mark"
               company={company.data ?? null}
               alt={companyDisplayName(company.data)}
+              variant="white"
             />
             <button
               type="button"
@@ -207,29 +308,39 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
           <span className="sidebar-tag">{profileLabel(profile)}</span>
         </div>
 
+        {showNovaVenda ? (
+          <Link
+            to="/vendas"
+            className="sidebar-cta"
+            title="VENDA - PDV"
+            onClick={closeMobileNav}
+          >
+            <NavIcon name="sales" />
+            <span className="sidebar-link-label">VENDA - PDV</span>
+          </Link>
+        ) : null}
+
         <nav id="sidebar-nav" className="sidebar-nav">
-          {items.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end ?? false}
-              title={item.label}
-              aria-label={item.label}
-              onClick={closeMobileNav}
-              className={({ isActive }) => {
-                let cls = 'sidebar-link';
-                if (item.to === '/vendas') {
-                  cls += ' sidebar-link-vendas';
-                  if (isActive) cls += ' sidebar-link-vendas--current';
-                } else if (isActive) {
-                  cls += ' sidebar-link-active';
-                }
-                return cls;
-              }}
-            >
-              <NavIcon name={item.icon} />
-              <span className="sidebar-link-label">{item.label}</span>
-            </NavLink>
+          {grouped.map((g) => (
+            <div key={g.group} className="sidebar-group">
+              <div className="sidebar-group-label">{g.label}</div>
+              {g.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end ?? false}
+                  title={item.label}
+                  aria-label={item.label}
+                  onClick={closeMobileNav}
+                  className={({ isActive }) =>
+                    'sidebar-link' + (isActive ? ' sidebar-link-active' : '')
+                  }
+                >
+                  <NavIcon name={item.icon} />
+                  <span className="sidebar-link-label">{item.label}</span>
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
 
@@ -266,11 +377,31 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
             <NavIcon name="menu" />
           </button>
           <span className="main-topbar-title">{companyDisplayName(company.data)}</span>
+          <div className="topbar-search-spacer" />
+          {profileMenu}
         </div>
         <ConnectionStatusBanner />
         <main className="main-content">
           <Outlet />
         </main>
+
+        {mobileTabs.length > 0 ? (
+          <nav className="mobile-tabbar" aria-label="Atalhos">
+            {mobileTabs.map((tab) => (
+              <NavLink
+                key={tab.to}
+                to={tab.to}
+                end={tab.end ?? false}
+                className={({ isActive }) =>
+                  'mobile-tabbar-item' + (isActive ? ' mobile-tabbar-item--active' : '')
+                }
+              >
+                <NavIcon name={tab.icon} />
+                <span>{tab.label.split(' ')[0]}</span>
+              </NavLink>
+            ))}
+          </nav>
+        ) : null}
       </div>
     </div>
   );

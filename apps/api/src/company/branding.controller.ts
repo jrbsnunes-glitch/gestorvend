@@ -13,6 +13,7 @@ function assertSafeTenantSlug(tenantSlug: string): string {
 /**
  * Arquivos de identidade visual por tenant — leitura pública para `<img src>`.
  * O slug do tenant já é conhecido no login; a logo não é dado sensível.
+ * O query `?v=` (gerado no upload) só serve para invalidar cache do navegador.
  */
 @Controller('branding')
 export class BrandingController {
@@ -23,7 +24,10 @@ export class BrandingController {
     const slug = assertSafeTenantSlug(tenantSlug);
     const { filePath, mime } = await this.logos.resolveFile(slug);
     res.setHeader('Content-Type', mime);
-    res.setHeader('Cache-Control', 'public, max-age=300');
+    // URL já vem versionada (`?v=`); evita cache longo sem versão e permite
+    // revalidação rápida quando o cliente ainda usa URL antiga.
+    res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate');
+    res.setHeader('ETag', `"${encodeURIComponent(filePath)}"`);
     res.sendFile(filePath);
   }
 }

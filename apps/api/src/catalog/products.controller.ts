@@ -208,7 +208,13 @@ export class ProductsController {
     return Number.isFinite(n) && n > 0 && n <= INT4_MAX ? n : null;
   }
 
-  private mapProductSearchRows(
+  /**
+   * Estoque exibido no PDV/busca deve espelhar a baixa da venda:
+   * - produto composto → saldo do SKU unitário vinculado (`stockComponentVariantId`)
+   * - preferência pelo local de estoque padrão (mesmo critério de `sales.service`)
+   */
+  private async mapProductSearchRows(
+    db: Awaited<ReturnType<TenantPrismaService['getClient']>>,
     variants: Array<{
       id: string;
       sku: string;
@@ -226,15 +232,41 @@ export class ProductsController {
         taxUnit: string | null;
         tareKg: Prisma.Decimal | null;
         defaultBarcode?: string | null;
+        stockComponentVariantId: string | null;
       };
-      stockBalances: Array<{ quantity: Prisma.Decimal }>;
     }>,
   ) {
+    if (!variants.length) return [];
+
+    const defaultLoc = await db.stockLocation.findFirst({
+      where: { isDefault: true },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+      select: { id: true },
+    });
+
+    const stockVariantIds = [
+      ...new Set(
+        variants.map((v) => v.product.stockComponentVariantId?.trim() || v.id),
+      ),
+    ];
+
+    const balances = await db.stockBalance.findMany({
+      where: {
+        variantId: { in: stockVariantIds },
+        ...(defaultLoc ? { locationId: defaultLoc.id } : {}),
+      },
+      select: { variantId: true, quantity: true },
+    });
+
+    const stockByVariant = new Map<string, Prisma.Decimal>();
+    for (const b of balances) {
+      const prev = stockByVariant.get(b.variantId) ?? new Prisma.Decimal(0);
+      stockByVariant.set(b.variantId, prev.add(b.quantity));
+    }
+
     return variants.map((v) => {
-      const stockTotal = v.stockBalances.reduce(
-        (acc, b) => acc.add(b.quantity),
-        new Prisma.Decimal(0),
-      );
+      const stockVariantId = v.product.stockComponentVariantId?.trim() || v.id;
+      const stockTotal = stockByVariant.get(stockVariantId) ?? new Prisma.Decimal(0);
       return {
         productId: v.product.id,
         productName: v.product.name,
@@ -251,6 +283,7 @@ export class ProductsController {
         costAverage: String(v.costAverage),
         stockTotal: stockTotal.toString(),
         minStock: String(v.minStock),
+        stockVariantId,
       };
     });
   }
@@ -284,9 +317,9 @@ export class ProductsController {
           taxUnit: true,
           tareKg: true,
           defaultBarcode: true,
+          stockComponentVariantId: true,
         },
       },
-      stockBalances: { select: { quantity: true } },
     } as const;
 
     // 1) Match exato de código de barras (variante OU padrão do produto).
@@ -304,7 +337,7 @@ export class ProductsController {
       include,
     });
     if (exactBarcode.length) {
-      return this.mapProductSearchRows(exactBarcode);
+      return this.mapProductSearchRows(db, exactBarcode);
     }
 
     // 2) Código sequencial do produto (somente se for número “curto” de controle).
@@ -317,7 +350,7 @@ export class ProductsController {
         include,
       });
       if (exactByCode.length) {
-        return this.mapProductSearchRows(exactByCode);
+        return this.mapProductSearchRows(db, exactByCode);
       }
     }
 
@@ -337,7 +370,7 @@ export class ProductsController {
       include,
     });
 
-    return this.mapProductSearchRows(variants);
+    return this.mapProductSearchRows(db, variants);
   }
 
   /**

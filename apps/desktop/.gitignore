@@ -1,0 +1,15 @@
+# Artefatos Electron / instalador
+dist/
+out/
+out-*/
+dist-installer/
+dist-installer-*/
+release/
+release-*/
+_stale_*/
+node_modules/
+.electron-builder.out.json
+*.exe
+*.blockmap
+builder-effective-config.yaml
+builder-debug.yml

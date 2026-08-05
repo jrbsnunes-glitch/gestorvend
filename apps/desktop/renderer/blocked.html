@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Licença — GestorVend</title>
+    <style>
+      :root {
+        --navy: #142159;
+        --navy-2: #1b2d78;
+        --surface: #fff;
+        --text: #0f172a;
+        --muted: #64748b;
+        --danger: #b91c1c;
+        --danger-bg: #fee2e2;
+        --radius: 12px;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(145deg, var(--navy) 0%, var(--navy-2) 100%);
+        color: var(--text);
+        padding: 1.5rem;
+      }
+      .card {
+        width: 100%;
+        max-width: 440px;
+        background: var(--surface);
+        border-radius: 16px;
+        padding: 2rem 1.75rem;
+        box-shadow: 0 16px 40px rgba(0,0,0,0.25);
+        text-align: center;
+      }
+      .badge {
+        display: inline-block;
+        background: var(--danger-bg);
+        color: var(--danger);
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        padding: 0.25rem 0.65rem;
+        border-radius: 999px;
+        margin-bottom: 0.85rem;
+      }
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1.35rem;
+        font-weight: 800;
+      }
+      p {
+        margin: 0 0 1.25rem;
+        color: var(--muted);
+        font-size: 0.95rem;
+        line-height: 1.5;
+      }
+      .actions {
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+      }
+      button {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        border-radius: var(--radius);
+        font-weight: 700;
+        font-size: 0.95rem;
+        cursor: pointer;
+        border: 1px solid transparent;
+      }
+      .primary {
+        background: var(--navy-2);
+        color: #fff;
+      }
+      .secondary {
+        background: #fff;
+        border-color: #cbd5e1;
+        color: var(--text);
+      }
+      button:disabled { opacity: 0.6; cursor: wait; }
+      .brand-logo {
+        width: 64px;
+        height: 64px;
+        border-radius: 14px;
+        object-fit: cover;
+        box-shadow: 0 8px 22px rgba(20, 33, 89, 0.28);
+        margin: 0 auto 0.9rem;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <img class="brand-logo" src="logo.png" alt="GestorVend" width="64" height="64" />
+      <div class="badge">Licença</div>
+      <h1>Acesso bloqueado</h1>
+      <p id="message">Não foi possível validar a licença deste computador.</p>
+      <div class="actions">
+        <button type="button" class="primary" id="retry">Tentar novamente</button>
+        <button type="button" class="secondary" id="reconfig">Reconfigurar servidor</button>
+      </div>
+    </div>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const msg = params.get('message');
+      if (msg) document.getElementById('message').textContent = msg;
+
+      const retry = document.getElementById('retry');
+      retry.addEventListener('click', async () => {
+        retry.disabled = true;
+        retry.textContent = 'Verificando…';
+        const r = await window.gestorvend.retryLicense();
+        if (!r.ok) {
+          document.getElementById('message').textContent = r.message || 'Ainda bloqueado.';
+          retry.disabled = false;
+          retry.textContent = 'Tentar novamente';
+        }
+      });
+
+      document.getElementById('reconfig').addEventListener('click', () => {
+        location.href = 'setup.html';
+      });
+    </script>
+  </body>
+</html>

@@ -32,7 +32,14 @@ export function PortalLogin() {
     <div className="portal-login-page">
       <div className="portal-login-card">
         <div className="portal-login-brand">
-          <img className="portal-login-mark" src="/gv.png" alt="" width={52} height={52} decoding="async" />
+          <img
+            className="portal-login-mark"
+            src="/gestorvend-mark.png"
+            alt="GestorVend"
+            width={52}
+            height={52}
+            decoding="async"
+          />
           <div className="portal-login-brand-copy">
             <strong>GestorVend</strong>
             <span>Portal de Licenciamento</span>

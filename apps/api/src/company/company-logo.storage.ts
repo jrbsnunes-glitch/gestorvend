@@ -9,8 +9,15 @@ const EXT_BY_MIME: Record<string, string> = {
   'image/jpeg': '.jpg',
   'image/webp': '.webp',
 };
+const MIME_BY_EXT: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+};
 
-const LOGO_BASENAME = 'logo';
+/** Aceita `logo.png` (legado) e `logo-1739….png` (versão). */
+const LOGO_FILE_RE = /^logo(?:-\d+)?\.(png|jpe?g|webp)$/i;
 
 @Injectable()
 export class CompanyLogoStorage {
@@ -26,9 +33,12 @@ export class CompanyLogoStorage {
     return path.join(this.getUploadRoot(), 'tenants', tenantSlug);
   }
 
-  /** URL pública servida pelo `BrandingController` (mesma origem /api). */
-  publicLogoPath(tenantSlug: string): string {
-    return `/api/branding/${encodeURIComponent(tenantSlug)}/logo`;
+  /**
+   * URL pública com `?v=` para forçar o navegador a buscar o arquivo novo
+   * (a rota ignora o query; só muda o cache).
+   */
+  publicLogoPath(tenantSlug: string, version: number | string): string {
+    return `/api/branding/${encodeURIComponent(tenantSlug)}/logo?v=${version}`;
   }
 
   assertAllowedMime(mime: string | undefined): string {
@@ -41,35 +51,85 @@ export class CompanyLogoStorage {
     return m;
   }
 
+  private async unlinkQuiet(filePath: string): Promise<void> {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await fs.unlink(filePath);
+        return;
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code === 'ENOENT') return;
+        // Windows: arquivo ainda aberto por leitura anterior — espera e tenta de novo
+        if (attempt < 4 && (code === 'EBUSY' || code === 'EPERM' || code === 'EACCES')) {
+          await new Promise((r) => setTimeout(r, 80 * (attempt + 1)));
+          continue;
+        }
+        return;
+      }
+    }
+  }
+
+  private async listLogoFiles(dir: string): Promise<string[]> {
+    try {
+      const names = await fs.readdir(dir);
+      return names.filter((n) => LOGO_FILE_RE.test(n));
+    } catch {
+      return [];
+    }
+  }
+
   async save(tenantSlug: string, buffer: Buffer, mime: string): Promise<string> {
     const normalizedMime = this.assertAllowedMime(mime);
     const ext = EXT_BY_MIME[normalizedMime];
     const dir = this.tenantDir(tenantSlug);
     await fs.mkdir(dir, { recursive: true });
 
-    for (const oldExt of Object.values(EXT_BY_MIME)) {
-      try {
-        await fs.unlink(path.join(dir, `${LOGO_BASENAME}${oldExt}`));
-      } catch {
-        /* arquivo anterior inexistente */
-      }
+    const version = Date.now();
+    const finalName = `logo-${version}${ext}`;
+    const finalPath = path.join(dir, finalName);
+    const tmpPath = path.join(dir, `logo-${version}.tmp${ext}`);
+
+    // Grava em arquivo temporário e renomeia — evita servir arquivo pela metade
+    await fs.writeFile(tmpPath, buffer);
+    await fs.rename(tmpPath, finalPath);
+
+    // Remove logos anteriores (legado `logo.png` e outras versões)
+    const existing = await this.listLogoFiles(dir);
+    for (const name of existing) {
+      if (name === finalName) continue;
+      await this.unlinkQuiet(path.join(dir, name));
     }
 
-    await fs.writeFile(path.join(dir, `${LOGO_BASENAME}${ext}`), buffer);
-    return this.publicLogoPath(tenantSlug);
+    return this.publicLogoPath(tenantSlug, version);
   }
 
   async resolveFile(tenantSlug: string): Promise<{ filePath: string; mime: string }> {
     const dir = this.tenantDir(tenantSlug);
-    for (const [mime, ext] of Object.entries(EXT_BY_MIME)) {
-      const candidate = path.join(dir, `${LOGO_BASENAME}${ext}`);
+    const names = await this.listLogoFiles(dir);
+    if (!names.length) {
+      throw new NotFoundException('Logotipo não encontrado para esta loja.');
+    }
+
+    // Prefere o arquivo mais recente (mtime); desempate pelo nome com timestamp
+    let best: { name: string; mtime: number } | null = null;
+    for (const name of names) {
+      const filePath = path.join(dir, name);
       try {
-        await fs.access(candidate);
-        return { filePath: candidate, mime };
+        const st = await fs.stat(filePath);
+        const mtime = st.mtimeMs;
+        if (!best || mtime > best.mtime || (mtime === best.mtime && name > best.name)) {
+          best = { name, mtime };
+        }
       } catch {
-        /* tenta próxima extensão */
+        /* ignora */
       }
     }
-    throw new NotFoundException('Logotipo não encontrado para esta loja.');
+    if (!best) {
+      throw new NotFoundException('Logotipo não encontrado para esta loja.');
+    }
+
+    const ext = path.extname(best.name).toLowerCase();
+    const mime = MIME_BY_EXT[ext] ?? 'application/octet-stream';
+    return { filePath: path.join(dir, best.name), mime };
   }
 }

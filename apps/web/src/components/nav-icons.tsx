@@ -23,7 +23,16 @@ export type NavIconName =
   | 'close'
   | 'collapse'
   | 'expand'
-  | 'logout';
+  | 'logout'
+  | 'search'
+  | 'chevron-down'
+  | 'user'
+  | 'settings'
+  | 'plus'
+  | 'eye'
+  | 'eye-off'
+  | 'building'
+  | 'lock';
 
 const SIZE = 20;
 
@@ -217,6 +226,70 @@ export function NavIcon({ name, title }: { name: NavIconName; title?: string }) 
           <path d="M10 17v2a2 2 0 0 0 2 2h7V3h-7a2 2 0 0 0-2 2v2" />
           <path d="M4 12h11" />
           <path d="M12 8l4 4-4 4" />
+        </Svg>
+      );
+    case 'search':
+      return (
+        <Svg title={title}>
+          <circle cx="11" cy="11" r="7" />
+          <path d="M20 20l-3.5-3.5" />
+        </Svg>
+      );
+    case 'chevron-down':
+      return (
+        <Svg title={title}>
+          <path d="M6 9l6 6 6-6" />
+        </Svg>
+      );
+    case 'user':
+      return (
+        <Svg title={title}>
+          <circle cx="12" cy="8" r="3.5" />
+          <path d="M4.5 20c1-3.5 3.8-5.5 7.5-5.5s6.5 2 7.5 5.5" />
+        </Svg>
+      );
+    case 'settings':
+      return (
+        <Svg title={title}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2v2.2M12 19.8V22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M2 12h2.2M19.8 12H22M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6" />
+        </Svg>
+      );
+    case 'plus':
+      return (
+        <Svg title={title}>
+          <path d="M12 5v14M5 12h14" />
+        </Svg>
+      );
+    case 'eye':
+      return (
+        <Svg title={title}>
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+          <circle cx="12" cy="12" r="3" />
+        </Svg>
+      );
+    case 'eye-off':
+      return (
+        <Svg title={title}>
+          <path d="M3 3l18 18" />
+          <path d="M10.6 10.6a3 3 0 0 0 4.2 4.2" />
+          <path d="M9.9 5.1A10.5 10.5 0 0 1 12 5c6.5 0 10 7 10 7a17.4 17.4 0 0 1-3.1 3.9" />
+          <path d="M6.1 6.1A17.5 17.5 0 0 0 2 12s3.5 7 10 7a10 10 0 0 0 4.2-.9" />
+        </Svg>
+      );
+    case 'building':
+      return (
+        <Svg title={title}>
+          <path d="M4 20V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v14" />
+          <path d="M2 20h20" />
+          <path d="M9 8h2M9 12h2M9 16h2M14 8h2M14 12h2M14 16h2" />
+        </Svg>
+      );
+    case 'lock':
+      return (
+        <Svg title={title}>
+          <rect x="5" y="11" width="14" height="10" rx="2" />
+          <path d="M8 11V8a4 4 0 0 1 8 0v3" />
         </Svg>
       );
     default:

@@ -72,4 +72,69 @@ export class TenantService {
     }
     return tenant.planCode;
   }
+
+  /**
+   * Status público e enxuto da licença (app desktop / checagem antecipada).
+   * Não expõe dados sensíveis do tenant.
+   */
+  async getPublicLicenseStatus(slug: string): Promise<{
+    ok: boolean;
+    status: string;
+    planCode: string | null;
+    expiresAt: string | null;
+    remainingDays: number | null;
+    message?: string;
+  }> {
+    const raw = await this.central.tenant.findUnique({ where: { slug } });
+    if (!raw) {
+      return {
+        ok: false,
+        status: 'not_found',
+        planCode: null,
+        expiresAt: null,
+        remainingDays: null,
+        message: 'Empresa não encontrada.',
+      };
+    }
+
+    const tenant = await this.syncLicenseExpiryStatus(raw);
+    const now = new Date();
+    const expiresAt = tenant.licenseExpiresAt
+      ? tenant.licenseExpiresAt.toISOString()
+      : null;
+    let remainingDays: number | null = null;
+    if (tenant.licenseExpiresAt) {
+      remainingDays = Math.ceil(
+        (tenant.licenseExpiresAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000),
+      );
+    }
+
+    const activeStatuses: LicenseStatus[] = [LicenseStatus.active, LicenseStatus.trial];
+    const ok =
+      activeStatuses.includes(tenant.licenseStatus) &&
+      (!tenant.licenseExpiresAt || tenant.licenseExpiresAt >= now);
+
+    let message: string | undefined;
+    if (!ok) {
+      if (tenant.licenseStatus === LicenseStatus.suspended) {
+        message = 'Licença suspensa. Entre em contato com o suporte.';
+      } else if (
+        tenant.licenseStatus === LicenseStatus.expired ||
+        (tenant.licenseExpiresAt && tenant.licenseExpiresAt < now)
+      ) {
+        message = 'Licença expirada.';
+      } else {
+        message = 'Licença inativa.';
+      }
+    }
+
+    return {
+      ok,
+      status: tenant.licenseStatus,
+      planCode: tenant.planCode,
+      expiresAt,
+      remainingDays,
+      message,
+    };
+  }
 }

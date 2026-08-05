@@ -923,6 +923,8 @@ function PosScreen({
 
   /* --- estado do carrinho atual --- */
   const [lines, setLines] = useState<CartLine[]>([]);
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
   /** Rascunho de qty enquanto digita (permite "0," / "1,25"). */
   const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
   const [focusQtyVariantId, setFocusQtyVariantId] = useState<string | null>(null);
@@ -1095,8 +1097,62 @@ function PosScreen({
     queryKey: ['products', 'search', scannerValue],
     queryFn: () => api<ProductSearchRow[]>(`/products/search?q=${encodeURIComponent(scannerValue.trim())}`),
     enabled: suggestOpen && scannerValue.trim().length >= 1,
-    staleTime: 2_000,
+    staleTime: 0,
   });
+
+  /**
+   * Recarrega o saldo de cada item do carrinho direto da API (sem cache).
+   * Necessário após inventário/entrada — o `stockTotal` gravado na linha
+   * ficava congelado e o PDV continuava avisando "sem estoque".
+   */
+  const refreshCartStock = useCallback(async () => {
+    const snapshot = linesRef.current;
+    if (!snapshot.length || serviceTabRef.current) return;
+    const unique = [...new Map(snapshot.map((l) => [l.variantId, l])).values()];
+    const updates = await Promise.all(
+      unique.map(async (l) => {
+        const q = (l.barcode || l.sku || l.productName).trim();
+        if (!q) return null;
+        try {
+          const matches = await api<ProductSearchRow[]>(
+            `/products/search?q=${encodeURIComponent(q)}`,
+          );
+          const hit =
+            matches.find((m) => m.variantId === l.variantId) ??
+            matches.find(
+              (m) =>
+                (l.barcode && m.barcode === l.barcode) ||
+                (l.sku && m.sku === l.sku),
+            );
+          if (!hit) return null;
+          return {
+            variantId: l.variantId,
+            stockTotal: parseDecimal(hit.stockTotal),
+            minStock: parseDecimal(hit.minStock),
+          };
+        } catch {
+          return null;
+        }
+      }),
+    );
+    const byId = new Map(
+      updates.filter(Boolean).map((u) => [u!.variantId, u!] as const),
+    );
+    if (!byId.size) return;
+    setLines((prev) =>
+      prev.map((l) => {
+        const u = byId.get(l.variantId);
+        return u ? { ...l, stockTotal: u.stockTotal, minStock: u.minStock } : l;
+      }),
+    );
+  }, []);
+
+  const openPaymentMenu = useCallback(async () => {
+    if (linesRef.current.length === 0) return;
+    await refreshCartStock();
+    setPayments([]);
+    setPaymentMenuOpen(true);
+  }, [refreshCartStock]);
 
   /**
    * Detalhe da sessão (incluindo o `summary.byMethod` com o esperado para o
@@ -1428,6 +1484,8 @@ function PosScreen({
         /* ignore */
       }
       qc.invalidateQueries({ queryKey: ['cash', 'pdv-readiness'] });
+      void qc.invalidateQueries({ queryKey: ['products', 'search'] });
+      void refreshCartStock();
       setToast({ kind: 'err', text: e.message });
     },
   });
@@ -1768,12 +1826,9 @@ function PosScreen({
           ? parseBarcodeWeight(code, companyQ.data?.barcodeWeightPattern ?? undefined)
           : null;
       const searchCode = weightParsed?.plu ?? code;
-      const matches = await qc.fetchQuery({
-        queryKey: ['products', 'search', searchCode],
-        queryFn: () =>
-          api<ProductSearchRow[]>(`/products/search?q=${encodeURIComponent(searchCode)}`),
-        staleTime: 2_000,
-      });
+      const matches = await api<ProductSearchRow[]>(
+        `/products/search?q=${encodeURIComponent(searchCode)}`,
+      );
       const exact =
         matches.find(
           (m) =>
@@ -1810,8 +1865,7 @@ function PosScreen({
         if (lines.length > 0 && total > 0) {
           // F2 agora abre o submenu de pagamento (fluxo de caixa real:
           // 1º bipa produtos, 2º aperta F2, 3º escolhe forma de pagamento).
-          setPayments([]);
-          setPaymentMenuOpen(true);
+          void openPaymentMenu();
         }
       } else if (ev.key === 'F4') {
         if (serviceTab) return; // conferência: cliente só após ir ao pagamento
@@ -1845,6 +1899,7 @@ function PosScreen({
     total,
     paymentMenuOpen,
     serviceTab,
+    openPaymentMenu,
   ]);
 
   function tryExit() {
@@ -1910,7 +1965,7 @@ function PosScreen({
               type="button"
               className="pos-btn pos-btn-finish"
               disabled={lines.length === 0}
-              onClick={() => setPaymentMenuOpen(true)}
+              onClick={() => void openPaymentMenu()}
             >
               Ir para pagamento (F2)
             </button>
@@ -2391,13 +2446,29 @@ function PosScreen({
                 <span className="pos-shortcut-key">F2</span> Finalizar venda ou no botão abaixo.
               </p>
 
+              <div className="pos-mobile-sheet-totals" aria-hidden="true">
+                <div className="pos-totals-row">
+                  <span>Subtotal</span>
+                  <strong>{formatBRL(subtotal)}</strong>
+                </div>
+                {discount > 0.005 ? (
+                  <div className="pos-totals-row">
+                    <span>Desconto</span>
+                    <strong>− {formatBRL(discount)}</strong>
+                  </div>
+                ) : null}
+                <div className="pos-totals-row pos-mobile-sheet-total">
+                  <span>Total</span>
+                  <strong>{formatBRL(total)}</strong>
+                </div>
+              </div>
+
               <button
                 type="button"
                 className="pos-btn pos-btn-finish"
                 onClick={() => {
                   if (lines.length === 0 || total <= 0) return;
-                  setPayments([]);
-                  setPaymentMenuOpen(true);
+                  void openPaymentMenu();
                 }}
                 disabled={
                   lines.length === 0 ||

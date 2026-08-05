@@ -4,7 +4,7 @@
 
 .portal-shell {
   min-height: 100vh;
-  background: #f1f5f9;
+  background: var(--color-bg, #f1f5f9);
   display: flex;
   flex-direction: column;
 }
@@ -14,7 +14,7 @@
   align-items: center;
   gap: 1.5rem;
   padding: 0.75rem 1.25rem;
-  background: #0f172a;
+  background: var(--color-navy-900, #142159);
   color: #f8fafc;
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.18);
 }
@@ -28,11 +28,12 @@
 }
 
 .portal-brand-mark {
-  height: 56px;
-  width: auto;
-  max-width: 288px;
-  object-fit: contain;
-  object-position: left center;
+  height: 44px;
+  width: 44px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
 .portal-brand > div {
@@ -206,12 +207,12 @@
 }
 
 .portal-login-mark {
-  width: 52px;
-  height: 52px;
-  border-radius: 12px;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
   object-fit: cover;
   flex-shrink: 0;
-  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.35);
+  box-shadow: 0 6px 18px rgba(20, 33, 89, 0.35);
   opacity: 0;
   transform: scale(0.9);
   animation: portal-login-logo-in 0.62s cubic-bezier(0.34, 1.4, 0.64, 1) 0.12s forwards;

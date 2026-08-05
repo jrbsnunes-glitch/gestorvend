@@ -3,6 +3,8 @@ import { api } from './api';
 
 /** Logo padrão do produto quando a loja não cadastrou identidade visual. */
 export const DEFAULT_APP_LOGO = '/gestor-venda-logo.png';
+/** Versão branca do logo (sidebar escura / painel de login). */
+export const DEFAULT_APP_LOGO_WHITE = '/gestor-venda-logo-white.png';
 export const DEFAULT_APP_NAME = 'GestorVend';
 
 export type CompanyBranding = {

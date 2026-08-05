@@ -1,0 +1,54 @@
+{
+  "name": "@gestorvend/desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cliente desktop GestorVend (Electron) — janela própria apontando para o servidor do cliente",
+  "author": "GestorVend",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "npm run build && electron .",
+    "pack": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/pack.ps1",
+    "dist": "npm run pack"
+  },
+  "devDependencies": {
+    "@types/node": "20.17.57",
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8",
+    "typescript": "5.8.3"
+  },
+  "build": {
+    "appId": "br.com.gestorvend.desktop",
+    "productName": "GestorVend",
+    "electronVersion": "33.4.11",
+    "directories": {
+      "output": "out",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "GestorVend",
+      "installerIcon": "build/icon.png",
+      "uninstallerIcon": "build/icon.png"
+    }
+  }
+}

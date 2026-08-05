@@ -550,15 +550,20 @@ export function CompanyPage() {
     mutationFn: (file: File) => apiUpload<Company>('/company/logo', file),
     onSuccess: (data) => {
       qc.setQueryData(['company'], data);
+      void qc.invalidateQueries({ queryKey: ['company'] });
       setForm(toForm(data));
       setTouched(false);
       setLogoPreviewKey((k) => k + 1);
+      if (logoFileRef.current) logoFileRef.current.value = '';
       setFeedback({
         kind: 'ok',
-        msg: 'Logotipo enviado ao servidor. Já aparece no PDV, relatórios e cupom.',
+        msg: 'Logotipo atualizado no servidor. A nova imagem já aparece no menu, PDV e relatórios.',
       });
     },
-    onError: (err: Error) => setFeedback({ kind: 'err', msg: err.message }),
+    onError: (err: Error) => {
+      if (logoFileRef.current) logoFileRef.current.value = '';
+      setFeedback({ kind: 'err', msg: err.message });
+    },
   });
 
   const save = useMutation({
@@ -1052,9 +1057,9 @@ export function CompanyPage() {
               />
               {form.logoUrl ? (
                 <img
-                  key={logoPreviewKey}
+                  key={`${form.logoUrl}-${logoPreviewKey}`}
                   className="company-form__logo-preview"
-                  src={`${resolveCompanyAssetUrl(form.logoUrl)}${form.logoUrl.includes('?') ? '&' : '?'}v=${logoPreviewKey}`}
+                  src={resolveCompanyAssetUrl(form.logoUrl)}
                   alt="Pré-visualização do logotipo"
                   onError={(e) => {
                     (e.target as HTMLImageElement).style.display = 'none';
@@ -1063,8 +1068,8 @@ export function CompanyPage() {
               ) : null}
             </div>
             <p className="company-form__hint" style={{ margin: '0.35rem 0 0' }}>
-              PNG/JPEG/WebP · até 2 MB · envia para a pasta da loja no servidor. URL pública é
-              alternativa se a imagem já estiver hospedada.
+              PNG/JPEG/WebP · até 2 MB. Cada envio substitui a logo anterior e atualiza o menu,
+              PDV e impressões na hora. URL pública é alternativa se a imagem já estiver hospedada.
             </p>
           </section>
 

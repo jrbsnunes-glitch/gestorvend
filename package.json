@@ -4,6 +4,7 @@
   "workspaces": [
     "apps/api",
     "apps/web",
+    "apps/desktop",
     "packages/shared-types"
   ],
   "scripts": {
@@ -13,7 +14,9 @@
     "build": "npm run db:generate && npm run build -w @gestorvend/api && npm run build -w @gestorvend/web",
     "db:generate": "npm run prisma:generate -w @gestorvend/api",
     "db:migrate:central": "npm run prisma:migrate:central -w @gestorvend/api",
-    "db:migrate:tenant": "npm run prisma:migrate:tenant -w @gestorvend/api"
+    "db:migrate:tenant": "npm run prisma:migrate:tenant -w @gestorvend/api",
+    "desktop:dev": "npm run dev -w @gestorvend/desktop",
+    "desktop:build": "npm run pack -w @gestorvend/desktop"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

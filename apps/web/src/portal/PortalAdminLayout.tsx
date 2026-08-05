@@ -17,8 +17,10 @@ export function PortalAdminLayout() {
         <Link to="/portal-admin/clientes" className="portal-brand">
           <img
             className="portal-brand-mark"
-            src="/gestor-venda-logo.png"
-            alt="Gestor Vendas"
+            src="/gestorvend-mark.png"
+            alt="GestorVend"
+            width={48}
+            height={48}
             decoding="async"
           />
           <div>

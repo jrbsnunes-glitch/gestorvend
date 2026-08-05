@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination } from '../components/ListPagination';
@@ -179,6 +180,7 @@ function minMinStockFromVariantForm(
 
 export function ProductsPage() {
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [viewProductId, setViewProductId] = useState<string | null>(null);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
@@ -192,6 +194,16 @@ export function ProductsPage() {
   const [searchInput, setSearchInput] = useState('');
   const [searchActionErr, setSearchActionErr] = useState<string | null>(null);
   const searchQ = useDeferredValue(searchInput.trim());
+
+  useEffect(() => {
+    const q = searchParams.get('q')?.trim();
+    if (!q) return;
+    setSearchInput(q);
+    setSearchOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('q');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [defaultBarcode, setDefaultBarcode] = useState('');
