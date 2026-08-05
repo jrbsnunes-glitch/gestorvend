@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { DesktopPrintStationPanel } from '../components/DesktopPrintStationPanel';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { api } from '../lib/api';
+import { getDesktopApi, isGestorVendDesktop } from '../lib/desktop-bridge';
 import {
   isLocalPrintStation,
   setLocalPrintStation,
@@ -39,12 +41,19 @@ function formatSeen(iso: string | null): string {
   return new Date(iso).toLocaleString('pt-BR');
 }
 
+function looksLikeElectronShell(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Electron/i.test(navigator.userAgent);
+}
+
 export function PrintStationsPage() {
   const qc = useQueryClient();
   const [name, setName] = useState('');
   const [sectors, setSectors] = useState('COZINHA');
   const [err, setErr] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
   const [tokenModal, setTokenModal] = useState<{ name: string; token: string } | null>(null);
+  const [pairToken, setPairToken] = useState<string | null>(null);
   const [localStation, setLocalStation] = useState(isLocalPrintStation);
   const [jobFilter, setJobFilter] = useState<string>('PENDING');
 
@@ -73,6 +82,7 @@ export function PrintStationsPage() {
       setSectors('COZINHA');
       setErr(null);
       setTokenModal({ name: row.name, token: row.token });
+      setPairToken(row.token);
       void qc.invalidateQueries({ queryKey: ['printing', 'stations'] });
     },
     onError: (e: Error) => setErr(e.message),
@@ -100,6 +110,7 @@ export function PrintStationsPage() {
     onSuccess: (row, id) => {
       const st = stations.data?.find((s) => s.id === id);
       setTokenModal({ name: st?.name ?? 'Estação', token: row.token });
+      setPairToken(row.token);
     },
     onError: (e: Error) => setErr(e.message),
   });
@@ -130,14 +141,19 @@ export function PrintStationsPage() {
     [jobs.data],
   );
 
+  const desktopApi = getDesktopApi();
+  const inDesktop = isGestorVendDesktop();
+  const electronShell = looksLikeElectronShell();
+  const canPairHere = Boolean(desktopApi?.saveStation && desktopApi?.listPrinters);
+
   return (
     <div className="page">
       <header className="page-header">
         <div>
           <h1>Impressão</h1>
           <p className="muted">
-            Estações do app desktop na cozinha/caixa. O celular do garçom só envia para a fila — nunca abre
-            o diálogo de impressão.
+            Cadastre a estação (token), pareie neste PC e acompanhe a fila. A impressora física é
+            escolhida abaixo quando o app Desktop estiver atualizado.
           </p>
         </div>
       </header>
@@ -148,6 +164,52 @@ export function PrintStationsPage() {
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setErr(null)}>
             Fechar
           </button>
+        </div>
+      )}
+      {okMsg && (
+        <div className="alert alert-success" style={{ marginBottom: '1rem' }}>
+          {okMsg}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOkMsg(null)}>
+            Fechar
+          </button>
+        </div>
+      )}
+
+      {canPairHere ? (
+        <DesktopPrintStationPanel
+          suggestedToken={pairToken}
+          onMessage={(msg, ok) => {
+            if (ok) {
+              setOkMsg(msg);
+              setErr(null);
+              void qc.invalidateQueries({ queryKey: ['printing'] });
+            } else {
+              setErr(msg);
+              setOkMsg(null);
+            }
+          }}
+        />
+      ) : electronShell || inDesktop ? (
+        <div className="alert alert-error" style={{ marginBottom: '1rem' }}>
+          <p style={{ margin: 0 }}>
+            Você está no GestorVend Desktop, mas esta versão <strong>não expõe</strong> a API de
+            impressoras (<code>window.gestorvend.listPrinters</code>). Feche o app, atualize o
+            Desktop (<code>npm run desktop:dev</code> ou reinstale o .exe da v1.0.28+) e abra de
+            novo. O menu <strong>GestorVend → Estação de impressão…</strong> também deve aparecer na
+            barra superior.
+          </p>
+        </div>
+      ) : (
+        <div className="alert alert-warn" style={{ marginBottom: '1rem' }}>
+          Para listar impressoras do Windows use o <strong>app Desktop</strong> nesta página (painel
+          verde) ou o menu <strong>GestorVend → Estação de impressão…</strong>.
+        </div>
+      )}
+
+      {(stations.data ?? []).some((st) => st.enabled && !st.lastSeenAt) && (
+        <div className="alert alert-warn" style={{ marginBottom: '1rem' }}>
+          Estação ativa com <strong>Último contato: Nunca</strong> — o token ainda não foi salvo
+          neste PC. Use o painel <em>Estação de impressão deste PC</em> acima.
         </div>
       )}
 
@@ -185,7 +247,7 @@ export function PrintStationsPage() {
         <h2 style={{ marginTop: 0, fontSize: '1.05rem' }}>Estações</h2>
         {stations.isLoading && <p className="muted">Carregando…</p>}
         {!stations.isLoading && !(stations.data?.length) && (
-          <p className="muted">Nenhuma estação cadastrada. Crie uma e pareie no app desktop.</p>
+          <p className="muted">Nenhuma estação cadastrada.</p>
         )}
         {(stations.data ?? []).length > 0 && (
           <div className="table-wrap">
@@ -210,9 +272,7 @@ export function PrintStationsPage() {
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
-                        onClick={() =>
-                          patch.mutate({ id: st.id, enabled: !st.enabled })
-                        }
+                        onClick={() => patch.mutate({ id: st.id, enabled: !st.enabled })}
                       >
                         {st.enabled ? 'Desativar' : 'Ativar'}
                       </button>
@@ -230,7 +290,7 @@ export function PrintStationsPage() {
                         onClick={() => {
                           if (
                             window.confirm(
-                              'Gerar novo token? O token anterior deixa de funcionar no desktop.',
+                              'Gerar novo token? O token anterior deixa de funcionar neste PC.',
                             )
                           ) {
                             rotate.mutate(st.id);
@@ -325,8 +385,7 @@ export function PrintStationsPage() {
       <section className="card">
         <h2 style={{ marginTop: 0, fontSize: '1.05rem' }}>Fallback neste navegador</h2>
         <p className="muted">
-          Se não houver estação desktop, o PC do caixa ainda pode abrir o ticket no navegador. Marque este
-          aparelho como estação local apenas em desktops — nunca no celular do garçom.
+          Só use se não houver agente desktop. No celular do garçom deixe desmarcado.
         </p>
         <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <input
@@ -346,8 +405,8 @@ export function PrintStationsPage() {
           <div className="modal" role="dialog" aria-labelledby="print-token-title">
             <h2 id="print-token-title">Token de pareamento</h2>
             <p>
-              Estação <strong>{tokenModal.name}</strong>. Cole este token no app desktop (menu Estação de
-              impressão). Ele só aparece agora.
+              Estação <strong>{tokenModal.name}</strong>. Cole no painel{' '}
+              <em>Estação de impressão deste PC</em> (acima) e escolha a impressora.
             </p>
             <textarea
               readOnly
@@ -362,9 +421,11 @@ export function PrintStationsPage() {
                 className="btn btn-primary"
                 onClick={() => {
                   void navigator.clipboard?.writeText(tokenModal.token);
+                  setPairToken(tokenModal.token);
+                  setTokenModal(null);
                 }}
               >
-                Copiar
+                Copiar e usar neste PC
               </button>
               <button type="button" className="btn btn-secondary" onClick={() => setTokenModal(null)}>
                 Fechar

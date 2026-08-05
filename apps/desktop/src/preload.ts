@@ -65,6 +65,8 @@ contextBridge.exposeInMainWorld('gestorvend', {
   testStationPrint: (deviceName?: string) =>
     ipcRenderer.invoke('station:test', deviceName) as Promise<{ ok: boolean; error?: string }>,
   openAppFromStation: () => ipcRenderer.invoke('station:openApp') as Promise<{ ok: boolean }>,
+  openStationUi: () =>
+    ipcRenderer.invoke('station:openUi') as Promise<{ ok: boolean; error?: string }>,
   stationStatus: () =>
     ipcRenderer.invoke('station:status') as Promise<{
       running: boolean;
@@ -74,4 +76,5 @@ contextBridge.exposeInMainWorld('gestorvend', {
       stationName: string | null;
     }>,
   platform: process.platform,
+  isDesktop: true,
 });

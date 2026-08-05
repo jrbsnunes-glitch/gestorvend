@@ -38,7 +38,7 @@ function createWindow(): BrowserWindow {
     minWidth: 1024,
     minHeight: 640,
     show: false,
-    autoHideMenuBar: true,
+    autoHideMenuBar: false,
     title: 'GestorVend',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -313,6 +313,14 @@ function registerIpc() {
       await openApp(mainWindow, cfg);
     }
     return { ok: true };
+  });
+
+  ipcMain.handle('station:openUi', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      showStation(mainWindow);
+      return { ok: true };
+    }
+    return { ok: false, error: 'Janela principal indisponível.' };
   });
 
   ipcMain.handle('station:status', () => getPrintAgentStatus());
