@@ -16,6 +16,7 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { TenantService } from '../tenant/tenant.service';
 import { SalesService } from '../sales/sales.service';
 import { CompanyService } from '../company/company.service';
+import { PrintingService } from '../printing/printing.service';
 
 function money(n: number): number {
   return Math.round(n * 100) / 100;
@@ -39,6 +40,7 @@ export class RestaurantService {
     private readonly tenants: TenantService,
     private readonly sales: SalesService,
     private readonly company: CompanyService,
+    private readonly printing: PrintingService,
   ) {}
 
   /** Plano RESTAURANT no central + flag da empresa. */
@@ -532,17 +534,77 @@ export class RestaurantService {
           };
     const pending = await db.serviceTabItem.findMany({
       where,
-      select: { id: true },
+      include: {
+        variant: {
+          include: { product: { select: { name: true, taxUnit: true } } },
+        },
+      },
     });
     const printedItemIds = pending.map((i) => i.id);
+
+    const alreadyPrintedCount = await db.serviceTabItem.count({
+      where: {
+        tabId,
+        kitchenPrintedAt: { not: null },
+        status: { not: ServiceTabItemStatus.CANCELLED },
+        ...(printedItemIds.length ? { id: { notIn: printedItemIds } } : {}),
+      },
+    });
+    const additional = alreadyPrintedCount > 0;
+
     if (printedItemIds.length) {
       await db.serviceTabItem.updateMany({
         where: { id: { in: printedItemIds } },
         data: { kitchenPrintedAt: new Date(), status: ServiceTabItemStatus.PREPARING },
       });
     }
+
     const tab = await this.getTab(tenantSlug, tabId);
-    return { ...tab, printedItemIds };
+    let dispatched = false;
+    let stationName: string | null = null;
+    let stationNames: string[] = [];
+    let jobIds: string[] = [];
+
+    if (pending.length) {
+      const enqueue = await this.printing.enqueueKitchenJobs(
+        tenantSlug,
+        {
+          id: tab.id,
+          number: tab.number,
+          guestCount: tab.guestCount,
+          table: tab.table
+            ? {
+                code: tab.table.code,
+                label: tab.table.label,
+                area: tab.table.area ? { name: tab.table.area.name } : null,
+              }
+            : null,
+          openedBy: tab.openedBy ? { name: tab.openedBy.name } : null,
+        },
+        pending.map((it) => ({
+          id: it.id,
+          quantity: it.quantity,
+          notes: it.notes,
+          printSector: it.printSector,
+          kitchenPrintedAt: it.kitchenPrintedAt,
+          variant: it.variant,
+        })),
+        { additional },
+      );
+      dispatched = enqueue.dispatched;
+      stationName = enqueue.stationName;
+      stationNames = enqueue.stationNames;
+      jobIds = enqueue.jobIds;
+    }
+
+    return {
+      ...tab,
+      printedItemIds,
+      dispatched,
+      stationName,
+      stationNames,
+      jobIds,
+    };
   }
 
   async closeTab(

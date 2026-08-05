@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ticket cozinha</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #fff;
+        color: #000;
+        font-family: 'Segoe UI', Arial, sans-serif;
+      }
+      .kitchen-ticket {
+        width: 72mm;
+        max-width: 100%;
+        margin: 0 auto;
+        padding: 2mm;
+        font-size: 12pt;
+      }
+      .kitchen-ticket h1 {
+        margin: 0 0 4px;
+        font-size: 18pt;
+        text-align: center;
+        letter-spacing: 0.04em;
+      }
+      .kitchen-ticket p {
+        margin: 2px 0;
+        font-size: 11pt;
+      }
+      .kitchen-ticket__time {
+        font-size: 9pt;
+        color: #333;
+      }
+      .kitchen-ticket ul {
+        list-style: none;
+        margin: 8px 0 0;
+        padding: 0;
+      }
+      .kitchen-ticket li {
+        margin: 0 0 8px;
+        padding-bottom: 6px;
+        border-bottom: 1px dashed #999;
+        page-break-inside: avoid;
+      }
+      .kitchen-ticket__notes {
+        font-size: 10pt;
+        font-weight: 700;
+        margin-top: 2px;
+      }
+      .add {
+        font-weight: 800;
+        text-align: center;
+        margin: 6px 0;
+      }
+      @page {
+        size: 80mm auto;
+        margin: 3mm;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root" class="kitchen-ticket">
+      <p>Aguardando ticket…</p>
+    </div>
+    <script>
+      window.__GV_RENDER_TICKET__ = function (payload) {
+        const root = document.getElementById('root');
+        if (!payload || typeof payload !== 'object') {
+          root.innerHTML = '<p>Payload inválido</p>';
+          return;
+        }
+        const title = escapeHtml(payload.title || 'COZINHA');
+        const tabNumber = payload.tabNumber != null ? String(payload.tabNumber) : '—';
+        const tableLabel = payload.tableLabel || payload.tableCode || '';
+        const area = payload.areaName || '';
+        const guests = payload.guestCount != null ? payload.guestCount : 1;
+        const waiter = payload.waiterName || '';
+        const when = payload.printedAt
+          ? new Date(payload.printedAt).toLocaleString('pt-BR')
+          : new Date().toLocaleString('pt-BR');
+        const items = Array.isArray(payload.items) ? payload.items : [];
+
+        let headerMeta = '';
+        if (tableLabel) {
+          headerMeta =
+            'MESA <strong>' +
+            escapeHtml(tableLabel) +
+            '</strong>' +
+            (area ? ' · ' + escapeHtml(area) : '') +
+            ' · Comanda #' +
+            escapeHtml(tabNumber);
+        } else {
+          headerMeta = 'Comanda <strong>#' + escapeHtml(tabNumber) + '</strong>';
+        }
+
+        const lines = items
+          .map(function (it) {
+            const qty = Number(it.quantity);
+            const qtyStr = Number.isFinite(qty)
+              ? qty.toLocaleString('pt-BR', { maximumFractionDigits: 3 })
+              : String(it.quantity ?? '');
+            const unit = it.unit ? ' ' + escapeHtml(it.unit) : '×';
+            const notes = it.notes
+              ? '<div class="kitchen-ticket__notes">Obs: ' + escapeHtml(it.notes) + '</div>'
+              : '';
+            return (
+              '<li><strong>' +
+              qtyStr +
+              unit +
+              '</strong> ' +
+              escapeHtml(it.name || '') +
+              notes +
+              '</li>'
+            );
+          })
+          .join('');
+
+        root.innerHTML =
+          '<header>' +
+          '<h1>' +
+          title +
+          '</h1>' +
+          '<p>' +
+          headerMeta +
+          '</p>' +
+          '<p>Pessoas: ' +
+          escapeHtml(String(guests)) +
+          (waiter ? ' · Garçom: ' + escapeHtml(waiter) : '') +
+          '</p>' +
+          '<p class="kitchen-ticket__time">' +
+          escapeHtml(when) +
+          '</p>' +
+          (payload.additional ? '<p class="add">*** PEDIDO ADICIONAL ***</p>' : '') +
+          '</header>' +
+          (items.length ? '<ul>' + lines + '</ul>' : '<p>Sem itens</p>');
+      };
+
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+    </script>
+  </body>
+</html>

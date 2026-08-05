@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Estação de impressão</title>
+    <style>
+      :root {
+        --navy: #142159;
+        --accent: #4ade9f;
+        --ink: #0b3b2b;
+        --bg: #f1f5f9;
+        --surface: #fff;
+        --text: #0f172a;
+        --muted: #64748b;
+        --border: #e2e8f0;
+        --danger: #b91c1c;
+        --danger-bg: #fee2e2;
+        --ok-bg: #dcfce7;
+        --radius: 12px;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        padding: 1.5rem;
+      }
+      .wrap { max-width: 640px; margin: 0 auto; }
+      h1 { margin: 0 0 0.35rem; font-size: 1.4rem; }
+      .muted { color: var(--muted); font-size: 0.92rem; line-height: 1.45; margin: 0 0 1.25rem; }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1.25rem;
+        margin-bottom: 1rem;
+      }
+      label {
+        display: block;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #475569;
+        margin-bottom: 0.35rem;
+      }
+      input, select, textarea {
+        width: 100%;
+        padding: 0.65rem 0.8rem;
+        border: 1px solid #cbd5e1;
+        border-radius: var(--radius);
+        font: inherit;
+        margin-bottom: 0.85rem;
+      }
+      textarea { font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem; }
+      .row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+      button {
+        padding: 0.65rem 1rem;
+        border: none;
+        border-radius: var(--radius);
+        background: var(--accent);
+        color: var(--ink);
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #e2e8f0;
+        color: #0f172a;
+      }
+      button.danger {
+        background: var(--danger-bg);
+        color: var(--danger);
+      }
+      .status {
+        padding: 0.65rem 0.85rem;
+        border-radius: 10px;
+        background: #e2e8f0;
+        font-size: 0.88rem;
+        margin-bottom: 0.75rem;
+      }
+      .status.ok { background: var(--ok-bg); }
+      .status.err { background: var(--danger-bg); color: var(--danger); }
+      .msg { font-size: 0.88rem; margin-top: 0.5rem; }
+      .msg.err { color: var(--danger); }
+      .msg.ok { color: #166534; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Estação de impressão</h1>
+      <p class="muted">
+        Pareie com o token gerado em <strong>Configurações → Impressão</strong> no sistema web.
+        O agente consulta a fila a cada poucos segundos e imprime silenciosamente na impressora
+        escolhida (USB, rede ou compartilhada — qualquer impressora do Windows).
+      </p>
+
+      <div id="agentStatus" class="status">Carregando…</div>
+
+      <div class="card">
+        <label for="token">Token de pareamento</label>
+        <textarea id="token" rows="3" placeholder="cole o token (id.secret)"></textarea>
+
+        <label for="name">Nome local (opcional)</label>
+        <input id="name" type="text" placeholder="Ex.: PC Cozinha" />
+
+        <label for="pollMs">Intervalo de poll (ms)</label>
+        <input id="pollMs" type="number" min="1500" max="60000" step="500" value="3000" />
+
+        <label for="printerCozinha">Impressora — setor COZINHA</label>
+        <select id="printerCozinha">
+          <option value="">(padrão do Windows)</option>
+        </select>
+
+        <label for="printerBar">Impressora — setor BAR (opcional)</label>
+        <select id="printerBar">
+          <option value="">(mesma da cozinha / padrão)</option>
+        </select>
+
+        <div class="row">
+          <button type="button" id="btnSave">Salvar e iniciar agente</button>
+          <button type="button" class="secondary" id="btnTest">Imprimir teste</button>
+          <button type="button" class="secondary" id="btnRefresh">Atualizar status</button>
+          <button type="button" class="danger" id="btnClear">Desparear</button>
+          <button type="button" class="secondary" id="btnBack">Voltar ao sistema</button>
+        </div>
+        <div id="msg" class="msg"></div>
+      </div>
+    </div>
+
+    <script>
+      const api = window.gestorvend;
+      const $ = (id) => document.getElementById(id);
+
+      function setMsg(text, ok) {
+        const el = $('msg');
+        el.textContent = text || '';
+        el.className = 'msg ' + (ok === true ? 'ok' : ok === false ? 'err' : '');
+      }
+
+      function fillPrinterSelect(sel, printers, selected) {
+        const keep = sel.querySelector('option')?.outerHTML || '<option value="">(padrão)</option>';
+        sel.innerHTML = keep;
+        // reset first option text already present
+        for (const p of printers) {
+          const opt = document.createElement('option');
+          opt.value = p.name;
+          opt.textContent = (p.displayName || p.name) + (p.isDefault ? ' (padrão)' : '');
+          if (selected && selected === p.name) opt.selected = true;
+          sel.appendChild(opt);
+        }
+      }
+
+      async function loadPrinters(selectedCozinha, selectedBar) {
+        const res = await api.listPrinters();
+        if (!res.ok) {
+          setMsg(res.error || 'Não foi possível listar impressoras.', false);
+          return;
+        }
+        fillPrinterSelect($('printerCozinha'), res.printers, selectedCozinha);
+        fillPrinterSelect($('printerBar'), res.printers, selectedBar);
+      }
+
+      function renderAgent(agent) {
+        const el = $('agentStatus');
+        if (!agent) {
+          el.textContent = 'Agente parado.';
+          el.className = 'status';
+          return;
+        }
+        const when = agent.lastPollAt
+          ? new Date(agent.lastPollAt).toLocaleTimeString('pt-BR')
+          : '—';
+        const name = agent.stationName ? ` · ${agent.stationName}` : '';
+        if (agent.lastError) {
+          el.className = 'status err';
+          el.textContent = `Agente ${agent.running ? 'ativo' : 'parado'}${name} · último poll ${when} · erro: ${agent.lastError}`;
+        } else {
+          el.className = 'status' + (agent.running ? ' ok' : '');
+          el.textContent = `Agente ${agent.running ? 'ativo' : 'parado'}${name} · último poll ${when}` +
+            (agent.lastJobId ? ` · último job ${agent.lastJobId.slice(0, 8)}…` : '');
+        }
+      }
+
+      async function refresh() {
+        const data = await api.getStation();
+        const st = data.config?.station;
+        if (st) {
+          $('token').value = st.token || '';
+          $('name').value = st.name || '';
+          $('pollMs').value = String(st.pollMs || 3000);
+          await loadPrinters(st.printers?.COZINHA, st.printers?.BAR);
+        } else {
+          await loadPrinters();
+        }
+        renderAgent(data.agent);
+      }
+
+      $('btnSave').onclick = async () => {
+        const token = $('token').value.trim();
+        if (!token) {
+          setMsg('Cole o token.', false);
+          return;
+        }
+        const printers = {};
+        if ($('printerCozinha').value) printers.COZINHA = $('printerCozinha').value;
+        if ($('printerBar').value) printers.BAR = $('printerBar').value;
+        const res = await api.saveStation({
+          token,
+          name: $('name').value.trim() || undefined,
+          pollMs: Number($('pollMs').value) || 3000,
+          printers,
+        });
+        if (!res.ok) {
+          setMsg(res.error || 'Falha ao salvar.', false);
+          return;
+        }
+        setMsg('Estação salva. Agente iniciado.', true);
+        renderAgent(res.agent);
+        setTimeout(refresh, 2500);
+      };
+
+      $('btnTest').onclick = async () => {
+        const device = $('printerCozinha').value || undefined;
+        const res = await api.testStationPrint(device);
+        setMsg(res.ok ? 'Teste enviado à impressora.' : (res.error || 'Falha no teste.'), res.ok);
+      };
+
+      $('btnRefresh').onclick = () => refresh();
+
+      $('btnClear').onclick = async () => {
+        if (!confirm('Remover o pareamento desta estação?')) return;
+        await api.clearStation();
+        $('token').value = '';
+        setMsg('Estação despareada.', true);
+        await refresh();
+      };
+
+      $('btnBack').onclick = () => api.openAppFromStation();
+
+      refresh();
+      setInterval(async () => {
+        const agent = await api.stationStatus();
+        renderAgent(agent);
+      }, 4000);
+    </script>
+  </body>
+</html>

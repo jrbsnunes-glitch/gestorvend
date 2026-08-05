@@ -53,6 +53,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/balanco', label: 'Balanço', icon: 'balance', group: 'gestao', managerOnly: true, allowFinanceRole: true },
   { to: '/cadastros', label: 'Cadastros Gerais', icon: 'registers', group: 'sistema', managerOnly: true },
   { to: '/empresa', label: 'Empresa', icon: 'company', group: 'sistema', managerOnly: true },
+  { to: '/configuracoes/impressao', label: 'Impressão', icon: 'settings', group: 'sistema', managerOnly: true },
   { to: '/usuarios', label: 'Usuários', icon: 'users', group: 'sistema', managerOnly: true },
   { to: '/logs', label: 'Logs', icon: 'logs', group: 'sistema', adminOnly: true },
 ];
@@ -245,7 +246,14 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
                 role="menuitem"
                 onClick={() => setProfileOpen(false)}
               >
-                <NavIcon name="settings" /> Configurações
+                <NavIcon name="settings" /> Empresa
+              </Link>
+              <Link
+                to="/configuracoes/impressao"
+                role="menuitem"
+                onClick={() => setProfileOpen(false)}
+              >
+                <NavIcon name="settings" /> Impressão (cozinha)
               </Link>
             </>
           ) : null}

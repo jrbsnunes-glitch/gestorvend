@@ -7,8 +7,21 @@ import {
   type WebContentsPrintOptions,
 } from 'electron';
 import * as path from 'path';
-import { readConfig, writeConfig, type DesktopConfig } from './config';
+import {
+  readConfig,
+  writeConfig,
+  writeStationConfig,
+  type DesktopConfig,
+  type StationConfig,
+} from './config';
 import { checkLicense, REVALIDATE_MS } from './license';
+import {
+  getPrintAgentStatus,
+  printTestTicket,
+  restartPrintAgent,
+  startPrintAgent,
+  stopPrintAgent,
+} from './print-agent';
 
 let mainWindow: BrowserWindow | null = null;
 let revalidateTimer: NodeJS.Timeout | null = null;
@@ -39,8 +52,35 @@ function createWindow(): BrowserWindow {
     win.show();
   });
 
+  // Mesma origem (páginas de impressão do app): permitir nova janela.
+  // URLs externas: abrir no navegador do sistema.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    try {
+      const current = win.webContents.getURL();
+      if (current && current !== 'about:blank') {
+        const base = new URL(current);
+        const target = new URL(url, base);
+        if (target.origin === base.origin) {
+          return {
+            action: 'allow',
+            overrideBrowserWindowOptions: {
+              autoHideMenuBar: true,
+              webPreferences: {
+                preload: path.join(__dirname, 'preload.js'),
+                contextIsolation: true,
+                nodeIntegration: false,
+                sandbox: false,
+              },
+            },
+          };
+        }
+      }
+    } catch {
+      /* fall through */
+    }
+    if (/^https?:\/\//i.test(url)) {
+      void shell.openExternal(url);
+    }
     return { action: 'deny' };
   });
 
@@ -54,6 +94,10 @@ function showSetup(win: BrowserWindow) {
 function showBlocked(win: BrowserWindow, message: string) {
   const q = new URLSearchParams({ message });
   void win.loadFile(rendererPath('blocked.html'), { search: q.toString() });
+}
+
+function showStation(win: BrowserWindow) {
+  void win.loadFile(rendererPath('station.html'));
 }
 
 async function openApp(win: BrowserWindow, cfg: DesktopConfig) {
@@ -73,6 +117,8 @@ async function openApp(win: BrowserWindow, cfg: DesktopConfig) {
       }
     });
   }, REVALIDATE_MS);
+
+  restartPrintAgent();
 }
 
 async function boot(win: BrowserWindow) {
@@ -82,6 +128,42 @@ async function boot(win: BrowserWindow) {
     return;
   }
   await openApp(win, cfg);
+}
+
+function buildMenu() {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'GestorVend',
+      submenu: [
+        {
+          label: 'Estação de impressão…',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) showStation(mainWindow);
+          },
+        },
+        {
+          label: 'Reconfigurar servidor…',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) showSetup(mainWindow);
+          },
+        },
+        { type: 'separator' },
+        { role: 'quit', label: 'Sair' },
+      ],
+    },
+    {
+      label: 'Exibir',
+      submenu: [
+        { role: 'reload', label: 'Recarregar' },
+        { role: 'toggleDevTools', label: 'Ferramentas de desenvolvedor' },
+        { type: 'separator' },
+        { role: 'resetZoom', label: 'Zoom padrão' },
+        { role: 'zoomIn', label: 'Aumentar zoom' },
+        { role: 'zoomOut', label: 'Diminuir zoom' },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 function registerIpc() {
@@ -96,9 +178,11 @@ function registerIpc() {
       if (!/^https?:\/\//i.test(serverUrl)) {
         serverUrl = `https://${serverUrl}`;
       }
+      const prev = readConfig();
       const cfg: DesktopConfig = {
         serverUrl,
         tenantSlug: body.tenantSlug.trim().toLowerCase(),
+        station: body.station ?? prev?.station,
       };
       writeConfig(cfg);
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -144,13 +228,96 @@ function registerIpc() {
       await shell.openExternal(url);
     }
   });
+
+  ipcMain.handle('printers:list', async (event) => {
+    try {
+      const list = await event.sender.getPrintersAsync();
+      return {
+        ok: true,
+        printers: list.map((p) => ({
+          name: p.name,
+          displayName: p.displayName || p.name,
+          isDefault: Boolean(p.isDefault),
+          status: p.status,
+        })),
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Falha ao listar impressoras.',
+        printers: [],
+      };
+    }
+  });
+
+  ipcMain.handle('station:get', () => {
+    const cfg = readConfig();
+    return {
+      config: cfg,
+      agent: getPrintAgentStatus(),
+    };
+  });
+
+  ipcMain.handle('station:save', async (_e, body: StationConfig) => {
+    try {
+      if (!body?.token?.trim()) {
+        return { ok: false, error: 'Cole o token gerado em Configurações → Impressão.' };
+      }
+      const printers: Record<string, string> = {};
+      if (body.printers && typeof body.printers === 'object') {
+        for (const [k, v] of Object.entries(body.printers)) {
+          if (typeof v === 'string' && v.trim()) {
+            printers[k.trim().toUpperCase()] = v.trim();
+          }
+        }
+      }
+      const updated = writeStationConfig({
+        token: body.token.trim(),
+        name: body.name?.trim() || undefined,
+        pollMs: body.pollMs,
+        printers,
+      });
+      if (!updated) {
+        return { ok: false, error: 'Configure o servidor antes de parear a estação.' };
+      }
+      restartPrintAgent();
+      return { ok: true, agent: getPrintAgentStatus() };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erro ao salvar estação.' };
+    }
+  });
+
+  ipcMain.handle('station:clear', () => {
+    writeStationConfig(null);
+    stopPrintAgent();
+    return { ok: true };
+  });
+
+  ipcMain.handle('station:test', async (_e, deviceName?: string) => {
+    return printTestTicket(typeof deviceName === 'string' ? deviceName : undefined);
+  });
+
+  ipcMain.handle('station:openApp', async () => {
+    const cfg = readConfig();
+    if (!cfg) {
+      if (mainWindow && !mainWindow.isDestroyed()) showSetup(mainWindow);
+      return { ok: false };
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      await openApp(mainWindow, cfg);
+    }
+    return { ok: true };
+  });
+
+  ipcMain.handle('station:status', () => getPrintAgentStatus());
 }
 
 app.whenReady().then(() => {
-  Menu.setApplicationMenu(null);
+  buildMenu();
   registerIpc();
   mainWindow = createWindow();
   void boot(mainWindow);
+  startPrintAgent();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -162,5 +329,6 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (revalidateTimer) clearInterval(revalidateTimer);
+  stopPrintAgent();
   if (process.platform !== 'darwin') app.quit();
 });

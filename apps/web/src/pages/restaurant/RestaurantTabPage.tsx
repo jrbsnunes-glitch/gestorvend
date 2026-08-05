@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { isWaiter } from '../../lib/auth';
+import { canPrintHere } from '../../lib/print-station';
 import { calcRestaurantFees, type RestaurantFeesCompany } from '../../lib/restaurant-fees';
 import { parseBarcodeWeight } from '../../lib/pos-scale';
 import { usePosScale } from '../../lib/use-pos-scale';
@@ -129,13 +130,15 @@ export function RestaurantTabPage() {
 
   const kitchenPrint = useMutation({
     mutationFn: () =>
-      api<{ printedItemIds?: string[] }>(
-        `/restaurant/tabs/${encodeURIComponent(tabId)}/kitchen-print`,
-        {
-          method: 'POST',
-          json: {},
-        },
-      ),
+      api<{
+        printedItemIds?: string[];
+        dispatched?: boolean;
+        stationName?: string | null;
+        stationNames?: string[];
+      }>(`/restaurant/tabs/${encodeURIComponent(tabId)}/kitchen-print`, {
+        method: 'POST',
+        json: {},
+      }),
     onSuccess: (res) => {
       void qc.invalidateQueries({ queryKey: ['restaurant', 'tab', tabId] });
       const ids = res.printedItemIds ?? [];
@@ -143,7 +146,22 @@ export function RestaurantTabPage() {
         setToast('Nenhum item novo para a cozinha.');
         return;
       }
-      const qs = `?itens=${encodeURIComponent(ids.join(','))}`;
+      if (res.dispatched) {
+        const names = (res.stationNames ?? []).filter(Boolean);
+        const label =
+          names.length > 1
+            ? names.join(', ')
+            : res.stationName || names[0] || 'estação';
+        setToast(`Enviado para a cozinha (${label}).`);
+        return;
+      }
+      if (!canPrintHere()) {
+        setToast(
+          'Nenhuma estação de impressão online. Configure em Configurações → Impressão ou use o app desktop na cozinha.',
+        );
+        return;
+      }
+      const qs = `?itens=${encodeURIComponent(ids.join(','))}&autoprint=1`;
       window.open(`/salao/comanda/${tabId}/cozinha${qs}`, '_blank', 'noopener,noreferrer');
     },
     onError: (e: Error) => setToast(e.message),
@@ -203,7 +221,7 @@ export function RestaurantTabPage() {
 
   useEffect(() => {
     if (!toast) return;
-    const t = window.setTimeout(() => setToast(null), 2800);
+    const t = window.setTimeout(() => setToast(null), 4500);
     return () => window.clearTimeout(t);
   }, [toast]);
 

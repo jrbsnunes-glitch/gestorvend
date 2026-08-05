@@ -1248,3 +1248,57 @@ model ServiceTabItem {
   @@index([tabId, status])
   @@index([variantId])
 }
+
+/// Tipo de ticket na fila de impressão local (agente desktop).
+enum PrintJobKind {
+  KITCHEN
+  RECEIPT
+  PRECHECK
+}
+
+enum PrintJobStatus {
+  PENDING
+  CLAIMED
+  DONE
+  ERROR
+  CANCELLED
+}
+
+/// Estação de impressão (PC com app desktop na cozinha/caixa).
+model PrintStation {
+  id         String     @id @default(uuid())
+  name       String     @db.VarChar(120)
+  /// Hash bcrypt do segredo (token = id.secret).
+  secretHash String     @db.VarChar(120)
+  /// Setores atendidos, CSV (ex.: COZINHA,BAR).
+  sectors    String     @db.VarChar(255) @default("COZINHA")
+  enabled    Boolean    @default(true)
+  lastSeenAt DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  jobs       PrintJob[]
+}
+
+/// Job de impressão consumido pelo agente local.
+model PrintJob {
+  id         String         @id @default(uuid())
+  kind       PrintJobKind
+  sector     String         @db.VarChar(32)
+  status     PrintJobStatus @default(PENDING)
+  payload    Json
+  copies     Int            @default(1)
+  attempts   Int            @default(0)
+  stationId  String?
+  station    PrintStation?  @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  tabId      String?
+  claimedAt  DateTime?
+  printedAt  DateTime?
+  error      String?        @db.VarChar(1000)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@index([status, createdAt])
+  @@index([sector, status])
+  @@index([tabId])
+  @@index([stationId])
+}

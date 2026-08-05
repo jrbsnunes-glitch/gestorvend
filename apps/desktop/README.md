@@ -35,6 +35,11 @@ O instalador sai em `apps/desktop/out/GestorVend Setup 1.0.0.exe`.
 
 > Sem certificado de assinatura de código, o Windows SmartScreen pode exibir um aviso na primeira instalação.
 
-## Impressão silenciosa
+## Impressão de cozinha (agente)
 
-O preload expõe `window.gestorvend.printSilent()` para uso futuro no cupom/cozinha via `webContents.print({ silent: true })`.
+1. No web: **Configurações → Impressão** → criar estação e copiar o token.
+2. No app desktop: menu **GestorVend → Estação de impressão…** → colar o token, escolher a impressora do Windows por setor e salvar.
+3. O agente faz poll em `/api/printing/agent/poll` a cada ~3 s e imprime silenciosamente (`deviceName`).
+4. No celular/tablet do garçom, **Imprimir cozinha** só enfileira o job — não abre diálogo de impressão.
+
+Fallback: se não houver estação para o setor, o PC (não-mobile) ainda pode abrir o ticket no navegador com `?autoprint=1`.

@@ -20,6 +20,7 @@ import './pages/restaurant/restaurant.css';
 import { CashPrintPage } from './pages/CashPrintPage';
 import { CashPrintItemsPage } from './pages/CashPrintItemsPage';
 import { CompanyPage } from './pages/CompanyPage';
+import { PrintStationsPage } from './pages/PrintStationsPage';
 import { CustomersPage } from './pages/CustomersPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { FinancePage } from './pages/FinancePage';
@@ -278,6 +279,7 @@ function AppInner() {
           <Route path="balanco/relatorios" element={<FinancialOverviewReportsPage />} />
           <Route path="balanco/plano-contas" element={<ReferentialChartPage />} />
           <Route path="empresa" element={<CompanyPage />} />
+          <Route path="configuracoes/impressao" element={<PrintStationsPage />} />
           <Route path="usuarios" element={<UsersPage />} />
           <Route
             path="logs"

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { canPrintHere } from '../../lib/print-station';
 import './restaurant.css';
 import './kitchen-print.css';
 
@@ -31,6 +32,7 @@ export function RestaurantKitchenPrintPage() {
   const { tabId = '' } = useParams();
   const [searchParams] = useSearchParams();
   const printedRef = useRef(false);
+  const wantAutoprint = searchParams.get('autoprint') === '1';
   const onlyIds = useMemo(() => {
     const raw = searchParams.get('itens') ?? searchParams.get('ids') ?? '';
     return new Set(
@@ -65,11 +67,11 @@ export function RestaurantKitchenPrintPage() {
     if (onlyIds.size > 0) {
       return active.filter((i) => onlyIds.has(i.id));
     }
-    // Fallback: só o que ainda não tinha sido impresso (ou recém marcado).
     return active.filter((i) => !i.kitchenPrintedAt);
   }, [tab?.items, onlyIds]);
 
   useEffect(() => {
+    if (!wantAutoprint || !canPrintHere()) return;
     if (!tabQ.data || printedRef.current) return;
     if (items.length === 0) return;
     printedRef.current = true;
@@ -77,7 +79,7 @@ export function RestaurantKitchenPrintPage() {
       runPrint();
     }, 400);
     return () => window.clearTimeout(t);
-  }, [tabQ.data, items.length, runPrint]);
+  }, [tabQ.data, items.length, runPrint, wantAutoprint]);
 
   return (
     <div>

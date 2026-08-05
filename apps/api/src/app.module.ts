@@ -21,6 +21,7 @@ import { UsersModule } from './users/users.module';
 import { WaChatModule } from './wachat/wachat.module';
 import { ActivityLogsModule } from './activity-logs/activity-logs.module';
 import { RestaurantModule } from './restaurant/restaurant.module';
+import { PrintingModule } from './printing/printing.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { RestaurantModule } from './restaurant/restaurant.module';
     UsersModule,
     WaChatModule,
     RestaurantModule,
+    PrintingModule,
     ActivityLogsModule,
   ],
   controllers: [HealthController],

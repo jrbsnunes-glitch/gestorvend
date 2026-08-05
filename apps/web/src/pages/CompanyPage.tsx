@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { api, apiUpload } from '../lib/api';
 import { resolveCompanyAssetUrl } from '../lib/company-branding';
@@ -846,7 +847,8 @@ export function CompanyPage() {
             <h2 className="company-form__h">Restaurante</h2>
             <p className="company-form__hint">
               Requer plano <strong>RESTAURANT</strong> no portal. Ativa salão/comandas, pesagem e
-              impressão de cozinha.
+              impressão de cozinha. Para estações do app desktop (fila da cozinha), abra{' '}
+              <Link to="/configuracoes/impressao">Impressão</Link>.
             </p>
             <div className="field">
               <label htmlFor="c-rest-enabled" style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
