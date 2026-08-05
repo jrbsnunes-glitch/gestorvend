@@ -48,9 +48,27 @@ model Company {
   scaleHint String?
   /// Texto livre (impressora de cozinha) — lembrete para TI.
   kitchenPrinterHint String?
+  /// Taxa de serviço (salão/comanda).
+  serviceFeeEnabled Boolean @default(false)
+  serviceFeeMode    RestaurantFeeMode @default(PERCENT)
+  serviceFeeValue   Decimal @default(0) @db.Decimal(14, 4)
+  /// Couvert (por pessoa quando FIXED).
+  couvertEnabled Boolean @default(false)
+  couvertMode    RestaurantFeeMode @default(FIXED)
+  couvertValue   Decimal @default(0) @db.Decimal(14, 4)
+  /// Taxa / gorjeta do garçom (acréscimo na conta).
+  waiterTipEnabled Boolean @default(false)
+  waiterTipMode    RestaurantFeeMode @default(PERCENT)
+  waiterTipValue   Decimal @default(0) @db.Decimal(14, 4)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   fiscalIssuerSettings FiscalIssuerSettings?
+}
+
+/// Modo de cobrança das taxas de salão (% sobre itens ou valor fixo em R$).
+enum RestaurantFeeMode {
+  PERCENT
+  FIXED
 }
 
 /// Origem do peso no PDV / self-service.
@@ -750,6 +768,12 @@ model Sale {
   discount      Decimal        @default(0) @db.Decimal(14, 2)
   /// Acréscimo comercial no total da venda (NFC-e/NF-e: vOutro — outras despesas acessórias).
   surcharge     Decimal        @default(0) @db.Decimal(14, 2)
+  /// Taxa de serviço aplicada (R$) — salão; soma entra em surcharge/vOutro.
+  serviceFeeAmount Decimal     @default(0) @db.Decimal(14, 2)
+  /// Couvert aplicado (R$).
+  couvertAmount    Decimal     @default(0) @db.Decimal(14, 2)
+  /// Taxa do garçom aplicada (R$).
+  waiterTipAmount  Decimal     @default(0) @db.Decimal(14, 2)
   /// Frete (vFrete) — soma no total da NF conforme regras do leiaute.
   freightAmount Decimal        @default(0) @db.Decimal(14, 2)
   /// modFrete SEFAZ: 0=emitente (CIF), 1=destinatário (FOB), 9=sem frete.
@@ -1185,6 +1209,8 @@ model ServiceTab {
   openedBy    User?            @relation("ServiceTabOpenedBy", fields: [openedById], references: [id], onDelete: SetNull)
   customerId  String?
   customer    Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  /// Número de pessoas (couvert por cabeça).
+  guestCount  Int              @default(1)
   notes       String?
   saleId      String?          @unique
   sale        Sale?            @relation(fields: [saleId], references: [id], onDelete: SetNull)

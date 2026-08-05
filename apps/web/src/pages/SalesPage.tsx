@@ -7,7 +7,7 @@ import {
   useState,
   type KeyboardEvent,
 } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { PermissionPasswordModal } from '../components/PermissionPasswordModal';
@@ -17,7 +17,8 @@ import {
   companyUsesCustomLogo,
   useCompanyBranding,
 } from '../lib/company-branding';
-import { isAdmin, isManager, profileLabel, type UserProfile } from '../lib/auth';
+import { hasRestaurantPlan, isAdmin, isManager, profileLabel, type UserProfile } from '../lib/auth';
+import { calcRestaurantFees, type RestaurantFeesCompany } from '../lib/restaurant-fees';
 import {
   hasUserPermission,
   type UserPermissionsResponse,
@@ -49,6 +50,8 @@ import {
 import './pos.css';
 
 const GV_POS_CHECKOUT_FAILURE_KEY = 'gv_pos_checkout_failure_v1';
+/** Comanda pendente de cobrança no PDV (sobrevive ao gateway de abertura de caixa). */
+const GV_PDV_COMANDA_KEY = 'gv_pdv_comanda';
 
 /* ----------------------------------------------------------------------------
  * Tipos de domínio
@@ -157,6 +160,8 @@ type CartLine = {
   minStock: number;
   /** Unidade tributável — controla qty fracionada no PDV. */
   taxUnit: string;
+  /** Item veio da comanda: estoque já baixado no salão — não alertar no PDV. */
+  fromComanda?: boolean;
 };
 
 type PaymentKind = 'CASH' | 'CARD' | 'PIX' | 'CREDIT' | 'OTHER';
@@ -287,9 +292,21 @@ function fiscalDocumentKindPt(kind: string): string {
  * Página principal — decide entre Gateway de Caixa e PDV
  * ------------------------------------------------------------------------- */
 
+function peekPendingPdvComandaId(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('comanda')?.trim();
+    if (fromUrl) return fromUrl;
+    return sessionStorage.getItem(GV_PDV_COMANDA_KEY)?.trim() || '';
+  } catch {
+    return '';
+  }
+}
+
 export function SalesPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
 
   const [localFailBump, setLocalFailBump] = useState(0);
 
@@ -386,6 +403,25 @@ export function SalesPage() {
 
   const operator = operatorQ.data ?? null;
 
+  const pendingComandaId =
+    searchParams.get('comanda')?.trim() || peekPendingPdvComandaId();
+
+  /**
+   * Cobrar no PDV: se já há caixa aberto e veio comanda na URL/storage,
+   * entra direto no PDV (sem parar no gateway) para carregar a comanda.
+   */
+  useEffect(() => {
+    if (entered || gatewayBlocked || sessionQ.isLoading) return;
+    if (!activeSession || !pendingComandaId) return;
+    setEntered(true);
+  }, [
+    entered,
+    gatewayBlocked,
+    sessionQ.isLoading,
+    activeSession,
+    pendingComandaId,
+  ]);
+
   if (sessionQ.isLoading) {
     return <PosGatewayLoading operator={operator} onExit={exitToDashboard} />;
   }
@@ -398,6 +434,7 @@ export function SalesPage() {
         operator={operator}
         isFetching={sessionQ.isFetching}
         notice={gatewayNotice}
+        pendingComanda={Boolean(pendingComandaId)}
         isManagerView={managerView}
         openSessions={openSessionsQ.data ?? []}
         currentUserId={operator?.id ?? null}
@@ -528,6 +565,7 @@ function PosGateway({
   operator,
   isFetching,
   notice,
+  pendingComanda,
   isManagerView,
   openSessions,
   currentUserId,
@@ -544,6 +582,7 @@ function PosGateway({
   operator: Operator | null;
   isFetching: boolean;
   notice: string | null;
+  pendingComanda?: boolean;
   isManagerView: boolean;
   openSessions: OpenSessionSummary[];
   currentUserId: string | null;
@@ -590,6 +629,29 @@ function PosGateway({
             Para começar a registrar vendas, abra um novo caixa ou continue o
             atendimento em um caixa já aberto.
           </p>
+
+          {pendingComanda && (
+            <div
+              role="status"
+              style={{
+                marginBottom: '1rem',
+                padding: '0.85rem 1rem',
+                borderRadius: 10,
+                background: 'rgba(34, 197, 94, 0.18)',
+                border: '1px solid rgba(134, 239, 172, 0.45)',
+                color: '#bbf7d0',
+                fontSize: '0.92rem',
+                lineHeight: 1.45,
+              }}
+            >
+              <strong style={{ display: 'block', marginBottom: '0.25rem' }}>
+                Cobrança de comanda pendente
+              </strong>
+              {hasOpen
+                ? 'Entre no PDV para carregar a comanda e finalizar com F2.'
+                : 'Abra o caixa abaixo; a comanda será carregada automaticamente no PDV.'}
+            </div>
+          )}
 
           {gatewayBlocked && gatewayBlockMessages.length > 0 && (
             <div
@@ -644,7 +706,9 @@ function PosGateway({
               </div>
               <h3>Continuar com caixa aberto</h3>
               <p className="pos-gateway-card-desc">
-                Retomar o atendimento no caixa que ficou aberto do último uso.
+                {pendingComanda
+                  ? 'Entrar no PDV para cobrar a comanda do salão (F2).'
+                  : 'Retomar o atendimento no caixa que ficou aberto do último uso.'}
               </p>
 
               {session ? (
@@ -682,7 +746,11 @@ function PosGateway({
                         : 'Não há caixa aberto'
                   }
                 >
-                  {isFetching && !hasOpen ? 'Verificando…' : 'Entrar no PDV'}
+                  {isFetching && !hasOpen
+                    ? 'Verificando…'
+                    : pendingComanda
+                      ? 'Cobrar comanda no PDV'
+                      : 'Entrar no PDV'}
                 </button>
               </div>
             </article>
@@ -850,6 +918,7 @@ function PosScreen({
   onCashClosed: () => void;
 }) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
 
   /* --- estado do carrinho atual --- */
@@ -862,6 +931,21 @@ function PosScreen({
   const [surcharge, setSurcharge] = useState(0);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [payments, setPayments] = useState<CartPayment[]>([]);
+  /** Comanda do salão sendo cobrada neste PDV (fecha após a venda). */
+  const [serviceTab, setServiceTab] = useState<{
+    id: string;
+    number: number;
+    label: string;
+    guestCount: number;
+  } | null>(null);
+  const serviceTabRef = useRef(serviceTab);
+  serviceTabRef.current = serviceTab;
+  const serviceTabLoadedRef = useRef<string | null>(null);
+  const [tabLookup, setTabLookup] = useState('');
+  const [tabLookupBusy, setTabLookupBusy] = useState(false);
+  const [tabCandidates, setTabCandidates] = useState<
+    Array<{ id: string; number: number; tableLabel: string; itemCount: number; total: number }>
+  >([]);
 
   /* --- estado da UI --- */
   const [scannerValue, setScannerValue] = useState('');
@@ -939,6 +1023,7 @@ function PosScreen({
   }
 
   function applySurcharge(value: number) {
+    if (serviceTabRef.current) return; // taxas da comanda vêm da empresa
     setSurcharge(Math.max(0, value));
   }
 
@@ -956,16 +1041,22 @@ function PosScreen({
   const companyQ = useQuery({
     queryKey: ['company'],
     queryFn: () =>
-      api<{
-        saleReceiptAutoPrint?: boolean;
-        saleReceiptPrinterHint?: string | null;
-        pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED';
-        scaleMode?: ScaleMode;
-        scaleAutoConfirmMs?: number;
-        barcodeWeightPattern?: string | null;
-      }>('/company'),
+      api<
+        RestaurantFeesCompany & {
+          saleReceiptAutoPrint?: boolean;
+          saleReceiptPrinterHint?: string | null;
+          pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED';
+          scaleMode?: ScaleMode;
+          scaleAutoConfirmMs?: number;
+          barcodeWeightPattern?: string | null;
+          restaurantModuleEnabled?: boolean;
+        }
+      >('/company'),
     staleTime: 60_000,
   });
+
+  const restaurantPdv =
+    Boolean(companyQ.data?.restaurantModuleEnabled) || hasRestaurantPlan();
 
   const scaleMode = (companyQ.data?.scaleMode ?? 'MANUAL') as ScaleMode;
   const scale = usePosScale({
@@ -1038,12 +1129,203 @@ function PosScreen({
     }
   }, [toast]);
 
+  /* --- carregar comanda do salão (?comanda=id ou sessionStorage) --- */
+  type ServiceTabPayload = {
+    id: string;
+    number: number;
+    status: string;
+    guestCount?: number;
+    customer?: { id: string; name: string } | null;
+    table: { code: string; label: string | null; area: { name: string } } | null;
+    items: Array<{
+      status: string;
+      quantity: string | number;
+      unitPrice: string | number;
+      variant: {
+        id: string;
+        sku: string;
+        barcode: string | null;
+        product: { name: string; taxUnit: string | null };
+      };
+    }>;
+  };
+
+  function applyServiceTabToCart(tab: ServiceTabPayload) {
+    if (tab.status !== 'OPEN') {
+      setToast({ kind: 'err', text: `Comanda #${tab.number} não está aberta.` });
+      return false;
+    }
+    const active = tab.items.filter((i) => i.status !== 'CANCELLED');
+    if (!active.length) {
+      setToast({ kind: 'err', text: `Comanda #${tab.number} sem itens.` });
+      return false;
+    }
+
+    const byVariant = new Map<string, CartLine>();
+    for (const it of active) {
+      const taxUnit = normalizeTaxUnit(it.variant.product.taxUnit);
+      const qty = roundCartQty(Number(it.quantity), taxUnit);
+      const unitPrice = Number(it.unitPrice);
+      const prev = byVariant.get(it.variant.id);
+      if (prev) {
+        prev.quantity = roundCartQty(prev.quantity + qty, taxUnit);
+      } else {
+        byVariant.set(it.variant.id, {
+          variantId: it.variant.id,
+          productName: it.variant.product.name,
+          sku: it.variant.sku,
+          barcode: it.variant.barcode,
+          unitPrice,
+          quantity: qty,
+          stockTotal: 0,
+          minStock: 0,
+          taxUnit,
+          fromComanda: true,
+        });
+      }
+    }
+
+    setLines([...byVariant.values()]);
+    setQtyDraft({});
+    setDiscount(0);
+    setPayments([]);
+    setTabCandidates([]);
+    if (tab.customer) {
+      setCustomer({ id: tab.customer.id, name: tab.customer.name });
+    } else {
+      setCustomer(null);
+    }
+    const tableLabel = tab.table
+      ? `${tab.table.area.name} / ${tab.table.label || tab.table.code}`
+      : 'sem mesa';
+    const guests = Math.max(1, Math.floor(Number(tab.guestCount ?? 1)) || 1);
+    setServiceTab({
+      id: tab.id,
+      number: tab.number,
+      label: tableLabel,
+      guestCount: guests,
+    });
+    // Taxas da comanda: calculadas a partir da empresa + pessoas (F9 bloqueado).
+    const itemsSub = [...byVariant.values()].reduce((s, l) => s + l.unitPrice * l.quantity, 0);
+    const fees = calcRestaurantFees(companyQ.data, itemsSub, guests);
+    setSurcharge(fees.feesTotal);
+    serviceTabLoadedRef.current = tab.id;
+    try {
+      sessionStorage.setItem(GV_PDV_COMANDA_KEY, tab.id);
+    } catch {
+      /* ignore */
+    }
+    setPaymentMenuOpen(false);
+    setToast({
+      kind: 'ok',
+      text: `Comanda #${tab.number} carregada (${tableLabel}). Confira os itens e use F2 para pagar.`,
+    });
+    return true;
+  }
+
+  async function loadServiceTabById(tabId: string) {
+    const tab = await api<ServiceTabPayload>(
+      `/restaurant/tabs/${encodeURIComponent(tabId)}`,
+    );
+    applyServiceTabToCart(tab);
+  }
+
+  async function lookupServiceTab(raw: string) {
+    const q = raw.trim();
+    if (!q) return;
+    setTabLookupBusy(true);
+    setTabCandidates([]);
+    try {
+      const res = await api<{
+        match: string;
+        tab: ServiceTabPayload | null;
+        candidates: Array<{
+          id: string;
+          number: number;
+          tableLabel: string;
+          itemCount: number;
+          total: number;
+        }>;
+      }>(`/restaurant/tabs/lookup?q=${encodeURIComponent(q)}`);
+      if (res.tab) {
+        applyServiceTabToCart(res.tab);
+        setTabLookup('');
+        return;
+      }
+      if (res.candidates?.length) {
+        setTabCandidates(res.candidates);
+        setToast({
+          kind: 'ok',
+          text: `Mesa com ${res.candidates.length} comandas abertas — escolha uma.`,
+        });
+        return;
+      }
+      setToast({ kind: 'err', text: `Nenhuma comanda encontrada para "${q}".` });
+    } catch (e) {
+      setToast({
+        kind: 'err',
+        text: e instanceof Error ? e.message : 'Falha ao buscar comanda',
+      });
+    } finally {
+      setTabLookupBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    let tabId = searchParams.get('comanda')?.trim() || '';
+    if (!tabId) {
+      try {
+        tabId = sessionStorage.getItem(GV_PDV_COMANDA_KEY)?.trim() || '';
+      } catch {
+        tabId = '';
+      }
+    }
+    if (!tabId) return;
+    if (serviceTabLoadedRef.current === tabId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        await loadServiceTabById(tabId);
+      } catch (e) {
+        if (!cancelled) {
+          serviceTabLoadedRef.current = null;
+          try {
+            sessionStorage.removeItem(GV_PDV_COMANDA_KEY);
+          } catch {
+            /* ignore */
+          }
+          setToast({
+            kind: 'err',
+            text: e instanceof Error ? e.message : 'Falha ao carregar comanda',
+          });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   /* --- totais derivados --- */
 
   const subtotal = useMemo(
     () => lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0),
     [lines],
   );
+  const restaurantFees = useMemo(() => {
+    if (!serviceTab) return null;
+    return calcRestaurantFees(companyQ.data, subtotal, serviceTab.guestCount);
+  }, [serviceTab, companyQ.data, subtotal]);
+
+  // Comanda: surcharge = taxas (serviço+couvert+garçom); PDV balcão: F9 livre.
+  useEffect(() => {
+    if (!serviceTab || !restaurantFees) return;
+    setSurcharge(restaurantFees.feesTotal);
+  }, [serviceTab, restaurantFees]);
+
   const total = Math.max(0, subtotal - discount + surcharge);
   const paidSum = useMemo(() => payments.reduce((s, p) => s + p.amount, 0), [payments]);
   const remaining = Math.max(0, total - paidSum);
@@ -1068,7 +1350,15 @@ function PosScreen({
           customerId: customer?.id ?? null,
           discount,
           surcharge,
+          serviceFeeAmount: restaurantFees?.serviceFee ?? 0,
+          couvertAmount: restaurantFees?.couvert ?? 0,
+          waiterTipAmount: restaurantFees?.waiterTip ?? 0,
+          guestCount: serviceTabRef.current?.guestCount,
           permissionPassword: permissionPassword || undefined,
+          source: serviceTabRef.current ? 'RESTAURANT' : undefined,
+          deductStock: serviceTabRef.current ? false : undefined,
+          externalRef: serviceTabRef.current ? `tab:${serviceTabRef.current.number}` : undefined,
+          notes: serviceTabRef.current ? `Comanda #${serviceTabRef.current.number}` : undefined,
           items: lines.map((l) => ({
             variantId: l.variantId,
             quantity: l.quantity,
@@ -1083,10 +1373,32 @@ function PosScreen({
           })),
         },
       }),
-    onSuccess: (sale) => {
+    onSuccess: async (sale) => {
       sessionStorage.removeItem(GV_POS_CHECKOUT_FAILURE_KEY);
       setPermModal(null);
       setPermModalError(null);
+      const tabClosing = serviceTabRef.current;
+      if (tabClosing) {
+        try {
+          await api(`/restaurant/tabs/${encodeURIComponent(tabClosing.id)}/close`, {
+            method: 'POST',
+            json: { saleId: sale.id },
+          });
+          void qc.invalidateQueries({ queryKey: ['restaurant'] });
+          try {
+            sessionStorage.removeItem(GV_PDV_COMANDA_KEY);
+          } catch {
+            /* ignore */
+          }
+        } catch (e) {
+          setToast({
+            kind: 'err',
+            text:
+              `Venda #${sale.number} ok, mas a comanda #${tabClosing.number} não fechou: ` +
+              (e instanceof Error ? e.message : 'erro'),
+          });
+        }
+      }
       qc.invalidateQueries({ queryKey: ['cash', 'pdv-readiness'] });
       qc.invalidateQueries({ queryKey: ['sales'] });
       qc.invalidateQueries({ queryKey: ['reports', 'sales-summary'] });
@@ -1101,7 +1413,12 @@ function PosScreen({
       } else {
         setReceiptPrompt({ id: sale.id, number: sale.number });
       }
-      setToast({ kind: 'ok', text: `Venda #${sale.number} concluída ${formatBRL(concluded)}` });
+      setToast({
+        kind: 'ok',
+        text: tabClosing
+          ? `Venda #${sale.number} · comanda #${tabClosing.number} fechada ${formatBRL(concluded)}`
+          : `Venda #${sale.number} concluída ${formatBRL(concluded)}`,
+      });
       scannerRef.current?.focus();
     },
     onError: (e: Error) => {
@@ -1359,6 +1676,20 @@ function PosScreen({
     setPayments([]);
     setScannerValue('');
     setSuggestOpen(false);
+    setServiceTab(null);
+    setTabCandidates([]);
+    setTabLookup('');
+    serviceTabLoadedRef.current = null;
+    try {
+      sessionStorage.removeItem(GV_PDV_COMANDA_KEY);
+    } catch {
+      /* ignore */
+    }
+    if (searchParams.get('comanda')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('comanda');
+      setSearchParams(next, { replace: true });
+    }
   }
 
   function closeCustomerDialog() {
@@ -1483,6 +1814,7 @@ function PosScreen({
           setPaymentMenuOpen(true);
         }
       } else if (ev.key === 'F4') {
+        if (serviceTab) return; // conferência: cliente só após ir ao pagamento
         ev.preventDefault();
         openCustomerDialog();
       } else if (ev.key === 'F8') {
@@ -1491,9 +1823,11 @@ function PosScreen({
         if (v != null) applyDiscount(parseDecimal(v));
       } else if (ev.key === 'F9') {
         ev.preventDefault();
+        if (serviceTab) return; // taxas da comanda não editáveis no PDV
         const v = prompt('Acréscimo em R$ no total da venda', String(surcharge));
         if (v != null) applySurcharge(parseDecimal(v));
       } else if (ev.key === 'Escape' && lines.length > 0) {
+        if (serviceTab) return; // use "Cancelar cobrança" no aviso amarelo
         if (confirm('Cancelar venda atual e limpar carrinho?')) resetSale();
       }
     }
@@ -1510,6 +1844,7 @@ function PosScreen({
     lines.length,
     total,
     paymentMenuOpen,
+    serviceTab,
   ]);
 
   function tryExit() {
@@ -1558,6 +1893,37 @@ function PosScreen({
             </button>
             <button type="button" className="pos-btn pos-btn-ghost" onClick={() => setReceiptPrompt(null)}>
               Ocultar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {serviceTab && (
+        <div className="pos-receipt-prompt no-print" role="status" style={{ background: '#fef3c7' }}>
+          <span>
+            Conferência da <strong>comanda #{serviceTab.number}</strong>
+            {serviceTab.label ? ` · ${serviceTab.label}` : ''} — revise os itens abaixo.
+            Depois <strong>F2</strong> (ou o botão) para pagar; a mesa fecha ao concluir.
+          </span>
+          <div className="pos-receipt-prompt-actions">
+            <button
+              type="button"
+              className="pos-btn pos-btn-finish"
+              disabled={lines.length === 0}
+              onClick={() => setPaymentMenuOpen(true)}
+            >
+              Ir para pagamento (F2)
+            </button>
+            <button
+              type="button"
+              className="pos-btn pos-btn-ghost"
+              onClick={() => {
+                if (confirm('Desistir desta comanda no PDV? Os itens da comanda no salão permanecem abertos.')) {
+                  resetSale();
+                }
+              }}
+            >
+              Cancelar cobrança
             </button>
           </div>
         </div>
@@ -1657,6 +2023,69 @@ function PosScreen({
               )}
             </div>
 
+            {restaurantPdv && (
+              <div className="pos-card" style={{ marginBottom: '0.65rem' }}>
+                <div className="pos-card-header">
+                  <h3 className="pos-card-title">Comanda / mesa</h3>
+                </div>
+                <div className="pos-card-body" style={{ paddingTop: '0.55rem' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <input
+                      className="pos-scanner-input"
+                      style={{ flex: '1 1 10rem', minWidth: 0 }}
+                      value={tabLookup}
+                      onChange={(e) => setTabLookup(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void lookupServiceTab(tabLookup);
+                        }
+                      }}
+                      placeholder="Nº da comanda ou código da mesa"
+                      inputMode="numeric"
+                      disabled={tabLookupBusy}
+                    />
+                    <button
+                      type="button"
+                      className="pos-btn pos-btn-finish"
+                      style={{ minHeight: 44 }}
+                      disabled={tabLookupBusy || !tabLookup.trim()}
+                      onClick={() => void lookupServiceTab(tabLookup)}
+                    >
+                      {tabLookupBusy ? 'Buscando…' : 'Carregar'}
+                    </button>
+                  </div>
+                  <p className="pos-scanner-hint" style={{ marginTop: '0.4rem' }}>
+                    Ex.: comanda <strong>12</strong> ou mesa <strong>01</strong> — Enter carrega para F2.
+                  </p>
+                  {tabCandidates.length > 0 && (
+                    <ul style={{ listStyle: 'none', margin: '0.5rem 0 0', padding: 0 }}>
+                      {tabCandidates.map((c) => (
+                        <li key={c.id} style={{ marginBottom: '0.35rem' }}>
+                          <button
+                            type="button"
+                            className="pos-btn pos-btn-ghost"
+                            style={{ width: '100%', justifyContent: 'space-between' }}
+                            onClick={() => void loadServiceTabById(c.id)}
+                          >
+                            <span>
+                              Comanda #{c.number} · {c.tableLabel} · {c.itemCount} itens
+                            </span>
+                            <strong>
+                              {c.total.toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              })}
+                            </strong>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="pos-card" style={{ flex: 1 }}>
               <div className="pos-card-header">
                 <h3 className="pos-card-title">
@@ -1700,7 +2129,9 @@ function PosScreen({
                       </thead>
                       <tbody>
                         {lines.map((l) => {
-                          const status = classifyStock(l.stockTotal, l.quantity, l.minStock);
+                          const status = l.fromComanda
+                            ? 'ok'
+                            : classifyStock(l.stockTotal, l.quantity, l.minStock);
                           const rowClass =
                             status === 'out' ? 'is-out' : status === 'low' ? 'is-low' : '';
                           const step = qtyStepForUnit(l.taxUnit);
@@ -1799,11 +2230,13 @@ function PosScreen({
                               </td>
                               <td>
                                 <span className={`pos-stock-pill ${status}`}>
-                                  {status === 'out'
-                                    ? 'Sem estoque'
-                                    : status === 'low'
-                                      ? `Baixo (${formatCartQty(l.stockTotal, l.taxUnit)} ${unitLbl})`
-                                      : `OK (${formatCartQty(l.stockTotal, l.taxUnit)} ${unitLbl})`}
+                                  {l.fromComanda
+                                    ? 'Comanda'
+                                    : status === 'out'
+                                      ? 'Sem estoque'
+                                      : status === 'low'
+                                        ? `Baixo (${formatCartQty(l.stockTotal, l.taxUnit)} ${unitLbl})`
+                                        : `OK (${formatCartQty(l.stockTotal, l.taxUnit)} ${unitLbl})`}
                                 </span>
                               </td>
                               <td>
@@ -1859,22 +2292,50 @@ function PosScreen({
                       />
                     </div>
                   </div>
-                  <div className="pos-totals-row">
-                    <span>
-                      Acréscimo <span className="pos-shortcut-key">F9</span>
-                    </span>
-                    <div className="pos-discount-row" style={{ width: 160 }}>
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={surcharge || ''}
-                        placeholder="0,00"
-                        onChange={(e) => applySurcharge(parseDecimal(e.target.value))}
-                        title="Outras despesas / acréscimo no total (+ vOutro)"
-                      />
+                  {serviceTab && restaurantFees ? (
+                    <>
+                      {restaurantFees.serviceFee > 0.005 ? (
+                        <div className="pos-totals-row">
+                          <span>Taxa de serviço</span>
+                          <strong>{formatBRL(restaurantFees.serviceFee)}</strong>
+                        </div>
+                      ) : null}
+                      {restaurantFees.couvert > 0.005 ? (
+                        <div className="pos-totals-row">
+                          <span>
+                            Couvert
+                            {serviceTab.guestCount > 1
+                              ? ` (${serviceTab.guestCount} pessoas)`
+                              : ''}
+                          </span>
+                          <strong>{formatBRL(restaurantFees.couvert)}</strong>
+                        </div>
+                      ) : null}
+                      {restaurantFees.waiterTip > 0.005 ? (
+                        <div className="pos-totals-row">
+                          <span>Taxa do garçom</span>
+                          <strong>{formatBRL(restaurantFees.waiterTip)}</strong>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div className="pos-totals-row">
+                      <span>
+                        Acréscimo <span className="pos-shortcut-key">F9</span>
+                      </span>
+                      <div className="pos-discount-row" style={{ width: 160 }}>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={surcharge || ''}
+                          placeholder="0,00"
+                          onChange={(e) => applySurcharge(parseDecimal(e.target.value))}
+                          title="Outras despesas / acréscimo no total (+ vOutro)"
+                        />
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <div className="pos-totals-divider" />
                   <div className="pos-total-big">
                     <span className="pos-total-big-label">Total</span>
@@ -1886,56 +2347,85 @@ function PosScreen({
           </div>
 
           {/* ---------- COLUNA DIREITA ---------- */}
-          <div className="pos-right">
-            <button
-              type="button"
-              className="pos-customer-btn"
-              onClick={openCustomerDialog}
-              title="Selecionar cliente (F4)"
+          <div
+            className={
+              serviceTab && !paymentMenuOpen
+                ? 'pos-right pos-right--conference'
+                : 'pos-right'
+            }
+          >
+            {serviceTab && !paymentMenuOpen ? (
+              <div className="pos-right-conference-veil" aria-live="polite">
+                <p>
+                  Conferência da comanda — revise os itens à esquerda.
+                  <br />
+                  Use <strong>Ir para pagamento</strong> no aviso amarelo ou{' '}
+                  <span className="pos-shortcut-key">F2</span>.
+                </p>
+              </div>
+            ) : null}
+            <div
+              className="pos-right-inner"
+              aria-hidden={Boolean(serviceTab && !paymentMenuOpen)}
             >
-              <span className="pos-customer-avatar" aria-hidden>
-                {customer ? customer.name.slice(0, 1).toUpperCase() : '🧍'}
-              </span>
-              <span style={{ flex: 1 }}>
-                {customer ? customer.name : 'Balcão (sem cliente)'}
-                <span className="pos-customer-meta" style={{ display: 'block' }}>
-                  Clique para alterar <span className="pos-shortcut-key">F4</span>
+              <button
+                type="button"
+                className="pos-customer-btn"
+                onClick={openCustomerDialog}
+                title="Selecionar cliente (F4)"
+                tabIndex={serviceTab && !paymentMenuOpen ? -1 : undefined}
+              >
+                <span className="pos-customer-avatar" aria-hidden>
+                  {customer ? customer.name.slice(0, 1).toUpperCase() : '🧍'}
                 </span>
-              </span>
-            </button>
+                <span style={{ flex: 1 }}>
+                  {customer ? customer.name : 'Balcão (sem cliente)'}
+                  <span className="pos-customer-meta" style={{ display: 'block' }}>
+                    Clique para alterar <span className="pos-shortcut-key">F4</span>
+                  </span>
+                </span>
+              </button>
 
-            <p className="pos-pay-later-hint" role="note">
-              As formas de pagamento aparecem após{' '}
-              <span className="pos-shortcut-key">F2</span> Finalizar venda ou no botão abaixo.
-            </p>
+              <p className="pos-pay-later-hint" role="note">
+                As formas de pagamento aparecem após{' '}
+                <span className="pos-shortcut-key">F2</span> Finalizar venda ou no botão abaixo.
+              </p>
 
-            <button
-              type="button"
-              className="pos-btn pos-btn-finish"
-              onClick={() => {
-                if (lines.length === 0 || total <= 0) return;
-                setPayments([]);
-                setPaymentMenuOpen(true);
-              }}
-              disabled={lines.length === 0 || total <= 0 || createSale.isPending}
-              title="Finalizar venda (F2)"
-            >
-              {createSale.isPending ? 'Salvando…' : 'Finalizar venda'}
-              <span className="pos-shortcut-key">F2</span>
-            </button>
+              <button
+                type="button"
+                className="pos-btn pos-btn-finish"
+                onClick={() => {
+                  if (lines.length === 0 || total <= 0) return;
+                  setPayments([]);
+                  setPaymentMenuOpen(true);
+                }}
+                disabled={
+                  lines.length === 0 ||
+                  total <= 0 ||
+                  createSale.isPending ||
+                  Boolean(serviceTab && !paymentMenuOpen)
+                }
+                title="Finalizar venda (F2)"
+                tabIndex={serviceTab && !paymentMenuOpen ? -1 : undefined}
+              >
+                {createSale.isPending ? 'Salvando…' : 'Finalizar venda'}
+                <span className="pos-shortcut-key">F2</span>
+              </button>
 
-            <button
-              type="button"
-              className="pos-btn pos-btn-danger"
-              onClick={() => {
-                if (lines.length === 0) return;
-                if (confirm('Cancelar venda atual?')) resetSale();
-              }}
-              disabled={lines.length === 0}
-            >
-              Cancelar venda
-              <span className="pos-shortcut-key">Esc</span>
-            </button>
+              <button
+                type="button"
+                className="pos-btn pos-btn-danger"
+                onClick={() => {
+                  if (lines.length === 0) return;
+                  if (confirm('Cancelar venda atual?')) resetSale();
+                }}
+                disabled={lines.length === 0 || Boolean(serviceTab && !paymentMenuOpen)}
+                tabIndex={serviceTab && !paymentMenuOpen ? -1 : undefined}
+              >
+                Cancelar venda
+                <span className="pos-shortcut-key">Esc</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -2523,6 +3013,8 @@ function PosScreen({
           subtotal={subtotal}
           discount={discount}
           surcharge={surcharge}
+          feeBreakdown={restaurantFees}
+          guestCount={serviceTab?.guestCount}
           itemsCount={lines.length}
           customerName={customer?.name ?? null}
           payments={payments}
@@ -2803,6 +3295,8 @@ function PaymentOverlay({
   subtotal,
   discount,
   surcharge,
+  feeBreakdown,
+  guestCount,
   itemsCount,
   customerName,
   payments,
@@ -2818,6 +3312,8 @@ function PaymentOverlay({
   subtotal: number;
   discount: number;
   surcharge: number;
+  feeBreakdown?: { serviceFee: number; couvert: number; waiterTip: number; feesTotal: number } | null;
+  guestCount?: number;
   itemsCount: number;
   customerName: string | null;
   payments: CartPayment[];
@@ -2953,7 +3449,23 @@ function PaymentOverlay({
         <div className="pos-payment-total">
           <span className="pos-payment-total-label">Total a pagar</span>
           <span className="pos-payment-total-value">{formatBRL(total)}</span>
-          {discount > 0 || surcharge > 0 ? (
+          {feeBreakdown && feeBreakdown.feesTotal > 0.005 ? (
+            <span className="pos-payment-total-detail">
+              Subtotal {formatBRL(subtotal)}
+              {discount > 0 ? ` · desconto ${formatBRL(discount)}` : ''}
+              {feeBreakdown.serviceFee > 0.005
+                ? ` · serviço ${formatBRL(feeBreakdown.serviceFee)}`
+                : ''}
+              {feeBreakdown.couvert > 0.005
+                ? ` · couvert ${formatBRL(feeBreakdown.couvert)}${
+                    guestCount && guestCount > 1 ? ` (${guestCount}p)` : ''
+                  }`
+                : ''}
+              {feeBreakdown.waiterTip > 0.005
+                ? ` · garçom ${formatBRL(feeBreakdown.waiterTip)}`
+                : ''}
+            </span>
+          ) : discount > 0 || surcharge > 0 ? (
             <span className="pos-payment-total-detail">
               Subtotal {formatBRL(subtotal)}
               {discount > 0 ? ` · desconto ${formatBRL(discount)}` : ''}

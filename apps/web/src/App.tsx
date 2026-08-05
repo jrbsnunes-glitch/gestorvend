@@ -10,7 +10,7 @@ import {
   scheduleAccessTokenRefresh,
 } from './lib/api';
 import { isAdmin } from './lib/auth';
-import { hasRestaurantPlan } from './lib/auth';
+import { hasRestaurantPlan, isWaiter } from './lib/auth';
 import { CashPage } from './pages/CashPage';
 import { RestaurantFloorPage } from './pages/restaurant/RestaurantFloorPage';
 import { RestaurantTabPage } from './pages/restaurant/RestaurantTabPage';
@@ -54,6 +54,8 @@ import { StockFechamentoPage } from './pages/stock/StockFechamentoPage';
 import { StockLocaisPage } from './pages/stock/StockLocaisPage';
 import { StockMovimentosPage } from './pages/stock/StockMovimentosPage';
 import { StockMovPrintPage } from './pages/stock/StockMovPrintPage';
+import { StockInventorySummaryPrintPage } from './pages/stock/StockInventorySummaryPrintPage';
+import { StockInventoryDivergencePrintPage } from './pages/stock/StockInventoryDivergencePrintPage';
 import { PortalAdminApp } from './portal/PortalAdminApp';
 import { StockNfeInboxPage } from './pages/stock/StockNfeInboxPage';
 import { StockPainelPage } from './pages/stock/StockPainelPage';
@@ -84,6 +86,13 @@ function RequireAdmin({ children }: { children: ReactNode }) {
 function RequireRestaurant({ children }: { children: ReactNode }) {
   const allowed = useMemo(() => hasRestaurantPlan(), []);
   if (!allowed) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+/** Garçom não opera PDV/caixa — redireciona para o Salão. */
+function BlockWaiterFromPdv({ children }: { children: ReactNode }) {
+  const blocked = useMemo(() => isWaiter(), []);
+  if (blocked) return <Navigate to="/salao" replace />;
   return <>{children}</>;
 }
 
@@ -155,7 +164,14 @@ function AppInner() {
           O próprio shell do PDV oferece um botão "Sair" que devolve o
           usuário ao Dashboard.
         */}
-        <Route path="vendas" element={<SalesPage />} />
+        <Route
+          path="vendas"
+          element={
+            <BlockWaiterFromPdv>
+              <SalesPage />
+            </BlockWaiterFromPdv>
+          }
+        />
         <Route path="vendas/impressao" element={<SaleReceiptPrintPage />} />
         <Route
           path="salao/comanda/:tabId/cozinha"
@@ -174,6 +190,14 @@ function AppInner() {
         <Route path="caixa/impressao" element={<CashPrintPage />} />
         <Route path="caixa/impressao/itens" element={<CashPrintItemsPage />} />
         <Route path="estoque/movimentos/impressao" element={<StockMovPrintPage />} />
+        <Route
+          path="estoque/inventario/relatorio/resumo"
+          element={<StockInventorySummaryPrintPage />}
+        />
+        <Route
+          path="estoque/inventario/relatorio/divergencias"
+          element={<StockInventoryDivergencePrintPage />}
+        />
         <Route path="produtos/relatorio/movimentacao" element={<ProductReportMovementPrintPage />} />
         <Route path="produtos/relatorio/giro" element={<ProductReportTurnoverPrintPage />} />
         <Route path="produtos/relatorio/estoque-financeiro" element={<ProductReportStockPrintPage />} />

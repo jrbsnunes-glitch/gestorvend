@@ -32,9 +32,20 @@ type Company = {
   scaleAutoConfirmMs?: number;
   scaleHint?: string | null;
   kitchenPrinterHint?: string | null;
+  serviceFeeEnabled?: boolean;
+  serviceFeeMode?: 'PERCENT' | 'FIXED';
+  serviceFeeValue?: string | number | null;
+  couvertEnabled?: boolean;
+  couvertMode?: 'PERCENT' | 'FIXED';
+  couvertValue?: string | number | null;
+  waiterTipEnabled?: boolean;
+  waiterTipMode?: 'PERCENT' | 'FIXED';
+  waiterTipValue?: string | number | null;
 };
 
 type FormState = Omit<Company, 'id'>;
+
+type FeeMode = 'PERCENT' | 'FIXED';
 
 const EMPTY_FORM: FormState = {
   legalName: '',
@@ -59,6 +70,15 @@ const EMPTY_FORM: FormState = {
   scaleAutoConfirmMs: 700,
   scaleHint: '',
   kitchenPrinterHint: '',
+  serviceFeeEnabled: false,
+  serviceFeeMode: 'PERCENT',
+  serviceFeeValue: 0,
+  couvertEnabled: false,
+  couvertMode: 'FIXED',
+  couvertValue: 0,
+  waiterTipEnabled: false,
+  waiterTipMode: 'PERCENT',
+  waiterTipValue: 0,
 };
 
 function toForm(c: Company): FormState {
@@ -85,6 +105,15 @@ function toForm(c: Company): FormState {
     scaleAutoConfirmMs: c.scaleAutoConfirmMs ?? 700,
     scaleHint: c.scaleHint ?? '',
     kitchenPrinterHint: c.kitchenPrinterHint ?? '',
+    serviceFeeEnabled: Boolean(c.serviceFeeEnabled),
+    serviceFeeMode: c.serviceFeeMode === 'FIXED' ? 'FIXED' : 'PERCENT',
+    serviceFeeValue: Number(c.serviceFeeValue ?? 0),
+    couvertEnabled: Boolean(c.couvertEnabled),
+    couvertMode: c.couvertMode === 'PERCENT' ? 'PERCENT' : 'FIXED',
+    couvertValue: Number(c.couvertValue ?? 0),
+    waiterTipEnabled: Boolean(c.waiterTipEnabled),
+    waiterTipMode: c.waiterTipMode === 'FIXED' ? 'FIXED' : 'PERCENT',
+    waiterTipValue: Number(c.waiterTipValue ?? 0),
   };
 }
 
@@ -899,6 +928,92 @@ export function CompanyPage() {
                 />
               </div>
             </div>
+
+            {form.restaurantModuleEnabled ? (
+              <>
+                <h3 className="company-form__h" style={{ marginTop: '1.25rem', fontSize: '1rem' }}>
+                  Taxas da comanda
+                </h3>
+                <p className="company-form__hint">
+                  Aplicadas só no fluxo de salão/comanda. Couvert em R$ é por pessoa.
+                </p>
+                {(
+                  [
+                    {
+                      key: 'service' as const,
+                      title: 'Taxa de serviço',
+                      enabled: 'serviceFeeEnabled' as const,
+                      mode: 'serviceFeeMode' as const,
+                      value: 'serviceFeeValue' as const,
+                    },
+                    {
+                      key: 'couvert' as const,
+                      title: 'Couvert',
+                      enabled: 'couvertEnabled' as const,
+                      mode: 'couvertMode' as const,
+                      value: 'couvertValue' as const,
+                    },
+                    {
+                      key: 'waiter' as const,
+                      title: 'Taxa do garçom',
+                      enabled: 'waiterTipEnabled' as const,
+                      mode: 'waiterTipMode' as const,
+                      value: 'waiterTipValue' as const,
+                    },
+                  ] as const
+                ).map((block) => (
+                  <div
+                    key={block.key}
+                    className="form-row form-row--3"
+                    style={{
+                      alignItems: 'end',
+                      marginBottom: '0.75rem',
+                      padding: '0.65rem 0.75rem',
+                      border: '1px solid var(--color-border, #e2e8f0)',
+                      borderRadius: 8,
+                    }}
+                  >
+                    <div className="field">
+                      <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(form[block.enabled])}
+                          onChange={(e) => update(block.enabled, e.target.checked)}
+                        />
+                        <span>{block.title}</span>
+                      </label>
+                    </div>
+                    <div className="field">
+                      <label>Modo</label>
+                      <select
+                        value={(form[block.mode] as FeeMode) ?? 'PERCENT'}
+                        disabled={!form[block.enabled]}
+                        onChange={(e) => update(block.mode, e.target.value as FeeMode)}
+                      >
+                        <option value="PERCENT">Percentual (%)</option>
+                        <option value="FIXED">Valor fixo (R$)</option>
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>
+                        {(form[block.mode] as FeeMode) === 'FIXED' ? 'Valor (R$)' : 'Valor (%)'}
+                        {block.key === 'couvert' && (form[block.mode] as FeeMode) === 'FIXED'
+                          ? ' / pessoa'
+                          : ''}
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        disabled={!form[block.enabled]}
+                        value={Number(form[block.value] ?? 0)}
+                        onChange={(e) => update(block.value, Number(e.target.value) || 0)}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </>
+            ) : null}
           </section>
 
           <section className="card">

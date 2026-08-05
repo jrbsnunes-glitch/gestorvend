@@ -267,7 +267,7 @@ export class ProductsController {
 
   /** Consulta em tempo real por código sequencial, nome, descrição, SKU ou código de barras. */
   @Get('search')
-  @Roles('admin', 'manager', 'seller', 'finance')
+  @Roles('admin', 'manager', 'seller', 'finance', 'waiter')
   async search(@CurrentUser() user: JwtPayload, @Query('q') q?: string) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const term = (q ?? '').trim();

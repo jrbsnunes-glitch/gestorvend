@@ -33,6 +33,10 @@ export class SalesController {
       notes?: string | null;
       discount?: number;
       surcharge?: number;
+      serviceFeeAmount?: number;
+      couvertAmount?: number;
+      waiterTipAmount?: number;
+      guestCount?: number;
       freightAmount?: number;
       freightMod?: number;
       operationNatureId?: string | null;
@@ -42,6 +46,7 @@ export class SalesController {
       permissionPassword?: string;
       /** PDV | WHATSAPP | NFE_FORM | RESTAURANT */
       source?: 'PDV' | 'WHATSAPP' | 'NFE_FORM' | 'RESTAURANT';
+      externalRef?: string | null;
       items: Array<{
         variantId: string;
         quantity: number;
@@ -66,12 +71,17 @@ export class SalesController {
       notes: body.notes,
       discount: body.discount,
       surcharge: body.surcharge,
+      serviceFeeAmount: body.serviceFeeAmount,
+      couvertAmount: body.couvertAmount,
+      waiterTipAmount: body.waiterTipAmount,
+      guestCount: body.guestCount,
       freightAmount: body.freightAmount,
       freightMod: body.freightMod,
       operationNatureId: body.operationNatureId,
       deliveryVehiclePlate: body.deliveryVehiclePlate,
       deliveryDriverName: body.deliveryDriverName,
       deductStock: body.deductStock,
+      externalRef: body.externalRef ?? null,
       source:
         body.source === 'NFE_FORM' ||
         body.source === 'WHATSAPP' ||

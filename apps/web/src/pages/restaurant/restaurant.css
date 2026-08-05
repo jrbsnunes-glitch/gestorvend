@@ -236,22 +236,6 @@
   font-size: 0.85rem;
 }
 
-@media print {
-  body * {
-    visibility: hidden;
-  }
-  .kitchen-ticket,
-  .kitchen-ticket * {
-    visibility: visible;
-  }
-  .kitchen-ticket {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-  }
-}
-
 @media (max-width: 720px) {
   .restaurant-launch__form {
     flex-direction: column;

@@ -1,0 +1,52 @@
+/**
+ * Estilos de impressão só da página de cozinha.
+ * NÃO importar globalmente — o hack de visibility quebrava o cupom do PDV.
+ */
+
+.kitchen-print-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1rem;
+  background: #f1f5f9;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.kitchen-print-toolbar .btn {
+  margin: 0;
+}
+
+@media print {
+  .kitchen-print-toolbar {
+    display: none !important;
+  }
+
+  @page {
+    size: 80mm auto;
+    margin: 3mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .kitchen-ticket {
+    max-width: none;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  .kitchen-ticket h1 {
+    font-size: 18pt;
+  }
+
+  .kitchen-ticket li {
+    font-size: 12pt;
+    page-break-inside: avoid;
+  }
+}

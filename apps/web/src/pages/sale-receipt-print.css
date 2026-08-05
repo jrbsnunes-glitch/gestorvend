@@ -216,26 +216,35 @@
 }
 
 @media print {
-  .sale-receipt-page {
-    background: #fff;
-    padding: 0;
+  /* Garante visibilidade mesmo se outro CSS global esconder body * */
+  body * {
+    visibility: visible !important;
   }
 
-  .sale-receipt-toolbar {
+  .sale-receipt-page {
+    background: #fff !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+  }
+
+  .sale-receipt-toolbar,
+  .no-print {
     display: none !important;
+    visibility: hidden !important;
   }
 
   .sale-receipt-doc {
-    box-shadow: none;
-    max-width: none;
-    width: 100%;
-    padding: 2mm 1mm 4mm;
-    font-size: 23pt;
+    box-shadow: none !important;
+    max-width: none !important;
+    width: 100% !important;
+    padding: 2mm 1mm 4mm !important;
+    font-size: 11pt !important;
     font-weight: 600;
-    line-height: 1.58;
-    color: #000;
+    line-height: 1.35;
+    color: #000 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+    visibility: visible !important;
   }
 
   @page {
@@ -244,16 +253,16 @@
   }
 
   .sale-receipt-title {
-    font-size: 29pt;
+    font-size: 13pt !important;
   }
 
   .sale-receipt-sub,
   .sale-receipt-legal {
-    font-size: 22pt;
+    font-size: 9pt !important;
   }
 
   .sale-receipt-banner {
-    font-size: 22pt;
+    font-size: 10pt !important;
   }
 
   .sale-receipt-meta,
@@ -261,25 +270,25 @@
   .sale-receipt-items,
   .sale-receipt-totals,
   .sale-receipt-payments {
-    color: #000;
-    font-size: 22pt;
+    color: #000 !important;
+    font-size: 9.5pt !important;
   }
 
   .sale-receipt-item-sku,
   .sale-receipt-fiscal-note {
-    color: #000;
-    font-size: 21pt;
+    color: #000 !important;
+    font-size: 9pt !important;
   }
 
   .sale-receipt-totals-row.is-total {
-    font-size: 29pt;
+    font-size: 12pt !important;
   }
 
   .sale-receipt-foot {
-    font-size: 21pt;
+    font-size: 9pt !important;
   }
 
   .sale-receipt-foot-muted {
-    font-size: 20pt;
+    font-size: 8pt !important;
   }
 }

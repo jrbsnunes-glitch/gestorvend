@@ -27,6 +27,15 @@ type CompanyInput = {
   scaleAutoConfirmMs?: number;
   scaleHint?: string | null;
   kitchenPrinterHint?: string | null;
+  serviceFeeEnabled?: boolean;
+  serviceFeeMode?: 'PERCENT' | 'FIXED' | string;
+  serviceFeeValue?: number | string;
+  couvertEnabled?: boolean;
+  couvertMode?: 'PERCENT' | 'FIXED' | string;
+  couvertValue?: number | string;
+  waiterTipEnabled?: boolean;
+  waiterTipMode?: 'PERCENT' | 'FIXED' | string;
+  waiterTipValue?: number | string;
 };
 
 /**
@@ -146,6 +155,47 @@ export class CompanyService {
       }
       data.pdvDocumentMode = m;
     }
+
+    const parseFeeMode = (raw: unknown, label: string): 'PERCENT' | 'FIXED' | undefined => {
+      if (raw === undefined) return undefined;
+      const m = String(raw).trim().toUpperCase();
+      if (m !== 'PERCENT' && m !== 'FIXED') {
+        throw new BadRequestException(`${label}: use PERCENT ou FIXED.`);
+      }
+      return m;
+    };
+    const parseFeeValue = (raw: unknown, label: string): number | undefined => {
+      if (raw === undefined) return undefined;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) {
+        throw new BadRequestException(`${label} inválido.`);
+      }
+      return n;
+    };
+
+    if (body.serviceFeeEnabled !== undefined) {
+      data.serviceFeeEnabled = Boolean(body.serviceFeeEnabled);
+    }
+    const serviceFeeMode = parseFeeMode(body.serviceFeeMode, 'Modo da taxa de serviço');
+    if (serviceFeeMode !== undefined) data.serviceFeeMode = serviceFeeMode;
+    const serviceFeeValue = parseFeeValue(body.serviceFeeValue, 'Valor da taxa de serviço');
+    if (serviceFeeValue !== undefined) data.serviceFeeValue = String(serviceFeeValue);
+
+    if (body.couvertEnabled !== undefined) {
+      data.couvertEnabled = Boolean(body.couvertEnabled);
+    }
+    const couvertMode = parseFeeMode(body.couvertMode, 'Modo do couvert');
+    if (couvertMode !== undefined) data.couvertMode = couvertMode;
+    const couvertValue = parseFeeValue(body.couvertValue, 'Valor do couvert');
+    if (couvertValue !== undefined) data.couvertValue = String(couvertValue);
+
+    if (body.waiterTipEnabled !== undefined) {
+      data.waiterTipEnabled = Boolean(body.waiterTipEnabled);
+    }
+    const waiterTipMode = parseFeeMode(body.waiterTipMode, 'Modo da taxa do garçom');
+    if (waiterTipMode !== undefined) data.waiterTipMode = waiterTipMode;
+    const waiterTipValue = parseFeeValue(body.waiterTipValue, 'Valor da taxa do garçom');
+    if (waiterTipValue !== undefined) data.waiterTipValue = String(waiterTipValue);
 
     return db.company.update({ where: { id: current.id }, data });
   }

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { PlanCode } from '../generated/central-client';
 import { PaymentMethod } from '../generated/tenant-client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -17,7 +17,7 @@ export class RestaurantController {
   constructor(private readonly restaurant: RestaurantService) {}
 
   @Get('areas')
-  @Roles('admin', 'manager', 'seller')
+  @Roles('admin', 'manager', 'seller', 'waiter')
   listAreas(@CurrentUser() user: JwtPayload) {
     return this.restaurant.listAreas(user.tenantSlug);
   }
@@ -42,28 +42,57 @@ export class RestaurantController {
   }
 
   @Get('tabs')
-  @Roles('admin', 'manager', 'seller')
+  @Roles('admin', 'manager', 'seller', 'waiter')
   listTabs(@CurrentUser() user: JwtPayload) {
     return this.restaurant.listOpenTabs(user.tenantSlug);
   }
 
+  @Get('tabs/lookup')
+  @Roles('admin', 'manager', 'seller', 'waiter')
+  lookupTab(@CurrentUser() user: JwtPayload, @Query('q') q?: string) {
+    return this.restaurant.lookupOpenTab(user.tenantSlug, q ?? '');
+  }
+
   @Get('tabs/:id')
-  @Roles('admin', 'manager', 'seller')
+  @Roles('admin', 'manager', 'seller', 'waiter')
   getTab(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.restaurant.getTab(user.tenantSlug, id);
   }
 
   @Post('tabs')
-  @Roles('admin', 'manager', 'seller')
+  @Roles('admin', 'manager', 'seller', 'waiter')
   openTab(
     @CurrentUser() user: JwtPayload,
-    @Body() body: { tableId?: string | null; customerId?: string | null; notes?: string | null },
+    @Body()
+    body: {
+      tableId?: string | null;
+      customerId?: string | null;
+      customerName?: string | null;
+      notes?: string | null;
+      guestCount?: number;
+    },
   ) {
     return this.restaurant.openTab(user.tenantSlug, user.sub, body);
   }
 
+  @Patch('tabs/:id')
+  @Roles('admin', 'manager', 'seller', 'waiter')
+  patchTab(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      guestCount?: number;
+      customerId?: string | null;
+      customerName?: string | null;
+      notes?: string | null;
+    },
+  ) {
+    return this.restaurant.patchTab(user.tenantSlug, id, body);
+  }
+
   @Post('tabs/:id/items')
-  @Roles('admin', 'manager', 'seller')
+  @Roles('admin', 'manager', 'seller', 'waiter')
   addItem(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
@@ -79,27 +108,27 @@ export class RestaurantController {
       printSector?: string | null;
     },
   ) {
-    return this.restaurant.addItem(user.tenantSlug, id, body);
+    return this.restaurant.addItem(user.tenantSlug, user.sub, id, body);
   }
 
   @Post('tabs/:id/items/:itemId/cancel')
-  @Roles('admin', 'manager', 'seller')
+  @Roles('admin', 'manager', 'seller', 'waiter')
   cancelItem(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
     @Param('itemId') itemId: string,
   ) {
-    return this.restaurant.cancelItem(user.tenantSlug, id, itemId);
+    return this.restaurant.cancelItem(user.tenantSlug, user.sub, id, itemId);
   }
 
   @Post('tabs/:id/cancel')
   @Roles('admin', 'manager')
   cancelTab(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
-    return this.restaurant.cancelTab(user.tenantSlug, id);
+    return this.restaurant.cancelTab(user.tenantSlug, user.sub, id);
   }
 
   @Post('tabs/:id/kitchen-print')
-  @Roles('admin', 'manager', 'seller')
+  @Roles('admin', 'manager', 'seller', 'waiter')
   kitchenPrint(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
@@ -108,6 +137,7 @@ export class RestaurantController {
     return this.restaurant.markKitchenPrinted(user.tenantSlug, id, body?.itemIds);
   }
 
+  /** Fechar comanda / cobrar — garçom não fecha (caixa no PDV). */
   @Post('tabs/:id/close')
   @Roles('admin', 'manager', 'seller')
   closeTab(
@@ -119,7 +149,9 @@ export class RestaurantController {
       surcharge?: number | string;
       notes?: string | null;
       permissionPassword?: string;
-      payments: Array<{
+      /** Quando informado, só vincula a venda do PDV (sem criar Sale). */
+      saleId?: string;
+      payments?: Array<{
         method: PaymentMethod;
         amount: number | string;
         installments?: number;
@@ -128,7 +160,18 @@ export class RestaurantController {
       }>;
     },
   ) {
-    return this.restaurant.closeTab(user.tenantSlug, user.sub, user.roles, id, body);
+    if (body.saleId?.trim()) {
+      return this.restaurant.closeTabWithSale(user.tenantSlug, id, body.saleId.trim());
+    }
+    if (!body.payments?.length) {
+      throw new BadRequestException(
+        'Informe saleId (fechamento via PDV) ou payments (legado).',
+      );
+    }
+    return this.restaurant.closeTab(user.tenantSlug, user.sub, user.roles, id, {
+      ...body,
+      payments: body.payments,
+    });
   }
 
   @Get('recipes/:productId')

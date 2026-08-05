@@ -14,12 +14,14 @@ import { assertValidUsername } from './username.util';
  * Mapeiam diretamente para roles do RBAC interno:
  *  - manager  → acesso total (gerencia cadastros e usuários)
  *  - cashier  → role interna `seller` (operação no PDV)
+ *  - waiter   → role interna `waiter` (só Salão / comandas)
  */
-export type UserProfile = 'manager' | 'cashier';
+export type UserProfile = 'manager' | 'cashier' | 'waiter';
 
 const PROFILE_TO_ROLE: Record<UserProfile, string> = {
   manager: 'manager',
   cashier: 'seller',
+  waiter: 'waiter',
 };
 
 export type UserSummary = {
@@ -49,6 +51,7 @@ export class UsersService {
   private toProfile(roles: { name: string }[]): UserProfile {
     const names = roles.map((r) => r.name);
     if (names.includes('admin') || names.includes('manager')) return 'manager';
+    if (names.includes('waiter') && !names.includes('seller')) return 'waiter';
     return 'cashier';
   }
 
@@ -76,8 +79,8 @@ export class UsersService {
   }
 
   private validateProfile(value: unknown): UserProfile {
-    if (value === 'manager' || value === 'cashier') return value;
-    throw new BadRequestException('Perfil inválido. Use "manager" ou "cashier".');
+    if (value === 'manager' || value === 'cashier' || value === 'waiter') return value;
+    throw new BadRequestException('Perfil inválido. Use "manager", "cashier" ou "waiter".');
   }
 
   private validateUsername(value: unknown): string {
@@ -242,7 +245,7 @@ export class UsersService {
       const profile = this.validateProfile(body.profile);
       const currentProfile = this.toProfile(target.roles);
       if (profile !== currentProfile) {
-        if (currentProfile === 'manager' && profile === 'cashier') {
+        if (currentProfile === 'manager' && (profile === 'cashier' || profile === 'waiter')) {
           await this.ensureNotLastManager(db, target.id, target.roles);
         }
         const role = await this.resolveRole(db, profile);

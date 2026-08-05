@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { CompanyLogo } from './CompanyLogo';
 import { ConnectionStatusBanner } from './ConnectionStatusBanner';
 import { NavIcon, type NavIconName } from './nav-icons';
 import { api } from '../lib/api';
 import { companyDisplayName } from '../lib/company-branding';
-import { getIdentity, hasRestaurantPlan, isAdmin, profileFromRoles, profileLabel } from '../lib/auth';
+import { getIdentity, hasRestaurantPlan, isAdmin, isWaiter, profileFromRoles, profileLabel } from '../lib/auth';
 import { APP_VERSION } from '../version';
 import './layout.css';
 
@@ -25,12 +25,14 @@ type NavItem = {
   adminOnly?: boolean;
   /** Exige plano RESTAURANT no JWT. */
   restaurantPlan?: boolean;
+  /** Garçom só vê itens marcados (Salão). */
+  waiterAllowed?: boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Início', icon: 'home', end: true },
   { to: '/vendas', label: 'Vendas', icon: 'sales' },
-  { to: '/salao', label: 'Salão / Comandas', icon: 'restaurant', restaurantPlan: true },
+  { to: '/salao', label: 'Salão / Comandas', icon: 'restaurant', restaurantPlan: true, waiterAllowed: true },
   { to: '/clientes', label: 'Clientes', icon: 'customers', managerOnly: true },
   { to: '/produtos', label: 'Produtos', icon: 'products', managerOnly: true },
   { to: '/fornecedores', label: 'Fornecedores', icon: 'suppliers', managerOnly: true },
@@ -46,7 +48,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/logs', label: 'Logs', icon: 'logs', adminOnly: true },
 ];
 
-type Me = { name: string; email: string; profile: 'manager' | 'cashier' };
+type Me = { name: string; email: string; profile: 'manager' | 'cashier' | 'waiter' };
 
 function readCollapsedPref(): boolean {
   try {
@@ -63,9 +65,11 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
   const identity = useMemo(() => getIdentity(), []);
   const localProfile = identity ? profileFromRoles(identity.roles) : 'cashier';
   const isManager = localProfile === 'manager';
+  const waiterOnly = localProfile === 'waiter' || isWaiter();
   const hasFinance = identity?.roles.includes('finance') ?? false;
   const userIsAdmin = isAdmin();
   const restaurantOk = hasRestaurantPlan();
+  const location = useLocation();
 
   const [collapsed, setCollapsed] = useState(readCollapsedPref);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -89,6 +93,9 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
   });
 
   const items = NAV_ITEMS.filter((it) => {
+    if (waiterOnly) {
+      return Boolean(it.waiterAllowed);
+    }
     if (it.adminOnly && !userIsAdmin) return false;
     if (it.restaurantPlan) {
       if (!restaurantOk) return false;
@@ -127,6 +134,10 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
       document.body.style.overflow = prev;
     };
   }, [mobileNavOpen]);
+
+  if (waiterOnly && !location.pathname.startsWith('/salao')) {
+    return <Navigate to="/salao" replace />;
+  }
 
   function toggleCollapsed() {
     setCollapsed((v) => !v);

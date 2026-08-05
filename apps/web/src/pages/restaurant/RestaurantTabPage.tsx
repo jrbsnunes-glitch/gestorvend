@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { isWaiter } from '../../lib/auth';
+import { calcRestaurantFees, type RestaurantFeesCompany } from '../../lib/restaurant-fees';
 import { parseBarcodeWeight } from '../../lib/pos-scale';
 import { usePosScale } from '../../lib/use-pos-scale';
 import type { ScaleMode } from '../../lib/pos-scale';
@@ -38,12 +40,14 @@ type Tab = {
   number: number;
   status: string;
   notes: string | null;
+  guestCount?: number;
+  customer?: { id: string; name: string } | null;
   table: { code: string; label: string | null; area: { name: string } } | null;
   items: TabItem[];
   sale?: { id: string; number: number; total: string | number } | null;
 };
 
-type CompanyScale = {
+type CompanyScale = RestaurantFeesCompany & {
   scaleMode?: ScaleMode;
   scaleAutoConfirmMs?: number;
   barcodeWeightPattern?: string | null;
@@ -53,6 +57,7 @@ type CompanyScale = {
 };
 
 const FRACTIONAL = new Set(['KG', 'G', 'GR', 'L', 'LT', 'ML']);
+const DEFAULT_CUSTOMER_NAME = 'Cliente Padrão';
 
 function isFractional(taxUnit?: string | null) {
   return FRACTIONAL.has(String(taxUnit ?? '').trim().toUpperCase());
@@ -70,9 +75,9 @@ export function RestaurantTabPage() {
   const [qty, setQty] = useState('1');
   const [notes, setNotes] = useState('');
   const [selected, setSelected] = useState<ProductHit | null>(null);
-  const [payMethod, setPayMethod] = useState<'CASH' | 'PIX' | 'CARD' | 'CREDIT'>('CASH');
-  const [closeOpen, setCloseOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [customerNameDraft, setCustomerNameDraft] = useState('');
+  const waiterOnly = isWaiter();
 
   const companyQ = useQuery({
     queryKey: ['company'],
@@ -124,54 +129,77 @@ export function RestaurantTabPage() {
 
   const kitchenPrint = useMutation({
     mutationFn: () =>
-      api(`/restaurant/tabs/${encodeURIComponent(tabId)}/kitchen-print`, {
-        method: 'POST',
-        json: {},
-      }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['restaurant', 'tab', tabId] });
-      window.open(`/salao/comanda/${tabId}/cozinha`, '_blank', 'noopener,noreferrer');
-    },
-  });
-
-  const closeTab = useMutation({
-    mutationFn: (total: number) =>
-      api<{ sale: { id: string; number: number } }>(
-        `/restaurant/tabs/${encodeURIComponent(tabId)}/close`,
+      api<{ printedItemIds?: string[] }>(
+        `/restaurant/tabs/${encodeURIComponent(tabId)}/kitchen-print`,
         {
           method: 'POST',
-          json: {
-            payments: [{ method: payMethod, amount: total }],
-          },
+          json: {},
         },
       ),
     onSuccess: (res) => {
-      void qc.invalidateQueries({ queryKey: ['restaurant'] });
-      const saleId = res.sale.id;
-      if (companyQ.data?.pdvDocumentMode === 'ELECTRONIC_FISCAL_PLANNED') {
-        void api('/fiscal/documents/queue', {
-          method: 'POST',
-          json: { saleId, kind: 'NFC_E' },
-        }).catch(() => undefined);
+      void qc.invalidateQueries({ queryKey: ['restaurant', 'tab', tabId] });
+      const ids = res.printedItemIds ?? [];
+      if (!ids.length) {
+        setToast('Nenhum item novo para a cozinha.');
+        return;
       }
-      if (companyQ.data?.saleReceiptAutoPrint !== false) {
-        window.open(`/vendas/impressao?saleId=${encodeURIComponent(saleId)}`, '_blank');
-      }
-      setToast(`Comanda fechada · venda #${res.sale.number}`);
-      navigate('/salao');
+      const qs = `?itens=${encodeURIComponent(ids.join(','))}`;
+      window.open(`/salao/comanda/${tabId}/cozinha${qs}`, '_blank', 'noopener,noreferrer');
+    },
+    onError: (e: Error) => setToast(e.message),
+  });
+
+  const patchTab = useMutation({
+    mutationFn: (body: { guestCount?: number; customerName?: string }) =>
+      api<Tab>(`/restaurant/tabs/${encodeURIComponent(tabId)}`, {
+        method: 'PATCH',
+        json: body,
+      }),
+    onSuccess: (updated) => {
+      if (updated.customer?.name) setCustomerNameDraft(updated.customer.name);
+      void qc.invalidateQueries({ queryKey: ['restaurant', 'tab', tabId] });
+      void qc.invalidateQueries({ queryKey: ['restaurant', 'tabs'] });
+      void qc.invalidateQueries({ queryKey: ['restaurant', 'areas'] });
     },
     onError: (e: Error) => setToast(e.message),
   });
 
   const tab = tabQ.data;
+
+  useEffect(() => {
+    if (tab?.customer?.name) {
+      setCustomerNameDraft(tab.customer.name);
+    } else if (tab) {
+      setCustomerNameDraft(DEFAULT_CUSTOMER_NAME);
+    }
+  }, [tab?.id, tab?.customer?.name]);
   const activeItems = useMemo(
     () => (tab?.items ?? []).filter((i) => i.status !== 'CANCELLED'),
     [tab?.items],
   );
-  const total = useMemo(
+  const subtotal = useMemo(
     () => activeItems.reduce((s, i) => s + Number(i.totalLine), 0),
     [activeItems],
   );
+  const guestCount = Math.max(1, tab?.guestCount ?? 1);
+  const fees = useMemo(
+    () => calcRestaurantFees(companyQ.data, subtotal, guestCount),
+    [companyQ.data, subtotal, guestCount],
+  );
+  const total = Math.max(0, subtotal + fees.feesTotal);
+
+  function goToPdvCheckout() {
+    if (!tabId || activeItems.length === 0) {
+      setToast('Inclua itens antes de cobrar no PDV.');
+      return;
+    }
+    try {
+      sessionStorage.setItem('gv_pdv_comanda', tabId);
+    } catch {
+      /* ignore */
+    }
+    navigate(`/vendas?comanda=${encodeURIComponent(tabId)}`);
+  }
 
   useEffect(() => {
     if (!toast) return;
@@ -264,13 +292,21 @@ export function RestaurantTabPage() {
             ← Salão
           </Link>
           <h1>
-            Comanda #{tab.number}
             {tab.table ? (
-              <span className="muted">
-                {' '}
-                · {tab.table.area.name} / {tab.table.label || tab.table.code}
-              </span>
-            ) : null}
+              <>
+                MESA {tab.table.label || tab.table.code}
+                <span className="muted">
+                  {' '}
+                  · {tab.table.area.name} · Comanda #{tab.number}
+                </span>
+              </>
+            ) : (
+              <>Comanda #{tab.number}</>
+            )}
+            <span className="muted">
+              {' '}
+              · {tab.customer?.name || DEFAULT_CUSTOMER_NAME}
+            </span>
           </h1>
         </div>
         <div className="restaurant-page__actions">
@@ -298,9 +334,17 @@ export function RestaurantTabPage() {
               >
                 Imprimir cozinha
               </button>
-              <button type="button" className="btn btn-primary" onClick={() => setCloseOpen(true)}>
-                Fechar conta
-              </button>
+              {!waiterOnly ? (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={activeItems.length === 0}
+                  onClick={goToPdvCheckout}
+                  title="Envia os itens da comanda para o PDV cobrar (F2)"
+                >
+                  Cobrar no PDV
+                </button>
+              ) : null}
             </>
           )}
         </div>
@@ -310,6 +354,51 @@ export function RestaurantTabPage() {
         <div className="alert alert-ok" role="status">
           {toast}
         </div>
+      )}
+
+      {!closed && (
+        <section className="card" style={{ marginBottom: '0.75rem' }}>
+          <div className="form-row" style={{ alignItems: 'end', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div className="field" style={{ flex: '1 1 220px', margin: 0 }}>
+              <label htmlFor="tab-customer-name">Cliente</label>
+              <input
+                id="tab-customer-name"
+                value={customerNameDraft}
+                disabled={patchTab.isPending}
+                placeholder={DEFAULT_CUSTOMER_NAME}
+                onChange={(e) => setCustomerNameDraft(e.target.value)}
+                onBlur={() => {
+                  const next = customerNameDraft.trim() || DEFAULT_CUSTOMER_NAME;
+                  const current = tab.customer?.name || DEFAULT_CUSTOMER_NAME;
+                  if (next === current) return;
+                  setCustomerNameDraft(next);
+                  patchTab.mutate({ customerName: next });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+              />
+            </div>
+            <div className="field" style={{ maxWidth: 160, margin: 0 }}>
+              <label htmlFor="tab-guest-count">Pessoas</label>
+              <input
+                id="tab-guest-count"
+                type="number"
+                min={1}
+                max={999}
+                value={guestCount}
+                disabled={patchTab.isPending}
+                onChange={(e) => {
+                  const n = Math.max(1, Math.min(999, Math.floor(Number(e.target.value)) || 1));
+                  patchTab.mutate({ guestCount: n });
+                }}
+              />
+            </div>
+          </div>
+        </section>
       )}
 
       {!closed && (
@@ -433,50 +522,35 @@ export function RestaurantTabPage() {
           </ul>
         )}
         <div className="restaurant-total">
+          <div style={{ fontSize: '0.9rem', marginBottom: '0.35rem', opacity: 0.9 }}>
+            <div>
+              Itens <strong>{money(subtotal)}</strong>
+            </div>
+            {fees.serviceFee > 0.005 ? (
+              <div>
+                Taxa de serviço <strong>{money(fees.serviceFee)}</strong>
+              </div>
+            ) : null}
+            {fees.couvert > 0.005 ? (
+              <div>
+                Couvert ({guestCount} {guestCount === 1 ? 'pessoa' : 'pessoas'}){' '}
+                <strong>{money(fees.couvert)}</strong>
+              </div>
+            ) : null}
+            {fees.waiterTip > 0.005 ? (
+              <div>
+                Taxa do garçom <strong>{money(fees.waiterTip)}</strong>
+              </div>
+            ) : null}
+          </div>
           Total <strong>{money(total)}</strong>
+          {!closed && !waiterOnly && (
+            <p className="muted" style={{ fontSize: '0.85rem', marginTop: '0.35rem' }}>
+              O pagamento é feito no PDV (caixa). Use <strong>Cobrar no PDV</strong>.
+            </p>
+          )}
         </div>
       </section>
-
-      {closeOpen && !closed && (
-        <div className="restaurant-modal-backdrop" role="dialog" aria-modal="true">
-          <div className="card restaurant-modal">
-            <h2>Fechar comanda #{tab.number}</h2>
-            <p>
-              Total a receber: <strong>{money(total)}</strong>
-            </p>
-            <div className="field">
-              <label>Forma de pagamento</label>
-              <select
-                value={payMethod}
-                onChange={(e) => setPayMethod(e.target.value as typeof payMethod)}
-              >
-                <option value="CASH">Dinheiro</option>
-                <option value="PIX">PIX</option>
-                <option value="CARD">Cartão</option>
-                <option value="CREDIT">Crediário</option>
-              </select>
-            </div>
-            <p className="muted" style={{ fontSize: '0.85rem' }}>
-              {companyQ.data?.pdvDocumentMode === 'ELECTRONIC_FISCAL_PLANNED'
-                ? 'Após o fechamento, a NFC-e será enfileirada conforme configuração da empresa.'
-                : 'Será emitido comprovante de venda sem valor fiscal (cupom interno).'}
-            </p>
-            <div className="restaurant-page__actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setCloseOpen(false)}>
-                Voltar
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={closeTab.isPending || total <= 0}
-                onClick={() => closeTab.mutate(total)}
-              >
-                Confirmar fechamento
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -46,7 +46,7 @@ export class UsersController {
 
   /** Identidade do usuário corrente — usada pelo front para exibir nome/perfil. */
   @Get('me')
-  @Roles('admin', 'manager', 'seller', 'finance')
+  @Roles('admin', 'manager', 'seller', 'finance', 'waiter')
   async me(@CurrentUser() user: JwtPayload) {
     return this.users.getById(user.tenantSlug, user.sub);
   }

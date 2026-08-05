@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom';
 import { CrudToolbar } from '../../components/CrudToolbar';
 import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
+import { InventoryReportsPanel } from '../../components/InventoryReportsPanel';
 import { ProductSearchModal, type ProductSearchRow } from '../../components/ProductSearchModal';
 import { RecordViewModal } from '../../components/RecordViewModal';
 import { api, apiDownload, apiUpload } from '../../lib/api';
@@ -321,31 +322,16 @@ export function StockInventarioPage() {
           setCreateOpen(true);
         }}
         includeLabel="Novo inventário"
-        onPrint={() => window.print()}
         onReports={() => setReportsOpen(true)}
       />
 
-      <ModuleReportsModal open={reportsOpen} title="Inventário" onClose={() => setReportsOpen(false)}>
-        <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
-          <li>Inclua de 1 a N produtos no mesmo inventário (mesmo local).</li>
-          <li>
-            Em lote: <strong>Incluir categoria / todos</strong> — SKUs unitários ativos; compostos e
-            duplicados são ignorados.
-          </li>
-          <li>
-            Inventarie o <strong>unitário</strong> (balde, peça), nunca a caixa/pack. Composto só serve
-            para entrada/venda com conversão — ver docs/ESTOQUE-COMPOSTOS-E-PESO.md.
-          </li>
-          <li>Ao postar, o sistema gera um acerto (ADJUST) por item.</li>
-          <li>
-            CSV: colunas <code>barcode</code>, <code>sku</code>, <code>controlNumber</code>,{' '}
-            <code>countedQty</code> (obrigatória). Aceita vírgula ou ponto-e-vírgula.
-          </li>
-          <li>
-            Coletor no celular: abra o rascunho → Coletar no celular (câmera ou leitor Bluetooth).
-          </li>
-          <li>Use Movimentos → impressão para filtrar por período/tipo AJUSTE.</li>
-        </ul>
+      <ModuleReportsModal
+        open={reportsOpen}
+        title="Inventário"
+        compactLauncher
+        onClose={() => setReportsOpen(false)}
+      >
+        <InventoryReportsPanel defaultInventoryId={editId ?? viewId} />
       </ModuleReportsModal>
 
       <p className="page-desc">

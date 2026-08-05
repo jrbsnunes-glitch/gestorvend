@@ -30,6 +30,9 @@ type SaleReceipt = {
   subtotal: string;
   discount: string;
   surcharge?: string;
+  serviceFeeAmount?: string;
+  couvertAmount?: string;
+  waiterTipAmount?: string;
   total: string;
   createdAt: string;
   notes: string | null;
@@ -76,6 +79,7 @@ export function SaleReceiptPrintPage() {
   const [sp] = useSearchParams();
   const saleId = sp.get('id')?.trim() ?? '';
   const wantAutoPrint = sp.get('autoprint') === '1' || sp.get('autoprint') === 'true';
+  const wantClose = sp.get('close') === '1' || sp.get('close') === 'true';
   const np = sp.get('_np');
 
   const companyQ = useQuery({
@@ -92,6 +96,19 @@ export function SaleReceiptPrintPage() {
   const c = companyQ.data;
   const s = saleQ.data;
   const loading = Boolean(saleId) && (saleQ.isLoading || companyQ.isLoading);
+
+  useEffect(() => {
+    if (!wantClose) return;
+    function onAfterPrint() {
+      try {
+        window.close();
+      } catch {
+        /* ignore */
+      }
+    }
+    window.addEventListener('afterprint', onAfterPrint);
+    return () => window.removeEventListener('afterprint', onAfterPrint);
+  }, [wantClose]);
 
   useEffect(() => {
     if (!wantAutoPrint || !saleId || !s) return;
@@ -237,7 +254,28 @@ export function SaleReceiptPrintPage() {
                 <span>− {formatBRL(s.discount)}</span>
               </div>
             )}
-            {parseN(s.surcharge) > 0.005 && (
+            {parseN(s.serviceFeeAmount) > 0.005 && (
+              <div className="sale-receipt-totals-row">
+                <span>Taxa de serviço</span>
+                <span>+ {formatBRL(s.serviceFeeAmount)}</span>
+              </div>
+            )}
+            {parseN(s.couvertAmount) > 0.005 && (
+              <div className="sale-receipt-totals-row">
+                <span>Couvert</span>
+                <span>+ {formatBRL(s.couvertAmount)}</span>
+              </div>
+            )}
+            {parseN(s.waiterTipAmount) > 0.005 && (
+              <div className="sale-receipt-totals-row">
+                <span>Taxa do garçom</span>
+                <span>+ {formatBRL(s.waiterTipAmount)}</span>
+              </div>
+            )}
+            {parseN(s.serviceFeeAmount) <= 0.005 &&
+              parseN(s.couvertAmount) <= 0.005 &&
+              parseN(s.waiterTipAmount) <= 0.005 &&
+              parseN(s.surcharge) > 0.005 && (
               <div className="sale-receipt-totals-row">
                 <span>Acréscimo</span>
                 <span>+ {formatBRL(s.surcharge)}</span>

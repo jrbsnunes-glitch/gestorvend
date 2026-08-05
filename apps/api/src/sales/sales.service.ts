@@ -8,6 +8,7 @@ import {
   Prisma,
   SaleSource,
   SaleStatus,
+  ServiceTabStatus,
   StockMovementSource,
   StockMovementType,
   ActivityLogAction,
@@ -17,6 +18,7 @@ import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { UserPermissionsService } from '../users/user-permissions.service';
 import { resolveSaleStockQuantity } from '../common/product-conversion.util';
+import { calcRestaurantFees } from '../restaurant/restaurant-fees';
 
 type TenantTx = Prisma.TransactionClient;
 
@@ -91,6 +93,12 @@ export type CreateSaleInput = {
   discount?: string | number;
   /** Acréscimo no total (R$) — espelha vOutro do leiaute NF-e/NFC-e. */
   surcharge?: string | number;
+  /** Taxas de salão (R$) — usadas quando source=RESTAURANT; surcharge = soma. */
+  serviceFeeAmount?: string | number;
+  couvertAmount?: string | number;
+  waiterTipAmount?: string | number;
+  /** Pessoas na comanda (couvert); se omitido e RESTAURANT, usa 1 ou busca via externalRef. */
+  guestCount?: number;
   /** Frete (vFrete) — soma no total da NF. */
   freightAmount?: string | number;
   /** modFrete: 0=emitente, 1=destinatário, 9=sem frete. */
@@ -228,10 +236,13 @@ export class SalesService {
     if (discount < 0 || !Number.isFinite(discount)) {
       throw new BadRequestException('Desconto inválido');
     }
-    const surcharge = Number(input.surcharge ?? 0);
+    let surcharge = Number(input.surcharge ?? 0);
     if (surcharge < 0 || !Number.isFinite(surcharge)) {
       throw new BadRequestException('Acréscimo inválido');
     }
+    let serviceFeeAmount = 0;
+    let couvertAmount = 0;
+    let waiterTipAmount = 0;
     const freightAmount = Number(input.freightAmount ?? 0);
     if (freightAmount < 0 || !Number.isFinite(freightAmount)) {
       throw new BadRequestException('Frete inválido');
@@ -246,7 +257,9 @@ export class SalesService {
         );
       }
     }
-    const deductStock = input.deductStock !== false;
+    // Comanda restaurante: estoque já baixa no lançamento do item (não no PDV).
+    const deductStock =
+      input.source === SaleSource.RESTAURANT ? false : input.deductStock !== false;
 
     if (discount > 0) {
       await this.permissions.assertPermission(
@@ -271,6 +284,28 @@ export class SalesService {
     if (discount > subtotal + 0.009) {
       throw new BadRequestException('Desconto não pode ser maior que o subtotal dos produtos.');
     }
+
+    if (input.source === SaleSource.RESTAURANT) {
+      const company = await db.company.findFirst();
+      let guestCount = Math.max(1, Math.floor(Number(input.guestCount ?? 1)) || 1);
+      const tabRef = String(input.externalRef ?? '');
+      const tabNumMatch = /^tab:(\d+)$/i.exec(tabRef);
+      if (tabNumMatch) {
+        const tab = await db.serviceTab.findFirst({
+          where: { number: Number(tabNumMatch[1]), status: ServiceTabStatus.OPEN },
+          select: { guestCount: true },
+        });
+        if (tab?.guestCount != null) {
+          guestCount = Math.max(1, tab.guestCount);
+        }
+      }
+      const fees = calcRestaurantFees(company, subtotal, guestCount);
+      serviceFeeAmount = fees.serviceFee;
+      couvertAmount = fees.couvert;
+      waiterTipAmount = fees.waiterTip;
+      surcharge = fees.feesTotal;
+    }
+
     // MOC NF-e/NFC-e: vNF ≈ vProd − vDesc + vFrete + vOutro (+ seguro/impostos).
     const total = roundMoney2(Math.max(0, subtotal - discount + surcharge + freightAmount));
     if (!input.payments?.length) {
@@ -360,6 +395,9 @@ export class SalesService {
           subtotal: String(subtotal.toFixed(2)),
           discount: String(discount.toFixed(2)),
           surcharge: String(surcharge.toFixed(2)),
+          serviceFeeAmount: String(serviceFeeAmount.toFixed(2)),
+          couvertAmount: String(couvertAmount.toFixed(2)),
+          waiterTipAmount: String(waiterTipAmount.toFixed(2)),
           freightAmount: String(freightAmount.toFixed(2)),
           freightMod,
           operationNatureId: input.operationNatureId ?? null,
@@ -727,6 +765,243 @@ export class SalesService {
         items: { include: { variant: { include: { product: true } } } },
         payments: true,
       },
+    });
+  }
+
+  /**
+   * Baixa estoque de linhas (produto unitário / composto / ficha técnica BOM).
+   * Usado pela comanda de restaurante no lançamento do item.
+   */
+  async consumeStockForLines(
+    tenantSlug: string,
+    userId: string,
+    lines: Array<{ variantId: string; quantity: number }>,
+    reference: string,
+  ): Promise<void> {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const defaultLoc = await getDefaultStockLocation(db);
+    if (!defaultLoc) {
+      throw new BadRequestException('Cadastre um local de estoque padrão');
+    }
+    const ref = reference.slice(0, 500);
+
+    await db.$transaction(async (tx) => {
+      for (const it of lines) {
+        const q = Number(it.quantity);
+        if (q <= 0) continue;
+        const soldVariant = await tx.productVariant.findUnique({
+          where: { id: it.variantId },
+          include: {
+            product: {
+              include: {
+                recipe: { include: { items: true } },
+              },
+            },
+          },
+        });
+        const recipeItems = soldVariant?.product.recipe?.items ?? [];
+
+        if (recipeItems.length > 0) {
+          for (const ri of recipeItems) {
+            const stockQty = Math.round(q * Number(ri.quantity) * 10_000) / 10_000;
+            if (stockQty <= 0) continue;
+            const bal = await tx.stockBalance.findUnique({
+              where: {
+                variantId_locationId: {
+                  variantId: ri.ingredientVariantId,
+                  locationId: defaultLoc.id,
+                },
+              },
+            });
+            const current = bal ? Number(bal.quantity) : 0;
+            if (current < stockQty) {
+              const ing = await tx.productVariant.findUnique({
+                where: { id: ri.ingredientVariantId },
+                include: { product: { select: { name: true } } },
+              });
+              throw new BadRequestException(
+                `Estoque insuficiente do insumo "${ing?.product.name ?? ri.ingredientVariantId}" (ficha técnica de "${soldVariant?.product.name}"): disponível ${current}, necessário ${stockQty}.`,
+              );
+            }
+            const next = current - stockQty;
+            await tx.stockBalance.upsert({
+              where: {
+                variantId_locationId: {
+                  variantId: ri.ingredientVariantId,
+                  locationId: defaultLoc.id,
+                },
+              },
+              create: {
+                variantId: ri.ingredientVariantId,
+                locationId: defaultLoc.id,
+                quantity: String(next),
+              },
+              update: { quantity: String(next) },
+            });
+            await tx.stockMovement.create({
+              data: {
+                type: StockMovementType.OUT,
+                source: StockMovementSource.OTHER,
+                variantId: ri.ingredientVariantId,
+                locationId: defaultLoc.id,
+                quantity: String(stockQty),
+                reference: `${ref} (BOM)`,
+                userId,
+              },
+            });
+          }
+          continue;
+        }
+
+        const {
+          stockVariantId,
+          stockQty,
+          soldProductName,
+          stockProductName,
+          conversion,
+        } = await resolveSaleStockTarget(tx, it.variantId, q);
+        const bal = await tx.stockBalance.findUnique({
+          where: {
+            variantId_locationId: { variantId: stockVariantId, locationId: defaultLoc.id },
+          },
+        });
+        const current = bal ? Number(bal.quantity) : 0;
+        if (current < stockQty) {
+          const packHint =
+            stockVariantId !== it.variantId
+              ? ` Item "${soldProductName}"${conversion ? ` (${conversion})` : ''} baixa ${stockQty} un. de "${stockProductName}".`
+              : '';
+          throw new BadRequestException(
+            `Estoque insuficiente de "${stockProductName}" no local ${defaultLoc.name}: disponível ${current}, necessário ${stockQty}.${packHint}`,
+          );
+        }
+        const next = current - stockQty;
+        await tx.stockBalance.upsert({
+          where: {
+            variantId_locationId: { variantId: stockVariantId, locationId: defaultLoc.id },
+          },
+          create: {
+            variantId: stockVariantId,
+            locationId: defaultLoc.id,
+            quantity: String(next),
+          },
+          update: { quantity: String(next) },
+        });
+        await tx.stockMovement.create({
+          data: {
+            type: StockMovementType.OUT,
+            source: StockMovementSource.OTHER,
+            variantId: stockVariantId,
+            locationId: defaultLoc.id,
+            quantity: String(stockQty),
+            reference: ref,
+            userId,
+          },
+        });
+      }
+    });
+  }
+
+  /** Estorna baixa de estoque (cancelamento de item/comanda). Inclui BOM. */
+  async restoreStockForLines(
+    tenantSlug: string,
+    userId: string,
+    lines: Array<{ variantId: string; quantity: number }>,
+    reference: string,
+  ): Promise<void> {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const defaultLoc = await getDefaultStockLocation(db);
+    if (!defaultLoc) return;
+    const ref = reference.slice(0, 500);
+
+    await db.$transaction(async (tx) => {
+      for (const it of lines) {
+        const q = Number(it.quantity);
+        if (q <= 0) continue;
+        const soldVariant = await tx.productVariant.findUnique({
+          where: { id: it.variantId },
+          include: {
+            product: {
+              include: {
+                recipe: { include: { items: true } },
+              },
+            },
+          },
+        });
+        const recipeItems = soldVariant?.product.recipe?.items ?? [];
+
+        if (recipeItems.length > 0) {
+          for (const ri of recipeItems) {
+            const stockQty = Math.round(q * Number(ri.quantity) * 10_000) / 10_000;
+            if (stockQty <= 0) continue;
+            const bal = await tx.stockBalance.findUnique({
+              where: {
+                variantId_locationId: {
+                  variantId: ri.ingredientVariantId,
+                  locationId: defaultLoc.id,
+                },
+              },
+            });
+            const current = bal ? Number(bal.quantity) : 0;
+            await tx.stockBalance.upsert({
+              where: {
+                variantId_locationId: {
+                  variantId: ri.ingredientVariantId,
+                  locationId: defaultLoc.id,
+                },
+              },
+              create: {
+                variantId: ri.ingredientVariantId,
+                locationId: defaultLoc.id,
+                quantity: String(current + stockQty),
+              },
+              update: { quantity: String(current + stockQty) },
+            });
+            await tx.stockMovement.create({
+              data: {
+                type: StockMovementType.IN,
+                source: StockMovementSource.OTHER,
+                variantId: ri.ingredientVariantId,
+                locationId: defaultLoc.id,
+                quantity: String(stockQty),
+                reference: `${ref} (estorno BOM)`,
+                userId,
+              },
+            });
+          }
+          continue;
+        }
+
+        const { stockVariantId, stockQty } = await resolveSaleStockTarget(tx, it.variantId, q);
+        const bal = await tx.stockBalance.findUnique({
+          where: {
+            variantId_locationId: { variantId: stockVariantId, locationId: defaultLoc.id },
+          },
+        });
+        const current = bal ? Number(bal.quantity) : 0;
+        await tx.stockBalance.upsert({
+          where: {
+            variantId_locationId: { variantId: stockVariantId, locationId: defaultLoc.id },
+          },
+          create: {
+            variantId: stockVariantId,
+            locationId: defaultLoc.id,
+            quantity: String(current + stockQty),
+          },
+          update: { quantity: String(current + stockQty) },
+        });
+        await tx.stockMovement.create({
+          data: {
+            type: StockMovementType.IN,
+            source: StockMovementSource.OTHER,
+            variantId: stockVariantId,
+            locationId: defaultLoc.id,
+            quantity: String(stockQty),
+            reference: `${ref} (estorno)`,
+            userId,
+          },
+        });
+      }
     });
   }
 

@@ -59,15 +59,22 @@ export function consumeAutoPrintNonce(nonce: string | null, saleId: string): boo
 }
 
 /**
- * Carrega o cupom em iframe oculto; a página dispara `window.print()` ao ficar pronta.
+ * Carrega o cupom numa janela dedicada e dispara a impressão.
+ * Evita iframe 0×0 (vários navegadores/spoolers geram página em branco).
  */
 export function queueSaleReceiptAutoPrint(saleId: string): void {
   const nonce = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+  const url = `/vendas/impressao?id=${encodeURIComponent(saleId)}&autoprint=1&_np=${encodeURIComponent(nonce)}&close=1`;
+  const w = window.open(url, 'gv_sale_receipt', 'noopener,noreferrer,width=420,height=720');
+  if (w) return;
+
+  // Fallback se pop-up bloqueado: iframe com tamanho real (fora da tela).
   const iframe = document.createElement('iframe');
   iframe.style.cssText =
-    'position:fixed;inset:0;width:0;height:0;border:0;opacity:0;pointer-events:none';
-  iframe.src = `/vendas/impressao?id=${encodeURIComponent(saleId)}&autoprint=1&_np=${encodeURIComponent(nonce)}`;
+    'position:fixed;right:0;bottom:0;width:80mm;height:120mm;border:0;opacity:0.01;z-index:-1;';
+  iframe.src = url;
   iframe.setAttribute('aria-hidden', 'true');
+  iframe.setAttribute('title', 'Cupom de venda');
   document.body.appendChild(iframe);
   window.setTimeout(() => {
     try {

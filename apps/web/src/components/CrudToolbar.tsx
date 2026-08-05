@@ -6,7 +6,8 @@ export type CrudToolbarProps = {
   leadingPrimary?: ReactNode;
   /** Se omitido, o botão Incluir não é exibido (ex.: telas só de consulta). */
   onInclude?: () => void;
-  onPrint: () => void;
+  /** Se omitido, o botão Imprimir não é exibido (ex.: módulo com relatório dedicado). */
+  onPrint?: () => void;
   onReports: () => void;
   includeLabel?: string;
 };
@@ -31,9 +32,11 @@ export function CrudToolbar({
         )}
       </div>
       <div className="crud-toolbar-group">
-        <button type="button" className="btn btn-secondary" onClick={onPrint}>
-          Imprimir
-        </button>
+        {onPrint != null ? (
+          <button type="button" className="btn btn-secondary" onClick={onPrint}>
+            Imprimir
+          </button>
+        ) : null}
         <button type="button" className="btn btn-secondary" onClick={onReports}>
           Relatórios
         </button>

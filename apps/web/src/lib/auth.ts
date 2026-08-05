@@ -4,8 +4,9 @@ import { getToken } from './api';
  * Perfis "amigáveis" expostos no UI. Mapeiam para roles RBAC do backend.
  *  - manager  → roles internas `admin` ou `manager`
  *  - cashier  → role interna `seller`
+ *  - waiter   → role interna `waiter` (só Salão)
  */
-export type UserProfile = 'manager' | 'cashier';
+export type UserProfile = 'manager' | 'cashier' | 'waiter';
 
 export type PlanCode = 'STANDARD' | 'WHATSAPP' | 'RESTAURANT';
 
@@ -54,11 +55,18 @@ export function getIdentity(): JwtIdentity | null {
 
 export function profileFromRoles(roles: string[]): UserProfile {
   if (roles.includes('admin') || roles.includes('manager')) return 'manager';
+  if (roles.includes('waiter') && !roles.includes('seller')) return 'waiter';
   return 'cashier';
 }
 
 export function profileLabel(profile: UserProfile): string {
-  return profile === 'manager' ? 'Gerente' : 'Caixa';
+  if (profile === 'manager') return 'Gerente';
+  if (profile === 'waiter') return 'Garçom';
+  return 'Caixa';
+}
+
+export function isWaiter(): boolean {
+  return profileFromRoles(getIdentity()?.roles ?? []) === 'waiter';
 }
 
 export function isManager(): boolean {

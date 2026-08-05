@@ -1,6 +1,13 @@
 import { BadRequestException, Controller, Get, Header, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
-import { Prisma, PrismaClient, SaleStatus, StockMovementSource, StockMovementType } from '../generated/tenant-client';
+import {
+  Prisma,
+  PrismaClient,
+  SaleStatus,
+  StockInventoryStatus,
+  StockMovementSource,
+  StockMovementType,
+} from '../generated/tenant-client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -1283,6 +1290,418 @@ export class ReportsController {
         totalDeficit: lines.reduce((s, r) => s + r.deficit, 0),
       },
     };
+  }
+
+  /**
+   * Resumo de inventários físicos no período (por data de postagem, ou criação se rascunho/cancelado).
+   * Diff = countedQty − systemQty (systemQty no post = saldo do sistema na postagem).
+   */
+  @Get('inventory-summary')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  async inventorySummary(
+    @CurrentUser() user: JwtPayload,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('locationId') locationId?: string,
+    @Query('status') statusRaw?: string,
+    @Query('controlMin') controlMinRaw?: string,
+    @Query('controlMax') controlMaxRaw?: string,
+  ) {
+    const controlRange = this.parseInventoryControlRange(controlMinRaw, controlMaxRaw);
+    const hasPeriod = Boolean(from?.trim() && to?.trim());
+    if (!hasPeriod && !controlRange) {
+      throw new BadRequestException(
+        'Informe o período (from/to) e/ou o intervalo de controle (controlMin/controlMax).',
+      );
+    }
+
+    let start: Date | null = null;
+    let end: Date | null = null;
+    if (hasPeriod) {
+      start = parseReportDate(from!.trim(), 'start');
+      end = parseReportDate(to!.trim(), 'end');
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        throw new BadRequestException('Datas inválidas.');
+      }
+      if (start > end) {
+        throw new BadRequestException('Data inicial não pode ser maior que a final.');
+      }
+    }
+
+    /**
+     * Com nº de controle: ignora o período (o # do inventário é a chave).
+     * Sem controle: exige período por data de postagem/criação.
+     */
+    const applyDateFilter = hasPeriod && !controlRange;
+
+    const statusFilter = this.parseInventoryStatusFilter(statusRaw);
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+
+    const onlyPosted =
+      statusFilter.length === 1 && statusFilter[0] === StockInventoryStatus.POSTED;
+
+    const inventories = await db.stockInventory.findMany({
+      where: {
+        ...(locationId?.trim() ? { locationId: locationId.trim() } : {}),
+        ...(statusFilter.length === 1
+          ? { status: statusFilter[0] }
+          : statusFilter.length > 1
+            ? { status: { in: statusFilter } }
+            : {}),
+        ...(controlRange
+          ? { controlNumber: { gte: controlRange.from, lte: controlRange.to } }
+          : {}),
+        ...(applyDateFilter && start && end
+          ? onlyPosted
+            ? { postedAt: { gte: start, lte: end } }
+            : {
+                OR: [
+                  { postedAt: { gte: start, lte: end } },
+                  { postedAt: null, createdAt: { gte: start, lte: end } },
+                ],
+              }
+          : {}),
+      },
+      orderBy: [{ postedAt: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        location: { select: { id: true, code: true, name: true } },
+        user: { select: { id: true, name: true } },
+        items: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            variant: {
+              select: {
+                id: true,
+                sku: true,
+                barcode: true,
+                product: { select: { name: true, controlNumber: true } },
+              },
+            },
+          },
+        },
+      },
+      take: 2000,
+    });
+
+    const lines = inventories.map((inv) => {
+      let itemCount = 0;
+      let countedCount = 0;
+      let divergentCount = 0;
+      let surplusQty = 0;
+      let shortageQty = 0;
+      let absDiffQty = 0;
+      const items = inv.items.map((it) => {
+        itemCount += 1;
+        const systemQty = Number(it.systemQty);
+        const countedQty = it.countedQty != null ? Number(it.countedQty) : null;
+        const diff = countedQty != null ? countedQty - systemQty : null;
+        if (countedQty != null) {
+          countedCount += 1;
+          if (diff != null && Math.abs(diff) > 1e-9) {
+            divergentCount += 1;
+            absDiffQty += Math.abs(diff);
+            if (diff > 0) surplusQty += diff;
+            else shortageQty += Math.abs(diff);
+          }
+        }
+        return {
+          variantId: it.variant.id,
+          sku: it.variant.sku,
+          barcode: it.variant.barcode,
+          productName: it.variant.product.name,
+          productControlNumber: it.variant.product.controlNumber,
+          systemQty,
+          countedQty,
+          diff,
+          notes: it.notes,
+        };
+      });
+      return {
+        id: inv.id,
+        controlNumber: inv.controlNumber,
+        status: inv.status,
+        locationId: inv.location.id,
+        locationCode: inv.location.code,
+        locationName: inv.location.name,
+        notes: inv.notes,
+        userName: inv.user?.name ?? null,
+        createdAt: inv.createdAt.toISOString(),
+        postedAt: inv.postedAt?.toISOString() ?? null,
+        itemCount,
+        countedCount,
+        divergentCount,
+        surplusQty,
+        shortageQty,
+        absDiffQty,
+        items,
+      };
+    });
+
+    const locationName =
+      locationId?.trim() && lines.length
+        ? (lines.find((l) => l.locationId === locationId.trim())?.locationName ?? null)
+        : locationId?.trim()
+          ? (
+              await db.stockLocation.findUnique({
+                where: { id: locationId.trim() },
+                select: { name: true },
+              })
+            )?.name ?? null
+          : null;
+
+    return {
+      title: 'Inventários — resumo',
+      period: hasPeriod ? { from: from!.trim(), to: to!.trim() } : null,
+      locationId: locationId?.trim() || null,
+      locationName,
+      statusFilter: statusFilter.map(String),
+      controlInterval: controlRange,
+      note:
+        'Lista inventários filtrados por período e/ou nº de controle. ' +
+        'Com controle informado, a data fica opcional (útil para achar um # específico fora do mês atual). ' +
+        'Divergência = contagem − saldo sistema na postagem. Sobra = contagem maior; falta = contagem menor. ' +
+        'O post iguala o saldo à contagem (ADJUST absoluto) — a diferença não gera saída/entrada separada.',
+      lines,
+      totals: {
+        inventories: lines.length,
+        posted: lines.filter((l) => l.status === StockInventoryStatus.POSTED).length,
+        items: lines.reduce((s, l) => s + l.itemCount, 0),
+        divergentLines: lines.reduce((s, l) => s + l.divergentCount, 0),
+        surplusQty: lines.reduce((s, l) => s + l.surplusQty, 0),
+        shortageQty: lines.reduce((s, l) => s + l.shortageQty, 0),
+        absDiffQty: lines.reduce((s, l) => s + l.absDiffQty, 0),
+      },
+    };
+  }
+
+  /**
+   * Divergências item a item (contado vs sistema) de inventários postados no período,
+   * ou de um inventário específico (`inventoryId`).
+   */
+  @Get('inventory-divergences')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  async inventoryDivergences(
+    @CurrentUser() user: JwtPayload,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('locationId') locationId?: string,
+    @Query('inventoryId') inventoryId?: string,
+    @Query('onlyDiffs') onlyDiffsRaw?: string,
+    @Query('controlMin') controlMinRaw?: string,
+    @Query('controlMax') controlMaxRaw?: string,
+  ) {
+    const onlyDiffs = onlyDiffsRaw === '1' || onlyDiffsRaw === 'true';
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const controlRange = inventoryId?.trim()
+      ? null
+      : this.parseInventoryControlRange(controlMinRaw, controlMaxRaw);
+
+    let inventories;
+    if (inventoryId?.trim()) {
+      const inv = await db.stockInventory.findUnique({
+        where: { id: inventoryId.trim() },
+        include: {
+          location: { select: { id: true, code: true, name: true } },
+          user: { select: { id: true, name: true } },
+          items: {
+            include: {
+              variant: {
+                select: {
+                  id: true,
+                  sku: true,
+                  barcode: true,
+                  product: { select: { name: true, controlNumber: true } },
+                },
+              },
+            },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      });
+      if (!inv) throw new BadRequestException('Inventário não encontrado.');
+      inventories = [inv];
+    } else {
+      const hasPeriod = Boolean(from?.trim() && to?.trim());
+      if (!hasPeriod && !controlRange) {
+        throw new BadRequestException(
+          'Informe inventoryId, período from/to ou intervalo de controle.',
+        );
+      }
+      let start: Date | null = null;
+      let end: Date | null = null;
+      if (hasPeriod) {
+        start = parseReportDate(from!.trim(), 'start');
+        end = parseReportDate(to!.trim(), 'end');
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+          throw new BadRequestException('Datas inválidas.');
+        }
+        if (start > end) {
+          throw new BadRequestException('Data inicial não pode ser maior que a final.');
+        }
+      }
+      const applyDateFilter = hasPeriod && !controlRange;
+      inventories = await db.stockInventory.findMany({
+        where: {
+          status: StockInventoryStatus.POSTED,
+          ...(applyDateFilter && start && end
+            ? { postedAt: { gte: start, lte: end } }
+            : {}),
+          ...(locationId?.trim() ? { locationId: locationId.trim() } : {}),
+          ...(controlRange
+            ? { controlNumber: { gte: controlRange.from, lte: controlRange.to } }
+            : {}),
+        },
+        orderBy: [{ postedAt: 'desc' }, { controlNumber: 'desc' }],
+        include: {
+          location: { select: { id: true, code: true, name: true } },
+          user: { select: { id: true, name: true } },
+          items: {
+            include: {
+              variant: {
+                select: {
+                  id: true,
+                  sku: true,
+                  barcode: true,
+                  product: { select: { name: true, controlNumber: true } },
+                },
+              },
+            },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+        take: 500,
+      });
+    }
+
+    type Line = {
+      inventoryId: string;
+      inventoryControlNumber: number;
+      inventoryStatus: string;
+      postedAt: string | null;
+      locationCode: string;
+      locationName: string;
+      variantId: string;
+      sku: string;
+      barcode: string | null;
+      productName: string;
+      productControlNumber: number;
+      systemQty: number;
+      countedQty: number | null;
+      diff: number | null;
+      notes: string | null;
+    };
+
+    const lines: Line[] = [];
+    for (const inv of inventories) {
+      for (const it of inv.items) {
+        const systemQty = Number(it.systemQty);
+        const countedQty = it.countedQty != null ? Number(it.countedQty) : null;
+        const diff = countedQty != null ? countedQty - systemQty : null;
+        if (onlyDiffs) {
+          if (diff == null || Math.abs(diff) <= 1e-9) continue;
+        }
+        lines.push({
+          inventoryId: inv.id,
+          inventoryControlNumber: inv.controlNumber,
+          inventoryStatus: inv.status,
+          postedAt: inv.postedAt?.toISOString() ?? null,
+          locationCode: inv.location.code,
+          locationName: inv.location.name,
+          variantId: it.variant.id,
+          sku: it.variant.sku,
+          barcode: it.variant.barcode,
+          productName: it.variant.product.name,
+          productControlNumber: it.variant.product.controlNumber,
+          systemQty,
+          countedQty,
+          diff,
+          notes: it.notes,
+        });
+      }
+    }
+
+    lines.sort((a, b) => {
+      if (a.inventoryControlNumber !== b.inventoryControlNumber) {
+        return b.inventoryControlNumber - a.inventoryControlNumber;
+      }
+      return a.productName.localeCompare(b.productName, 'pt-BR');
+    });
+
+    const withDiff = lines.filter((l) => l.diff != null && Math.abs(l.diff) > 1e-9);
+    const surplusQty = withDiff.filter((l) => (l.diff ?? 0) > 0).reduce((s, l) => s + (l.diff ?? 0), 0);
+    const shortageQty = withDiff
+      .filter((l) => (l.diff ?? 0) < 0)
+      .reduce((s, l) => s + Math.abs(l.diff ?? 0), 0);
+
+    return {
+      title: onlyDiffs ? 'Inventário — divergências' : 'Inventário — contagens',
+      period:
+        inventoryId?.trim() || controlRange
+          ? null
+          : from?.trim() && to?.trim()
+            ? { from: from.trim(), to: to.trim() }
+            : null,
+      inventoryId: inventoryId?.trim() || null,
+      locationId: locationId?.trim() || null,
+      controlInterval: controlRange,
+      onlyDiffs,
+      note:
+        'Diff = quantidade contada − saldo do sistema na postagem. ' +
+        'Valores positivos = sobra física; negativos = falta. ' +
+        'Ao postar, o saldo operacional passa a ser a contagem (ADJUST absoluto).',
+      lines,
+      totals: {
+        linesCount: lines.length,
+        divergentLines: withDiff.length,
+        surplusQty,
+        shortageQty,
+        absDiffQty: surplusQty + shortageQty,
+        inventories: new Set(lines.map((l) => l.inventoryId)).size,
+      },
+    };
+  }
+
+  private parseInventoryControlRange(
+    minRaw?: string,
+    maxRaw?: string,
+  ): { from: number; to: number } | null {
+    const hasMin = Boolean(minRaw?.trim());
+    const hasMax = Boolean(maxRaw?.trim());
+    if (!hasMin && !hasMax) return null;
+
+    const parseOne = (raw: string | undefined, label: string): number => {
+      const n = Number(String(raw).trim());
+      if (!Number.isInteger(n) || n < 1) {
+        throw new BadRequestException(`${label} deve ser um inteiro positivo.`);
+      }
+      return n;
+    };
+
+    const from = hasMin ? parseOne(minRaw, 'controlMin') : 1;
+    const to = hasMax ? parseOne(maxRaw, 'controlMax') : parseOne(minRaw, 'controlMin');
+    if (from > to) {
+      throw new BadRequestException('controlMin não pode ser maior que controlMax.');
+    }
+    return { from, to };
+  }
+
+  private parseInventoryStatusFilter(raw?: string): StockInventoryStatus[] {
+    if (!raw?.trim() || raw.trim().toUpperCase() === 'POSTED') {
+      return [StockInventoryStatus.POSTED];
+    }
+    const token = raw.trim().toUpperCase();
+    if (token === 'ALL') {
+      return [
+        StockInventoryStatus.POSTED,
+        StockInventoryStatus.DRAFT,
+        StockInventoryStatus.CANCELLED,
+      ];
+    }
+    if (token === 'DRAFT') return [StockInventoryStatus.DRAFT];
+    if (token === 'CANCELLED') return [StockInventoryStatus.CANCELLED];
+    throw new BadRequestException(
+      'status inválido. Use POSTED (padrão), DRAFT, CANCELLED ou ALL.',
+    );
   }
 
   @Get('export/sales.csv')

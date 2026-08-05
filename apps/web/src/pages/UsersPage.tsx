@@ -381,11 +381,15 @@ export function UsersPage() {
                           background:
                             u.profile === 'manager'
                               ? 'rgba(22,163,74,0.12)'
-                              : 'rgba(37,99,235,0.12)',
+                              : u.profile === 'waiter'
+                                ? 'rgba(180,83,9,0.12)'
+                                : 'rgba(37,99,235,0.12)',
                           color:
                             u.profile === 'manager'
                               ? '#15803d'
-                              : '#1d4ed8',
+                              : u.profile === 'waiter'
+                                ? '#b45309'
+                                : '#1d4ed8',
                           fontSize: '0.78rem',
                           fontWeight: 700,
                         }}
@@ -576,6 +580,12 @@ export function UsersPage() {
                   title="Caixa"
                   subtitle="Opera o PDV e o caixa. Ações sensíveis exigem permissão e senha do administrador."
                   onClick={() => setForm((f) => ({ ...f, profile: 'cashier' }))}
+                />
+                <ProfileChoice
+                  active={form.profile === 'waiter'}
+                  title="Garçom"
+                  subtitle="Acesso apenas ao Salão / Comandas (lançar itens e imprimir cozinha). Não opera PDV nem caixa."
+                  onClick={() => setForm((f) => ({ ...f, profile: 'waiter' }))}
                 />
               </div>
             </div>

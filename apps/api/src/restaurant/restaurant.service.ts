@@ -27,6 +27,11 @@ function parseQty(v: string | number | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** Cliente de balcão/mesa quando o nome não é informado. */
+export const DEFAULT_WALK_IN_CUSTOMER_NAME = 'Cliente Padrão';
+
+type TenantDb = Awaited<ReturnType<TenantPrismaService['getClient']>>;
+
 @Injectable()
 export class RestaurantService {
   constructor(
@@ -52,6 +57,35 @@ export class RestaurantService {
     return this.tenantPrisma.getClient(tenantSlug);
   }
 
+  /**
+   * Mesa fica OCCUPIED só com comanda aberta que tenha cliente ou item ativo.
+   * Comanda vazia (só reserva de número) mantém a mesa livre.
+   */
+  private async syncDiningTableStatus(
+    db: Awaited<ReturnType<TenantPrismaService['getClient']>>,
+    tableId: string | null | undefined,
+  ) {
+    if (!tableId) return;
+    const openTabs = await db.serviceTab.findMany({
+      where: { tableId, status: ServiceTabStatus.OPEN },
+      select: {
+        customerId: true,
+        items: {
+          where: { status: { not: ServiceTabItemStatus.CANCELLED } },
+          select: { id: true },
+          take: 1,
+        },
+      },
+    });
+    const occupied = openTabs.some((t) => Boolean(t.customerId) || t.items.length > 0);
+    await db.diningTable.update({
+      where: { id: tableId },
+      data: {
+        status: occupied ? DiningTableStatus.OCCUPIED : DiningTableStatus.FREE,
+      },
+    });
+  }
+
   // --- Ambientes / mesas ---
 
   listAreas(tenantSlug: string) {
@@ -66,7 +100,19 @@ export class RestaurantService {
             include: {
               tabs: {
                 where: { status: ServiceTabStatus.OPEN },
-                select: { id: true, number: true },
+                select: {
+                  id: true,
+                  number: true,
+                  customerId: true,
+                  customer: { select: { id: true, name: true } },
+                  _count: {
+                    select: {
+                      items: {
+                        where: { status: { not: ServiceTabItemStatus.CANCELLED } },
+                      },
+                    },
+                  },
+                },
               },
             },
           },
@@ -107,6 +153,21 @@ export class RestaurantService {
 
   // --- Comandas ---
 
+  private readonly tabDetailInclude = {
+    table: { include: { area: true } },
+    items: {
+      include: {
+        variant: {
+          include: { product: { select: { id: true, name: true, taxUnit: true, tareKg: true } } },
+        },
+      },
+      orderBy: { createdAt: 'asc' as const },
+    },
+    customer: true,
+    openedBy: { select: { id: true, name: true } },
+    sale: { select: { id: true, number: true, total: true } },
+  };
+
   async listOpenTabs(tenantSlug: string) {
     const db = await this.db(tenantSlug);
     return db.serviceTab.findMany({
@@ -130,54 +191,207 @@ export class RestaurantService {
     const db = await this.db(tenantSlug);
     const tab = await db.serviceTab.findUnique({
       where: { id },
-      include: {
-        table: { include: { area: true } },
-        items: {
-          include: {
-            variant: { include: { product: { select: { id: true, name: true, taxUnit: true, tareKg: true } } } },
-          },
-          orderBy: { createdAt: 'asc' },
-        },
-        customer: true,
-        openedBy: { select: { id: true, name: true } },
-        sale: { select: { id: true, number: true, total: true } },
-      },
+      include: this.tabDetailInclude,
     });
     if (!tab) throw new NotFoundException('Comanda não encontrada.');
     return tab;
   }
 
+  /**
+   * Localiza comanda aberta por número da comanda ou código/rótulo da mesa.
+   * Usado pelo PDV para cobrança sem depender do link do salão.
+   */
+  async lookupOpenTab(tenantSlug: string, q: string) {
+    const db = await this.db(tenantSlug);
+    const term = String(q ?? '').trim();
+    if (!term) {
+      throw new BadRequestException('Informe o número da comanda ou o código da mesa.');
+    }
+
+    const asPureNumber = /^\d+$/.test(term) && term.length <= 10;
+    /** "01" / "001" costuma ser código de mesa, não comanda #1. */
+    const preferTableCode = asPureNumber && /^0\d+$/.test(term);
+
+    if (asPureNumber && !preferTableCode) {
+      const n = Number(term);
+      const byNumber = await db.serviceTab.findFirst({
+        where: { number: n, status: ServiceTabStatus.OPEN },
+        include: this.tabDetailInclude,
+      });
+      if (byNumber) return { match: 'number' as const, tab: byNumber, candidates: [] as never[] };
+    }
+
+    const tables = await db.diningTable.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          { code: { equals: term, mode: 'insensitive' } },
+          { label: { equals: term, mode: 'insensitive' } },
+        ],
+      },
+      include: {
+        area: true,
+        tabs: {
+          where: { status: ServiceTabStatus.OPEN },
+          orderBy: { number: 'asc' },
+          include: this.tabDetailInclude,
+        },
+      },
+    });
+
+    const openFromTables = tables.flatMap((t) => t.tabs);
+    if (openFromTables.length === 1) {
+      return { match: 'table' as const, tab: openFromTables[0]!, candidates: [] as never[] };
+    }
+    if (openFromTables.length > 1) {
+      return {
+        match: 'ambiguous' as const,
+        tab: null,
+        candidates: openFromTables.map((t) => ({
+          id: t.id,
+          number: t.number,
+          tableLabel: t.table
+            ? `${t.table.area.name} / ${t.table.label || t.table.code}`
+            : 'sem mesa',
+          itemCount: t.items.filter((i) => i.status !== ServiceTabItemStatus.CANCELLED).length,
+          total: t.items
+            .filter((i) => i.status !== ServiceTabItemStatus.CANCELLED)
+            .reduce((s, i) => s + Number(i.totalLine), 0),
+        })),
+      };
+    }
+
+    /** Fallback: "01" sem mesa → tenta comanda #1. */
+    if (preferTableCode) {
+      const n = Number(term);
+      const byNumber = await db.serviceTab.findFirst({
+        where: { number: n, status: ServiceTabStatus.OPEN },
+        include: this.tabDetailInclude,
+      });
+      if (byNumber) return { match: 'number' as const, tab: byNumber, candidates: [] as never[] };
+    }
+
+    throw new NotFoundException(
+      `Nenhuma comanda aberta para "${term}". Use o nº da comanda ou o código da mesa.`,
+    );
+  }
+
+  private async resolveCustomerId(
+    db: TenantDb,
+    opts: { customerId?: string | null; customerName?: string | null },
+  ): Promise<string> {
+    if (opts.customerId?.trim()) {
+      const byId = await db.customer.findUnique({
+        where: { id: opts.customerId.trim() },
+        select: { id: true },
+      });
+      if (!byId) throw new BadRequestException('Cliente inválido.');
+      return byId.id;
+    }
+    const name = (opts.customerName?.trim() || DEFAULT_WALK_IN_CUSTOMER_NAME).slice(0, 120);
+    const found = await db.customer.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (found) return found.id;
+    const created = await db.customer.create({
+      data: { name },
+      select: { id: true },
+    });
+    return created.id;
+  }
+
   async openTab(
     tenantSlug: string,
     userId: string,
-    body: { tableId?: string | null; customerId?: string | null; notes?: string | null },
+    body: {
+      tableId?: string | null;
+      customerId?: string | null;
+      customerName?: string | null;
+      notes?: string | null;
+      guestCount?: number;
+    },
   ) {
     const db = await this.db(tenantSlug);
     let tableId = body.tableId?.trim() || null;
     if (tableId) {
       const table = await db.diningTable.findUnique({ where: { id: tableId } });
       if (!table || !table.isActive) throw new BadRequestException('Mesa inválida.');
-      await db.diningTable.update({
-        where: { id: tableId },
-        data: { status: DiningTableStatus.OCCUPIED },
-      });
     }
-    return db.serviceTab.create({
+    let guestCount = 1;
+    if (body.guestCount !== undefined) {
+      const n = Math.floor(Number(body.guestCount));
+      if (!Number.isFinite(n) || n < 1 || n > 999) {
+        throw new BadRequestException('Número de pessoas inválido (1–999).');
+      }
+      guestCount = n;
+    }
+    const customerId = await this.resolveCustomerId(db, {
+      customerId: body.customerId,
+      customerName: body.customerName,
+    });
+    const tab = await db.serviceTab.create({
       data: {
         tableId,
-        customerId: body.customerId ?? null,
+        customerId,
         notes: body.notes?.trim() || null,
         openedById: userId,
+        guestCount,
       },
-      include: {
-        table: { include: { area: true } },
-        items: true,
-      },
+      include: this.tabDetailInclude,
     });
+    await this.syncDiningTableStatus(db, tableId);
+    return tab;
+  }
+
+  async patchTab(
+    tenantSlug: string,
+    tabId: string,
+    body: {
+      guestCount?: number;
+      customerId?: string | null;
+      customerName?: string | null;
+      notes?: string | null;
+    },
+  ) {
+    const db = await this.db(tenantSlug);
+    const tab = await db.serviceTab.findUnique({ where: { id: tabId } });
+    if (!tab) throw new NotFoundException('Comanda não encontrada.');
+    if (tab.status !== ServiceTabStatus.OPEN) {
+      throw new BadRequestException('Comanda não está aberta.');
+    }
+    const data: { guestCount?: number; customerId?: string | null; notes?: string | null } = {};
+    if (body.guestCount !== undefined) {
+      const n = Math.floor(Number(body.guestCount));
+      if (!Number.isFinite(n) || n < 1 || n > 999) {
+        throw new BadRequestException('Número de pessoas inválido (1–999).');
+      }
+      data.guestCount = n;
+    }
+    if (body.customerId !== undefined || body.customerName !== undefined) {
+      data.customerId = await this.resolveCustomerId(db, {
+        customerId: body.customerId,
+        customerName: body.customerName,
+      });
+    }
+    if (body.notes !== undefined) {
+      data.notes = body.notes?.trim() || null;
+    }
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException('Nada para atualizar.');
+    }
+    const updated = await db.serviceTab.update({
+      where: { id: tabId },
+      data,
+      include: this.tabDetailInclude,
+    });
+    await this.syncDiningTableStatus(db, updated.tableId);
+    return updated;
   }
 
   async addItem(
     tenantSlug: string,
+    userId: string,
     tabId: string,
     body: {
       variantId: string;
@@ -223,7 +437,15 @@ export class RestaurantService {
     const discount = parseQty(body.discount ?? 0);
     const totalLine = money(qty * unitPrice - discount);
 
-    return db.serviceTabItem.create({
+    // Baixa estoque no lançamento (comanda). A venda no PDV não baixa de novo.
+    await this.sales.consumeStockForLines(
+      tenantSlug,
+      userId,
+      [{ variantId: body.variantId, quantity: qty }],
+      `Comanda #${tab.number}`,
+    );
+
+    const created = await db.serviceTabItem.create({
       data: {
         tabId,
         variantId: body.variantId,
@@ -241,44 +463,60 @@ export class RestaurantService {
         variant: { include: { product: { select: { id: true, name: true, taxUnit: true, tareKg: true } } } },
       },
     });
+    await this.syncDiningTableStatus(db, tab.tableId);
+    return created;
   }
 
-  async cancelItem(tenantSlug: string, tabId: string, itemId: string) {
+  async cancelItem(tenantSlug: string, userId: string, tabId: string, itemId: string) {
     const db = await this.db(tenantSlug);
     const item = await db.serviceTabItem.findFirst({ where: { id: itemId, tabId } });
     if (!item) throw new NotFoundException('Item não encontrado.');
-    return db.serviceTabItem.update({
+    if (item.status === ServiceTabItemStatus.CANCELLED) {
+      return item;
+    }
+    const tab = await db.serviceTab.findUnique({ where: { id: tabId } });
+    await this.sales.restoreStockForLines(
+      tenantSlug,
+      userId,
+      [{ variantId: item.variantId, quantity: Number(item.quantity) }],
+      `Comanda #${tab?.number ?? '?'} — cancelamento item`,
+    );
+    const updated = await db.serviceTabItem.update({
       where: { id: itemId },
       data: { status: ServiceTabItemStatus.CANCELLED },
     });
+    await this.syncDiningTableStatus(db, tab?.tableId);
+    return updated;
   }
 
-  async cancelTab(tenantSlug: string, tabId: string) {
+  async cancelTab(tenantSlug: string, userId: string, tabId: string) {
     const db = await this.db(tenantSlug);
-    const tab = await db.serviceTab.findUnique({ where: { id: tabId } });
+    const tab = await db.serviceTab.findUnique({
+      where: { id: tabId },
+      include: {
+        items: { where: { status: { not: ServiceTabItemStatus.CANCELLED } } },
+      },
+    });
     if (!tab) throw new NotFoundException('Comanda não encontrada.');
     if (tab.status !== ServiceTabStatus.OPEN) {
       throw new BadRequestException('Só é possível cancelar comanda aberta.');
+    }
+    if (tab.items.length) {
+      await this.sales.restoreStockForLines(
+        tenantSlug,
+        userId,
+        tab.items.map((it) => ({
+          variantId: it.variantId,
+          quantity: Number(it.quantity),
+        })),
+        `Comanda #${tab.number} — cancelamento`,
+      );
     }
     const updated = await db.serviceTab.update({
       where: { id: tabId },
       data: { status: ServiceTabStatus.CANCELLED, closedAt: new Date() },
     });
-    if (tab.tableId) {
-      const otherOpen = await db.serviceTab.count({
-        where: {
-          tableId: tab.tableId,
-          status: ServiceTabStatus.OPEN,
-          id: { not: tabId },
-        },
-      });
-      if (otherOpen === 0) {
-        await db.diningTable.update({
-          where: { id: tab.tableId },
-          data: { status: DiningTableStatus.FREE },
-        });
-      }
-    }
+    await this.syncDiningTableStatus(db, tab.tableId);
     return updated;
   }
 
@@ -292,11 +530,19 @@ export class RestaurantService {
             status: { not: ServiceTabItemStatus.CANCELLED },
             kitchenPrintedAt: null,
           };
-    await db.serviceTabItem.updateMany({
+    const pending = await db.serviceTabItem.findMany({
       where,
-      data: { kitchenPrintedAt: new Date(), status: ServiceTabItemStatus.PREPARING },
+      select: { id: true },
     });
-    return this.getTab(tenantSlug, tabId);
+    const printedItemIds = pending.map((i) => i.id);
+    if (printedItemIds.length) {
+      await db.serviceTabItem.updateMany({
+        where: { id: { in: printedItemIds } },
+        data: { kitchenPrintedAt: new Date(), status: ServiceTabItemStatus.PREPARING },
+      });
+    }
+    const tab = await this.getTab(tenantSlug, tabId);
+    return { ...tab, printedItemIds };
   }
 
   async closeTab(
@@ -343,6 +589,7 @@ export class RestaurantService {
       discount: body.discount ?? 0,
       surcharge: body.surcharge ?? 0,
       source: SaleSource.RESTAURANT,
+      deductStock: false,
       externalRef: `tab:${tab.number}`,
       items: tab.items.map((it) => ({
         variantId: it.variantId,
@@ -363,22 +610,41 @@ export class RestaurantService {
     });
 
     if (tab.tableId) {
-      const otherOpen = await db.serviceTab.count({
-        where: {
-          tableId: tab.tableId,
-          status: ServiceTabStatus.OPEN,
-          id: { not: tabId },
-        },
-      });
-      if (otherOpen === 0) {
-        await db.diningTable.update({
-          where: { id: tab.tableId },
-          data: { status: DiningTableStatus.FREE },
-        });
-      }
+      await this.syncDiningTableStatus(db, tab.tableId);
     }
 
     return { tab: await this.getTab(tenantSlug, tabId), sale };
+  }
+
+  /**
+   * Fecha a comanda após o PDV já ter criado a Sale (pagamento no caixa).
+   * Não cria venda de novo — só vincula e libera a mesa.
+   */
+  async closeTabWithSale(tenantSlug: string, tabId: string, saleId: string) {
+    const db = await this.db(tenantSlug);
+    const tab = await db.serviceTab.findUnique({ where: { id: tabId } });
+    if (!tab) throw new NotFoundException('Comanda não encontrada.');
+    if (tab.status !== ServiceTabStatus.OPEN) {
+      throw new BadRequestException('Comanda já fechada ou cancelada.');
+    }
+    const sale = await db.sale.findUnique({ where: { id: saleId } });
+    if (!sale) throw new BadRequestException('Venda inválida.');
+    if (sale.status !== 'COMPLETED') {
+      throw new BadRequestException('Só é possível vincular venda concluída.');
+    }
+
+    const updated = await db.serviceTab.update({
+      where: { id: tabId },
+      data: {
+        status: ServiceTabStatus.CLOSED,
+        closedAt: new Date(),
+        saleId: sale.id,
+      },
+    });
+
+    await this.syncDiningTableStatus(db, tab.tableId);
+
+    return { tab: await this.getTab(tenantSlug, tabId), sale: updated };
   }
 
   // --- Ficha técnica (BOM) ---
