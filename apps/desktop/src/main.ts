@@ -22,6 +22,7 @@ import {
   startPrintAgent,
   stopPrintAgent,
 } from './print-agent';
+import { listSystemPrinters } from './printers';
 
 let mainWindow: BrowserWindow | null = null;
 let revalidateTimer: NodeJS.Timeout | null = null;
@@ -231,17 +232,22 @@ function registerIpc() {
 
   ipcMain.handle('printers:list', async (event) => {
     try {
-      const list = await event.sender.getPrintersAsync();
-      return {
-        ok: true,
-        printers: list.map((p) => ({
-          name: p.name,
-          displayName: p.displayName || p.name,
-          isDefault: Boolean(p.isDefault),
-          status: p.status,
-        })),
-      };
+      const { printers, error, detail } = await listSystemPrinters([
+        event.sender,
+        mainWindow?.webContents,
+      ]);
+      console.log(`[printers:list] count=${printers.length} ${detail ?? ''}`);
+      if (!printers.length) {
+        return {
+          ok: false,
+          error: error || 'Nenhuma impressora encontrada.',
+          detail,
+          printers: [],
+        };
+      }
+      return { ok: true, printers, detail };
     } catch (err) {
+      console.error('[printers:list] failed', err);
       return {
         ok: false,
         error: err instanceof Error ? err.message : 'Falha ao listar impressoras.',

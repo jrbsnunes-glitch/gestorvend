@@ -17,11 +17,18 @@ contextBridge.exposeInMainWorld('gestorvend', {
   printSilent: () => ipcRenderer.invoke('print:silent') as Promise<{ ok: boolean; error?: string }>,
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   retryLicense: () => ipcRenderer.invoke('license:retry') as Promise<{ ok: boolean; message: string }>,
-  listPrinters: () =>
+    listPrinters: () =>
     ipcRenderer.invoke('printers:list') as Promise<{
       ok: boolean;
       error?: string;
-      printers: Array<{ name: string; displayName: string; isDefault: boolean; status: number }>;
+      detail?: string;
+      printers: Array<{
+        name: string;
+        displayName: string;
+        isDefault: boolean;
+        status: number;
+        source?: string;
+      }>;
     }>,
   getStation: () =>
     ipcRenderer.invoke('station:get') as Promise<{

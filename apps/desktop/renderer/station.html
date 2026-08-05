@@ -108,14 +108,29 @@
         <input id="pollMs" type="number" min="1500" max="60000" step="500" value="3000" />
 
         <label for="printerCozinha">Impressora — setor COZINHA</label>
-        <select id="printerCozinha">
-          <option value="">(padrão do Windows)</option>
-        </select>
+        <div class="row" style="margin-bottom: 0.35rem;">
+          <select id="printerCozinha" style="flex: 1 1 220px; margin-bottom: 0;">
+            <option value="">Carregando impressoras…</option>
+          </select>
+          <button type="button" class="secondary" id="btnReloadPrinters" style="width: auto;">
+            Atualizar lista
+          </button>
+        </div>
+        <p id="printerHint" class="muted" style="margin: 0 0 0.75rem; font-size: 0.82rem;"></p>
+        <label for="printerCozinhaManual">Ou digite o nome exato (como no Windows)</label>
+        <input
+          id="printerCozinhaManual"
+          type="text"
+          placeholder="Ex.: EPSON TM-T20II Receipt"
+          style="margin-bottom: 1rem;"
+        />
 
         <label for="printerBar">Impressora — setor BAR (opcional)</label>
         <select id="printerBar">
           <option value="">(mesma da cozinha / padrão)</option>
         </select>
+        <label for="printerBarManual">Ou digite o nome — BAR</label>
+        <input id="printerBarManual" type="text" placeholder="Opcional" />
 
         <div class="row">
           <button type="button" id="btnSave">Salvar e iniciar agente</button>
@@ -138,10 +153,12 @@
         el.className = 'msg ' + (ok === true ? 'ok' : ok === false ? 'err' : '');
       }
 
-      function fillPrinterSelect(sel, printers, selected) {
-        const keep = sel.querySelector('option')?.outerHTML || '<option value="">(padrão)</option>';
-        sel.innerHTML = keep;
-        // reset first option text already present
+      function fillPrinterSelect(sel, printers, selected, emptyLabel) {
+        sel.innerHTML = '';
+        const first = document.createElement('option');
+        first.value = '';
+        first.textContent = emptyLabel || '(padrão do Windows)';
+        sel.appendChild(first);
         for (const p of printers) {
           const opt = document.createElement('option');
           opt.value = p.name;
@@ -149,16 +166,70 @@
           if (selected && selected === p.name) opt.selected = true;
           sel.appendChild(opt);
         }
+        if (selected && selected.trim() && !printers.some((p) => p.name === selected)) {
+          const opt = document.createElement('option');
+          opt.value = selected;
+          opt.textContent = selected + ' (salva)';
+          opt.selected = true;
+          sel.appendChild(opt);
+        }
+      }
+
+      function resolvePrinter(selectId, manualId) {
+        const manual = $(manualId).value.trim();
+        if (manual) return manual;
+        return $(selectId).value.trim() || undefined;
       }
 
       async function loadPrinters(selectedCozinha, selectedBar) {
-        const res = await api.listPrinters();
-        if (!res.ok) {
-          setMsg(res.error || 'Não foi possível listar impressoras.', false);
+        if (!api || typeof api.listPrinters !== 'function') {
+          $('printerHint').textContent =
+            'App desktop desatualizado (API listPrinters ausente). Feche e rode npm run desktop:dev na pasta do projeto.';
+          setMsg('Recompile o app desktop para listar impressoras.', false);
+          fillPrinterSelect($('printerCozinha'), [], selectedCozinha, '(padrão do Windows)');
+          fillPrinterSelect($('printerBar'), [], selectedBar, '(mesma da cozinha / padrão)');
           return;
         }
-        fillPrinterSelect($('printerCozinha'), res.printers, selectedCozinha);
-        fillPrinterSelect($('printerBar'), res.printers, selectedBar);
+        $('printerHint').textContent = 'Consultando impressoras do Windows…';
+        let res;
+        try {
+          res = await api.listPrinters();
+        } catch (e) {
+          $('printerHint').textContent = 'Erro ao consultar impressoras: ' + (e && e.message ? e.message : e);
+          setMsg('Falha na chamada listPrinters.', false);
+          return;
+        }
+        const list = res.printers || [];
+        fillPrinterSelect($('printerCozinha'), list, selectedCozinha, '(padrão do Windows)');
+        fillPrinterSelect($('printerBar'), list, selectedBar, '(mesma da cozinha / padrão)');
+        if (!res.ok || list.length === 0) {
+          $('printerHint').textContent =
+            (res.error || 'Nenhuma impressora listada.') +
+            (res.detail ? ' [' + res.detail + ']' : '') +
+            ' Use o campo de nome manual (ex.: EPSON L3250 Series ou MP-4200 TH).';
+          if (selectedCozinha) $('printerCozinhaManual').value = selectedCozinha;
+          if (selectedBar) $('printerBarManual').value = selectedBar;
+          if (!res.ok) setMsg(res.error || 'Não foi possível listar impressoras.', false);
+          return;
+        }
+        const src = list[0]?.source || 'sistema';
+        $('printerHint').textContent =
+          list.length +
+          ' impressora(s): ' +
+          list
+            .slice(0, 4)
+            .map((p) => p.name)
+            .join(', ') +
+          (list.length > 4 ? '…' : '') +
+          ' (via ' +
+          src +
+          ').';
+        if (selectedCozinha && !list.some((p) => p.name === selectedCozinha)) {
+          $('printerCozinhaManual').value = selectedCozinha;
+        }
+        if (selectedBar && !list.some((p) => p.name === selectedBar)) {
+          $('printerBarManual').value = selectedBar;
+        }
       }
 
       function renderAgent(agent) {
@@ -203,8 +274,10 @@
           return;
         }
         const printers = {};
-        if ($('printerCozinha').value) printers.COZINHA = $('printerCozinha').value;
-        if ($('printerBar').value) printers.BAR = $('printerBar').value;
+        const cozinha = resolvePrinter('printerCozinha', 'printerCozinhaManual');
+        const bar = resolvePrinter('printerBar', 'printerBarManual');
+        if (cozinha) printers.COZINHA = cozinha;
+        if (bar) printers.BAR = bar;
         const res = await api.saveStation({
           token,
           name: $('name').value.trim() || undefined,
@@ -221,12 +294,17 @@
       };
 
       $('btnTest').onclick = async () => {
-        const device = $('printerCozinha').value || undefined;
+        const device = resolvePrinter('printerCozinha', 'printerCozinhaManual');
         const res = await api.testStationPrint(device);
         setMsg(res.ok ? 'Teste enviado à impressora.' : (res.error || 'Falha no teste.'), res.ok);
       };
 
       $('btnRefresh').onclick = () => refresh();
+      $('btnReloadPrinters').onclick = async () => {
+        const data = await api.getStation();
+        const st = data.config?.station;
+        await loadPrinters(st?.printers?.COZINHA, st?.printers?.BAR);
+      };
 
       $('btnClear').onclick = async () => {
         if (!confirm('Remover o pareamento desta estação?')) return;
