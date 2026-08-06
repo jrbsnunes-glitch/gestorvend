@@ -74,6 +74,12 @@ function TableIcon({ occupied }: { occupied: boolean }) {
   );
 }
 
+/** Item do cadastro rápido em edição (um por vez). */
+type SetupEdit =
+  | { kind: 'area'; id: string; name: string }
+  | { kind: 'table'; id: string; areaId: string; code: string; label: string }
+  | { kind: 'station'; id: string; code: string; label: string };
+
 /** Mesa ou comanda fixa ocupada só com cliente vinculado ou item lançado. */
 function tabIsOccupied(tab: {
   customerId?: string | null;
@@ -182,6 +188,35 @@ export function RestaurantFloorPage() {
     },
   });
 
+  const [edit, setEdit] = useState<SetupEdit | null>(null);
+
+  const saveEdit = useMutation({
+    mutationFn: (d: SetupEdit) => {
+      if (d.kind === 'area') {
+        return api(`/restaurant/areas/${d.id}`, {
+          method: 'PATCH',
+          json: { name: d.name.trim() },
+        });
+      }
+      if (d.kind === 'table') {
+        return api(`/restaurant/tables/${d.id}`, {
+          method: 'PATCH',
+          json: { areaId: d.areaId, code: d.code.trim(), label: d.label.trim() || null },
+        });
+      }
+      return api(`/restaurant/stations/${d.id}`, {
+        method: 'PATCH',
+        json: { code: d.code.trim(), label: d.label.trim() || null },
+      });
+    },
+    onSuccess: (_res, d) => {
+      setEdit(null);
+      void qc.invalidateQueries({
+        queryKey: ['restaurant', d.kind === 'station' ? 'stations' : 'areas'],
+      });
+    },
+  });
+
   const [openTabError, setOpenTabError] = useState<string | null>(null);
   const openTab = useMutation({
     mutationFn: (body: {
@@ -205,6 +240,12 @@ export function RestaurantFloorPage() {
     },
     onError: (e: Error) => setOpenTabError(e.message),
   });
+
+  function closeSetup() {
+    setSetupOpen(false);
+    setEdit(null);
+    saveEdit.reset();
+  }
 
   function beginOpenTab(opts: {
     tableId?: string | null;
@@ -512,7 +553,7 @@ export function RestaurantFloorPage() {
       ))}
 
       {setupOpen && !waiterOnly ? (
-        <FormModalBackdrop onClose={() => setSetupOpen(false)}>
+        <FormModalBackdrop onClose={closeSetup}>
           <div
             className="modal restaurant-setup-modal"
             role="dialog"
@@ -524,11 +565,12 @@ export function RestaurantFloorPage() {
               Ambientes, mesas{fixedNumbering ? ' e comandas fixas' : ''}.
             </p>
 
-            {(createArea.error || createTable.error || createStation.error) && (
+            {(createArea.error || createTable.error || createStation.error || saveEdit.error) && (
               <div className="alert alert-error" role="alert" style={{ marginBottom: '0.75rem' }}>
                 {(createArea.error as Error)?.message ||
                   (createTable.error as Error)?.message ||
-                  (createStation.error as Error)?.message}
+                  (createStation.error as Error)?.message ||
+                  (saveEdit.error as Error)?.message}
               </div>
             )}
 
@@ -591,6 +633,146 @@ export function RestaurantFloorPage() {
                     </div>
                   </div>
                 </div>
+
+                <div className="restaurant-setup-list">
+                  <h4 className="restaurant-setup-list__title">Cadastrados</h4>
+                  {areas.length === 0 ? (
+                    <p className="muted" style={{ margin: 0 }}>
+                      Nenhum ambiente cadastrado ainda.
+                    </p>
+                  ) : null}
+                  {areas.map((area) => (
+                    <div key={area.id} className="restaurant-setup-list__group">
+                      {edit?.kind === 'area' && edit.id === area.id ? (
+                        <form
+                          className="restaurant-inline-form"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            saveEdit.mutate(edit);
+                          }}
+                        >
+                          <input
+                            autoFocus
+                            value={edit.name}
+                            onChange={(e) => setEdit({ ...edit, name: e.target.value })}
+                            placeholder="Nome do ambiente"
+                          />
+                          <button
+                            type="submit"
+                            className="btn btn-primary btn-sm"
+                            disabled={!edit.name.trim() || saveEdit.isPending}
+                          >
+                            Salvar
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => setEdit(null)}
+                          >
+                            Cancelar
+                          </button>
+                        </form>
+                      ) : (
+                        <div className="restaurant-setup-list__row">
+                          <span className="restaurant-setup-list__name">{area.name}</span>
+                          <span className="restaurant-setup-list__meta muted">
+                            {area.tables.length === 1
+                              ? '1 mesa'
+                              : `${area.tables.length} mesas`}
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() =>
+                              setEdit({ kind: 'area', id: area.id, name: area.name })
+                            }
+                          >
+                            Editar
+                          </button>
+                        </div>
+                      )}
+
+                      {area.tables.map((table) =>
+                        edit?.kind === 'table' && edit.id === table.id ? (
+                          <form
+                            key={table.id}
+                            className="restaurant-inline-form restaurant-inline-form--wrap restaurant-setup-list__child"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              saveEdit.mutate(edit);
+                            }}
+                          >
+                            <select
+                              value={edit.areaId}
+                              onChange={(e) => setEdit({ ...edit, areaId: e.target.value })}
+                            >
+                              {areas.map((a) => (
+                                <option key={a.id} value={a.id}>
+                                  {a.name}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              autoFocus
+                              value={edit.code}
+                              onChange={(e) => setEdit({ ...edit, code: e.target.value })}
+                              placeholder="Código"
+                            />
+                            <input
+                              value={edit.label}
+                              onChange={(e) => setEdit({ ...edit, label: e.target.value })}
+                              placeholder="Rótulo (opcional)"
+                            />
+                            <button
+                              type="submit"
+                              className="btn btn-primary btn-sm"
+                              disabled={!edit.code.trim() || saveEdit.isPending}
+                            >
+                              Salvar
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => setEdit(null)}
+                            >
+                              Cancelar
+                            </button>
+                          </form>
+                        ) : (
+                          <div
+                            key={table.id}
+                            className="restaurant-setup-list__row restaurant-setup-list__child"
+                          >
+                            <span className="restaurant-setup-list__name">
+                              {table.code}
+                              {table.label && table.label !== table.code
+                                ? ` · ${table.label}`
+                                : ''}
+                            </span>
+                            <span className="restaurant-setup-list__meta muted">
+                              {table.tabs.some(tabIsOccupied) ? 'em uso' : 'livre'}
+                            </span>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() =>
+                                setEdit({
+                                  kind: 'table',
+                                  id: table.id,
+                                  areaId: area.id,
+                                  code: table.code,
+                                  label: table.label ?? '',
+                                })
+                              }
+                            >
+                              Editar
+                            </button>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {fixedNumbering ? (
@@ -619,12 +801,85 @@ export function RestaurantFloorPage() {
                       </button>
                     </div>
                   </div>
+
+                  <div className="restaurant-setup-list">
+                    <h4 className="restaurant-setup-list__title">Cadastradas</h4>
+                    {stations.length === 0 ? (
+                      <p className="muted" style={{ margin: 0 }}>
+                        Nenhuma comanda cadastrada ainda.
+                      </p>
+                    ) : null}
+                    {stations.map((station) =>
+                      edit?.kind === 'station' && edit.id === station.id ? (
+                        <form
+                          key={station.id}
+                          className="restaurant-inline-form restaurant-inline-form--wrap"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            saveEdit.mutate(edit);
+                          }}
+                        >
+                          <input
+                            autoFocus
+                            value={edit.code}
+                            onChange={(e) => setEdit({ ...edit, code: e.target.value })}
+                            placeholder="Número ou sigla"
+                          />
+                          <input
+                            value={edit.label}
+                            onChange={(e) => setEdit({ ...edit, label: e.target.value })}
+                            placeholder="Rótulo (opcional)"
+                          />
+                          <button
+                            type="submit"
+                            className="btn btn-primary btn-sm"
+                            disabled={!edit.code.trim() || saveEdit.isPending}
+                          >
+                            Salvar
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => setEdit(null)}
+                          >
+                            Cancelar
+                          </button>
+                        </form>
+                      ) : (
+                        <div key={station.id} className="restaurant-setup-list__row">
+                          <span className="restaurant-setup-list__name">
+                            {station.code}
+                            {station.label && station.label !== station.code
+                              ? ` · ${station.label}`
+                              : ''}
+                          </span>
+                          <span className="restaurant-setup-list__meta muted">
+                            {station.tabs.some(tabIsOccupied) ? 'em uso' : 'livre'}
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() =>
+                              setEdit({
+                                kind: 'station',
+                                id: station.id,
+                                code: station.code,
+                                label: station.label ?? '',
+                              })
+                            }
+                          >
+                            Editar
+                          </button>
+                        </div>
+                      ),
+                    )}
+                  </div>
                 </div>
               ) : null}
             </div>
 
             <div className="modal-actions">
-              <button type="button" className="btn btn-primary" onClick={() => setSetupOpen(false)}>
+              <button type="button" className="btn btn-primary" onClick={closeSetup}>
                 Fechar
               </button>
             </div>

@@ -132,6 +132,20 @@ export class RestaurantService {
     });
   }
 
+  async updateArea(tenantSlug: string, id: string, body: { name?: string; sortOrder?: number }) {
+    const db = await this.db(tenantSlug);
+    const current = await db.diningArea.findUnique({ where: { id } });
+    if (!current) throw new NotFoundException('Ambiente não encontrado.');
+    const data: { name?: string; sortOrder?: number } = {};
+    if (body.name !== undefined) {
+      const name = String(body.name).trim();
+      if (!name) throw new BadRequestException('Nome do ambiente é obrigatório.');
+      data.name = name;
+    }
+    if (body.sortOrder !== undefined) data.sortOrder = Number(body.sortOrder) || 0;
+    return db.diningArea.update({ where: { id }, data });
+  }
+
   async createTable(
     tenantSlug: string,
     body: { areaId: string; code: string; label?: string | null; capacity?: number | null },
@@ -151,6 +165,55 @@ export class RestaurantService {
         capacity: body.capacity ?? null,
       },
     });
+  }
+
+  async updateTable(
+    tenantSlug: string,
+    id: string,
+    body: { areaId?: string; code?: string; label?: string | null; capacity?: number | null },
+  ) {
+    const db = await this.db(tenantSlug);
+    const current = await db.diningTable.findUnique({ where: { id } });
+    if (!current) throw new NotFoundException('Mesa não encontrada.');
+
+    const data: {
+      areaId?: string;
+      code?: string;
+      label?: string | null;
+      capacity?: number | null;
+    } = {};
+
+    if (body.areaId !== undefined) {
+      const areaId = String(body.areaId).trim();
+      if (!areaId) throw new BadRequestException('Ambiente da mesa é obrigatório.');
+      const area = await db.diningArea.findUnique({ where: { id: areaId } });
+      if (!area) throw new NotFoundException('Ambiente não encontrado.');
+      data.areaId = areaId;
+    }
+    if (body.code !== undefined) {
+      const code = String(body.code).trim();
+      if (!code) throw new BadRequestException('Código da mesa é obrigatório.');
+      data.code = code;
+    }
+    if (body.label !== undefined) data.label = body.label?.trim() || null;
+    if (body.capacity !== undefined) {
+      data.capacity = body.capacity == null ? null : Number(body.capacity) || null;
+    }
+
+    // Código é único dentro do ambiente: valida antes para devolver mensagem clara.
+    const nextAreaId = data.areaId ?? current.areaId;
+    const nextCode = data.code ?? current.code;
+    if (nextAreaId !== current.areaId || nextCode !== current.code) {
+      const clash = await db.diningTable.findFirst({
+        where: { areaId: nextAreaId, code: nextCode, id: { not: id } },
+        select: { id: true },
+      });
+      if (clash) {
+        throw new BadRequestException(`Já existe a mesa ${nextCode} nesse ambiente.`);
+      }
+    }
+
+    return db.diningTable.update({ where: { id }, data });
   }
 
   // --- Comandas fixas (sem mesa) ---
@@ -202,6 +265,34 @@ export class RestaurantService {
         sortOrder: body.sortOrder ?? 0,
       },
     });
+  }
+
+  async updateStation(
+    tenantSlug: string,
+    id: string,
+    body: { code?: string; label?: string | null; sortOrder?: number },
+  ) {
+    const db = await this.db(tenantSlug);
+    const current = await db.comandaStation.findUnique({ where: { id } });
+    if (!current) throw new NotFoundException('Comanda não encontrada.');
+
+    const data: { code?: string; label?: string | null; sortOrder?: number } = {};
+    if (body.code !== undefined) {
+      const code = String(body.code).trim();
+      if (!code) throw new BadRequestException('Número ou sigla da comanda é obrigatório.');
+      if (code !== current.code) {
+        const clash = await db.comandaStation.findFirst({
+          where: { code, id: { not: id } },
+          select: { id: true },
+        });
+        if (clash) throw new BadRequestException(`Já existe a comanda ${code}.`);
+      }
+      data.code = code;
+    }
+    if (body.label !== undefined) data.label = body.label?.trim() || null;
+    if (body.sortOrder !== undefined) data.sortOrder = Number(body.sortOrder) || 0;
+
+    return db.comandaStation.update({ where: { id }, data });
   }
 
   // --- Comandas ---

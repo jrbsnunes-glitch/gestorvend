@@ -31,6 +31,16 @@ export class RestaurantController {
     return this.restaurant.createArea(user.tenantSlug, body);
   }
 
+  @Patch('areas/:id')
+  @Roles('admin', 'manager')
+  updateArea(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: { name?: string; sortOrder?: number },
+  ) {
+    return this.restaurant.updateArea(user.tenantSlug, id, body);
+  }
+
   @Post('tables')
   @Roles('admin', 'manager')
   createTable(
@@ -39,6 +49,17 @@ export class RestaurantController {
     body: { areaId: string; code: string; label?: string | null; capacity?: number | null },
   ) {
     return this.restaurant.createTable(user.tenantSlug, body);
+  }
+
+  @Patch('tables/:id')
+  @Roles('admin', 'manager')
+  updateTable(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body()
+    body: { areaId?: string; code?: string; label?: string | null; capacity?: number | null },
+  ) {
+    return this.restaurant.updateTable(user.tenantSlug, id, body);
   }
 
   @Get('stations')
@@ -54,6 +75,16 @@ export class RestaurantController {
     @Body() body: { code: string; label?: string | null; sortOrder?: number },
   ) {
     return this.restaurant.createStation(user.tenantSlug, body);
+  }
+
+  @Patch('stations/:id')
+  @Roles('admin', 'manager')
+  updateStation(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: { code?: string; label?: string | null; sortOrder?: number },
+  ) {
+    return this.restaurant.updateStation(user.tenantSlug, id, body);
   }
 
   @Get('tabs')
