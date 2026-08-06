@@ -1,5 +1,5 @@
 {
-  "version": "1.0.30",
+  "version": "1.0.31",
   "downloadUrl": "",
-  "notes": "Versão do shell Electron (impressão silenciosa, PDV, agent). Mudanças só do sistema web não exigem reinstalar — use Exibir → Recarregar."
+  "notes": "Impressão silenciosa do cupom PDV (sem diálogo do Windows). Reinstale o Desktop ou rode npm run pack."
 }

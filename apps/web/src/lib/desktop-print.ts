@@ -22,11 +22,13 @@ export async function tryDesktopSilentPrint(
     const cfg = await api.getPdvPrinter?.();
     deviceName = cfg?.printer?.trim() || undefined;
   } catch {
-    /* sem config — ainda tenta silent com padrão do SO */
+    /* ignore */
   }
 
-  // Sem impressora definida no Desktop, deixa o diálogo do navegador (mais previsível).
-  if (!deviceName) return false;
+  if (!deviceName) {
+    console.warn('[desktop-print] Impressora do PDV não configurada.');
+    return false;
+  }
 
   const res = await api.printSilent({ deviceName, pageSize, printBackground: true });
   if (!res.ok) {
@@ -36,8 +38,60 @@ export async function tryDesktopSilentPrint(
   return true;
 }
 
-/** Imprime cupom/DANFE: Desktop silencioso se configurado; senão diálogo do SO. */
+/**
+ * Imprime cupom/DANFE.
+ * No Desktop com impressora do PDV: silencioso (sem diálogo).
+ * Se o silent falhar no Desktop, NÃO abre o diálogo do Windows (evita surpresa no PDV).
+ */
 export async function printDocument(pageSize: DesktopPrintPageSize = '80mm'): Promise<void> {
+  const desktop = isGestorVendDesktop();
   const used = await tryDesktopSilentPrint(pageSize);
-  if (!used) window.print();
+  if (used) return;
+  if (desktop) {
+    // Já tentou silent; diálogo do SO é exatamente o que o PDV não quer.
+    console.warn(
+      '[desktop-print] Impressão silenciosa indisponível. Confira a impressora do PDV e se o Desktop está atualizado.',
+    );
+    return;
+  }
+  window.print();
+}
+
+/** Caminho relativo → URL absoluta na origem atual. */
+export function absoluteAppUrl(pathAndQuery: string): string {
+  if (/^https?:\/\//i.test(pathAndQuery)) return pathAndQuery;
+  const path = pathAndQuery.startsWith('/') ? pathAndQuery : `/${pathAndQuery}`;
+  return `${window.location.origin}${path}`;
+}
+
+/**
+ * Imprime uma URL (cupom) numa janela oculta do Desktop, sem diálogo.
+ * @returns true se o Desktop aceitou o job.
+ */
+export async function tryDesktopPrintUrl(
+  pathAndQuery: string,
+  pageSize: DesktopPrintPageSize = '80mm',
+): Promise<boolean> {
+  if (!isGestorVendDesktop()) return false;
+  const api = getDesktopApi();
+  if (!api?.printUrl) return false;
+
+  let deviceName: string | undefined;
+  try {
+    const cfg = await api.getPdvPrinter?.();
+    deviceName = cfg?.printer?.trim() || undefined;
+  } catch {
+    /* ignore */
+  }
+
+  const res = await api.printUrl({
+    url: absoluteAppUrl(pathAndQuery),
+    deviceName,
+    pageSize,
+  });
+  if (!res.ok) {
+    console.warn('[desktop-print]', res.error || 'Falha printUrl');
+    return false;
+  }
+  return true;
 }

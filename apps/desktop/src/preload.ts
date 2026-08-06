@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('gestorvend', {
     pageSize?: '80mm' | 'A4';
     printBackground?: boolean;
   }) => ipcRenderer.invoke('print:silent', opts) as Promise<{ ok: boolean; error?: string }>,
+  printUrl: (opts: { url: string; deviceName?: string; pageSize?: '80mm' | 'A4' }) =>
+    ipcRenderer.invoke('print:url', opts) as Promise<{ ok: boolean; error?: string }>,
   getShellVersion: () =>
     ipcRenderer.invoke('shell:getVersion') as Promise<{ version: string }>,
   checkForUpdates: () =>

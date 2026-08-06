@@ -66,6 +66,11 @@ export type GestorVendDesktopApi = {
   testStationPrint?: (deviceName?: string) => Promise<{ ok: boolean; error?: string }>;
   stationStatus?: () => Promise<DesktopAgentStatus>;
   printSilent?: (opts?: DesktopPrintSilentOpts) => Promise<{ ok: boolean; error?: string }>;
+  printUrl?: (opts: {
+    url: string;
+    deviceName?: string;
+    pageSize?: '80mm' | 'A4';
+  }) => Promise<{ ok: boolean; error?: string }>;
   getPdvPrinter?: () => Promise<{ printer: string | null }>;
   savePdvPrinter?: (body: {
     printer?: string | null;

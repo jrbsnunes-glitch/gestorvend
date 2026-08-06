@@ -329,6 +329,115 @@ function registerIpc() {
   });
 
   ipcMain.handle(
+    'print:url',
+    async (
+      _e,
+      body?: { url?: string; deviceName?: string; pageSize?: '80mm' | 'A4' },
+    ) => {
+      const rawUrl = typeof body?.url === 'string' ? body.url.trim() : '';
+      if (!rawUrl) {
+        return { ok: false, error: 'URL de impressão inválida.' };
+      }
+      let target = rawUrl;
+      if (target.startsWith('/')) {
+        const cfg = readConfig();
+        if (!cfg?.serverUrl) {
+          return { ok: false, error: 'Configure o servidor antes de imprimir.' };
+        }
+        target = `${cfg.serverUrl.replace(/\/$/, '')}${target}`;
+      }
+      if (!/^https?:\/\//i.test(target)) {
+        return { ok: false, error: 'URL de impressão inválida.' };
+      }
+
+      const device =
+        typeof body?.deviceName === 'string' && body.deviceName.trim()
+          ? body.deviceName.trim()
+          : readConfig()?.pdv?.printer?.trim();
+      if (!device) {
+        return {
+          ok: false,
+          error: 'Defina a impressora do PDV em Configurações → Impressão.',
+        };
+      }
+
+      const win = new BrowserWindow({
+        width: 420,
+        height: 720,
+        show: false,
+        webPreferences: {
+          preload: path.join(__dirname, 'preload.js'),
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: false,
+        },
+      });
+
+      try {
+        await win.loadURL(target);
+        // Aguarda o cupom renderizar (React Query), sem depender de autoprint na página.
+        const ready = await new Promise<boolean>((resolve) => {
+          let tries = 0;
+          const tick = async () => {
+            if (win.isDestroyed()) {
+              resolve(false);
+              return;
+            }
+            try {
+              const ok = await win.webContents.executeJavaScript(
+                `Boolean(document.querySelector('article.sale-receipt-doc'))`,
+              );
+              if (ok) {
+                resolve(true);
+                return;
+              }
+            } catch {
+              /* ignore */
+            }
+            tries += 1;
+            if (tries >= 40) {
+              resolve(false);
+              return;
+            }
+            setTimeout(() => {
+              void tick();
+            }, 250);
+          };
+          void tick();
+        });
+        if (!ready) {
+          return { ok: false, error: 'Cupom não carregou a tempo para imprimir.' };
+        }
+        await new Promise((r) => setTimeout(r, 200));
+
+        const pageSize = body?.pageSize ?? '80mm';
+        const opts: WebContentsPrintOptions & { deviceName?: string } = {
+          silent: true,
+          printBackground: true,
+          deviceName: device,
+        };
+        if (pageSize === '80mm') {
+          opts.pageSize = { width: 80_000, height: 200_000 };
+        } else {
+          opts.pageSize = 'A4';
+        }
+
+        await new Promise<void>((resolve, reject) => {
+          win.webContents.print(opts, (success, failureReason) => {
+            if (success) resolve();
+            else reject(new Error(failureReason || 'Falha na impressão silenciosa'));
+          });
+        });
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Erro ao imprimir.' };
+      } finally {
+        if (!win.isDestroyed()) win.destroy();
+      }
+    },
+  );
+
+  ipcMain.handle(
     'print:silent',
     async (
       event,
