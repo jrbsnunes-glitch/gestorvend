@@ -2,7 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { hasRestaurantPlan, isWaiter } from '../../lib/auth';
+import { formatServiceTabBadge, formatServiceTabLabel } from '../../lib/service-tab';
+import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { useEffect, useState } from 'react';
+import './restaurant.css';
 
 const DEFAULT_CUSTOMER_NAME = 'Cliente Padrão';
 
@@ -26,10 +29,24 @@ type DiningArea = {
   tables: DiningTable[];
 };
 
+type ComandaStation = {
+  id: string;
+  code: string;
+  label: string | null;
+  tabs: Array<{
+    id: string;
+    number: number;
+    customerId?: string | null;
+    customer?: { id: string; name: string } | null;
+    _count?: { items: number };
+  }>;
+};
+
 type OpenTab = {
   id: string;
   number: number;
   table: { code: string; label: string | null; area: { name: string } } | null;
+  station?: { code: string; label: string | null } | null;
   customer?: { id: string; name: string } | null;
   items: Array<{ totalLine: string | number }>;
 };
@@ -38,8 +55,30 @@ function tabTotal(items: Array<{ totalLine: string | number }>): number {
   return items.reduce((s, it) => s + Number(it.totalLine), 0);
 }
 
-/** Mesa ocupada só com cliente vinculado ou item lançado na comanda. */
-function tabOccupiesTable(tab: DiningTable['tabs'][number]): boolean {
+function TabReceiptIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M7 3h10a2 2 0 0 1 2 2v16l-2-1.5L15 21l-2-1.5L11 21l-2-1.5L7 21l-2-1.5V5a2 2 0 0 1 2-2z" />
+      <path d="M9 8h6M9 12h6M9 16h4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function TableIcon({ occupied }: { occupied: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <ellipse cx="12" cy="7" rx="8" ry="2.5" />
+      <path d="M4 7v3M20 7v3" strokeLinecap="round" />
+      <path d={occupied ? 'M6 18v-5M18 18v-5' : 'M6 19v-6M18 19v-6'} strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Mesa ou comanda fixa ocupada só com cliente vinculado ou item lançado. */
+function tabIsOccupied(tab: {
+  customerId?: string | null;
+  _count?: { items: number };
+}): boolean {
   return Boolean(tab.customerId) || (tab._count?.items ?? 0) > 0;
 }
 
@@ -50,17 +89,25 @@ export function RestaurantFloorPage() {
   const waiterOnly = isWaiter();
   const [areaName, setAreaName] = useState('');
   const [tableForm, setTableForm] = useState({ areaId: '', code: '', label: '' });
+  const [stationForm, setStationForm] = useState({ code: '', label: '' });
+  const [setupOpen, setSetupOpen] = useState(false);
   const [openDraft, setOpenDraft] = useState<{
     tableId: string | null;
-    tableLabel: string;
+    stationId: string | null;
+    targetLabel: string;
     customerName: string;
   } | null>(null);
 
   const companyQ = useQuery({
     queryKey: ['company'],
-    queryFn: () => api<{ restaurantModuleEnabled?: boolean }>('/company'),
+    queryFn: () =>
+      api<{ restaurantModuleEnabled?: boolean; comandaNumberingMode?: 'DYNAMIC' | 'FIXED' }>(
+        '/company',
+      ),
     staleTime: 10 * 60_000,
   });
+
+  const fixedNumbering = companyQ.data?.comandaNumberingMode === 'FIXED';
 
   const areasQ = useQuery({
     queryKey: ['restaurant', 'areas'],
@@ -74,7 +121,16 @@ export function RestaurantFloorPage() {
   const tabsQ = useQuery({
     queryKey: ['restaurant', 'tabs'],
     queryFn: () => api<OpenTab[]>('/restaurant/tabs'),
-    enabled: planOk && companyQ.data?.restaurantModuleEnabled === true,
+    enabled: planOk && companyQ.data?.restaurantModuleEnabled === true && !fixedNumbering,
+    refetchInterval: () =>
+      typeof document !== 'undefined' && document.visibilityState === 'hidden' ? false : 15_000,
+    staleTime: 8_000,
+  });
+
+  const stationsQ = useQuery({
+    queryKey: ['restaurant', 'stations'],
+    queryFn: () => api<ComandaStation[]>('/restaurant/stations'),
+    enabled: planOk && companyQ.data?.restaurantModuleEnabled === true && fixedNumbering,
     refetchInterval: () =>
       typeof document !== 'undefined' && document.visibilityState === 'hidden' ? false : 15_000,
     staleTime: 8_000,
@@ -111,13 +167,33 @@ export function RestaurantFloorPage() {
     },
   });
 
+  const createStation = useMutation({
+    mutationFn: () =>
+      api('/restaurant/stations', {
+        method: 'POST',
+        json: {
+          code: stationForm.code.trim(),
+          label: stationForm.label.trim() || null,
+        },
+      }),
+    onSuccess: () => {
+      setStationForm({ code: '', label: '' });
+      void qc.invalidateQueries({ queryKey: ['restaurant', 'stations'] });
+    },
+  });
+
   const [openTabError, setOpenTabError] = useState<string | null>(null);
   const openTab = useMutation({
-    mutationFn: (body: { tableId: string | null; customerName: string }) =>
+    mutationFn: (body: {
+      tableId: string | null;
+      stationId: string | null;
+      customerName: string;
+    }) =>
       api<{ id: string }>('/restaurant/tabs', {
         method: 'POST',
         json: {
           tableId: body.tableId,
+          stationId: body.stationId,
           customerName: body.customerName.trim() || DEFAULT_CUSTOMER_NAME,
         },
       }),
@@ -130,14 +206,24 @@ export function RestaurantFloorPage() {
     onError: (e: Error) => setOpenTabError(e.message),
   });
 
-  function beginOpenTab(tableId: string | null, tableLabel: string) {
+  function beginOpenTab(opts: {
+    tableId?: string | null;
+    stationId?: string | null;
+    targetLabel: string;
+  }) {
     setOpenTabError(null);
-    setOpenDraft({ tableId, tableLabel, customerName: '' });
+    setOpenDraft({
+      tableId: opts.tableId ?? null,
+      stationId: opts.stationId ?? null,
+      targetLabel: opts.targetLabel,
+      customerName: '',
+    });
   }
 
   const areas = areasQ.data ?? [];
-  /** Topo: só comandas avulsas (sem mesa). Comandas de mesa aparecem no mapa abaixo. */
-  const openTabsWithoutTable = (tabsQ.data ?? []).filter((t) => !t.table);
+  const stations = stationsQ.data ?? [];
+  /** Numeração dinâmica: comandas avulsas (sem mesa e sem slot fixo). */
+  const openTabsWithoutTable = (tabsQ.data ?? []).filter((t) => !t.table && !t.station);
 
   if (!planOk) {
     return (
@@ -167,29 +253,50 @@ export function RestaurantFloorPage() {
       <header className="restaurant-page__header">
         <div>
           <h1>Salão / Comandas</h1>
-          <p className="muted">Em cima: comandas sem mesa · Embaixo: mesas</p>
+          <p className="muted">
+            {fixedNumbering
+              ? 'Em cima: comandas cadastradas (numeração fixa) · Embaixo: mesas'
+              : 'Em cima: comandas sem mesa · Embaixo: mesas'}
+          </p>
         </div>
         <div className="restaurant-page__actions">
           {!waiterOnly ? (
-            <Link to="/salao/fichas-tecnicas" className="btn btn-secondary">
-              Fichas técnicas
-            </Link>
+            <>
+              <Link to="/salao/fichas-tecnicas" className="btn btn-secondary">
+                Fichas técnicas
+              </Link>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setSetupOpen(true)}
+              >
+                Cadastro rápido
+              </button>
+            </>
           ) : null}
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={openTab.isPending}
-            onClick={() => beginOpenTab(null, 'sem mesa')}
-          >
-            Abrir comanda (sem mesa)
-          </button>
+          {!fixedNumbering ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={openTab.isPending}
+              onClick={() => beginOpenTab({ targetLabel: 'sem mesa' })}
+            >
+              Abrir comanda (sem mesa)
+            </button>
+          ) : null}
         </div>
       </header>
 
-      {(areasQ.error || tabsQ.error || openTabError) && (
+      {(areasQ.error ||
+        tabsQ.error ||
+        stationsQ.error ||
+        createStation.error ||
+        openTabError) && (
         <div className="alert alert-error" role="alert">
           {(areasQ.error as Error)?.message ||
             (tabsQ.error as Error)?.message ||
+            (stationsQ.error as Error)?.message ||
+            (createStation.error as Error)?.message ||
             openTabError}
         </div>
       )}
@@ -197,7 +304,7 @@ export function RestaurantFloorPage() {
       {openDraft && (
         <section className="card" style={{ marginBottom: '0.75rem' }}>
           <h2 style={{ marginTop: 0, fontSize: '1.05rem' }}>
-            Abrir comanda · {openDraft.tableLabel}
+            Abrir comanda · {openDraft.targetLabel}
           </h2>
           <form
             className="form-row"
@@ -206,6 +313,7 @@ export function RestaurantFloorPage() {
               e.preventDefault();
               openTab.mutate({
                 tableId: openDraft.tableId,
+                stationId: openDraft.stationId,
                 customerName: openDraft.customerName,
               });
             }}
@@ -242,10 +350,79 @@ export function RestaurantFloorPage() {
         </section>
       )}
 
-      {/* Topo: só comandas sem mesa */}
+      {/* Comandas sem mesa */}
       <section className="card restaurant-open-tabs">
-        <h2>Comandas sem mesa ({openTabsWithoutTable.length})</h2>
-        {tabsQ.isLoading ? (
+        <h2>
+          Comandas sem mesa
+          {fixedNumbering
+            ? ` (${stations.length} cadastradas)`
+            : ` (${openTabsWithoutTable.length} abertas)`}
+        </h2>
+        {fixedNumbering ? (
+          stationsQ.isLoading ? (
+            <p className="muted">Carregando…</p>
+          ) : stations.length === 0 ? (
+            <p className="muted">
+              Nenhuma comanda cadastrada. Use o cadastro rápido abaixo ou altere para numeração
+              dinâmica em <Link to="/empresa">Empresa → Restaurante</Link>.
+            </p>
+          ) : (
+            <div className="restaurant-table-grid restaurant-station-grid">
+              {stations.map((station) => {
+                const occupying = station.tabs.filter(tabIsOccupied);
+                const occupied = occupying.length > 0;
+                const resumeTab = occupying[0] ?? station.tabs[0];
+                const displayCode = station.label || station.code;
+                return (
+                  <button
+                    key={station.id}
+                    type="button"
+                    className={
+                      'restaurant-table-tile restaurant-station-tile' +
+                      (occupied
+                        ? ' restaurant-table-tile--busy'
+                        : ' restaurant-table-tile--free')
+                    }
+                    onClick={() => {
+                      if (resumeTab) {
+                        navigate(`/salao/comanda/${resumeTab.id}`);
+                      } else {
+                        beginOpenTab({
+                          stationId: station.id,
+                          targetLabel: `Comanda ${displayCode}`,
+                        });
+                      }
+                    }}
+                  >
+                    <span className="restaurant-table-tile__icon" aria-hidden>
+                      <TabReceiptIcon />
+                    </span>
+                    <span className="restaurant-table-tile__code">{displayCode}</span>
+                    {station.label && station.label !== station.code ? (
+                      <span className="restaurant-station-tile__code-hint">{station.code}</span>
+                    ) : null}
+                    {occupied ? (
+                      <>
+                        <span className="restaurant-table-tile__badge restaurant-table-tile__badge--busy">
+                          Em uso
+                        </span>
+                        {resumeTab?.customer?.name ? (
+                          <span className="restaurant-table-tile__guest">
+                            {resumeTab.customer.name}
+                          </span>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="restaurant-table-tile__badge restaurant-table-tile__badge--free">
+                        Livre
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )
+        ) : tabsQ.isLoading ? (
           <p className="muted">Carregando…</p>
         ) : openTabsWithoutTable.length === 0 ? (
           <p className="muted">Nenhuma comanda sem mesa.</p>
@@ -254,8 +431,17 @@ export function RestaurantFloorPage() {
             {openTabsWithoutTable.map((t) => (
               <li key={t.id}>
                 <Link to={`/salao/comanda/${t.id}`} className="restaurant-tab-chip">
-                  <strong>#{t.number}</strong>
-                  <span>{t.customer?.name || DEFAULT_CUSTOMER_NAME}</span>
+                  <span className="restaurant-tab-chip__icon" aria-hidden>
+                    <TabReceiptIcon />
+                  </span>
+                  <span className="restaurant-tab-chip__body">
+                    <span className="restaurant-tab-chip__number">
+                      {formatServiceTabLabel(t)}
+                    </span>
+                    <span className="restaurant-tab-chip__customer">
+                      {t.customer?.name || DEFAULT_CUSTOMER_NAME}
+                    </span>
+                  </span>
                   <span className="restaurant-tab-chip__total">
                     {tabTotal(t.items).toLocaleString('pt-BR', {
                       style: 'currency',
@@ -275,7 +461,7 @@ export function RestaurantFloorPage() {
           <h2>{area.name}</h2>
           <div className="restaurant-table-grid">
             {area.tables.map((table) => {
-              const occupying = table.tabs.filter(tabOccupiesTable);
+              const occupying = table.tabs.filter(tabIsOccupied);
               const occupied = occupying.length > 0;
               const resumeTab = occupying[0] ?? table.tabs[0];
               return (
@@ -290,21 +476,33 @@ export function RestaurantFloorPage() {
                     if (resumeTab) {
                       navigate(`/salao/comanda/${resumeTab.id}`);
                     } else {
-                      beginOpenTab(table.id, `Mesa ${table.label || table.code}`);
+                      beginOpenTab({
+                        tableId: table.id,
+                        targetLabel: `Mesa ${table.label || table.code}`,
+                      });
                     }
                   }}
                 >
-                  <span className="restaurant-table-tile__code">{table.label || table.code}</span>
-                  <span className="restaurant-table-tile__status">
-                    {occupied
-                      ? occupying
-                          .map(
-                            (t) =>
-                              `#${t.number}${t.customer?.name ? ` · ${t.customer.name}` : ''}`,
-                          )
-                          .join(', ') || 'Ocupada'
-                      : 'Livre'}
+                  <span className="restaurant-table-tile__icon" aria-hidden>
+                    <TableIcon occupied={occupied} />
                   </span>
+                  <span className="restaurant-table-tile__code">{table.label || table.code}</span>
+                  {occupied ? (
+                    <>
+                      <span className="restaurant-table-tile__badge restaurant-table-tile__badge--busy">
+                        {occupying.length > 1
+                          ? `${occupying.length} comandas`
+                          : formatServiceTabBadge(resumeTab ?? { number: 0 })}
+                      </span>
+                      {resumeTab?.customer?.name ? (
+                        <span className="restaurant-table-tile__guest">{resumeTab.customer.name}</span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <span className="restaurant-table-tile__badge restaurant-table-tile__badge--free">
+                      Livre
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -313,64 +511,125 @@ export function RestaurantFloorPage() {
         </section>
       ))}
 
-      {!waiterOnly ? (
-        <section className="card restaurant-setup">
-          <h2>Cadastro rápido</h2>
-          <div className="form-row form-row--2">
-            <div className="field">
-              <label>Novo ambiente</label>
-              <div className="restaurant-inline-form">
-                <input
-                  value={areaName}
-                  onChange={(e) => setAreaName(e.target.value)}
-                  placeholder="Ex.: Salão, Varanda"
-                />
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={!areaName.trim() || createArea.isPending}
-                  onClick={() => createArea.mutate()}
-                >
-                  Adicionar
-                </button>
+      {setupOpen && !waiterOnly ? (
+        <FormModalBackdrop onClose={() => setSetupOpen(false)}>
+          <div
+            className="modal restaurant-setup-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="restaurant-setup-title"
+          >
+            <h2 id="restaurant-setup-title">Cadastro rápido</h2>
+            <p className="muted" style={{ marginTop: '-0.35rem', marginBottom: '0.85rem' }}>
+              Ambientes, mesas{fixedNumbering ? ' e comandas fixas' : ''}.
+            </p>
+
+            {(createArea.error || createTable.error || createStation.error) && (
+              <div className="alert alert-error" role="alert" style={{ marginBottom: '0.75rem' }}>
+                {(createArea.error as Error)?.message ||
+                  (createTable.error as Error)?.message ||
+                  (createStation.error as Error)?.message}
               </div>
+            )}
+
+            <div className="restaurant-setup restaurant-setup--modal">
+              <div className="restaurant-setup-panel restaurant-setup-panel--floor">
+                <h3 className="restaurant-setup-panel__title">Mesas e ambientes</h3>
+                <div className="restaurant-setup-panel__grid">
+                  <div className="field">
+                    <label>Novo ambiente</label>
+                    <div className="restaurant-inline-form">
+                      <input
+                        value={areaName}
+                        onChange={(e) => setAreaName(e.target.value)}
+                        placeholder="Ex.: Salão, Varanda"
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={!areaName.trim() || createArea.isPending}
+                        onClick={() => createArea.mutate()}
+                      >
+                        Adicionar
+                      </button>
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label>Nova mesa</label>
+                    <div className="restaurant-inline-form restaurant-inline-form--wrap">
+                      <select
+                        value={tableForm.areaId}
+                        onChange={(e) => setTableForm({ ...tableForm, areaId: e.target.value })}
+                      >
+                        <option value="">Ambiente…</option>
+                        {areas.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        value={tableForm.code}
+                        onChange={(e) => setTableForm({ ...tableForm, code: e.target.value })}
+                        placeholder="Código"
+                      />
+                      <input
+                        value={tableForm.label}
+                        onChange={(e) => setTableForm({ ...tableForm, label: e.target.value })}
+                        placeholder="Rótulo (opcional)"
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={
+                          !tableForm.areaId || !tableForm.code.trim() || createTable.isPending
+                        }
+                        onClick={() => createTable.mutate()}
+                      >
+                        Adicionar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {fixedNumbering ? (
+                <div className="restaurant-setup-panel restaurant-setup-panel--stations">
+                  <h3 className="restaurant-setup-panel__title">Comandas sem mesa</h3>
+                  <div className="field">
+                    <label>Nova comanda</label>
+                    <div className="restaurant-inline-form restaurant-inline-form--wrap">
+                      <input
+                        value={stationForm.code}
+                        onChange={(e) => setStationForm({ ...stationForm, code: e.target.value })}
+                        placeholder="Número ou sigla"
+                      />
+                      <input
+                        value={stationForm.label}
+                        onChange={(e) => setStationForm({ ...stationForm, label: e.target.value })}
+                        placeholder="Rótulo (opcional)"
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={!stationForm.code.trim() || createStation.isPending}
+                        onClick={() => createStation.mutate()}
+                      >
+                        Adicionar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
-            <div className="field">
-              <label>Nova mesa</label>
-              <div className="restaurant-inline-form restaurant-inline-form--wrap">
-                <select
-                  value={tableForm.areaId}
-                  onChange={(e) => setTableForm({ ...tableForm, areaId: e.target.value })}
-                >
-                  <option value="">Ambiente…</option>
-                  {areas.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  value={tableForm.code}
-                  onChange={(e) => setTableForm({ ...tableForm, code: e.target.value })}
-                  placeholder="Código"
-                />
-                <input
-                  value={tableForm.label}
-                  onChange={(e) => setTableForm({ ...tableForm, label: e.target.value })}
-                  placeholder="Rótulo (opcional)"
-                />
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={!tableForm.areaId || !tableForm.code.trim() || createTable.isPending}
-                  onClick={() => createTable.mutate()}
-                >
-                  Adicionar
-                </button>
-              </div>
+
+            <div className="modal-actions">
+              <button type="button" className="btn btn-primary" onClick={() => setSetupOpen(false)}>
+                Fechar
+              </button>
             </div>
           </div>
-        </section>
+        </FormModalBackdrop>
       ) : null}
     </div>
   );

@@ -27,6 +27,7 @@ type Company = {
   saleReceiptAutoPrint?: boolean;
   saleReceiptPrinterHint?: string | null;
   restaurantModuleEnabled?: boolean;
+  comandaNumberingMode?: 'DYNAMIC' | 'FIXED';
   scaleMode?: 'MANUAL' | 'SERIAL_DIRECT' | 'AGENT' | 'BARCODE_LABEL';
   scaleProfile?: string | null;
   barcodeWeightPattern?: string | null;
@@ -65,6 +66,7 @@ const EMPTY_FORM: FormState = {
   saleReceiptAutoPrint: false,
   saleReceiptPrinterHint: '',
   restaurantModuleEnabled: false,
+  comandaNumberingMode: 'DYNAMIC',
   scaleMode: 'MANUAL',
   scaleProfile: '',
   barcodeWeightPattern: '2PPPPPWWWWWC',
@@ -100,6 +102,7 @@ function toForm(c: Company): FormState {
     saleReceiptAutoPrint: Boolean(c.saleReceiptAutoPrint),
     saleReceiptPrinterHint: c.saleReceiptPrinterHint ?? '',
     restaurantModuleEnabled: Boolean(c.restaurantModuleEnabled),
+    comandaNumberingMode: c.comandaNumberingMode === 'FIXED' ? 'FIXED' : 'DYNAMIC',
     scaleMode: c.scaleMode ?? 'MANUAL',
     scaleProfile: c.scaleProfile ?? '',
     barcodeWeightPattern: c.barcodeWeightPattern ?? '2PPPPPWWWWWC',
@@ -867,6 +870,61 @@ export function CompanyPage() {
                 </span>
               </label>
             </div>
+
+            {form.restaurantModuleEnabled ? (
+              <div className="field" style={{ marginTop: '0.75rem' }}>
+                <span
+                  className="company-form__h"
+                  style={{ display: 'block', fontSize: '0.95rem', marginBottom: '0.35rem' }}
+                >
+                  Numeração das comandas sem mesa
+                </span>
+                <label
+                  htmlFor="c-comanda-dynamic"
+                  style={{
+                    display: 'flex',
+                    gap: '0.4rem',
+                    alignItems: 'flex-start',
+                    marginBottom: '0.35rem',
+                  }}
+                >
+                  <input
+                    id="c-comanda-dynamic"
+                    type="radio"
+                    name="comandaNumberingMode"
+                    checked={form.comandaNumberingMode !== 'FIXED'}
+                    onChange={() => update('comandaNumberingMode', 'DYNAMIC')}
+                    style={{ marginTop: '0.15rem' }}
+                  />
+                  <span>
+                    Dinâmica (livre)
+                    <span className="sub" style={{ fontWeight: 400, display: 'block' }}>
+                      Número sequencial automático e botão “Abrir comanda sem mesa”.
+                    </span>
+                  </span>
+                </label>
+                <label
+                  htmlFor="c-comanda-fixed"
+                  style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}
+                >
+                  <input
+                    id="c-comanda-fixed"
+                    type="radio"
+                    name="comandaNumberingMode"
+                    checked={form.comandaNumberingMode === 'FIXED'}
+                    onChange={() => update('comandaNumberingMode', 'FIXED')}
+                    style={{ marginTop: '0.15rem' }}
+                  />
+                  <span>
+                    Fixa (cadastrada)
+                    <span className="sub" style={{ fontWeight: 400, display: 'block' }}>
+                      Cadastre comandas com número ou sigla no Salão (como as mesas).
+                    </span>
+                  </span>
+                </label>
+              </div>
+            ) : null}
+
             <div className="form-row form-row--2">
               <div className="field">
                 <label htmlFor="c-scale-mode">Captura de peso (self-service)</label>

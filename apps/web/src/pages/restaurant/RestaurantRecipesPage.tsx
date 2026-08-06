@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { hasRestaurantPlan } from '../../lib/auth';
+import './restaurant.css';
 
 type ProductHit = {
   productId: string;

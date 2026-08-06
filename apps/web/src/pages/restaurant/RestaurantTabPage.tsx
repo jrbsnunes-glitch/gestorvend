@@ -5,9 +5,11 @@ import { api } from '../../lib/api';
 import { isWaiter } from '../../lib/auth';
 import { canPrintHere } from '../../lib/print-station';
 import { calcRestaurantFees, type RestaurantFeesCompany } from '../../lib/restaurant-fees';
+import { formatServiceTabLabel } from '../../lib/service-tab';
 import { parseBarcodeWeight } from '../../lib/pos-scale';
 import { usePosScale } from '../../lib/use-pos-scale';
 import type { ScaleMode } from '../../lib/pos-scale';
+import './restaurant.css';
 
 type ProductHit = {
   variantId: string;
@@ -44,6 +46,7 @@ type Tab = {
   guestCount?: number;
   customer?: { id: string; name: string } | null;
   table: { code: string; label: string | null; area: { name: string } } | null;
+  station?: { code: string; label: string | null } | null;
   items: TabItem[];
   sale?: { id: string; number: number; total: string | number } | null;
 };
@@ -317,11 +320,11 @@ export function RestaurantTabPage() {
                 MESA {tab.table.label || tab.table.code}
                 <span className="muted">
                   {' '}
-                  · {tab.table.area.name} · Comanda #{tab.number}
+                  · {tab.table.area.name} · Comanda {formatServiceTabLabel(tab)}
                 </span>
               </>
             ) : (
-              <>Comanda #{tab.number}</>
+              <>Comanda {formatServiceTabLabel(tab)}</>
             )}
             <span className="muted">
               {' '}

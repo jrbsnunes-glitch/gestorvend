@@ -41,6 +41,21 @@ export class RestaurantController {
     return this.restaurant.createTable(user.tenantSlug, body);
   }
 
+  @Get('stations')
+  @Roles('admin', 'manager', 'seller', 'waiter')
+  listStations(@CurrentUser() user: JwtPayload) {
+    return this.restaurant.listStations(user.tenantSlug);
+  }
+
+  @Post('stations')
+  @Roles('admin', 'manager')
+  createStation(
+    @CurrentUser() user: JwtPayload,
+    @Body() body: { code: string; label?: string | null; sortOrder?: number },
+  ) {
+    return this.restaurant.createStation(user.tenantSlug, body);
+  }
+
   @Get('tabs')
   @Roles('admin', 'manager', 'seller', 'waiter')
   listTabs(@CurrentUser() user: JwtPayload) {
@@ -66,6 +81,7 @@ export class RestaurantController {
     @Body()
     body: {
       tableId?: string | null;
+      stationId?: string | null;
       customerId?: string | null;
       customerName?: string | null;
       notes?: string | null;

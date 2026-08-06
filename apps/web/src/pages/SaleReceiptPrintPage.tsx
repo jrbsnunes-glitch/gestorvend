@@ -5,7 +5,7 @@ import { CompanyLogo } from '../components/CompanyLogo';
 import { api } from '../lib/api';
 import { companyUsesCustomLogo } from '../lib/company-branding';
 import { formatBRL, formatDate } from '../lib/format';
-import { getDesktopApi } from '../lib/desktop-bridge';
+import { getDesktopApi, isGestorVendDesktop } from '../lib/desktop-bridge';
 import { consumeAutoPrintNonce } from '../lib/sale-receipt-print';
 import {
   hardenSaleReceiptStyles,
@@ -179,6 +179,12 @@ export function SaleReceiptPrintPage() {
 
   const docRef = useRef<HTMLElement | null>(null);
   const [hardened, setHardened] = useState(false);
+  /** Sem o shell Desktop a impressão cai no diálogo do sistema (papel do driver). */
+  const [browserPrint, setBrowserPrint] = useState(false);
+
+  useEffect(() => {
+    setBrowserPrint(!isGestorVendDesktop());
+  }, []);
 
   const s = receiptQ.data?.sale;
   const c = receiptQ.data?.company;
@@ -276,6 +282,15 @@ export function SaleReceiptPrintPage() {
           ) : null}
           Bobina 80 mm — não fiscal. No GestorVend Desktop, use a impressora configurada em
           Configurações → Impressão (PDV). No navegador, o diálogo do sistema escolhe a impressora.
+          {browserPrint ? (
+            <>
+              {' '}
+              <strong>Impressão pelo navegador:</strong> no diálogo, escolha o papel da bobina (80 mm
+              / Roll) e deixe a escala em <strong>100%</strong> e as margens em{' '}
+              <strong>Nenhuma</strong>. Com papel A4 e “Ajustar à página”, o cupom sai minúsculo — a
+              impressão silenciosa do Desktop já usa a bobina.
+            </>
+          ) : null}
           {c && !companyUsesCustomLogo(c) ? (
             <>
               {' '}

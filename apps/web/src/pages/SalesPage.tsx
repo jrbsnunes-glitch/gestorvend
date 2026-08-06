@@ -20,6 +20,7 @@ import {
 } from '../lib/company-branding';
 import { hasRestaurantPlan, isAdmin, isManager, profileLabel, type UserProfile } from '../lib/auth';
 import { calcRestaurantFees, type RestaurantFeesCompany } from '../lib/restaurant-fees';
+import { formatServiceTabLabel } from '../lib/service-tab';
 import {
   hasUserPermission,
   type UserPermissionsResponse,
@@ -941,6 +942,7 @@ function PosScreen({
   const [serviceTab, setServiceTab] = useState<{
     id: string;
     number: number;
+    displayName: string;
     label: string;
     guestCount: number;
   } | null>(null);
@@ -1223,6 +1225,7 @@ function PosScreen({
     guestCount?: number;
     customer?: { id: string; name: string } | null;
     table: { code: string; label: string | null; area: { name: string } } | null;
+    station?: { code: string; label: string | null } | null;
     items: Array<{
       status: string;
       quantity: string | number;
@@ -1238,13 +1241,14 @@ function PosScreen({
   };
 
   function applyServiceTabToCart(tab: ServiceTabPayload) {
+    const tabName = formatServiceTabLabel(tab);
     if (tab.status !== 'OPEN') {
-      setToast({ kind: 'err', text: `Comanda #${tab.number} não está aberta.` });
+      setToast({ kind: 'err', text: `Comanda ${tabName} não está aberta.` });
       return false;
     }
     const active = tab.items.filter((i) => i.status !== 'CANCELLED');
     if (!active.length) {
-      setToast({ kind: 'err', text: `Comanda #${tab.number} sem itens.` });
+      setToast({ kind: 'err', text: `Comanda ${tabName} sem itens.` });
       return false;
     }
 
@@ -1292,6 +1296,7 @@ function PosScreen({
     setServiceTab({
       id: tab.id,
       number: tab.number,
+      displayName: tabName,
       label: tableLabel,
       guestCount: guests,
     });
@@ -1311,7 +1316,7 @@ function PosScreen({
     setPaymentMenuOpen(false);
     setToast({
       kind: 'ok',
-      text: `Comanda #${tab.number} carregada (${tableLabel}). Confira os itens e use F2 para pagar.`,
+      text: `Comanda ${tabName} carregada (${tableLabel}). Confira os itens e use F2 para pagar.`,
     });
     return true;
   }
@@ -1476,7 +1481,9 @@ function PosScreen({
           source: serviceTabRef.current ? 'RESTAURANT' : undefined,
           deductStock: serviceTabRef.current ? false : undefined,
           externalRef: serviceTabRef.current ? `tab:${serviceTabRef.current.number}` : undefined,
-          notes: serviceTabRef.current ? `Comanda #${serviceTabRef.current.number}` : undefined,
+          notes: serviceTabRef.current
+            ? `Comanda ${serviceTabRef.current.displayName}`
+            : undefined,
           items: lines.map((l) => ({
             variantId: l.variantId,
             quantity: l.quantity,
@@ -1513,7 +1520,7 @@ function PosScreen({
           setToast({
             kind: 'err',
             text:
-              `Venda #${sale.number} ok, mas a comanda #${tabClosing.number} não fechou: ` +
+              `Venda #${sale.number} ok, mas a comanda ${tabClosing.displayName} não fechou: ` +
               (e instanceof Error ? e.message : 'erro'),
           });
         }
@@ -1535,7 +1542,7 @@ function PosScreen({
       setToast({
         kind: 'ok',
         text: tabClosing
-          ? `Venda #${sale.number} · comanda #${tabClosing.number} fechada ${formatBRL(concluded)}`
+          ? `Venda #${sale.number} · comanda ${tabClosing.displayName} fechada ${formatBRL(concluded)}`
           : `Venda #${sale.number} concluída ${formatBRL(concluded)}`,
       });
       scannerRef.current?.focus();
@@ -2034,7 +2041,7 @@ function PosScreen({
       {serviceTab && (
         <div className="pos-receipt-prompt no-print" role="status" style={{ background: '#fef3c7' }}>
           <span>
-            Conferência da <strong>comanda #{serviceTab.number}</strong>
+            Conferência da <strong>comanda {serviceTab.displayName}</strong>
             {serviceTab.label ? ` · ${serviceTab.label}` : ''} — revise os itens abaixo.
             Depois <strong>F2</strong> (ou o botão) para pagar; a mesa fecha ao concluir.
           </span>

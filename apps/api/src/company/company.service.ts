@@ -21,6 +21,7 @@ type CompanyInput = {
   saleReceiptPrinterHint?: string | null;
   pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED' | string;
   restaurantModuleEnabled?: boolean;
+  comandaNumberingMode?: 'DYNAMIC' | 'FIXED' | string;
   scaleMode?: 'MANUAL' | 'SERIAL_DIRECT' | 'AGENT' | 'BARCODE_LABEL' | string;
   scaleProfile?: string | null;
   barcodeWeightPattern?: string | null;
@@ -128,6 +129,16 @@ export class CompanyService {
 
     if (body.restaurantModuleEnabled !== undefined) {
       data.restaurantModuleEnabled = Boolean(body.restaurantModuleEnabled);
+    }
+
+    if (body.comandaNumberingMode !== undefined) {
+      const m = String(body.comandaNumberingMode).trim().toUpperCase();
+      if (m !== 'DYNAMIC' && m !== 'FIXED') {
+        throw new BadRequestException(
+          'Modo de numeração de comanda inválido (use DYNAMIC ou FIXED).',
+        );
+      }
+      data.comandaNumberingMode = m;
     }
 
     if (body.scaleAutoConfirmMs !== undefined) {

@@ -153,10 +153,62 @@ export class RestaurantService {
     });
   }
 
+  // --- Comandas fixas (sem mesa) ---
+
+  listStations(tenantSlug: string) {
+    return this.db(tenantSlug).then((db) =>
+      db.comandaStation.findMany({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
+        include: {
+          tabs: {
+            where: { status: ServiceTabStatus.OPEN },
+            select: {
+              id: true,
+              number: true,
+              customerId: true,
+              customer: { select: { id: true, name: true } },
+              _count: {
+                select: {
+                  items: {
+                    where: { status: { not: ServiceTabItemStatus.CANCELLED } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    );
+  }
+
+  async createStation(
+    tenantSlug: string,
+    body: { code: string; label?: string | null; sortOrder?: number },
+  ) {
+    const db = await this.db(tenantSlug);
+    const code = String(body.code ?? '').trim();
+    if (!code) throw new BadRequestException('Número ou sigla da comanda é obrigatório.');
+    const company = await db.company.findFirst({ select: { comandaNumberingMode: true } });
+    if (company?.comandaNumberingMode !== 'FIXED') {
+      throw new BadRequestException(
+        'Cadastro de comandas fixas só está disponível com numeração fixa em Empresa → Restaurante.',
+      );
+    }
+    return db.comandaStation.create({
+      data: {
+        code,
+        label: body.label?.trim() || null,
+        sortOrder: body.sortOrder ?? 0,
+      },
+    });
+  }
+
   // --- Comandas ---
 
   private readonly tabDetailInclude = {
     table: { include: { area: true } },
+    station: true,
     items: {
       include: {
         variant: {
@@ -177,6 +229,7 @@ export class RestaurantService {
       orderBy: { number: 'asc' },
       include: {
         table: { include: { area: true } },
+        station: true,
         items: {
           where: { status: { not: ServiceTabItemStatus.CANCELLED } },
           include: {
@@ -308,6 +361,7 @@ export class RestaurantService {
     userId: string,
     body: {
       tableId?: string | null;
+      stationId?: string | null;
       customerId?: string | null;
       customerName?: string | null;
       notes?: string | null;
@@ -315,7 +369,41 @@ export class RestaurantService {
     },
   ) {
     const db = await this.db(tenantSlug);
+    const company = await db.company.findFirst({
+      select: { comandaNumberingMode: true },
+    });
+    const numberingMode = company?.comandaNumberingMode ?? 'DYNAMIC';
+
     let tableId = body.tableId?.trim() || null;
+    let stationId = body.stationId?.trim() || null;
+
+    if (tableId && stationId) {
+      throw new BadRequestException('Comanda não pode ter mesa e número fixo ao mesmo tempo.');
+    }
+
+    if (stationId) {
+      if (numberingMode !== 'FIXED') {
+        throw new BadRequestException(
+          'Numeração fixa não está ativa. Ative em Empresa → Restaurante.',
+        );
+      }
+      const station = await db.comandaStation.findUnique({ where: { id: stationId } });
+      if (!station || !station.isActive) {
+        throw new BadRequestException('Comanda fixa inválida ou inativa.');
+      }
+      const openOnStation = await db.serviceTab.findFirst({
+        where: { stationId, status: ServiceTabStatus.OPEN },
+        select: { id: true },
+      });
+      if (openOnStation) {
+        throw new BadRequestException('Já existe comanda aberta neste número/sigla.');
+      }
+    } else if (!tableId && numberingMode === 'FIXED') {
+      throw new BadRequestException(
+        'Selecione uma comanda cadastrada (numeração fixa).',
+      );
+    }
+
     if (tableId) {
       const table = await db.diningTable.findUnique({ where: { id: tableId } });
       if (!table || !table.isActive) throw new BadRequestException('Mesa inválida.');
@@ -335,6 +423,7 @@ export class RestaurantService {
     const tab = await db.serviceTab.create({
       data: {
         tableId,
+        stationId,
         customerId,
         notes: body.notes?.trim() || null,
         openedById: userId,

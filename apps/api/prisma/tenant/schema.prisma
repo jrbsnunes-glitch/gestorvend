@@ -36,6 +36,8 @@ model Company {
   saleReceiptPrinterHint String?
   /// Módulo restaurante ativo neste tenant (só surte efeito se o plano central for RESTAURANT).
   restaurantModuleEnabled Boolean @default(false)
+  /// Comandas sem mesa: DYNAMIC = número livre/sequencial; FIXED = slots cadastrados (ComandaStation).
+  comandaNumberingMode ComandaNumberingMode @default(DYNAMIC)
   /// Como o PDV captura peso no self-service.
   scaleMode ScaleCaptureMode @default(MANUAL)
   /// Perfil/protocolo da balança serial (ex.: GENERIC_STREAM, TOLEDO_P05).
@@ -68,6 +70,12 @@ model Company {
 /// Modo de cobrança das taxas de salão (% sobre itens ou valor fixo em R$).
 enum RestaurantFeeMode {
   PERCENT
+  FIXED
+}
+
+/// Comandas sem mesa: numeração sequencial automática ou slots fixos (cadastrados).
+enum ComandaNumberingMode {
+  DYNAMIC
   FIXED
 }
 
@@ -1203,12 +1211,28 @@ model DiningTable {
   @@index([status])
 }
 
+/// Slot de comanda sem mesa (numeração fixa / sigla — ex.: 01, BALCÃO, VIP).
+model ComandaStation {
+  id        String       @id @default(uuid())
+  code      String       @unique @db.VarChar(32)
+  label     String?
+  sortOrder Int          @default(0)
+  isActive  Boolean      @default(true)
+  tabs      ServiceTab[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([sortOrder, code])
+}
+
 model ServiceTab {
   id          String           @id @default(uuid())
   number      Int              @unique @default(autoincrement())
   status      ServiceTabStatus @default(OPEN)
   tableId     String?
   table       DiningTable?     @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  stationId   String?
+  station     ComandaStation?  @relation(fields: [stationId], references: [id], onDelete: SetNull)
   openedById  String?
   openedBy    User?            @relation("ServiceTabOpenedBy", fields: [openedById], references: [id], onDelete: SetNull)
   customerId  String?
@@ -1225,6 +1249,7 @@ model ServiceTab {
 
   @@index([status, createdAt])
   @@index([tableId])
+  @@index([stationId])
 }
 
 model ServiceTabItem {
