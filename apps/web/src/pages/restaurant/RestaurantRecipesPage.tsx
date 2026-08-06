@@ -28,6 +28,44 @@ type Recipe = {
   }>;
 };
 
+/**
+ * Lista de sugestões da busca. Mostra o estado (buscando, vazio, falha) —
+ * sem isso um erro de rede ou permissão virava uma caixa vazia, indistinguível
+ * de "produto não cadastrado".
+ */
+function ProductSuggest({
+  term,
+  query,
+  onPick,
+}: {
+  term: string;
+  query: { isFetching: boolean; isError: boolean; error: unknown; data?: ProductHit[] };
+  onPick: (p: ProductHit) => void;
+}) {
+  const hits = (query.data ?? []).slice(0, 8);
+  return (
+    <ul className="restaurant-suggest" style={{ position: 'relative' }}>
+      {query.isError ? (
+        <li className="restaurant-suggest__msg">
+          Falha na busca: {(query.error as Error)?.message || 'tente novamente'}
+        </li>
+      ) : hits.length === 0 ? (
+        <li className="restaurant-suggest__msg">
+          {query.isFetching ? 'Buscando…' : `Nenhum produto encontrado para “${term}”.`}
+        </li>
+      ) : (
+        hits.map((p) => (
+          <li key={p.variantId}>
+            <button type="button" onClick={() => onPick(p)}>
+              {p.productName} <span className="muted">· {p.sku}</span>
+            </button>
+          </li>
+        ))
+      )}
+    </ul>
+  );
+}
+
 export function RestaurantRecipesPage() {
   const qc = useQueryClient();
   const planOk = hasRestaurantPlan();
@@ -154,15 +192,7 @@ export function RestaurantRecipesPage() {
             placeholder="Buscar produto…"
           />
           {productQ.trim().length >= 1 && (
-            <ul className="restaurant-suggest" style={{ position: 'relative' }}>
-              {(productsQ.data ?? []).slice(0, 8).map((p) => (
-                <li key={p.variantId}>
-                  <button type="button" onClick={() => onSelectProduct(p)}>
-                    {p.productName}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <ProductSuggest term={productQ.trim()} query={productsQ} onPick={onSelectProduct} />
           )}
         </div>
         {productId && recipeQ.isFetching && (
@@ -185,28 +215,21 @@ export function RestaurantRecipesPage() {
               placeholder="Buscar insumo…"
             />
             {ingQ.trim().length >= 1 && (
-              <ul className="restaurant-suggest" style={{ position: 'relative' }}>
-                {(ingsQ.data ?? []).slice(0, 8).map((p) => (
-                  <li key={p.variantId}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLines((prev) => [
-                          ...prev,
-                          {
-                            ingredientVariantId: p.variantId,
-                            label: `${p.productName} (${p.sku})`,
-                            quantity: '1',
-                          },
-                        ]);
-                        setIngQ('');
-                      }}
-                    >
-                      {p.productName}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <ProductSuggest
+                term={ingQ.trim()}
+                query={ingsQ}
+                onPick={(p) => {
+                  setLines((prev) => [
+                    ...prev,
+                    {
+                      ingredientVariantId: p.variantId,
+                      label: `${p.productName} (${p.sku})`,
+                      quantity: '1',
+                    },
+                  ]);
+                  setIngQ('');
+                }}
+              />
             )}
           </div>
           <ul className="restaurant-items">
