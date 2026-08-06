@@ -111,6 +111,13 @@ export class SalesController {
     return this.sales.removeSaleItem(user.tenantSlug, id, itemId, user.sub);
   }
 
+  /** Cupom PDV: venda + empresa juntos (logo/CNPJ/endereço sem segunda corrida). */
+  @Get(':id/receipt')
+  @Roles('admin', 'manager', 'seller', 'finance', 'waiter')
+  getReceipt(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.sales.findReceiptPrintPayload(user.tenantSlug, id);
+  }
+
   @Get(':id')
   @Roles('admin', 'manager', 'seller', 'finance')
   getOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {

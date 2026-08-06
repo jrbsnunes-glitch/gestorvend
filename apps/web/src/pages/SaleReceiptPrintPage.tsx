@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { api } from '../lib/api';
-import { companyUsesCustomLogo } from '../lib/company-branding';
 import { formatBRL, formatDate } from '../lib/format';
 import { consumeAutoPrintNonce } from '../lib/sale-receipt-print';
 import { printDocument } from '../lib/desktop-print';
@@ -53,6 +52,11 @@ type SaleReceipt = {
   }>;
 };
 
+type ReceiptPayload = {
+  sale: SaleReceipt;
+  company: Company;
+};
+
 const PAY_LABEL: Record<SaleReceipt['payments'][number]['method'], string> = {
   CASH: 'Dinheiro',
   CARD: 'Cartão',
@@ -76,6 +80,15 @@ function parseN(v: string | number | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function formatAddressLine(c: Company): string {
+  const parts = [c.city, c.state].filter(Boolean);
+  const cityState = parts.join(' / ');
+  const z = onlyDigits(c.zip ?? '');
+  const cep =
+    z.length === 8 ? `CEP ${z.slice(0, 5)}-${z.slice(5)}` : c.zip?.trim() ? `CEP ${c.zip}` : '';
+  return [cityState, cep].filter(Boolean).join(' · ');
+}
+
 export function SaleReceiptPrintPage() {
   const [sp] = useSearchParams();
   const saleId = sp.get('id')?.trim() ?? '';
@@ -83,22 +96,31 @@ export function SaleReceiptPrintPage() {
   const wantClose = sp.get('close') === '1' || sp.get('close') === 'true';
   const np = sp.get('_np');
 
-  const companyQ = useQuery({
-    queryKey: ['company'],
-    queryFn: () => api<Company>('/company'),
-  });
-
-  const saleQ = useQuery({
-    queryKey: ['sales', saleId],
-    queryFn: () => api<SaleReceipt>(`/sales/${encodeURIComponent(saleId)}`),
+  const receiptQ = useQuery({
+    queryKey: ['sales', saleId, 'receipt'],
+    queryFn: async (): Promise<ReceiptPayload> => {
+      try {
+        return await api<ReceiptPayload>(`/sales/${encodeURIComponent(saleId)}/receipt`);
+      } catch {
+        // API antiga sem /receipt — carrega venda + empresa em paralelo.
+        const [sale, company] = await Promise.all([
+          api<SaleReceipt>(`/sales/${encodeURIComponent(saleId)}`),
+          api<Company>('/company'),
+        ]);
+        return { sale, company };
+      }
+    },
     enabled: Boolean(saleId),
+    retry: 2,
+    retryDelay: 400,
   });
 
-  const c = companyQ.data;
-  const s = saleQ.data;
-  const loading = Boolean(saleId) && (saleQ.isLoading || companyQ.isLoading);
-  /** Venda + empresa resolvidas — Desktop espera este flag antes de imprimir. */
-  const receiptReady = Boolean(s) && (companyQ.isSuccess || companyQ.isError) && !saleQ.isLoading;
+  const s = receiptQ.data?.sale;
+  const c = receiptQ.data?.company;
+  const loading = Boolean(saleId) && receiptQ.isLoading;
+  /** Libera impressão com venda + nome da empresa no DOM. */
+  const receiptReady = Boolean(s && (c?.legalName || c?.tradeName));
+  const companyOk = receiptReady;
 
   useEffect(() => {
     document.documentElement.classList.add('gv-sale-receipt-print');
@@ -137,17 +159,22 @@ export function SaleReceiptPrintPage() {
           }, 400);
         }
       });
-    }, 550);
+    }, 600);
     return () => window.clearTimeout(t);
   }, [wantAutoPrint, saleId, receiptReady, np, wantClose]);
 
   return (
-    <div className="sale-receipt-page" data-receipt-ready={receiptReady ? '1' : '0'}>
+    <div
+      className="sale-receipt-page"
+      data-receipt-ready={receiptReady ? '1' : '0'}
+      data-company-ok={companyOk ? '1' : '0'}
+    >
       <div className="sale-receipt-toolbar no-print">
         <button
           type="button"
           className="btn btn-primary"
           onClick={() => void printDocument('80mm')}
+          disabled={!receiptReady}
         >
           Imprimir (Ctrl+P)
         </button>
@@ -173,50 +200,42 @@ export function SaleReceiptPrintPage() {
 
       {saleId && loading && (
         <div className="sale-receipt-doc">
-          <p>Carregando…</p>
+          <p>Carregando cupom e dados da empresa…</p>
         </div>
       )}
 
-      {saleId && saleQ.isError && (
+      {saleId && receiptQ.isError && (
         <div className="sale-receipt-doc">
-          <p>Não foi possível carregar a venda. {(saleQ.error as Error).message}</p>
+          <p>Não foi possível carregar o cupom. {(receiptQ.error as Error).message}</p>
         </div>
       )}
 
-      {s && (
+      {s && c && (
         <article
           className="sale-receipt-doc"
-          data-receipt-ready={receiptReady ? '1' : '0'}
+          data-receipt-ready="1"
+          data-company-ok="1"
         >
-          {c ? (
-            <header className="sale-receipt-center">
-              {companyUsesCustomLogo(c) ? (
-                <CompanyLogo className="sale-receipt-logo" company={c} alt={c.tradeName || c.legalName} />
-              ) : null}
-              <p className="sale-receipt-title">{c.tradeName || c.legalName}</p>
-              {c.tradeName && c.legalName !== c.tradeName && (
-                <p className="sale-receipt-legal">{c.legalName}</p>
-              )}
+          <header className="sale-receipt-center sale-receipt-company">
+            <CompanyLogo
+              className="sale-receipt-logo"
+              company={c}
+              alt={c.tradeName || c.legalName}
+            />
+            <p className="sale-receipt-title">{c.tradeName || c.legalName}</p>
+            {c.tradeName && c.legalName && c.legalName !== c.tradeName && (
+              <p className="sale-receipt-legal">{c.legalName}</p>
+            )}
+            {c.cnpj?.trim() ? (
               <p className="sale-receipt-sub">CNPJ {formatCnpjForReceipt(c.cnpj)}</p>
-              {c.ie?.trim() ? <p className="sale-receipt-sub">IE {c.ie}</p> : null}
-              {c.address?.trim() ? <p className="sale-receipt-sub">{c.address}</p> : null}
-              {(c.city || c.state || c.zip) && (
-                <p className="sale-receipt-sub">
-                  {[c.city, c.state].filter(Boolean).join(' / ')}
-                  {(() => {
-                    const z = onlyDigits(c.zip ?? '');
-                    if (z.length !== 8) return c.zip?.trim() ? ` · CEP ${c.zip}` : '';
-                    return ` · CEP ${z.slice(0, 5)}-${z.slice(5)}`;
-                  })()}
-                </p>
-              )}
-              {c.phone?.trim() ? <p className="sale-receipt-sub">Tel. {c.phone}</p> : null}
-            </header>
-          ) : (
-            <p className="sale-receipt-center sale-receipt-sub">
-              Cadastre a empresa em <strong>Empresa</strong> para exibir razão social e CNPJ no cupom.
-            </p>
-          )}
+            ) : null}
+            {c.ie?.trim() ? <p className="sale-receipt-sub">IE {c.ie}</p> : null}
+            {c.address?.trim() ? <p className="sale-receipt-sub">{c.address}</p> : null}
+            {formatAddressLine(c) ? (
+              <p className="sale-receipt-sub">{formatAddressLine(c)}</p>
+            ) : null}
+            {c.phone?.trim() ? <p className="sale-receipt-sub">Tel. {c.phone}</p> : null}
+          </header>
 
           <hr className="sale-receipt-line" />
 
@@ -307,11 +326,11 @@ export function SaleReceiptPrintPage() {
               parseN(s.couvertAmount) <= 0.005 &&
               parseN(s.waiterTipAmount) <= 0.005 &&
               parseN(s.surcharge) > 0.005 && (
-              <div className="sale-receipt-totals-row">
-                <span>Acréscimo</span>
-                <span>+ {formatBRL(s.surcharge)}</span>
-              </div>
-            )}
+                <div className="sale-receipt-totals-row">
+                  <span>Acréscimo</span>
+                  <span>+ {formatBRL(s.surcharge)}</span>
+                </div>
+              )}
             <div className="sale-receipt-totals-row is-total">
               <span>TOTAL</span>
               <span>{formatBRL(s.total)}</span>

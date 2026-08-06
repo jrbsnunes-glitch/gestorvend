@@ -90,7 +90,15 @@ export async function tryDesktopPrintUrl(
     pageSize,
   });
   if (!res.ok) {
-    console.warn('[desktop-print]', res.error || 'Falha printUrl');
+    const msg = res.error || 'Falha printUrl';
+    console.warn('[desktop-print]', msg);
+    try {
+      window.dispatchEvent(
+        new CustomEvent('gv-print-failed', { detail: { error: msg, path: pathAndQuery } }),
+      );
+    } catch {
+      /* ignore */
+    }
     return false;
   }
   return true;

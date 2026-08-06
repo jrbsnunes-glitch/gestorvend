@@ -50,15 +50,24 @@
   text-align: center;
 }
 
+.sale-receipt-company {
+  margin-bottom: 0.15rem;
+}
+
 .sale-receipt-logo {
   max-width: 52mm;
   max-height: 20mm;
   width: auto;
   height: auto;
   object-fit: contain;
-  object-position: center;
+  object-position: center center;
   margin: 0 auto 0.35rem;
   display: block;
+}
+
+.sale-receipt-logo.company-logo--tenant,
+.sale-receipt-logo.company-logo--default {
+  object-position: center center;
 }
 
 .sale-receipt-title {

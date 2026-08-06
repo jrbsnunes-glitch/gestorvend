@@ -1181,10 +1181,20 @@ function PosScreen({
 
   useEffect(() => {
     if (toast) {
-      const t = setTimeout(() => setToast(null), 2400);
+      const t = setTimeout(() => setToast(null), toast.kind === 'err' ? 6000 : 2400);
       return () => clearTimeout(t);
     }
   }, [toast]);
+
+  useEffect(() => {
+    function onPrintFailed(ev: Event) {
+      const detail = (ev as CustomEvent<{ error?: string }>).detail;
+      const msg = detail?.error?.trim() || 'Falha ao enviar cupom à impressora.';
+      setToast({ kind: 'err', text: msg });
+    }
+    window.addEventListener('gv-print-failed', onPrintFailed);
+    return () => window.removeEventListener('gv-print-failed', onPrintFailed);
+  }, []);
 
   /* --- carregar comanda do salão (?comanda=id ou sessionStorage) --- */
   type ServiceTabPayload = {

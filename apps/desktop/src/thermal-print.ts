@@ -5,9 +5,54 @@ export type ThermalPrintPageSize = '80mm' | 'A4';
 /**
  * Janela ~largura da bobina @ 96dpi.
  * A formatação visual fica no CSS do web (`sale-receipt-print.css`);
- * aqui só removemos chrome, anulamos @page A4 e aplicamos a escala.
+ * aqui só removemos chrome, anulamos @page A4, embutimos a logo e aplicamos a escala.
  */
 export const THERMAL_WINDOW_WIDTH_PX = 302;
+
+async function inlineReceiptImages(wc: WebContents): Promise<void> {
+  // Timeout curto — não pode travar o job de impressão se a logo falhar.
+  await Promise.race([
+    wc.executeJavaScript(`
+      (async () => {
+        const imgs = Array.from(
+          document.querySelectorAll('article.sale-receipt-doc img.sale-receipt-logo, article.sale-receipt-doc img'),
+        );
+        await Promise.all(
+          imgs.map(async (img) => {
+            try {
+              const src = img.currentSrc || img.src;
+              if (!src || src.startsWith('data:')) return;
+              const ctrl = new AbortController();
+              const timer = setTimeout(() => ctrl.abort(), 1200);
+              const res = await fetch(src, {
+                credentials: 'same-origin',
+                cache: 'force-cache',
+                signal: ctrl.signal,
+              });
+              clearTimeout(timer);
+              if (!res.ok) return;
+              const blob = await res.blob();
+              const dataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+              if (typeof dataUrl === 'string') {
+                img.src = dataUrl;
+                img.removeAttribute('srcset');
+              }
+            } catch {
+              /* mantém src original */
+            }
+          }),
+        );
+        return true;
+      })()
+    `),
+    new Promise((r) => setTimeout(r, 2000)),
+  ]);
+}
 
 /**
  * Prepara o DOM do cupom sem apagar a tipografia/layout do sistema.
@@ -18,8 +63,19 @@ export async function prepareSaleReceiptForThermalPrint(
   receiptScale = 1,
 ): Promise<number> {
   const scale = Math.max(0.75, Math.min(2, receiptScale || 1));
+
+  // Preferível ter cabeçalho; se não tiver, ainda imprime o article (não bloqueia a térmica).
+  const hasArticle = await wc.executeJavaScript(
+    `Boolean(document.querySelector('article.sale-receipt-doc'))`,
+  );
+  if (!hasArticle) {
+    throw new Error('Cupom não encontrado na página.');
+  }
+
+  await inlineReceiptImages(wc);
+
   await wc.executeJavaScript(`
-    (async () => {
+    (() => {
       const scale = ${JSON.stringify(scale)};
       document.documentElement.classList.add('gv-sale-receipt-print');
       document.body.classList.add('gv-sale-receipt-print');
@@ -35,31 +91,12 @@ export async function prepareSaleReceiptForThermalPrint(
         document.body.replaceChildren(doc);
       }
 
-      // Espera logo/imagens do cabeçalho da empresa.
-      const imgs = Array.from(document.querySelectorAll('article.sale-receipt-doc img'));
-      await Promise.all(
-        imgs.map(
-          (img) =>
-            new Promise((resolve) => {
-              if (img.complete && img.naturalWidth > 0) {
-                resolve(true);
-                return;
-              }
-              const done = () => resolve(true);
-              img.addEventListener('load', done, { once: true });
-              img.addEventListener('error', done, { once: true });
-              setTimeout(done, 2500);
-            }),
-        ),
-      );
-
       let style = document.getElementById('gv-thermal-print-prep');
       if (!style) {
         style = document.createElement('style');
         style.id = 'gv-thermal-print-prep';
         document.head.appendChild(style);
       }
-      // size:auto anula o A4 global; zoom só escala — não redefine fontes.
       style.textContent = \`
         @page { size: auto !important; margin: 0 !important; }
         html.gv-sale-receipt-print, html {
@@ -100,6 +137,25 @@ export async function prepareSaleReceiptForThermalPrint(
           height: auto !important;
           min-height: 0 !important;
           zoom: \${scale};
+        }
+        .sale-receipt-logo {
+          display: block !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+          max-width: 52mm !important;
+          max-height: 20mm !important;
+          object-fit: contain !important;
+          object-position: center !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        .sale-receipt-company, .sale-receipt-title, .sale-receipt-sub, .sale-receipt-legal {
+          text-align: center !important;
+          color: #000 !important;
+        }
+        .sale-receipt-line {
+          border: none !important;
+          border-top: 1.5px dashed #000 !important;
         }
       \`;
       return true;

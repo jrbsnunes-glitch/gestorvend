@@ -1,5 +1,5 @@
 {
-  "version": "1.0.37",
+  "version": "1.0.38",
   "downloadUrl": "",
-  "notes": "Cupom PDV: anula @page A4 e espera empresa/logo antes de imprimir."
+  "notes": "Cupom PDV: venda+empresa no mesmo payload; impressão não trava sem logo."
 }

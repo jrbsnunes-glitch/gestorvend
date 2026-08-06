@@ -75,16 +75,21 @@ export function queueSaleReceiptAutoPrint(saleId: string): void {
 
   if (isGestorVendDesktop()) {
     void (async () => {
-      // Sem autoprint: o main process imprime após o HTML ficar pronto (evita diálogo + double print).
       const pathSilent = receiptPrintPath(saleId, nonce, { autoprint: false, close: false });
       const ok = await tryDesktopPrintUrl(pathSilent, '80mm');
       if (ok) return;
-      // Fallback: janela filha COM preload (sem noopener) e autoprint na página.
-      window.open(
+
+      // Fallback: janela filha COM preload e autoprint na página.
+      const w = window.open(
         receiptPrintPath(saleId, nonce, { autoprint: true, close: true }),
         'gv_sale_receipt',
         'width=420,height=720',
       );
+      if (!w) {
+        window.alert(
+          'Não foi possível enviar o cupom à impressora.\n\nConfira: impressora do PDV em Configurações → Impressão, Desktop atualizado (npm run pack) e servidor atualizado.',
+        );
+      }
     })();
     return;
   }
@@ -92,7 +97,6 @@ export function queueSaleReceiptAutoPrint(saleId: string): void {
   const w = window.open(path, 'gv_sale_receipt', 'noopener,noreferrer,width=420,height=720');
   if (w) return;
 
-  // Fallback se pop-up bloqueado (navegador): iframe.
   const iframe = document.createElement('iframe');
   iframe.style.cssText =
     'position:fixed;right:0;bottom:0;width:80mm;height:120mm;border:0;opacity:0.01;z-index:-1;';

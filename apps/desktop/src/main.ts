@@ -380,7 +380,7 @@ function registerIpc() {
 
       try {
         await win.loadURL(target);
-        // Aguarda venda + empresa (data-receipt-ready), não só o article vazio.
+        // Pronto quando o cupom tem título da empresa (novo ou legado) ou article após carga.
         const ready = await new Promise<boolean>((resolve) => {
           let tries = 0;
           const tick = async () => {
@@ -389,9 +389,18 @@ function registerIpc() {
               return;
             }
             try {
-              const ok = await win.webContents.executeJavaScript(
-                `Boolean(document.querySelector('article.sale-receipt-doc[data-receipt-ready="1"]'))`,
-              );
+              const ok = await win.webContents.executeJavaScript(`
+                (() => {
+                  const article = document.querySelector('article.sale-receipt-doc');
+                  if (!article) return false;
+                  // Preferível: cabeçalho da empresa
+                  if (article.querySelector('.sale-receipt-title')) return true;
+                  // data-company-ok (build novo)
+                  if (article.getAttribute('data-company-ok') === '1') return true;
+                  if (article.getAttribute('data-receipt-ready') === '1') return true;
+                  return false;
+                })()
+              `);
               if (ok) {
                 resolve(true);
                 return;
@@ -400,7 +409,7 @@ function registerIpc() {
               /* ignore */
             }
             tries += 1;
-            if (tries >= 60) {
+            if (tries >= 80) {
               resolve(false);
               return;
             }
@@ -411,7 +420,11 @@ function registerIpc() {
           void tick();
         });
         if (!ready) {
-          return { ok: false, error: 'Cupom não carregou a tempo para imprimir.' };
+          return {
+            ok: false,
+            error:
+              'Cupom não carregou a tempo (venda/empresa). Atualize o servidor e tente de novo.',
+          };
         }
         await new Promise((r) => setTimeout(r, 200));
 
@@ -458,11 +471,12 @@ function registerIpc() {
 
         let contentHeightPx: number | undefined;
         if (pageSize === '80mm') {
-          try {
+          const isReceipt = await wc
+            .executeJavaScript(`Boolean(document.querySelector('article.sale-receipt-doc'))`)
+            .catch(() => false);
+          if (isReceipt) {
             const receiptScale = readConfig()?.pdv?.receiptScale ?? 1;
             contentHeightPx = await prepareSaleReceiptForThermalPrint(wc, receiptScale);
-          } catch {
-            /* página sem cupom — imprime mesmo assim */
           }
         }
 

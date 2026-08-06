@@ -15,6 +15,7 @@ import {
   UserPermissionCode,
 } from '../generated/tenant-client';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
+import { CompanyService } from '../company/company.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { UserPermissionsService } from '../users/user-permissions.service';
 import { resolveSaleStockQuantity } from '../common/product-conversion.util';
@@ -227,6 +228,7 @@ export class SalesService {
     private readonly tenantPrisma: TenantPrismaService,
     private readonly activityLog: ActivityLogService,
     private readonly permissions: UserPermissionsService,
+    private readonly company: CompanyService,
   ) {}
 
   async create(input: CreateSaleInput) {
@@ -740,6 +742,15 @@ export class SalesService {
       throw new NotFoundException('Venda não encontrada');
     }
     return sale;
+  }
+
+  /** Cupom não fiscal: venda + cadastro da empresa num único payload (evita race na impressão). */
+  async findReceiptPrintPayload(tenantSlug: string, saleId: string) {
+    const [sale, company] = await Promise.all([
+      this.findById(tenantSlug, saleId),
+      this.company.getOrCreate(tenantSlug),
+    ]);
+    return { sale, company };
   }
 
   async list(tenantSlug: string, from?: string, to?: string, customerId?: string) {
