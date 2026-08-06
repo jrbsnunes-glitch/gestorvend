@@ -768,6 +768,8 @@ model Sale {
   discount      Decimal        @default(0) @db.Decimal(14, 2)
   /// Acréscimo comercial no total da venda (NFC-e/NF-e: vOutro — outras despesas acessórias).
   surcharge     Decimal        @default(0) @db.Decimal(14, 2)
+  /// Taxa de cartão repassada ao cliente (soma em vOutro; aparte do surcharge comercial).
+  cardFeeSurcharge Decimal     @default(0) @db.Decimal(14, 2)
   /// Taxa de serviço aplicada (R$) — salão; soma entra em surcharge/vOutro.
   serviceFeeAmount Decimal     @default(0) @db.Decimal(14, 2)
   /// Couvert aplicado (R$).
@@ -883,6 +885,8 @@ model PaymentForm {
   adminFeePercent Decimal          @default(0) @db.Decimal(7, 4)
   /// Taxa fixa por transação (R$).
   adminFeeFixed   Decimal          @default(0) @db.Decimal(14, 2)
+  /// Se true, soma taxa % + fixa como acréscimo no total cobrado do cliente.
+  passAdminFeeToCustomer Boolean   @default(false)
   /// Dias para previsão de baixa (D+N).
   settlementDays  Int              @default(1)
   maxInstallments Int              @default(1)

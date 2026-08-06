@@ -158,6 +158,9 @@ export class PaymentFormsController {
       if (body.adminFeeFixed !== undefined || requireName) {
         data.adminFeeFixed = decMoney(body.adminFeeFixed ?? 0, 'Taxa fixa');
       }
+      if (body.passAdminFeeToCustomer !== undefined || requireName) {
+        data.passAdminFeeToCustomer = Boolean(body.passAdminFeeToCustomer);
+      }
       if (body.settlementDays !== undefined || requireName) {
         const d = Number(body.settlementDays ?? 1);
         if (!Number.isFinite(d) || d < 0 || d > 365) {
@@ -177,6 +180,7 @@ export class PaymentFormsController {
       data.cardOperation = null;
       data.adminFeePercent = new Prisma.Decimal(0);
       data.adminFeeFixed = new Prisma.Decimal(0);
+      data.passAdminFeeToCustomer = false;
       data.settlementDays = 0;
       data.maxInstallments = 1;
     }

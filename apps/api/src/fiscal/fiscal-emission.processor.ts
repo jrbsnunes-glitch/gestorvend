@@ -392,13 +392,17 @@ export class FiscalEmissionProcessorService {
         modelo,
       });
 
-    const vDescTotal = Math.max(0, Number(sale.discount ?? 0));
-    const vOutroTotal = Math.max(0, Number(sale.surcharge ?? 0));
+    const vDescCupom = Math.max(0, Number(sale.discount ?? 0));
+    const vOutroTotal =
+      Math.max(0, Number(sale.surcharge ?? 0)) + Math.max(0, Number(sale.cardFeeSurcharge ?? 0));
     const vFreteTotal = Math.max(0, Number(sale.freightAmount ?? 0));
     const natureCfop = (sale.operationNature?.cfop ?? '').replace(/\D/g, '').slice(0, 4);
-    const lineWeights = sale.items.map((it) => Math.max(0, Number(it.totalLine)));
-    const descParts = allocateMoneyByWeights(vDescTotal, lineWeights);
-    const outroParts = allocateMoneyByWeights(vOutroTotal, lineWeights);
+    // Pesos pelo valor bruto da linha (qty × unitPrice) — MOC: vProd bruto, vDesc explícito.
+    const grossWeights = sale.items.map((it) =>
+      Math.max(0, Number(it.quantity) * Number(it.unitPrice)),
+    );
+    const descParts = allocateMoneyByWeights(vDescCupom, grossWeights);
+    const outroParts = allocateMoneyByWeights(vOutroTotal, grossWeights);
 
     const itemsXml: NfceItemInput[] = sale.items.map((it, idx) => {
       const p = it.variant.product;
@@ -415,8 +419,10 @@ export class FiscalEmissionProcessorService {
       const csosn = csosnRaw.slice(-3).padStart(3, '0');
       const orig = (p.fiscalOrigin ?? '0').replace(/\D/g, '').slice(0, 1) || '0';
       const qty = Number(it.quantity);
-      const line = Number(it.totalLine);
-      const vUn = qty > 0 ? line / qty : line;
+      const unit = Number(it.unitPrice);
+      const itemDesc = Math.max(0, Number(it.discount ?? 0));
+      const gross = Math.max(0, qty * unit);
+      const vDesc = Math.max(0, itemDesc + (descParts[idx] ?? 0));
       return {
         nItem: idx + 1,
         sku: it.variant.sku,
@@ -425,9 +431,9 @@ export class FiscalEmissionProcessorService {
         cfop,
         uCom: p.taxUnit?.trim() || 'UN',
         qCom: qty,
-        vUnCom: vUn,
-        vProd: line,
-        vDesc: descParts[idx] ?? 0,
+        vUnCom: unit,
+        vProd: gross,
+        vDesc,
         vOutro: outroParts[idx] ?? 0,
         orig,
         csosn,
@@ -507,7 +513,7 @@ export class FiscalEmissionProcessorService {
       totals: {
         vNF,
         vProd,
-        vDesc: vDescTotal,
+        vDesc: itemsXml.reduce((s, x) => s + (x.vDesc ?? 0), 0),
         vOutro: vOutroTotal,
         vFrete: vFreteTotal,
       },

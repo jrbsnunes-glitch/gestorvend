@@ -274,15 +274,32 @@ export class SalesService {
     }
 
     let subtotal = 0;
+    let itemDiscountSum = 0;
     for (const it of input.items) {
       const q = Number(it.quantity);
       const p = Number(it.unitPrice);
       const d = Number(it.discount ?? 0);
       if (q <= 0) throw new BadRequestException('Quantidade inválida');
       if (d < 0) throw new BadRequestException('Desconto de item inválido');
-      subtotal += q * p - d;
+      const gross = roundMoney2(q * p);
+      if (d > gross + 0.009) {
+        throw new BadRequestException('Desconto de item não pode exceder o valor da linha.');
+      }
+      itemDiscountSum += d;
+      subtotal += gross - d;
     }
     subtotal = roundMoney2(subtotal);
+    itemDiscountSum = roundMoney2(itemDiscountSum);
+    if (itemDiscountSum > 0 && discount <= 0) {
+      // Desconto só em item: mesma permissão SALE_DISCOUNT.
+      await this.permissions.assertPermission(
+        input.tenantSlug,
+        input.userId,
+        input.userRoles,
+        UserPermissionCode.SALE_DISCOUNT,
+        input.permissionPassword,
+      );
+    }
     if (discount > subtotal + 0.009) {
       throw new BadRequestException('Desconto não pode ser maior que o subtotal dos produtos.');
     }
@@ -308,12 +325,15 @@ export class SalesService {
       surcharge = fees.feesTotal;
     }
 
-    // MOC NF-e/NFC-e: vNF ≈ vProd − vDesc + vFrete + vOutro (+ seguro/impostos).
-    const total = roundMoney2(Math.max(0, subtotal - discount + surcharge + freightAmount));
+    // Total mercadoria (antes do repasse de taxa de cartão).
+    // MOC: vNF ≈ vProd − vDesc + vFrete + vOutro (+ seguro/impostos).
+    const merchandiseTotal = roundMoney2(
+      Math.max(0, subtotal - discount + surcharge + freightAmount),
+    );
     if (!input.payments?.length) {
       throw new BadRequestException('Informe ao menos uma forma de pagamento');
     }
-    const paymentsNorm = normalizePaymentsToSaleTotal(input.payments, total);
+    const paymentsNorm = normalizePaymentsToSaleTotal(input.payments, merchandiseTotal);
 
     const formIds = [
       ...new Set(paymentsNorm.map((p) => p.paymentFormId).filter(Boolean) as string[]),
@@ -323,6 +343,7 @@ export class SalesService {
       : [];
     const formById = new Map(forms.map((f) => [f.id, f]));
 
+    let cardFeeSurcharge = 0;
     const paymentsToCreate: NormalizedSalePayment[] = paymentsNorm.map((p) => {
       const form = p.paymentFormId ? formById.get(p.paymentFormId) : undefined;
       if (p.paymentFormId && !form) {
@@ -336,6 +357,7 @@ export class SalesService {
         method = form.kind as unknown as PaymentMethod;
       }
       const isCard = method === PaymentMethod.CARD;
+      let amount = p.amount;
       let adminFeeAmount = 0;
       let netAmount: number | null = null;
       let cardBrand = form?.cardBrand ?? null;
@@ -345,8 +367,19 @@ export class SalesService {
       if (isCard) {
         const feePct = Number(form?.adminFeePercent ?? 0);
         const feeFix = Number(form?.adminFeeFixed ?? 0);
-        adminFeeAmount = roundMoney2((p.amount * feePct) / 100 + feeFix);
-        netAmount = roundMoney2(p.amount - adminFeeAmount);
+        const passFee = Boolean(form?.passAdminFeeToCustomer);
+        const baseAmount = amount;
+        const fee = roundMoney2((baseAmount * feePct) / 100 + feeFix);
+        if (passFee && fee > 0) {
+          // Repasse: cliente paga base + taxa; MDR = taxa (líquido ≈ base).
+          cardFeeSurcharge = roundMoney2(cardFeeSurcharge + fee);
+          amount = roundMoney2(baseAmount + fee);
+          adminFeeAmount = fee;
+          netAmount = roundMoney2(amount - adminFeeAmount);
+        } else {
+          adminFeeAmount = fee;
+          netAmount = roundMoney2(amount - adminFeeAmount);
+        }
         settlementStatus = CardSettlementStatus.OPEN;
         const days = form?.settlementDays ?? 1;
         expectedSettleAt = new Date();
@@ -354,7 +387,7 @@ export class SalesService {
       }
       return {
         method,
-        amount: p.amount,
+        amount,
         installments: isCard
           ? Math.min(p.installments, form?.maxInstallments ?? p.installments)
           : p.installments,
@@ -368,6 +401,8 @@ export class SalesService {
         expectedSettleAt,
       };
     });
+
+    const total = roundMoney2(merchandiseTotal + cardFeeSurcharge);
 
     const defaultLoc = await getDefaultStockLocation(db);
     if (deductStock && !defaultLoc) {
@@ -397,6 +432,7 @@ export class SalesService {
           subtotal: String(subtotal.toFixed(2)),
           discount: String(discount.toFixed(2)),
           surcharge: String(surcharge.toFixed(2)),
+          cardFeeSurcharge: String(cardFeeSurcharge.toFixed(2)),
           serviceFeeAmount: String(serviceFeeAmount.toFixed(2)),
           couvertAmount: String(couvertAmount.toFixed(2)),
           waiterTipAmount: String(waiterTipAmount.toFixed(2)),

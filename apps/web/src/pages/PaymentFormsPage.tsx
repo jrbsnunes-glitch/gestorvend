@@ -30,6 +30,7 @@ type Draft = {
   cardOperation: CardOperation;
   adminFeePercent: string;
   adminFeeFixed: string;
+  passAdminFeeToCustomer: boolean;
   settlementDays: string;
   maxInstallments: string;
   notes: string;
@@ -44,6 +45,7 @@ const emptyDraft = (): Draft => ({
   cardOperation: 'CREDIT',
   adminFeePercent: '0',
   adminFeeFixed: '0',
+  passAdminFeeToCustomer: false,
   settlementDays: '1',
   maxInstallments: '1',
   notes: '',
@@ -59,6 +61,7 @@ function rowToDraft(row: PaymentForm): Draft {
     cardOperation: row.cardOperation ?? 'CREDIT',
     adminFeePercent: String(row.adminFeePercent ?? '0'),
     adminFeeFixed: String(row.adminFeeFixed ?? '0'),
+    passAdminFeeToCustomer: Boolean(row.passAdminFeeToCustomer),
     settlementDays: String(row.settlementDays ?? 1),
     maxInstallments: String(row.maxInstallments ?? 1),
     notes: row.notes ?? '',
@@ -78,6 +81,7 @@ function draftToBody(d: Draft) {
     body.cardOperation = d.cardOperation;
     body.adminFeePercent = d.adminFeePercent;
     body.adminFeeFixed = d.adminFeeFixed;
+    body.passAdminFeeToCustomer = d.passAdminFeeToCustomer;
     body.settlementDays = Number(d.settlementDays) || 0;
     body.maxInstallments = Number(d.maxInstallments) || 1;
   }
@@ -236,6 +240,23 @@ export function PaymentFormsPage() {
                 />
               </div>
             </div>
+            <label
+              className="field"
+              style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 4 }}
+            >
+              <input
+                type="checkbox"
+                checked={draft.passAdminFeeToCustomer}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, passAdminFeeToCustomer: e.target.checked }))
+                }
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                Repassar taxa administrativa ao cliente (acréscimo no total da venda — % + taxa
+                fixa)
+              </span>
+            </label>
           </>
         )}
 
@@ -409,6 +430,10 @@ export function PaymentFormsPage() {
                           { label: 'Operação', value: cardOperationLabel(viewing.cardOperation) },
                           { label: 'Taxa adm. %', value: viewing.adminFeePercent },
                           { label: 'Taxa fixa (R$)', value: viewing.adminFeeFixed },
+                          {
+                            label: 'Repassar taxa ao cliente',
+                            value: viewing.passAdminFeeToCustomer ? 'Sim' : 'Não',
+                          },
                           { label: 'Dias p/ baixa (D+N)', value: viewing.settlementDays },
                           { label: 'Máx. parcelas', value: viewing.maxInstallments },
                         ]

@@ -26,6 +26,7 @@ export type PaymentForm = {
   cardOperation: CardOperation | null;
   adminFeePercent: string;
   adminFeeFixed: string;
+  passAdminFeeToCustomer?: boolean;
   settlementDays: number;
   maxInstallments: number;
   notes: string | null;

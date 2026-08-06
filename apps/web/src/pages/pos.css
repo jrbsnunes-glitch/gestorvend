@@ -888,6 +888,74 @@
   color: var(--pos-text-muted);
 }
 
+/* --- F3 Procedimentos --- */
+
+.pos-procedures-pick {
+  padding: 0.5rem 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.pos-procedures-lead {
+  margin: 0 0 0.35rem;
+  font-size: 0.88rem;
+  color: var(--pos-text-muted);
+  line-height: 1.4;
+}
+
+.pos-procedures-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--pos-border, #e2e8f0);
+  background: var(--pos-surface, #fff);
+  cursor: pointer;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.pos-procedures-tile:hover {
+  border-color: var(--pos-accent, #4ade9f);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+
+.pos-procedures-tile strong {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--pos-text, #0f172a);
+}
+
+.pos-procedures-tile span {
+  font-size: 0.82rem;
+  color: var(--pos-text-muted, #64748b);
+}
+
+.pos-procedures-form {
+  padding: 0.25rem 1.25rem 1.5rem;
+}
+
+.pos-procedures-form .field {
+  margin-bottom: 0.75rem;
+}
+
+.pos-procedures-form .field label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.pos-procedures-form .field input,
+.pos-procedures-form .field select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .pos-payment-body {
   flex: 1;
   overflow-y: auto;

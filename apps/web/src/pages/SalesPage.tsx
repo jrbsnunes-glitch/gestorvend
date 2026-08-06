@@ -11,6 +11,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { PermissionPasswordModal } from '../components/PermissionPasswordModal';
+import { PdvProceduresOverlay } from '../components/PdvProceduresOverlay';
 import { api } from '../lib/api';
 import {
   companyDisplayName,
@@ -157,6 +158,8 @@ type CartLine = {
   barcode: string | null;
   unitPrice: number;
   quantity: number;
+  /** Desconto da linha em R$ (sempre absoluto; % é convertido na UI). */
+  discount: number;
   stockTotal: number;
   minStock: number;
   /** Unidade tributável — controla qty fracionada no PDV. */
@@ -976,6 +979,14 @@ function PosScreen({
    * 4=Crediário, 5=Outro, Enter=Confirmar, Esc=Voltar.
    */
   const [paymentMenuOpen, setPaymentMenuOpen] = useState(false);
+  /** Overlay F3: sangria / despesa / suprimento no caixa aberto. */
+  const [proceduresOpen, setProceduresOpen] = useState(false);
+  /** Modal de desconto por item (R$ ou %). */
+  const [itemDiscountDraft, setItemDiscountDraft] = useState<{
+    variantId: string;
+    mode: 'BRL' | 'PCT';
+    value: string;
+  } | null>(null);
   /** Após concluir venda: atalho para cupom não fiscal (bobina térmica). */
   const [receiptPrompt, setReceiptPrompt] = useState<{ id: string; number: number } | null>(null);
 
@@ -1031,7 +1042,15 @@ function PosScreen({
   }
 
   function requestFinalizeSale() {
-    if (discount > 0 && !isAdmin() && canApplyDiscount) {
+    const hasItemDiscount = lines.some((l) => l.discount > 0.005);
+    if ((discount > 0 || hasItemDiscount) && !isAdmin()) {
+      if (!canApplyDiscount) {
+        setToast({
+          kind: 'err',
+          text: 'Sem permissão para desconto (item ou total). Solicite ao administrador.',
+        });
+        return;
+      }
       setPermModalError(null);
       setPermModal({ kind: 'discount_finish' });
       return;
@@ -1208,6 +1227,7 @@ function PosScreen({
       status: string;
       quantity: string | number;
       unitPrice: string | number;
+      discount?: string | number;
       variant: {
         id: string;
         sku: string;
@@ -1233,9 +1253,11 @@ function PosScreen({
       const taxUnit = normalizeTaxUnit(it.variant.product.taxUnit);
       const qty = roundCartQty(Number(it.quantity), taxUnit);
       const unitPrice = Number(it.unitPrice);
+      const lineDiscount = Math.max(0, Number(it.discount ?? 0));
       const prev = byVariant.get(it.variant.id);
       if (prev) {
         prev.quantity = roundCartQty(prev.quantity + qty, taxUnit);
+        prev.discount = Math.max(0, prev.discount + lineDiscount);
       } else {
         byVariant.set(it.variant.id, {
           variantId: it.variant.id,
@@ -1244,6 +1266,7 @@ function PosScreen({
           barcode: it.variant.barcode,
           unitPrice,
           quantity: qty,
+          discount: lineDiscount,
           stockTotal: 0,
           minStock: 0,
           taxUnit,
@@ -1273,7 +1296,10 @@ function PosScreen({
       guestCount: guests,
     });
     // Taxas da comanda: calculadas a partir da empresa + pessoas (F9 bloqueado).
-    const itemsSub = [...byVariant.values()].reduce((s, l) => s + l.unitPrice * l.quantity, 0);
+    const itemsSub = [...byVariant.values()].reduce(
+      (s, l) => s + l.unitPrice * l.quantity - l.discount,
+      0,
+    );
     const fees = calcRestaurantFees(companyQ.data, itemsSub, guests);
     setSurcharge(fees.feesTotal);
     serviceTabLoadedRef.current = tab.id;
@@ -1379,7 +1405,7 @@ function PosScreen({
   /* --- totais derivados --- */
 
   const subtotal = useMemo(
-    () => lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0),
+    () => lines.reduce((s, l) => s + l.unitPrice * l.quantity - (l.discount || 0), 0),
     [lines],
   );
   const restaurantFees = useMemo(() => {
@@ -1393,11 +1419,36 @@ function PosScreen({
     setSurcharge(restaurantFees.feesTotal);
   }, [serviceTab, restaurantFees]);
 
-  const total = Math.max(0, subtotal - discount + surcharge);
+  const paymentFormsQ = useQuery({
+    queryKey: ['payment-forms', 'active'],
+    queryFn: () => api<PaymentForm[]>('/payment-forms?active=1'),
+    staleTime: 60_000,
+  });
+  const paymentFormById = useMemo(() => {
+    const m = new Map<string, PaymentForm>();
+    for (const f of paymentFormsQ.data ?? []) m.set(f.id, f);
+    return m;
+  }, [paymentFormsQ.data]);
+
+  /** Taxa de cartão repassada (sobre o valor da mercadoria já lançado em pagamentos CARD). */
+  const cardFeeSurcharge = useMemo(() => {
+    let sum = 0;
+    for (const p of payments) {
+      if (p.method !== 'CARD' || !p.paymentFormId) continue;
+      const form = paymentFormById.get(p.paymentFormId);
+      if (!form?.passAdminFeeToCustomer) continue;
+      sum += calcAdminFee(p.amount, form.adminFeePercent, form.adminFeeFixed);
+    }
+    return Math.round(sum * 100) / 100;
+  }, [payments, paymentFormById]);
+
+  const merchandiseTotal = Math.max(0, subtotal - discount + surcharge);
+  const total = merchandiseTotal + cardFeeSurcharge;
   const paidSum = useMemo(() => payments.reduce((s, p) => s + p.amount, 0), [payments]);
-  const remaining = Math.max(0, total - paidSum);
-  const change = Math.max(0, paidSum - total);
-  const canFinish = lines.length > 0 && total > 0 && paidSum + 0.02 >= total;
+  /** Restante da mercadoria (pagamentos ainda não incluem o repasse de taxa). */
+  const remaining = Math.max(0, merchandiseTotal - paidSum);
+  const change = Math.max(0, paidSum - merchandiseTotal);
+  const canFinish = lines.length > 0 && merchandiseTotal > 0 && paidSum + 0.02 >= merchandiseTotal;
 
   const receiptAutoSummary = useMemo(() => {
     const m = getPosAutoPrintMode();
@@ -1430,6 +1481,7 @@ function PosScreen({
             variantId: l.variantId,
             quantity: l.quantity,
             unitPrice: l.unitPrice,
+            discount: l.discount > 0 ? l.discount : 0,
           })),
           payments: payments.map((p) => ({
             method: p.method,
@@ -1667,6 +1719,7 @@ function PosScreen({
           barcode: p.barcode,
           unitPrice,
           quantity: initialQty,
+          discount: 0,
           stockTotal: parseDecimal(p.stockTotal),
           minStock: parseDecimal(p.minStock),
           taxUnit,
@@ -1870,7 +1923,15 @@ function PosScreen({
     function onKey(ev: globalThis.KeyboardEvent) {
       // Quando o submenu de pagamento estiver aberto, ele captura o teclado
       // sozinho — aqui apenas evitamos disparar outros atalhos.
-      if (customerOpen || historyOpen || closeOpen || paymentMenuOpen) return;
+      if (
+        customerOpen ||
+        historyOpen ||
+        closeOpen ||
+        paymentMenuOpen ||
+        proceduresOpen ||
+        itemDiscountDraft
+      )
+        return;
       if (ev.key === 'F2') {
         ev.preventDefault();
         if (lines.length > 0 && total > 0) {
@@ -1878,6 +1939,9 @@ function PosScreen({
           // 1º bipa produtos, 2º aperta F2, 3º escolhe forma de pagamento).
           void openPaymentMenu();
         }
+      } else if (ev.key === 'F3') {
+        ev.preventDefault();
+        setProceduresOpen(true);
       } else if (ev.key === 'F4') {
         if (serviceTab) return; // conferência: cliente só após ir ao pagamento
         ev.preventDefault();
@@ -1909,6 +1973,8 @@ function PosScreen({
     lines.length,
     total,
     paymentMenuOpen,
+    proceduresOpen,
+    itemDiscountDraft,
     serviceTab,
     openPaymentMenu,
   ]);
@@ -1933,6 +1999,7 @@ function PosScreen({
         receiptAutoSummary={receiptAutoSummary}
         onOpenPrintPrefs={() => setPrintPrefsOpen(true)}
         onOpenHistory={() => setHistoryOpen(true)}
+        onOpenProcedures={() => setProceduresOpen(true)}
         onExit={tryExit}
         onCloseCash={() => {
           setCloseOpen(true);
@@ -2307,11 +2374,51 @@ function PosScreen({
                               </td>
                               <td>
                                 <div className="pos-line-money">
-                                  {formatBRL(l.unitPrice * l.quantity)}
+                                  {l.discount > 0.005 ? (
+                                    <>
+                                      <span
+                                        style={{
+                                          textDecoration: 'line-through',
+                                          opacity: 0.65,
+                                          fontSize: '0.85em',
+                                          display: 'block',
+                                        }}
+                                      >
+                                        {formatBRL(l.unitPrice * l.quantity)}
+                                      </span>
+                                      {formatBRL(l.unitPrice * l.quantity - l.discount)}
+                                    </>
+                                  ) : (
+                                    formatBRL(l.unitPrice * l.quantity)
+                                  )}
                                 </div>
                                 <span className="pos-line-unit">
                                   {formatBRL(l.unitPrice)}/{unitLbl}
+                                  {l.discount > 0.005
+                                    ? ` · −${formatBRL(l.discount)}`
+                                    : ''}
                                 </span>
+                                {canApplyDiscount ? (
+                                  <button
+                                    type="button"
+                                    className="pos-btn pos-btn-ghost"
+                                    style={{
+                                      fontSize: '0.72rem',
+                                      padding: '0.15rem 0.4rem',
+                                      marginTop: 4,
+                                    }}
+                                    title="Desconto neste item (R$ ou %)"
+                                    onClick={() =>
+                                      setItemDiscountDraft({
+                                        variantId: l.variantId,
+                                        mode: 'BRL',
+                                        value: l.discount > 0 ? String(l.discount) : '',
+                                      })
+                                    }
+                                  >
+                                    Desc. item
+                                  </button>
+                                ) : null}
                               </td>
                               <td>
                                 <button
@@ -2402,6 +2509,12 @@ function PosScreen({
                       </div>
                     </div>
                   )}
+                  {cardFeeSurcharge > 0.005 ? (
+                    <div className="pos-totals-row">
+                      <span>Taxa cartão (repasse)</span>
+                      <strong>{formatBRL(cardFeeSurcharge)}</strong>
+                    </div>
+                  ) : null}
                   <div className="pos-totals-divider" />
                   <div className="pos-total-big">
                     <span className="pos-total-big-label">Total</span>
@@ -3092,6 +3205,8 @@ function PosScreen({
       {paymentMenuOpen && (
         <PaymentOverlay
           total={total}
+          merchandiseTotal={merchandiseTotal}
+          cardFeeSurcharge={cardFeeSurcharge}
           subtotal={subtotal}
           discount={discount}
           surcharge={surcharge}
@@ -3110,6 +3225,138 @@ function PosScreen({
         />
       )}
 
+      <PdvProceduresOverlay
+        open={proceduresOpen}
+        onClose={() => setProceduresOpen(false)}
+        onSuccess={(msg) => setToast({ kind: 'ok', text: msg })}
+      />
+
+      {itemDiscountDraft &&
+        (() => {
+          const line = lines.find((l) => l.variantId === itemDiscountDraft.variantId);
+          if (!line) return null;
+          const gross = Math.round(line.unitPrice * line.quantity * 100) / 100;
+          return (
+            <FormModalBackdrop onClose={() => setItemDiscountDraft(null)}>
+              <div
+                className="modal"
+                role="dialog"
+                onClick={(e) => e.stopPropagation()}
+                style={{ maxWidth: 400 }}
+              >
+                <h2 style={{ marginTop: 0, fontSize: '1.1rem' }}>Desconto no item</h2>
+                <p style={{ marginTop: 0, color: 'var(--color-text-muted)', fontSize: '0.88rem' }}>
+                  <strong>{line.productName}</strong>
+                  <br />
+                  Valor bruto da linha: {formatBRL(gross)}
+                </p>
+                <div className="form-row">
+                  <div className="field" style={{ flex: '0 0 110px' }}>
+                    <label>Tipo</label>
+                    <select
+                      value={itemDiscountDraft.mode}
+                      onChange={(e) =>
+                        setItemDiscountDraft((d) =>
+                          d ? { ...d, mode: e.target.value as 'BRL' | 'PCT' } : d,
+                        )
+                      }
+                    >
+                      <option value="BRL">R$</option>
+                      <option value="PCT">%</option>
+                    </select>
+                  </div>
+                  <div className="field" style={{ flex: 1 }}>
+                    <label>Valor</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      autoFocus
+                      value={itemDiscountDraft.value}
+                      onChange={(e) =>
+                        setItemDiscountDraft((d) => (d ? { ...d, value: e.target.value } : d))
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        const raw = parseDecimal(itemDiscountDraft.value);
+                        let disc =
+                          itemDiscountDraft.mode === 'PCT'
+                            ? Math.round(((gross * raw) / 100) * 100) / 100
+                            : raw;
+                        disc = Math.max(0, Math.min(gross, disc));
+                        if (disc > 0 && !canApplyDiscount) {
+                          setToast({
+                            kind: 'err',
+                            text: 'Sem permissão para desconto. Solicite ao administrador.',
+                          });
+                          return;
+                        }
+                        setLines((prev) =>
+                          prev.map((l) =>
+                            l.variantId === line.variantId ? { ...l, discount: disc } : l,
+                          ),
+                        );
+                        setItemDiscountDraft(null);
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setLines((prev) =>
+                        prev.map((l) =>
+                          l.variantId === line.variantId ? { ...l, discount: 0 } : l,
+                        ),
+                      );
+                      setItemDiscountDraft(null);
+                    }}
+                  >
+                    Zerar
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => setItemDiscountDraft(null)}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => {
+                      const raw = parseDecimal(itemDiscountDraft.value);
+                      let disc =
+                        itemDiscountDraft.mode === 'PCT'
+                          ? Math.round(((gross * raw) / 100) * 100) / 100
+                          : raw;
+                      disc = Math.max(0, Math.min(gross, disc));
+                      if (disc > 0 && !canApplyDiscount) {
+                        setToast({
+                          kind: 'err',
+                          text: 'Sem permissão para desconto. Solicite ao administrador.',
+                        });
+                        return;
+                      }
+                      setLines((prev) =>
+                        prev.map((l) =>
+                          l.variantId === line.variantId ? { ...l, discount: disc } : l,
+                        ),
+                      );
+                      setItemDiscountDraft(null);
+                    }}
+                  >
+                    Aplicar
+                  </button>
+                </div>
+              </div>
+            </FormModalBackdrop>
+          );
+        })()}
+
       <PermissionPasswordModal
         open={permModal != null}
         title={
@@ -3121,7 +3368,11 @@ function PosScreen({
         }
         description={
           permModal?.kind === 'discount_finish'
-            ? `Informe a senha de autorização para concluir a venda com desconto de ${formatBRL(discount)}.`
+            ? `Informe a senha de autorização para concluir a venda com desconto${
+                discount > 0 ? ` de ${formatBRL(discount)} no total` : ''
+              }${
+                lines.some((l) => l.discount > 0.005) ? ' (inclui desconto em item)' : ''
+              }.`
             : permModal?.kind === 'cancel_sale'
               ? `Informe a senha de autorização para cancelar a venda #${permModal.saleNumber}.`
               : permModal?.kind === 'fiscal_cancel'
@@ -3282,6 +3533,7 @@ function PosTopbar({
   receiptAutoSummary,
   onOpenPrintPrefs,
   onOpenHistory,
+  onOpenProcedures,
   onExit,
   onCloseCash,
 }: {
@@ -3291,6 +3543,7 @@ function PosTopbar({
   receiptAutoSummary: string;
   onOpenPrintPrefs: () => void;
   onOpenHistory: () => void;
+  onOpenProcedures: () => void;
   onExit: () => void;
   onCloseCash: () => void;
 }) {
@@ -3342,6 +3595,7 @@ function PosTopbar({
         </span>
         <span style={{ fontSize: '0.75rem', color: 'var(--pos-text-muted)' }}>
           <span className="pos-shortcut-key">F2</span> finalizar ·{' '}
+          <span className="pos-shortcut-key">F3</span> procedimentos ·{' '}
           <span className="pos-shortcut-key">F4</span> cliente ·{' '}
           <span className="pos-shortcut-key">F8</span> desconto ·{' '}
           <span className="pos-shortcut-key">F9</span> acréscimo ·{' '}
@@ -3363,6 +3617,14 @@ function PosTopbar({
         >
           Impressão
         </button>
+        <button
+          type="button"
+          className="pos-btn pos-btn-ghost"
+          onClick={onOpenProcedures}
+          title="Sangria, despesas e suprimentos (F3)"
+        >
+          Procedimentos <span className="pos-shortcut-key">F3</span>
+        </button>
         <button type="button" className="pos-btn pos-btn-ghost" onClick={onOpenHistory}>
           Vendas recentes
         </button>
@@ -3383,6 +3645,8 @@ function PosTopbar({
 
 function PaymentOverlay({
   total,
+  merchandiseTotal,
+  cardFeeSurcharge,
   subtotal,
   discount,
   surcharge,
@@ -3400,6 +3664,8 @@ function PaymentOverlay({
   onConfirm,
 }: {
   total: number;
+  merchandiseTotal: number;
+  cardFeeSurcharge: number;
   subtotal: number;
   discount: number;
   surcharge: number;
@@ -3555,12 +3821,18 @@ function PaymentOverlay({
               {feeBreakdown.waiterTip > 0.005
                 ? ` · garçom ${formatBRL(feeBreakdown.waiterTip)}`
                 : ''}
+              {cardFeeSurcharge > 0.005
+                ? ` · taxa cartão ${formatBRL(cardFeeSurcharge)}`
+                : ''}
             </span>
-          ) : discount > 0 || surcharge > 0 ? (
+          ) : discount > 0 || surcharge > 0 || cardFeeSurcharge > 0.005 ? (
             <span className="pos-payment-total-detail">
-              Subtotal {formatBRL(subtotal)}
+              Mercadoria {formatBRL(merchandiseTotal)}
               {discount > 0 ? ` · desconto ${formatBRL(discount)}` : ''}
               {surcharge > 0 ? ` · acréscimo ${formatBRL(surcharge)}` : ''}
+              {cardFeeSurcharge > 0.005
+                ? ` · taxa cartão (repasse) ${formatBRL(cardFeeSurcharge)}`
+                : ''}
             </span>
           ) : null}
         </div>
@@ -3609,7 +3881,12 @@ function PaymentOverlay({
               />
               {feePreview > 0 ? (
                 <small style={{ color: 'var(--color-text-muted)' }}>
-                  Taxa adm. estimada: {formatBRL(feePreview)}
+                  {selected?.form?.passAdminFeeToCustomer
+                    ? `Repasse ao cliente: ${formatBRL(feePreview)} · no cartão ${(
+                        (parseDecimal(amountStr) > 0 ? parseDecimal(amountStr) : remaining) +
+                        feePreview
+                      ).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+                    : `Taxa adm. estimada (custo loja): ${formatBRL(feePreview)}`}
                 </small>
               ) : null}
             </div>

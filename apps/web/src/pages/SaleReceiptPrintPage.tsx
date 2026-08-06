@@ -38,6 +38,7 @@ type SaleReceipt = {
   subtotal: string;
   discount: string;
   surcharge?: string;
+  cardFeeSurcharge?: string;
   serviceFeeAmount?: string;
   couvertAmount?: string;
   waiterTipAmount?: string;
@@ -377,6 +378,7 @@ export function SaleReceiptPrintPage() {
               const q = parseN(it.quantity);
               const line = parseN(it.totalLine);
               const unit = parseN(it.unitPrice);
+              const itemDisc = parseN(it.discount);
               const name = it.variant.product?.name ?? 'Item';
               return (
                 <li key={`${s.id}-line-${idx}`}>
@@ -387,6 +389,7 @@ export function SaleReceiptPrintPage() {
                   <div className="sale-receipt-item-qty">
                     <span>
                       {q} × {formatBRL(unit)}
+                      {itemDisc > 0.005 ? ` (− ${formatBRL(itemDisc)})` : ''}
                     </span>
                     <strong>{formatBRL(line)}</strong>
                   </div>
@@ -433,6 +436,12 @@ export function SaleReceiptPrintPage() {
                   <span>+ {formatBRL(s.surcharge)}</span>
                 </div>
               )}
+            {parseN(s.cardFeeSurcharge) > 0.005 && (
+              <div className="sale-receipt-totals-row">
+                <span>Taxa cartão (repasse)</span>
+                <span>+ {formatBRL(s.cardFeeSurcharge)}</span>
+              </div>
+            )}
             <div className="sale-receipt-totals-row is-total">
               <span>TOTAL</span>
               <span>{formatBRL(s.total)}</span>
