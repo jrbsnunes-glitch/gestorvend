@@ -1,5 +1,5 @@
 {
-  "version": "1.0.33",
+  "version": "1.0.34",
   "downloadUrl": "",
-  "notes": "Cupom PDV: corrige letras minúsculas (layout full-page contra driver A4→80mm)."
+  "notes": "Cupom PDV em tipografia padrão de mercado (80 mm)."
 }
