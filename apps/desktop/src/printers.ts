@@ -13,6 +13,9 @@ export type ListedPrinter = {
   isDefault: boolean;
   status: number;
   source: 'electron' | 'windows' | 'registry';
+  /** Driver do Windows — "Generic / Text Only" imprime só texto (sem logo/formatação). */
+  driverName?: string;
+  portName?: string;
 };
 
 function mapElectronPrinters(
@@ -60,15 +63,21 @@ function parsePrinterJson(raw: string): ListedPrinter[] {
       isDefault?: boolean;
       PrinterStatus?: number;
       status?: number;
+      DriverName?: string;
+      PortName?: string;
     };
     const name = String(r.Name ?? r.name ?? '').trim();
     if (!name) continue;
+    const driverName = String(r.DriverName ?? '').trim();
+    const portName = String(r.PortName ?? '').trim();
     out.push({
       name,
       displayName: name,
       isDefault: Boolean(r.Default ?? r.isDefault),
       status: typeof r.PrinterStatus === 'number' ? r.PrinterStatus : Number(r.status) || 0,
       source: 'windows',
+      ...(driverName ? { driverName } : {}),
+      ...(portName ? { portName } : {}),
     });
   }
   return out;
@@ -85,6 +94,8 @@ $rows = @(Get-CimInstance -ClassName Win32_Printer | ForEach-Object {
     Name = $_.Name
     Default = [bool]$_.Default
     PrinterStatus = [int]$_.PrinterStatus
+    DriverName = [string]$_.DriverName
+    PortName = [string]$_.PortName
   }
 })
 if ($rows.Count -eq 0) {
@@ -93,6 +104,8 @@ if ($rows.Count -eq 0) {
       Name = $_.Name
       Default = [bool]($_.Default -eq $true)
       PrinterStatus = 0
+      DriverName = [string]$_.DriverName
+      PortName = [string]$_.PortName
     }
   })
 }

@@ -57,6 +57,8 @@ contextBridge.exposeInMainWorld('gestorvend', {
         isDefault: boolean;
         status: number;
         source?: string;
+        driverName?: string;
+        portName?: string;
       }>;
     }>,
   getStation: () =>

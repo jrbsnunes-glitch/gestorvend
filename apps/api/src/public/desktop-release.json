@@ -1,5 +1,5 @@
 {
-  "version": "1.0.39",
+  "version": "1.0.40",
   "downloadUrl": "",
-  "notes": "Cupom PDV: layout da empresa blindado contra sobrescrita de estilo na impressão."
+  "notes": "Impressão: mostra o driver da térmica e alerta driver 'somente texto'."
 }

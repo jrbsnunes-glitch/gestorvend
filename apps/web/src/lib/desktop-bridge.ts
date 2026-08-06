@@ -6,6 +6,9 @@ export type DesktopPrinter = {
   isDefault: boolean;
   status?: number;
   source?: string;
+  /** Driver do Windows: "Generic / Text Only" descarta logo e formatação. */
+  driverName?: string;
+  portName?: string;
 };
 
 export type DesktopStationConfig = {

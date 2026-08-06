@@ -31,6 +31,12 @@ export function DesktopPdvPrinterPanel({ onMessage }: Props) {
     return selected.trim() || undefined;
   }
 
+  const currentName = (savedPrinter ?? resolvePrinter() ?? '').trim().toLowerCase();
+  const currentDriver =
+    printers.find((p) => p.name.trim().toLowerCase() === currentName)?.driverName?.trim() ?? '';
+  /** "Generic / Text Only" e similares descartam gráficos no próprio spooler. */
+  const textOnlyDriver = /generic|text only|somente texto|texto/i.test(currentDriver);
+
   async function refreshPrinters(prefer?: string | null) {
     if (!api?.listPrinters) {
       setHint('App desktop desatualizado — reinstale para listar impressoras.');
@@ -157,12 +163,22 @@ export function DesktopPdvPrinterPanel({ onMessage }: Props) {
       {savedPrinter ? (
         <p className="desktop-print-panel__status alert alert-success">
           Atual: <strong>{savedPrinter}</strong>
+          {currentDriver ? <> · driver {currentDriver}</> : null}
         </p>
       ) : (
         <p className="desktop-print-panel__lead" style={{ marginTop: '-0.25rem' }}>
           Nenhuma salva — o PDV abrirá o diálogo Imprimir.
         </p>
       )}
+
+      {textOnlyDriver ? (
+        <p className="desktop-print-panel__status alert alert-warning">
+          O driver <strong>{currentDriver}</strong> imprime <strong>somente texto</strong>: o Windows
+          descarta logotipo, linhas e negrito antes de chegar na bobina — o cupom sai genérico
+          independente do sistema. Instale o driver do fabricante da térmica (Elgin, Bematech, Epson
+          TM, etc.) e selecione-o aqui.
+        </p>
+      ) : null}
 
       <div className="desktop-print-panel__grid">
         <label className="desktop-print-panel__field">
@@ -179,6 +195,7 @@ export function DesktopPdvPrinterPanel({ onMessage }: Props) {
               <option key={p.name} value={p.name}>
                 {p.displayName || p.name}
                 {p.isDefault ? ' (padrão Windows)' : ''}
+                {p.driverName?.trim() ? ` — ${p.driverName.trim()}` : ''}
               </option>
             ))}
           </select>
