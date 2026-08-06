@@ -1,5 +1,5 @@
 {
-  "version": "1.0.40",
+  "version": "1.0.41",
   "downloadUrl": "",
-  "notes": "Impressão: mostra o driver da térmica e alerta driver 'somente texto'."
+  "notes": "Cupom PDV: largura fixa da bobina — corrige valores e cabeçalho cortados."
 }

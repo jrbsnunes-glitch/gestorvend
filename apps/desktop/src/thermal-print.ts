@@ -56,14 +56,12 @@ async function inlineReceiptImages(wc: WebContents): Promise<void> {
 
 /**
  * Prepara o DOM do cupom sem apagar a tipografia/layout do sistema.
- * @param receiptScale zoom tipográfico (1 = base do CSS; padrão recomendado 1.2).
+ *
+ * A escala e a largura da bobina são aplicadas pela própria página (ela lê
+ * `pdv.receiptScale` pelo bridge). Aqui só removemos o chrome e ajustamos a
+ * página para o spooler — mexer em width/zoom daqui cortava a coluna da direita.
  */
-export async function prepareSaleReceiptForThermalPrint(
-  wc: WebContents,
-  receiptScale = 1,
-): Promise<number> {
-  const scale = Math.max(0.75, Math.min(2, receiptScale || 1));
-
+export async function prepareSaleReceiptForThermalPrint(wc: WebContents): Promise<number> {
   // Preferível ter cabeçalho; se não tiver, ainda imprime o article (não bloqueia a térmica).
   const hasArticle = await wc.executeJavaScript(
     `Boolean(document.querySelector('article.sale-receipt-doc'))`,
@@ -76,7 +74,6 @@ export async function prepareSaleReceiptForThermalPrint(
 
   await wc.executeJavaScript(`
     (() => {
-      const scale = ${JSON.stringify(scale)};
       document.documentElement.classList.add('gv-sale-receipt-print');
       document.body.classList.add('gv-sale-receipt-print');
 
@@ -98,7 +95,7 @@ export async function prepareSaleReceiptForThermalPrint(
         document.head.appendChild(style);
       }
       style.textContent = \`
-        @page { size: auto !important; margin: 0 !important; }
+        @page { size: 80mm auto !important; margin: 0 !important; }
         html.gv-sale-receipt-print, html {
           margin: 0 !important;
           padding: 0 !important;
@@ -129,14 +126,17 @@ export async function prepareSaleReceiptForThermalPrint(
           max-width: none !important;
           background: #fff !important;
         }
+        /*
+         * Geometria e escala são responsabilidade da página (largura física da
+         * bobina + escala tipográfica). Aqui não se mexe em width/zoom: com
+         * width:100% o cupom assumia a largura da página do driver e a coluna
+         * da direita (valores, data) saía cortada no papel.
+         */
         .sale-receipt-doc, article.sale-receipt-doc {
-          width: 100% !important;
-          max-width: none !important;
           margin: 0 !important;
           box-shadow: none !important;
           height: auto !important;
           min-height: 0 !important;
-          zoom: \${scale};
         }
         .sale-receipt-logo {
           display: block !important;

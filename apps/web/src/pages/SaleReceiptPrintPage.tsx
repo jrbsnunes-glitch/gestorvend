@@ -5,6 +5,7 @@ import { CompanyLogo } from '../components/CompanyLogo';
 import { api } from '../lib/api';
 import { companyUsesCustomLogo } from '../lib/company-branding';
 import { formatBRL, formatDate } from '../lib/format';
+import { getDesktopApi } from '../lib/desktop-bridge';
 import { consumeAutoPrintNonce } from '../lib/sale-receipt-print';
 import {
   hardenSaleReceiptStyles,
@@ -96,6 +97,21 @@ function formatAddressLine(c: Company): string {
   return [cityState, cep].filter(Boolean).join(' · ');
 }
 
+/**
+ * Escala do cupom configurada no PDV (Desktop). Aplicada na tipografia, nunca
+ * na largura — a caixa precisa continuar do tamanho da bobina.
+ */
+async function readPdvReceiptScale(): Promise<number> {
+  try {
+    const cfg = await getDesktopApi()?.getPdvPrinter?.();
+    const raw = cfg?.receiptScale;
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
+  } catch {
+    /* navegador ou shell antigo */
+  }
+  return 1.2;
+}
+
 /** Venda fictícia do modo demonstração (`?demo=1`) — valida o layout na térmica. */
 function buildDemoSale(): SaleReceipt {
   return {
@@ -180,8 +196,9 @@ export function SaleReceiptPrintPage() {
   }, []);
 
   /**
-   * Blinda o cupom antes de qualquer impressão: estilos `important` inline
-   * (imunes à folha injetada pelo shell) e logo em `data:` URL.
+   * Blinda o cupom antes de qualquer impressão: largura física da bobina,
+   * escala só na tipografia, estilos `important` inline (imunes à folha
+   * injetada pelo shell) e logo em `data:` URL.
    */
   useEffect(() => {
     const root = docRef.current;
@@ -189,11 +206,12 @@ export function SaleReceiptPrintPage() {
     let alive = true;
     setHardened(false);
     void (async () => {
-      hardenSaleReceiptStyles(root);
+      const scale = await readPdvReceiptScale();
+      hardenSaleReceiptStyles(root, scale);
       await inlineSaleReceiptImages(root);
       await waitSaleReceiptImages(root);
       if (!alive) return;
-      hardenSaleReceiptStyles(root);
+      hardenSaleReceiptStyles(root, scale);
       setHardened(true);
     })();
     return () => {

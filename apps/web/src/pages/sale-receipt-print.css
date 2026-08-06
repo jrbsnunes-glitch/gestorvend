@@ -230,12 +230,14 @@
 
 @media print {
   /*
-   * Anula o @page A4 de reports-document.css — senão o spooler da térmica
-   * trata o job como A4 e o cupom sai “genérico” / miniaturizado.
-   * Tipografia, linhas, logo e hierarquia vêm do CSS de tela.
+   * Anula o @page A4 de reports-document.css: na térmica o job precisa ser a
+   * bobina. E o documento precisa de largura FÍSICA fixa — com `width: 100%`
+   * ele assume a largura da página do driver (às vezes A4) e tudo que é
+   * alinhado à direita (valores, data) ou centralizado (logo, razão social)
+   * cai fora do papel e sai cortado.
    */
   @page {
-    size: auto;
+    size: 80mm auto;
     margin: 0;
   }
 
@@ -286,10 +288,12 @@
 
   .sale-receipt-doc {
     box-shadow: none !important;
-    width: 100% !important;
-    max-width: none !important;
+    width: 72mm !important;
+    max-width: 72mm !important;
     margin: 0 !important;
-    padding: 3mm 2.5mm 5mm !important;
+    padding: 2mm 1.5mm 4mm !important;
+    box-sizing: border-box !important;
+    zoom: 1 !important;
     height: auto !important;
     min-height: 0 !important;
     font-family: 'Courier New', Courier, 'Liberation Mono', monospace !important;

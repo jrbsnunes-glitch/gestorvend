@@ -427,11 +427,7 @@ function registerIpc() {
         }
         await new Promise((r) => setTimeout(r, 200));
 
-        const receiptScale = readConfig()?.pdv?.receiptScale ?? 1;
-        const contentHeightPx = await prepareSaleReceiptForThermalPrint(
-          win.webContents,
-          receiptScale,
-        );
+        const contentHeightPx = await prepareSaleReceiptForThermalPrint(win.webContents);
         const pageSize = body?.pageSize ?? '80mm';
         const opts = buildThermalPrintOptions({
           deviceName: device,
@@ -474,8 +470,7 @@ function registerIpc() {
             .executeJavaScript(`Boolean(document.querySelector('article.sale-receipt-doc'))`)
             .catch(() => false);
           if (isReceipt) {
-            const receiptScale = readConfig()?.pdv?.receiptScale ?? 1;
-            contentHeightPx = await prepareSaleReceiptForThermalPrint(wc, receiptScale);
+            contentHeightPx = await prepareSaleReceiptForThermalPrint(wc);
           }
         }
 

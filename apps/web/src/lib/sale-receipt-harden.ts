@@ -15,10 +15,28 @@ type Decls = Record<string, string>;
 
 const FONT_STACK = "'Courier New', Courier, 'Liberation Mono', monospace";
 
+/**
+ * Área imprimível de uma bobina de 80 mm (o mecanismo imprime ~72 mm).
+ * Precisa ser largura física fixa: com `width: 100%` o documento assume a
+ * largura da página que o driver expõe (muitas vezes A4) e tudo que é
+ * alinhado à direita — valores, datas, e até o cabeçalho centralizado —
+ * cai fora do papel e sai cortado.
+ */
+export const RECEIPT_PRINT_WIDTH_MM = 72;
+
 const RULES: Array<{ selector: string; decls: Decls }> = [
   {
     selector: '.sale-receipt-doc',
     decls: {
+      width: `${RECEIPT_PRINT_WIDTH_MM}mm`,
+      'max-width': `${RECEIPT_PRINT_WIDTH_MM}mm`,
+      'min-width': '0',
+      'box-sizing': 'border-box',
+      padding: '2mm 1.5mm 4mm',
+      margin: '0',
+      // A escala é tipográfica: `zoom`/`transform` alargariam a caixa e voltariam a cortar.
+      zoom: '1',
+      transform: 'none',
       'font-family': FONT_STACK,
       'font-size': '13px',
       'font-weight': '700',
@@ -26,6 +44,7 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
       color: '#000',
       background: '#fff',
       'box-shadow': 'none',
+      overflow: 'visible',
     },
   },
   { selector: '.sale-receipt-doc strong', decls: { 'font-weight': '800' } },
@@ -225,8 +244,21 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   },
 ];
 
-/** Grava as regras do cupom no atributo `style` com prioridade `important`. */
-export function hardenSaleReceiptStyles(root: ParentNode): void {
+/** Aplica a escala do PDV só na tipografia (a caixa continua com a largura da bobina). */
+function scaleValue(prop: string, value: string, scale: number): string {
+  if (scale === 1) return value;
+  if (prop !== 'font-size') return value;
+  const px = /^(\d+(?:\.\d+)?)px$/.exec(value);
+  if (!px) return value;
+  return `${Math.round(Number(px[1]) * scale * 100) / 100}px`;
+}
+
+/**
+ * Grava as regras do cupom no atributo `style` com prioridade `important`.
+ * @param scale multiplicador tipográfico configurado no PDV (1 = base).
+ */
+export function hardenSaleReceiptStyles(root: ParentNode, scale = 1): void {
+  const factor = Number.isFinite(scale) ? Math.max(0.75, Math.min(2, scale)) : 1;
   for (const { selector, decls } of RULES) {
     const targets =
       root instanceof HTMLElement && root.matches(selector)
@@ -234,7 +266,7 @@ export function hardenSaleReceiptStyles(root: ParentNode): void {
         : Array.from(root.querySelectorAll<HTMLElement>(selector));
     for (const el of targets) {
       for (const [prop, value] of Object.entries(decls)) {
-        el.style.setProperty(prop, value, 'important');
+        el.style.setProperty(prop, scaleValue(prop, value, factor), 'important');
       }
     }
   }
