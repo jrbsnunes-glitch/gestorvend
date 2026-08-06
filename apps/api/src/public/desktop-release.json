@@ -1,5 +1,5 @@
 {
-  "version": "1.0.32",
+  "version": "1.0.33",
   "downloadUrl": "",
-  "notes": "Cupom PDV em tamanho legível na bobina 80 mm (sem encolher a página)."
+  "notes": "Cupom PDV: corrige letras minúsculas (layout full-page contra driver A4→80mm)."
 }
