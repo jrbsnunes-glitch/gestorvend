@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { DesktopPrintStationPanel } from '../components/DesktopPrintStationPanel';
+import { DesktopPdvPrinterPanel } from '../components/DesktopPdvPrinterPanel';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { api } from '../lib/api';
 import { getDesktopApi, isGestorVendDesktop } from '../lib/desktop-bridge';
+import { checkDesktopUpdate } from '../lib/desktop-update';
 import {
   isLocalPrintStation,
   setLocalPrintStation,
@@ -56,6 +58,8 @@ export function PrintStationsPage() {
   const [pairToken, setPairToken] = useState<string | null>(null);
   const [localStation, setLocalStation] = useState(isLocalPrintStation);
   const [jobFilter, setJobFilter] = useState<string>('PENDING');
+
+  const [updateChecking, setUpdateChecking] = useState(false);
 
   const stations = useQuery({
     queryKey: ['printing', 'stations'],
@@ -152,10 +156,43 @@ export function PrintStationsPage() {
         <div>
           <h1>Impressão</h1>
           <p className="muted">
-            Cadastre a estação (token), pareie neste PC e acompanhe a fila. A impressora física é
-            escolhida abaixo quando o app Desktop estiver atualizado.
+            Cadastre a estação da cozinha (token), a impressora do PDV (cupom/NFC-e 80 mm) e
+            acompanhe a fila. No Desktop, as impressoras físicas são escolhidas abaixo.
           </p>
         </div>
+        {inDesktop ? (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={updateChecking}
+            onClick={() => {
+              setUpdateChecking(true);
+              void checkDesktopUpdate()
+                .then((r) => {
+                  if (!r.ok) {
+                    setErr(r.message);
+                    setOkMsg(null);
+                    return;
+                  }
+                  if (r.updateAvailable) {
+                    setOkMsg(r.message + (r.notes ? ` — ${r.notes}` : ''));
+                    setErr(null);
+                    if (r.downloadUrl) {
+                      const api = getDesktopApi();
+                      if (api?.openExternal) void api.openExternal(r.downloadUrl);
+                      else window.open(r.downloadUrl, '_blank', 'noopener,noreferrer');
+                    }
+                  } else {
+                    setOkMsg(r.message);
+                    setErr(null);
+                  }
+                })
+                .finally(() => setUpdateChecking(false));
+            }}
+          >
+            {updateChecking ? 'Verificando…' : 'Verificar atualizações'}
+          </button>
+        ) : null}
       </header>
 
       {err && (
@@ -176,25 +213,36 @@ export function PrintStationsPage() {
       )}
 
       {canPairHere ? (
-        <DesktopPrintStationPanel
-          suggestedToken={pairToken}
-          onMessage={(msg, ok) => {
-            if (ok) {
-              setOkMsg(msg);
-              setErr(null);
-              void qc.invalidateQueries({ queryKey: ['printing'] });
-            } else {
-              setErr(msg);
-              setOkMsg(null);
-            }
-          }}
-        />
+        <>
+          <DesktopPdvPrinterPanel
+            onMessage={(msg, ok) => {
+              if (ok === false) setErr(msg);
+              else {
+                setOkMsg(msg);
+                setErr(null);
+              }
+            }}
+          />
+          <DesktopPrintStationPanel
+            suggestedToken={pairToken}
+            onMessage={(msg, ok) => {
+              if (ok) {
+                setOkMsg(msg);
+                setErr(null);
+                void qc.invalidateQueries({ queryKey: ['printing'] });
+              } else {
+                setErr(msg);
+                setOkMsg(null);
+              }
+            }}
+          />
+        </>
       ) : electronShell || inDesktop ? (
         <div className="alert alert-error" style={{ marginBottom: '1rem' }}>
           <p style={{ margin: 0 }}>
             Você está no GestorVend Desktop, mas esta versão <strong>não expõe</strong> a API de
             impressoras (<code>window.gestorvend.listPrinters</code>). Feche o app, atualize o
-            Desktop (<code>npm run desktop:dev</code> ou reinstale o .exe da v1.0.28+) e abra de
+            Desktop (<code>npm run desktop:dev</code> ou reinstale o .exe) e abra de
             novo. O menu <strong>GestorVend → Estação de impressão…</strong> também deve aparecer na
             barra superior.
           </p>

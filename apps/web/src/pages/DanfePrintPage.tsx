@@ -1,12 +1,13 @@
 /**
- * DANFE simplificado em HTML — imprimir / salvar PDF pelo navegador.
- * Abre em nova aba a partir de Emitir / 2ª via.
+ * DANFE / cupom auxiliar — NF-e (A4) ou NFC-e (térmica 80 mm).
  */
 import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { printDocument } from '../lib/desktop-print';
 import { formatBRL, formatCnpj, formatCpfCnpj, formatDate } from '../lib/format';
+import './danfe-thermal-print.css';
 
 type DanfePayload = {
   document: {
@@ -89,15 +90,10 @@ export function DanfePrintPage() {
     },
   });
 
-  useEffect(() => {
-    document.title = q.data
-      ? `DANFE NF-e #${q.data.document.sale.number}`
-      : 'DANFE NF-e';
-  }, [q.data]);
-
   const doc = q.data?.document;
   const company = q.data?.company;
   const aliquots = q.data?.aliquots ?? [];
+  const isNfce = doc?.kind === 'NFC_E';
   const pending =
     doc &&
     (doc.status === 'QUEUED' ||
@@ -105,20 +101,120 @@ export function DanfePrintPage() {
       doc.status === 'SENT' ||
       doc.status === 'CONTINGENCY');
 
+  useEffect(() => {
+    document.title = doc
+      ? `${isNfce ? 'NFC-e' : 'DANFE NF-e'} #${doc.sale.number}`
+      : 'Documento fiscal';
+  }, [doc, isNfce]);
+
+  const toolbar = (
+    <div className="no-print" style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+      <Link to="/notas-fiscais">← Notas</Link>
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={() => void printDocument(isNfce ? '80mm' : 'A4')}
+      >
+        Imprimir {isNfce ? '(80 mm)' : '/ PDF'}
+      </button>
+      {pending && (
+        <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+          Aguardando autorização SEFAZ ({doc?.status})…
+        </span>
+      )}
+    </div>
+  );
+
+  if (isNfce && doc) {
+    return (
+      <div className="danfe-thermal-page">
+        {toolbar}
+        {q.isLoading && <p className="no-print">Carregando…</p>}
+        {q.isError && (
+          <div className="alert alert-error no-print">{(q.error as Error).message}</div>
+        )}
+        <article className="danfe-thermal-doc">
+          <div className="muted-line">NFC-e — modelo 65</div>
+          <h1>{company?.tradeName || company?.legalName || 'Emitente'}</h1>
+          {company && (
+            <p className="muted-line">
+              CNPJ {formatCnpj(company.cnpj)}
+              {company.ie ? ` · IE ${company.ie}` : ''}
+            </p>
+          )}
+          {company && (
+            <p className="muted-line">
+              {[company.address, company.city, company.state].filter(Boolean).join(' · ')}
+            </p>
+          )}
+          <hr />
+          <div>
+            Cupom #{doc.sale.number} · {formatDate(doc.sale.createdAt)}
+          </div>
+          <div>
+            Situação: <strong>{doc.status}</strong>
+            {doc.protocol ? ` · Prot. ${doc.protocol}` : ''}
+          </div>
+          {doc.sale.customer?.name && (
+            <div>
+              Cliente: {doc.sale.customer.name}
+              {doc.sale.customer.document
+                ? ` · ${formatCpfCnpj(doc.sale.customer.document)}`
+                : ''}
+            </div>
+          )}
+          <hr />
+          <table>
+            <tbody>
+              {(doc.sale.items ?? []).map((it, i) => (
+                <tr key={i}>
+                  <td style={{ width: '100%' }}>
+                    <div>{it.variant?.product?.name ?? '—'}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.35rem' }}>
+                      <span>
+                        {Number(it.quantity).toLocaleString('pt-BR')} x {formatBRL(it.unitPrice)}
+                      </span>
+                      <span>{formatBRL(it.totalLine)}</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <hr />
+          {Number(doc.sale.discount) > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Desconto</span>
+              <span>{formatBRL(doc.sale.discount)}</span>
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+            <strong>TOTAL</strong>
+            <strong>{formatBRL(doc.sale.total)}</strong>
+          </div>
+          {doc.accessKey && (
+            <>
+              <hr />
+              <div className="key">
+                Chave:
+                <br />
+                {doc.accessKey}
+              </div>
+            </>
+          )}
+          {doc.lastError && doc.status !== 'AUTHORIZED' && (
+            <div className="alert alert-error no-print">{doc.lastError}</div>
+          )}
+          <hr />
+          <p className="muted-line">Documento auxiliar NFC-e. Validade jurídica: XML SEFAZ.</p>
+        </article>
+      </div>
+    );
+  }
+
   return (
     <div className="page print-area" style={{ maxWidth: 900, margin: '0 auto' }}>
-      <div className="no-print" style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem' }}>
-        <Link to="/notas-fiscais?tab=NF_E">← Notas</Link>
-        <button type="button" className="btn btn-primary" onClick={() => window.print()}>
-          Imprimir / PDF
-        </button>
-        {pending && (
-          <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-            Aguardando autorização SEFAZ ({doc?.status})…
-          </span>
-        )}
-      </div>
-
+      {toolbar}
       {q.isLoading && <p>Carregando DANFE…</p>}
       {q.isError && <div className="alert alert-error">{(q.error as Error).message}</div>}
 
@@ -275,8 +371,7 @@ export function DanfePrintPage() {
               )}
               {Number(doc.sale.freightAmount ?? 0) > 0 && (
                 <div style={{ textAlign: 'right', fontSize: '0.85rem' }}>
-                  Frete ({freightLabel(doc.sale.freightMod)}):{' '}
-                  {formatBRL(doc.sale.freightAmount)}
+                  Frete ({freightLabel(doc.sale.freightMod)}): {formatBRL(doc.sale.freightAmount)}
                 </div>
               )}
               <strong>Total: {formatBRL(doc.sale.total)}</strong>
@@ -300,8 +395,7 @@ export function DanfePrintPage() {
             <strong>Alíquotas (Situação Fiscal)</strong>
             {aliquots.length === 0 ? (
               <p style={{ margin: '0.35rem 0 0', color: '#555' }}>
-                Sem alíquotas cadastradas nas situações fiscais dos produtos desta nota. Informe ICMS,
-                IPI, PIS e COFINS em Cadastros Gerais → Situação fiscal.
+                Sem alíquotas cadastradas nas situações fiscais dos produtos desta nota.
               </p>
             ) : (
               <table
@@ -358,7 +452,6 @@ export function DanfePrintPage() {
 
           <p style={{ marginTop: '1.25rem', fontSize: '0.72rem', color: '#444' }}>
             Documento auxiliar de NF-e (DANFE). A validade jurídica é do XML autorizado junto à SEFAZ.
-            Use Imprimir do navegador para gerar PDF.
           </p>
         </article>
       )}

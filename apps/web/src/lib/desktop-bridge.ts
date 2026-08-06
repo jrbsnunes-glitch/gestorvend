@@ -23,6 +23,22 @@ export type DesktopAgentStatus = {
   stationName: string | null;
 };
 
+export type DesktopPrintSilentOpts = {
+  deviceName?: string;
+  pageSize?: '80mm' | 'A4';
+  printBackground?: boolean;
+};
+
+export type DesktopUpdateCheckResult = {
+  ok: boolean;
+  updateAvailable: boolean;
+  localVersion: string;
+  remoteVersion?: string;
+  downloadUrl?: string;
+  notes?: string;
+  message: string;
+};
+
 export type GestorVendDesktopApi = {
   isDesktop?: boolean;
   openStationUi?: () => Promise<{ ok: boolean; error?: string }>;
@@ -33,7 +49,12 @@ export type GestorVendDesktopApi = {
     printers: DesktopPrinter[];
   }>;
   getStation?: () => Promise<{
-    config: { serverUrl: string; tenantSlug: string; station?: DesktopStationConfig } | null;
+    config: {
+      serverUrl: string;
+      tenantSlug: string;
+      station?: DesktopStationConfig;
+      pdv?: { printer?: string };
+    } | null;
     agent: DesktopAgentStatus;
   }>;
   saveStation?: (body: DesktopStationConfig) => Promise<{
@@ -44,6 +65,14 @@ export type GestorVendDesktopApi = {
   clearStation?: () => Promise<{ ok: boolean }>;
   testStationPrint?: (deviceName?: string) => Promise<{ ok: boolean; error?: string }>;
   stationStatus?: () => Promise<DesktopAgentStatus>;
+  printSilent?: (opts?: DesktopPrintSilentOpts) => Promise<{ ok: boolean; error?: string }>;
+  getPdvPrinter?: () => Promise<{ printer: string | null }>;
+  savePdvPrinter?: (body: {
+    printer?: string | null;
+  }) => Promise<{ ok: boolean; error?: string; printer?: string | null }>;
+  getShellVersion?: () => Promise<{ version: string }>;
+  checkForUpdates?: () => Promise<DesktopUpdateCheckResult>;
+  openExternal?: (url: string) => Promise<void> | void;
 };
 
 declare global {
@@ -60,6 +89,12 @@ export function getDesktopApi(): GestorVendDesktopApi | null {
 export function isGestorVendDesktop(): boolean {
   const api = getDesktopApi();
   return Boolean(
-    api?.isDesktop || api?.openStationUi || api?.listPrinters || api?.saveStation || api?.getStation,
+    api?.isDesktop ||
+      api?.openStationUi ||
+      api?.listPrinters ||
+      api?.saveStation ||
+      api?.getStation ||
+      api?.printSilent ||
+      api?.getPdvPrinter,
   );
 }

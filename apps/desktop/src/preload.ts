@@ -11,13 +11,39 @@ contextBridge.exposeInMainWorld('gestorvend', {
         pollMs?: number;
         printers: Record<string, string>;
       };
+      pdv?: { printer?: string };
     } | null>,
   saveConfig: (cfg: { serverUrl: string; tenantSlug: string }) =>
     ipcRenderer.invoke('config:save', cfg) as Promise<{ ok: boolean; error?: string }>,
-  printSilent: () => ipcRenderer.invoke('print:silent') as Promise<{ ok: boolean; error?: string }>,
+  printSilent: (opts?: {
+    deviceName?: string;
+    pageSize?: '80mm' | 'A4';
+    printBackground?: boolean;
+  }) => ipcRenderer.invoke('print:silent', opts) as Promise<{ ok: boolean; error?: string }>,
+  getShellVersion: () =>
+    ipcRenderer.invoke('shell:getVersion') as Promise<{ version: string }>,
+  checkForUpdates: () =>
+    ipcRenderer.invoke('desktop:checkUpdates') as Promise<{
+      ok: boolean;
+      updateAvailable: boolean;
+      localVersion: string;
+      remoteVersion?: string;
+      downloadUrl?: string;
+      notes?: string;
+      message: string;
+    }>,
+  getPdvPrinter: () =>
+    ipcRenderer.invoke('pdv:get') as Promise<{ printer: string | null }>,
+  savePdvPrinter: (body: { printer?: string | null }) =>
+    ipcRenderer.invoke('pdv:save', body) as Promise<{
+      ok: boolean;
+      error?: string;
+      printer?: string | null;
+    }>,
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
-  retryLicense: () => ipcRenderer.invoke('license:retry') as Promise<{ ok: boolean; message: string }>,
-    listPrinters: () =>
+  retryLicense: () =>
+    ipcRenderer.invoke('license:retry') as Promise<{ ok: boolean; message: string }>,
+  listPrinters: () =>
     ipcRenderer.invoke('printers:list') as Promise<{
       ok: boolean;
       error?: string;
@@ -41,6 +67,7 @@ contextBridge.exposeInMainWorld('gestorvend', {
           pollMs?: number;
           printers: Record<string, string>;
         };
+        pdv?: { printer?: string };
       } | null;
       agent: {
         running: boolean;

@@ -1,0 +1,82 @@
+/**
+ * DANFE / cupom NFC-e em bobina térmica 80 mm.
+ */
+
+.danfe-thermal-page {
+  min-height: 100vh;
+  background: #e8e8e8;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.danfe-thermal-doc {
+  max-width: 80mm;
+  margin: 0 auto;
+  padding: 0.5rem 0.4rem 1rem;
+  background: #fff;
+  color: #000;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  box-sizing: border-box;
+}
+
+.danfe-thermal-doc h1 {
+  margin: 0.15rem 0;
+  font-size: 14px;
+  text-align: center;
+}
+
+.danfe-thermal-doc .muted-line {
+  text-align: center;
+  font-size: 11px;
+  margin: 0.1rem 0;
+}
+
+.danfe-thermal-doc hr {
+  border: 0;
+  border-top: 1px dashed #000;
+  margin: 0.45rem 0;
+}
+
+.danfe-thermal-doc table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.danfe-thermal-doc th,
+.danfe-thermal-doc td {
+  padding: 0.15rem 0;
+  vertical-align: top;
+}
+
+.danfe-thermal-doc .key {
+  word-break: break-all;
+  font-size: 10px;
+}
+
+@media print {
+  .danfe-thermal-page {
+    background: #fff !important;
+    padding: 0 !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .danfe-thermal-doc {
+    max-width: none !important;
+    width: 100% !important;
+    box-shadow: none !important;
+    padding: 1mm 1.5mm 3mm !important;
+    font-size: 9.5pt !important;
+  }
+
+  @page {
+    size: 80mm auto;
+    margin: 1.5mm;
+  }
+}

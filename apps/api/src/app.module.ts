@@ -12,6 +12,7 @@ import { FinancialOverviewModule } from './financial-overview/financial-overview
 import { PortalModule } from './portal/portal.module';
 import { FiscalModule } from './fiscal/fiscal.module';
 import { HealthController } from './health.controller';
+import { PublicReleaseController } from './public/public-release.controller';
 import { InventoryModule } from './inventory/inventory.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ReportsModule } from './reports/reports.module';
@@ -53,6 +54,6 @@ import { PrintingModule } from './printing/printing.module';
     PrintingModule,
     ActivityLogsModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, PublicReleaseController],
 })
 export class AppModule {}

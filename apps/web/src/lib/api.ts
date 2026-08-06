@@ -167,7 +167,7 @@ export function formatFetchNetworkError(error: unknown): string {
   return 'Falha de rede';
 }
 
-function resolveApiUrl(path: string): string {
+export function resolveApiUrl(path: string): string {
   const raw = import.meta.env.VITE_API_BASE_URL as string | undefined;
   const base = typeof raw === 'string' ? raw.trim() : '';
   if (base) {

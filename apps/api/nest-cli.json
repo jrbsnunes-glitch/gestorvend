@@ -8,6 +8,10 @@
       {
         "include": "generated/**/*",
         "outDir": "dist/src"
+      },
+      {
+        "include": "public/**/*.json",
+        "watchAssets": true
       }
     ]
   }

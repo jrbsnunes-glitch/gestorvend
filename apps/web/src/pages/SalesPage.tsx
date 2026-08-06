@@ -38,6 +38,7 @@ import {
   setPosAutoPrintMode,
   type PosAutoPrintMode,
 } from '../lib/sale-receipt-print';
+import { isGestorVendDesktop } from '../lib/desktop-bridge';
 import { parseBarcodeWeight, type ScaleMode } from '../lib/pos-scale';
 import { usePosScale } from '../lib/use-pos-scale';
 import {
@@ -3168,6 +3169,7 @@ function PosPrintPrefsModal({
   companyAutoPrint: boolean;
 }) {
   const [mode, setMode] = useState<PosAutoPrintMode>('inherit');
+  const desktop = isGestorVendDesktop();
   useEffect(() => {
     if (open) setMode(getPosAutoPrintMode());
   }, [open]);
@@ -3185,10 +3187,18 @@ function PosPrintPrefsModal({
       >
         <h2 style={{ marginTop: 0 }}>Impressão do cupom nesta máquina</h2>
         <p style={{ margin: '0 0 0.75rem', fontSize: '0.86rem', color: 'var(--pos-text-sub)' }}>
-          Com o sistema na nuvem, o cupom{' '}
-          <strong>sempre sai pela impressora do computador onde o PDV está aberto</strong>. O
-          navegador usa a impressora padrão do Windows/macOS ou a que você escolher no diálogo
-          &quot;Imprimir&quot;. Não há como o servidor remoto apontar diretamente para uma USB local.
+          {desktop ? (
+            <>
+              No <strong>GestorVend Desktop</strong>, configure a impressora térmica 80 mm em{' '}
+              <strong>Configurações → Impressão</strong> (painel azul). Cupons e NFC-e saem em
+              silêncio nessa impressora.
+            </>
+          ) : (
+            <>
+              Com o sistema na nuvem no navegador, o cupom sai pelo diálogo Imprimir deste
+              computador. Para escolher a impressora sem diálogo, use o app Desktop.
+            </>
+          )}
         </p>
         <p style={{ margin: '0 0 0.9rem', fontSize: '0.8rem', color: 'var(--pos-text-muted)' }}>
           Padrão definido em <strong>Empresa</strong>:{' '}

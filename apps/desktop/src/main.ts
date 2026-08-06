@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   shell,
@@ -11,6 +12,7 @@ import {
   readConfig,
   writeConfig,
   writeStationConfig,
+  writePdvConfig,
   type DesktopConfig,
   type StationConfig,
 } from './config';
@@ -23,6 +25,7 @@ import {
   stopPrintAgent,
 } from './print-agent';
 import { listSystemPrinters } from './printers';
+import { fetchDesktopRelease, isSemverGreater } from './desktop-update';
 
 let mainWindow: BrowserWindow | null = null;
 let revalidateTimer: NodeJS.Timeout | null = null;
@@ -131,6 +134,109 @@ async function boot(win: BrowserWindow) {
   await openApp(win, cfg);
 }
 
+async function checkForDesktopUpdates(): Promise<{
+  ok: boolean;
+  updateAvailable: boolean;
+  localVersion: string;
+  remoteVersion?: string;
+  downloadUrl?: string;
+  notes?: string;
+  message: string;
+}> {
+  const localVersion = app.getVersion();
+  const cfg = readConfig();
+  if (!cfg?.serverUrl) {
+    return {
+      ok: false,
+      updateAvailable: false,
+      localVersion,
+      message: 'Configure o servidor antes de verificar atualizações.',
+    };
+  }
+  try {
+    const remote = await fetchDesktopRelease(cfg.serverUrl);
+    if (!remote.version) {
+      return {
+        ok: false,
+        updateAvailable: false,
+        localVersion,
+        message: 'Servidor não informou a versão do Desktop.',
+      };
+    }
+    const updateAvailable = isSemverGreater(remote.version, localVersion);
+    if (!updateAvailable) {
+      return {
+        ok: true,
+        updateAvailable: false,
+        localVersion,
+        remoteVersion: remote.version,
+        downloadUrl: remote.downloadUrl || undefined,
+        notes: remote.notes || undefined,
+        message: `Desktop atualizado (v${localVersion}).`,
+      };
+    }
+    return {
+      ok: true,
+      updateAvailable: true,
+      localVersion,
+      remoteVersion: remote.version,
+      downloadUrl: remote.downloadUrl || undefined,
+      notes: remote.notes || undefined,
+      message: `Há uma nova versão do Desktop: v${remote.version} (você tem v${localVersion}).`,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      updateAvailable: false,
+      localVersion,
+      message: err instanceof Error ? err.message : 'Falha ao verificar atualizações.',
+    };
+  }
+}
+
+async function showUpdateDialog() {
+  const result = await checkForDesktopUpdates();
+  if (!result.ok) {
+    await dialog.showMessageBox({
+      type: 'warning',
+      title: 'Atualizações',
+      message: 'Não foi possível verificar',
+      detail: result.message,
+      buttons: ['OK'],
+    });
+    return;
+  }
+  if (!result.updateAvailable) {
+    await dialog.showMessageBox({
+      type: 'info',
+      title: 'Atualizações',
+      message: result.message,
+      detail: result.notes || undefined,
+      buttons: ['OK'],
+    });
+    return;
+  }
+  const buttons = result.downloadUrl
+    ? ['Baixar atualização', 'Agora não']
+    : ['OK'];
+  const { response } = await dialog.showMessageBox({
+    type: 'info',
+    title: 'Atualização disponível',
+    message: result.message,
+    detail:
+      (result.notes ? `${result.notes}\n\n` : '') +
+      (result.downloadUrl
+        ? 'Clique em Baixar para abrir o instalador.'
+        : 'Peça o instalador atualizado ao suporte ou gere com npm run pack no servidor.'),
+    buttons,
+    defaultId: 0,
+    cancelId: buttons.length - 1,
+  });
+  if (result.downloadUrl && response === 0) {
+    await shell.openExternal(result.downloadUrl);
+  }
+}
+
 function buildMenu() {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
@@ -140,6 +246,12 @@ function buildMenu() {
           label: 'Estação de impressão…',
           click: () => {
             if (mainWindow && !mainWindow.isDestroyed()) showStation(mainWindow);
+          },
+        },
+        {
+          label: 'Verificar atualizações…',
+          click: () => {
+            void showUpdateDialog();
           },
         },
         {
@@ -170,6 +282,10 @@ function buildMenu() {
 function registerIpc() {
   ipcMain.handle('config:get', () => readConfig());
 
+  ipcMain.handle('shell:getVersion', () => ({ version: app.getVersion() }));
+
+  ipcMain.handle('desktop:checkUpdates', async () => checkForDesktopUpdates());
+
   ipcMain.handle('config:save', async (_e, body: DesktopConfig) => {
     try {
       if (!body?.serverUrl?.trim() || !body?.tenantSlug?.trim()) {
@@ -184,6 +300,7 @@ function registerIpc() {
         serverUrl,
         tenantSlug: body.tenantSlug.trim().toLowerCase(),
         station: body.station ?? prev?.station,
+        pdv: body.pdv ?? prev?.pdv,
       };
       writeConfig(cfg);
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -205,25 +322,61 @@ function registerIpc() {
     return { ok: result.ok, message: result.message };
   });
 
-  ipcMain.handle('print:silent', async (event) => {
-    try {
-      const wc = event.sender;
-      const opts: WebContentsPrintOptions = {
-        silent: true,
-        printBackground: true,
-      };
-      await new Promise<void>((resolve, reject) => {
-        wc.print(opts, (success, failureReason) => {
-          if (success) resolve();
-          else reject(new Error(failureReason || 'Falha na impressão'));
+  ipcMain.handle(
+    'print:silent',
+    async (
+      event,
+      body?: { deviceName?: string; pageSize?: '80mm' | 'A4'; printBackground?: boolean },
+    ) => {
+      try {
+        const wc = event.sender;
+        const opts: WebContentsPrintOptions & { deviceName?: string } = {
+          silent: true,
+          printBackground: body?.printBackground !== false,
+        };
+        const pageSize = body?.pageSize ?? '80mm';
+        if (pageSize === '80mm') {
+          opts.pageSize = { width: 80_000, height: 200_000 };
+        } else {
+          opts.pageSize = 'A4';
+        }
+        const device =
+          typeof body?.deviceName === 'string' && body.deviceName.trim()
+            ? body.deviceName.trim()
+            : readConfig()?.pdv?.printer?.trim();
+        if (device) opts.deviceName = device;
+
+        await new Promise<void>((resolve, reject) => {
+          wc.print(opts, (success, failureReason) => {
+            if (success) resolve();
+            else reject(new Error(failureReason || 'Falha na impressão'));
+          });
         });
-      });
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : 'Erro ao imprimir.' };
-    }
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Erro ao imprimir.' };
+      }
+    },
+  );
+
+  ipcMain.handle('pdv:get', () => {
+    const cfg = readConfig();
+    return { printer: cfg?.pdv?.printer ?? null };
   });
 
+  ipcMain.handle('pdv:save', (_e, body: { printer?: string | null }) => {
+    try {
+      const printer =
+        typeof body?.printer === 'string' && body.printer.trim() ? body.printer.trim() : null;
+      const updated = writePdvConfig(printer ? { printer } : null);
+      if (!updated) {
+        return { ok: false, error: 'Configure o servidor antes de definir a impressora do PDV.' };
+      }
+      return { ok: true, printer: updated.pdv?.printer ?? null };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erro ao salvar.' };
+    }
+  });
   ipcMain.handle('shell:openExternal', async (_e, url: string) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
       await shell.openExternal(url);

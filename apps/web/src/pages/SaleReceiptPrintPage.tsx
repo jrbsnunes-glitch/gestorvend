@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { companyUsesCustomLogo } from '../lib/company-branding';
 import { formatBRL, formatDate } from '../lib/format';
 import { consumeAutoPrintNonce } from '../lib/sale-receipt-print';
+import { printDocument } from '../lib/desktop-print';
 import './sale-receipt-print.css';
 
 type Company = {
@@ -113,19 +114,35 @@ export function SaleReceiptPrintPage() {
   useEffect(() => {
     if (!wantAutoPrint || !saleId || !s) return;
     if (!consumeAutoPrintNonce(np, saleId)) return;
-    const t = window.setTimeout(() => window.print(), 450);
+    const t = window.setTimeout(() => {
+      void printDocument('80mm').then(() => {
+        if (wantClose) {
+          window.setTimeout(() => {
+            try {
+              window.close();
+            } catch {
+              /* ignore */
+            }
+          }, 400);
+        }
+      });
+    }, 450);
     return () => window.clearTimeout(t);
-  }, [wantAutoPrint, saleId, s, np]);
+  }, [wantAutoPrint, saleId, s, np, wantClose]);
 
   return (
     <div className="sale-receipt-page">
       <div className="sale-receipt-toolbar no-print">
-        <button type="button" className="btn btn-primary" onClick={() => window.print()}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => void printDocument('80mm')}
+        >
           Imprimir (Ctrl+P)
         </button>
         <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-          Bobina 80 mm — não fiscal. Mesmo com o sistema na nuvem, a impressão usa a impressora
-          instalada neste computador (diálogo do navegador).
+          Bobina 80 mm — não fiscal. No GestorVend Desktop, use a impressora configurada em
+          Configurações → Impressão (PDV). No navegador, o diálogo do sistema escolhe a impressora.
           {c?.saleReceiptPrinterHint?.trim() ? (
             <>
               {' '}

@@ -3,6 +3,7 @@ import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { CompanyLogo } from './CompanyLogo';
 import { ConnectionStatusBanner } from './ConnectionStatusBanner';
+import { DesktopUpdateBanner } from './DesktopUpdateBanner';
 import { NavIcon, type NavIconName } from './nav-icons';
 import { api } from '../lib/api';
 import { companyDisplayName } from '../lib/company-branding';
@@ -389,6 +390,7 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
           {profileMenu}
         </div>
         <ConnectionStatusBanner />
+        <DesktopUpdateBanner />
         <main className="main-content">
           <Outlet />
         </main>

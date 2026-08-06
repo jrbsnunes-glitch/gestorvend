@@ -1,16 +1,9 @@
 /**
  * Impressão de cupom não fiscal no PDV.
  *
- * **Nuvem × impressora local:** o GestorVend na nuvem não acessa USB/rede do PC do
- * cliente. Quem imprime é sempre o **navegador** na máquina do operador (diálogo
- * Imprimir → impressora definida no Windows/macOS). Não é possível, em HTML puro,
- * escolher programaticamente o nome da impressora nem imprimir em silêncio sem
- * permissões especiais (quiosque, extensão ou serviço local tipo “print bridge”).
- *
- * Este módulo:
- * - enfileira o cupom em um iframe invisível com `autoprint=1` (evita bloqueio de pop-up);
- * - `SaleReceiptPrintPage` chama `window.print()` ao carregar quando `autoprint=1`;
- * - permite **preferência na estação** (`localStorage`) além do padrão do cadastro Empresa.
+ * No **GestorVend Desktop**, com impressora configurada em Configurações → Impressão,
+ * o cupom sai em silêncio na térmica 80 mm (`printSilent` + deviceName).
+ * No navegador puro, usa o diálogo Imprimir do sistema.
  */
 
 const POS_AUTO_PRINT_KEY = 'gv_pos_auto_print_receipt';

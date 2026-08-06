@@ -12,10 +12,17 @@ export type StationConfig = {
   printers: StationPrinters;
 };
 
+/** Impressora do PDV neste PC (cupom + NFC-e térmico 80 mm). */
+export type PdvPrinterConfig = {
+  /** deviceName do Windows (cupom não fiscal e documentos fiscais térmicos) */
+  printer?: string;
+};
+
 export type DesktopConfig = {
   serverUrl: string;
   tenantSlug: string;
   station?: StationConfig;
+  pdv?: PdvPrinterConfig;
 };
 
 export type LicenseCache = {
@@ -62,6 +69,15 @@ function normalizeStation(raw: unknown): StationConfig | undefined {
   };
 }
 
+function normalizePdv(raw: unknown): PdvPrinterConfig | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const p = raw as Record<string, unknown>;
+  const printer =
+    typeof p.printer === 'string' && p.printer.trim() ? p.printer.trim() : undefined;
+  if (!printer) return undefined;
+  return { printer };
+}
+
 export function readConfig(): DesktopConfig | null {
   try {
     const raw = fs.readFileSync(configPath(), 'utf8');
@@ -76,6 +92,7 @@ export function readConfig(): DesktopConfig | null {
         serverUrl: parsed.serverUrl.trim().replace(/\/$/, ''),
         tenantSlug: parsed.tenantSlug.trim().toLowerCase(),
         station: normalizeStation(parsed.station),
+        pdv: normalizePdv(parsed.pdv),
       };
     }
     return null;
@@ -99,10 +116,26 @@ export function writeConfig(cfg: DesktopConfig): void {
       printers: cfg.station.printers ?? {},
     };
   }
+  if (cfg.pdv?.printer?.trim()) {
+    payload.pdv = { printer: cfg.pdv.printer.trim() };
+  }
   fs.writeFileSync(configPath(), JSON.stringify(payload, null, 2), 'utf8');
 }
 
-/** Atualiza só a parte da estação, preservando serverUrl/tenant. */
+/** Atualiza só a impressora do PDV, preservando servidor/estação. */
+export function writePdvConfig(pdv: PdvPrinterConfig | null): DesktopConfig | null {
+  const cfg = readConfig();
+  if (!cfg) return null;
+  if (pdv?.printer?.trim()) {
+    cfg.pdv = { printer: pdv.printer.trim() };
+  } else {
+    delete cfg.pdv;
+  }
+  writeConfig(cfg);
+  return cfg;
+}
+
+/** Atualiza só a parte da estação, preservando serverUrl/tenant/pdv. */
 export function writeStationConfig(station: StationConfig | null): DesktopConfig | null {
   const cfg = readConfig();
   if (!cfg) return null;
