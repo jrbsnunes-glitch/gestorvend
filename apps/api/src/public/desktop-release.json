@@ -1,5 +1,5 @@
 {
-  "version": "1.0.35",
+  "version": "1.0.36",
   "downloadUrl": "",
-  "notes": "Cupom PDV: tamanho mercado + escala ajustável nas configurações."
+  "notes": "Cupom PDV: preserva formatação do sistema na impressão térmica (escala 1.2)."
 }

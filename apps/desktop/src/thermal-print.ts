@@ -3,17 +3,15 @@ import type { WebContents, WebContentsPrintOptions } from 'electron';
 export type ThermalPrintPageSize = '80mm' | 'A4';
 
 /**
- * Janela ~largura da bobina @ 96dpi. Não usar layout “A4 com fontes gigantes”
- * nem caixinha 72mm com pageSize em microns (os dois extremos falharam no Windows).
- *
- * Estratégia: preencher 100% da página que o driver da térmica expõe (já é a
- * bobina) + tipografia de comprovante de mercado (~11–13 pt).
+ * Janela ~largura da bobina @ 96dpi.
+ * A formatação visual fica no CSS do web (`sale-receipt-print.css`);
+ * aqui só removemos chrome e aplicamos a escala configurada.
  */
 export const THERMAL_WINDOW_WIDTH_PX = 302;
 
 /**
- * Prepara o DOM do cupom: remove chrome, largura total, fontes de mercado.
- * @param receiptScale zoom tipográfico (1 = padrão mercado).
+ * Prepara o DOM do cupom sem sobrescrever a tipografia/layout do sistema.
+ * @param receiptScale zoom tipográfico (1 = base do CSS; padrão recomendado 1.2).
  */
 export async function prepareSaleReceiptForThermalPrint(
   wc: WebContents,
@@ -24,12 +22,25 @@ export async function prepareSaleReceiptForThermalPrint(
     (() => {
       const scale = ${JSON.stringify(scale)};
       document.querySelectorAll('.no-print, .sale-receipt-toolbar').forEach((el) => el.remove());
+
+      const page = document.querySelector('.sale-receipt-page');
       const doc = document.querySelector('article.sale-receipt-doc');
-      if (doc) {
+      if (page && doc) {
+        // Mantém o article (classes/estrutura) e limpa o restante da página.
+        page.replaceChildren(doc);
+        document.body.replaceChildren(page);
+      } else if (doc) {
         document.body.replaceChildren(doc);
       }
-      const css = document.createElement('style');
-      css.textContent = \`
+
+      // Só layout de impressão + escala — não redefine fontes/cores do cupom.
+      let style = document.getElementById('gv-thermal-print-prep');
+      if (!style) {
+        style = document.createElement('style');
+        style.id = 'gv-thermal-print-prep';
+        document.head.appendChild(style);
+      }
+      style.textContent = \`
         @page { margin: 0; }
         html, body {
           margin: 0 !important;
@@ -41,39 +52,25 @@ export async function prepareSaleReceiptForThermalPrint(
           background: #fff !important;
           overflow: visible !important;
         }
+        .sale-receipt-page {
+          margin: 0 !important;
+          padding: 0 !important;
+          min-height: 0 !important;
+          height: auto !important;
+          width: 100% !important;
+          max-width: none !important;
+          background: #fff !important;
+        }
         .sale-receipt-doc, article.sale-receipt-doc {
           width: 100% !important;
           max-width: none !important;
           margin: 0 !important;
-          padding: 6px 8px 10px !important;
-          box-sizing: border-box !important;
           box-shadow: none !important;
           height: auto !important;
           min-height: 0 !important;
-          font-family: "Courier New", Courier, monospace !important;
-          font-size: 12px !important;
-          font-weight: 700 !important;
-          line-height: 1.32 !important;
-          color: #000 !important;
-          zoom: \${scale} !important;
+          zoom: \${scale};
         }
-        .sale-receipt-title { font-size: 15px !important; font-weight: 800 !important; }
-        .sale-receipt-sub,
-        .sale-receipt-legal { font-size: 11px !important; font-weight: 600 !important; }
-        .sale-receipt-meta,
-        .sale-receipt-section-title,
-        .sale-receipt-items,
-        .sale-receipt-totals,
-        .sale-receipt-payments,
-        .sale-receipt-foot { font-size: 12px !important; font-weight: 700 !important; }
-        .sale-receipt-item-sku,
-        .sale-receipt-fiscal-note,
-        .sale-receipt-foot-muted { font-size: 10px !important; font-weight: 600 !important; }
-        .sale-receipt-totals-row.is-total { font-size: 15px !important; font-weight: 800 !important; }
-        .sale-receipt-banner { font-size: 12px !important; }
-        .sale-receipt-logo { max-width: 55% !important; max-height: 48px !important; }
       \`;
-      document.head.appendChild(css);
       return true;
     })()
   `);
@@ -97,9 +94,6 @@ export function buildThermalPrintOptions(opts: {
   scaleFactor?: number;
   dpi?: { horizontal: number; vertical: number };
 } {
-  // Sem pageSize custom em microns e sem preferCSSPageSize 80mm:
-  // no Windows isso faz o spooler encolher o cupom (letras minúsculas).
-  // A página padrão da impressora térmica já é a bobina.
   const printOpts: WebContentsPrintOptions & {
     deviceName?: string;
     scaleFactor?: number;

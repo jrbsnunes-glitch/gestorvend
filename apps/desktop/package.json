@@ -1,6 +1,6 @@
 {
   "name": "@gestorvend/desktop",
-  "version": "1.0.35",
+  "version": "1.0.36",
   "private": true,
   "description": "Cliente desktop GestorVend (Electron) — janela própria apontando para o servidor do cliente",
   "author": "GestorVend",

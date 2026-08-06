@@ -220,8 +220,9 @@
 
 @media print {
   /*
-   * Preenche a página do spooler (na térmica = bobina) com tipografia de mercado.
-   * NÃO usar width: 80mm fixo aqui — com alguns drivers isso miniaturiza o cupom.
+   * Só adapta a página ao spooler da térmica.
+   * Tipografia, linhas, logo e hierarquia vêm do CSS de tela (não achatar).
+   * NÃO usar width: 80mm fixo — com alguns drivers isso miniaturiza o cupom.
    */
   @page {
     margin: 0;
@@ -237,10 +238,6 @@
     padding: 0 !important;
     background: #fff !important;
     overflow: visible !important;
-  }
-
-  body * {
-    visibility: visible !important;
   }
 
   .sale-receipt-page {
@@ -267,63 +264,15 @@
     width: 100% !important;
     max-width: none !important;
     margin: 0 !important;
-    padding: 2mm 2.5mm 3mm !important;
-    font-size: 12px !important;
-    font-weight: 700 !important;
-    line-height: 1.32 !important;
-    color: #000 !important;
     height: auto !important;
     min-height: 0 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    visibility: visible !important;
   }
 
-  .sale-receipt-logo {
-    max-width: 55% !important;
-    max-height: 14mm !important;
-  }
-
-  .sale-receipt-title {
-    font-size: 15px !important;
-    font-weight: 800 !important;
-  }
-
-  .sale-receipt-sub,
-  .sale-receipt-legal {
-    font-size: 11px !important;
-  }
-
-  .sale-receipt-banner {
-    font-size: 12px !important;
-  }
-
-  .sale-receipt-meta,
-  .sale-receipt-section-title,
-  .sale-receipt-items,
-  .sale-receipt-totals,
-  .sale-receipt-payments {
-    color: #000 !important;
-    font-size: 12px !important;
-    font-weight: 700 !important;
-  }
-
-  .sale-receipt-item-sku,
-  .sale-receipt-fiscal-note {
-    color: #000 !important;
-    font-size: 10px !important;
-  }
-
-  .sale-receipt-totals-row.is-total {
-    font-size: 15px !important;
-    font-weight: 800 !important;
-  }
-
-  .sale-receipt-foot {
-    font-size: 11px !important;
-  }
-
-  .sale-receipt-foot-muted {
-    font-size: 10px !important;
+  .sale-receipt-banner,
+  .sale-receipt-line {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }
