@@ -97,6 +97,17 @@ export function SaleReceiptPrintPage() {
   const c = companyQ.data;
   const s = saleQ.data;
   const loading = Boolean(saleId) && (saleQ.isLoading || companyQ.isLoading);
+  /** Venda + empresa resolvidas — Desktop espera este flag antes de imprimir. */
+  const receiptReady = Boolean(s) && (companyQ.isSuccess || companyQ.isError) && !saleQ.isLoading;
+
+  useEffect(() => {
+    document.documentElement.classList.add('gv-sale-receipt-print');
+    document.body.classList.add('gv-sale-receipt-print');
+    return () => {
+      document.documentElement.classList.remove('gv-sale-receipt-print');
+      document.body.classList.remove('gv-sale-receipt-print');
+    };
+  }, []);
 
   useEffect(() => {
     if (!wantClose) return;
@@ -112,7 +123,7 @@ export function SaleReceiptPrintPage() {
   }, [wantClose]);
 
   useEffect(() => {
-    if (!wantAutoPrint || !saleId || !s) return;
+    if (!wantAutoPrint || !saleId || !receiptReady) return;
     if (!consumeAutoPrintNonce(np, saleId)) return;
     const t = window.setTimeout(() => {
       void printDocument('80mm').then(() => {
@@ -126,12 +137,12 @@ export function SaleReceiptPrintPage() {
           }, 400);
         }
       });
-    }, 450);
+    }, 550);
     return () => window.clearTimeout(t);
-  }, [wantAutoPrint, saleId, s, np, wantClose]);
+  }, [wantAutoPrint, saleId, receiptReady, np, wantClose]);
 
   return (
-    <div className="sale-receipt-page">
+    <div className="sale-receipt-page" data-receipt-ready={receiptReady ? '1' : '0'}>
       <div className="sale-receipt-toolbar no-print">
         <button
           type="button"
@@ -173,7 +184,10 @@ export function SaleReceiptPrintPage() {
       )}
 
       {s && (
-        <article className="sale-receipt-doc">
+        <article
+          className="sale-receipt-doc"
+          data-receipt-ready={receiptReady ? '1' : '0'}
+        >
           {c ? (
             <header className="sale-receipt-center">
               {companyUsesCustomLogo(c) ? (

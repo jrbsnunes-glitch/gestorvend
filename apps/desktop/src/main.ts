@@ -380,7 +380,7 @@ function registerIpc() {
 
       try {
         await win.loadURL(target);
-        // Aguarda o cupom renderizar (React Query), sem depender de autoprint na página.
+        // Aguarda venda + empresa (data-receipt-ready), não só o article vazio.
         const ready = await new Promise<boolean>((resolve) => {
           let tries = 0;
           const tick = async () => {
@@ -390,7 +390,7 @@ function registerIpc() {
             }
             try {
               const ok = await win.webContents.executeJavaScript(
-                `Boolean(document.querySelector('article.sale-receipt-doc'))`,
+                `Boolean(document.querySelector('article.sale-receipt-doc[data-receipt-ready="1"]'))`,
               );
               if (ok) {
                 resolve(true);
@@ -400,7 +400,7 @@ function registerIpc() {
               /* ignore */
             }
             tries += 1;
-            if (tries >= 40) {
+            if (tries >= 60) {
               resolve(false);
               return;
             }
@@ -413,7 +413,7 @@ function registerIpc() {
         if (!ready) {
           return { ok: false, error: 'Cupom não carregou a tempo para imprimir.' };
         }
-        await new Promise((r) => setTimeout(r, 250));
+        await new Promise((r) => setTimeout(r, 200));
 
         const receiptScale = readConfig()?.pdv?.receiptScale ?? 1;
         const contentHeightPx = await prepareSaleReceiptForThermalPrint(

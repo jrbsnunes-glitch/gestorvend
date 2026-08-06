@@ -1,5 +1,5 @@
 {
-  "version": "1.0.36",
+  "version": "1.0.37",
   "downloadUrl": "",
-  "notes": "Cupom PDV: preserva formatação do sistema na impressão térmica (escala 1.2)."
+  "notes": "Cupom PDV: anula @page A4 e espera empresa/logo antes de imprimir."
 }

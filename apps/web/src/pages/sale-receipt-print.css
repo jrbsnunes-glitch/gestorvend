@@ -56,6 +56,7 @@
   width: auto;
   height: auto;
   object-fit: contain;
+  object-position: center;
   margin: 0 auto 0.35rem;
   display: block;
 }
@@ -220,16 +221,18 @@
 
 @media print {
   /*
-   * Só adapta a página ao spooler da térmica.
-   * Tipografia, linhas, logo e hierarquia vêm do CSS de tela (não achatar).
-   * NÃO usar width: 80mm fixo — com alguns drivers isso miniaturiza o cupom.
+   * Anula o @page A4 de reports-document.css — senão o spooler da térmica
+   * trata o job como A4 e o cupom sai “genérico” / miniaturizado.
+   * Tipografia, linhas, logo e hierarquia vêm do CSS de tela.
    */
   @page {
+    size: auto;
     margin: 0;
   }
 
-  html,
-  body {
+  html.gv-sale-receipt-print,
+  html:has(.sale-receipt-doc) {
+    font-size: 16px !important;
     width: 100% !important;
     max-width: none !important;
     height: auto !important;
@@ -238,6 +241,19 @@
     padding: 0 !important;
     background: #fff !important;
     overflow: visible !important;
+  }
+
+  body.gv-sale-receipt-print,
+  html:has(.sale-receipt-doc) body {
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    overflow: visible !important;
+    font-family: 'Courier New', Courier, 'Liberation Mono', monospace !important;
   }
 
   .sale-receipt-page {
@@ -264,15 +280,76 @@
     width: 100% !important;
     max-width: none !important;
     margin: 0 !important;
+    padding: 3mm 2.5mm 5mm !important;
     height: auto !important;
     min-height: 0 !important;
+    font-family: 'Courier New', Courier, 'Liberation Mono', monospace !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    line-height: 1.35 !important;
+    color: #000 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
-  .sale-receipt-banner,
+  .sale-receipt-logo {
+    max-width: 52mm !important;
+    max-height: 20mm !important;
+    object-fit: contain !important;
+  }
+
+  .sale-receipt-title {
+    font-size: 15px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.02em !important;
+    text-transform: uppercase !important;
+  }
+
+  .sale-receipt-sub,
+  .sale-receipt-legal {
+    font-size: 12px !important;
+    font-weight: 700 !important;
+  }
+
   .sale-receipt-line {
+    border: none !important;
+    border-top: 1.5px dashed #000 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  .sale-receipt-banner {
+    background: #fecaca !important;
+    color: #450a0a !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .sale-receipt-meta,
+  .sale-receipt-section-title,
+  .sale-receipt-items,
+  .sale-receipt-totals,
+  .sale-receipt-payments,
+  .sale-receipt-foot {
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    color: #000 !important;
+  }
+
+  .sale-receipt-items li {
+    border-bottom: 1px dotted #000 !important;
+  }
+
+  .sale-receipt-totals-row.is-total {
+    font-size: 15px !important;
+    font-weight: 800 !important;
+    border-top: 2px solid #000 !important;
+  }
+
+  .sale-receipt-item-sku,
+  .sale-receipt-fiscal-note,
+  .sale-receipt-foot-muted {
+    font-size: 11px !important;
+    color: #000 !important;
   }
 }
