@@ -26,6 +26,11 @@ import {
 } from './print-agent';
 import { listSystemPrinters } from './printers';
 import { fetchDesktopRelease, isSemverGreater } from './desktop-update';
+import {
+  THERMAL_WINDOW_WIDTH_PX,
+  buildThermalPrintOptions,
+  prepareSaleReceiptForThermalPrint,
+} from './thermal-print';
 
 let mainWindow: BrowserWindow | null = null;
 let revalidateTimer: NodeJS.Timeout | null = null;
@@ -362,8 +367,8 @@ function registerIpc() {
       }
 
       const win = new BrowserWindow({
-        width: 420,
-        height: 720,
+        width: THERMAL_WINDOW_WIDTH_PX,
+        height: 900,
         show: false,
         webPreferences: {
           preload: path.join(__dirname, 'preload.js'),
@@ -408,19 +413,15 @@ function registerIpc() {
         if (!ready) {
           return { ok: false, error: 'Cupom não carregou a tempo para imprimir.' };
         }
-        await new Promise((r) => setTimeout(r, 200));
+        await new Promise((r) => setTimeout(r, 250));
 
+        const contentHeightPx = await prepareSaleReceiptForThermalPrint(win.webContents);
         const pageSize = body?.pageSize ?? '80mm';
-        const opts: WebContentsPrintOptions & { deviceName?: string } = {
-          silent: true,
-          printBackground: true,
+        const opts = buildThermalPrintOptions({
           deviceName: device,
-        };
-        if (pageSize === '80mm') {
-          opts.pageSize = { width: 80_000, height: 200_000 };
-        } else {
-          opts.pageSize = 'A4';
-        }
+          pageSize,
+          contentHeightPx,
+        });
 
         await new Promise<void>((resolve, reject) => {
           win.webContents.print(opts, (success, failureReason) => {
@@ -445,21 +446,29 @@ function registerIpc() {
     ) => {
       try {
         const wc = event.sender;
-        const opts: WebContentsPrintOptions & { deviceName?: string } = {
-          silent: true,
-          printBackground: body?.printBackground !== false,
-        };
         const pageSize = body?.pageSize ?? '80mm';
-        if (pageSize === '80mm') {
-          opts.pageSize = { width: 80_000, height: 200_000 };
-        } else {
-          opts.pageSize = 'A4';
-        }
         const device =
           typeof body?.deviceName === 'string' && body.deviceName.trim()
             ? body.deviceName.trim()
             : readConfig()?.pdv?.printer?.trim();
-        if (device) opts.deviceName = device;
+
+        let contentHeightPx: number | undefined;
+        if (pageSize === '80mm') {
+          try {
+            contentHeightPx = await prepareSaleReceiptForThermalPrint(wc);
+          } catch {
+            /* página sem cupom — imprime mesmo assim */
+          }
+        }
+
+        const opts = buildThermalPrintOptions({
+          deviceName: device,
+          pageSize,
+          contentHeightPx,
+        });
+        if (body?.printBackground === false) {
+          opts.printBackground = false;
+        }
 
         await new Promise<void>((resolve, reject) => {
           wc.print(opts, (success, failureReason) => {

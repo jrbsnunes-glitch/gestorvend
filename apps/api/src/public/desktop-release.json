@@ -1,5 +1,5 @@
 {
-  "version": "1.0.31",
+  "version": "1.0.32",
   "downloadUrl": "",
-  "notes": "Impressão silenciosa do cupom PDV (sem diálogo do Windows). Reinstale o Desktop ou rode npm run pack."
+  "notes": "Cupom PDV em tamanho legível na bobina 80 mm (sem encolher a página)."
 }
