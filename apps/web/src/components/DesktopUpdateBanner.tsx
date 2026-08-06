@@ -60,7 +60,19 @@ export function DesktopUpdateBanner() {
         color: '#1e3a8a',
       }}
     >
-      <span className="connection-banner__text">{msg}</span>
+      <span className="connection-banner__text">
+        {msg}{' '}
+        <span style={{ opacity: 0.85 }}>
+          (web: Exibir → Recarregar; shell: só com novo instalador)
+        </span>
+      </span>
+      <button
+        type="button"
+        className="btn btn-secondary btn-sm connection-banner__retry"
+        onClick={() => window.location.reload()}
+      >
+        Recarregar
+      </button>
       {downloadUrl ? (
         <button
           type="button"
@@ -71,7 +83,7 @@ export function DesktopUpdateBanner() {
             else window.open(downloadUrl, '_blank', 'noopener,noreferrer');
           }}
         >
-          Baixar atualização
+          Baixar instalador
         </button>
       ) : null}
       <button

@@ -217,23 +217,29 @@ async function showUpdateDialog() {
     return;
   }
   const buttons = result.downloadUrl
-    ? ['Baixar atualização', 'Agora não']
-    : ['OK'];
+    ? ['Baixar instalador', 'Recarregar sistema', 'Agora não']
+    : ['Recarregar sistema', 'OK'];
   const { response } = await dialog.showMessageBox({
     type: 'info',
-    title: 'Atualização disponível',
+    title: 'Atualização do Desktop',
     message: result.message,
     detail:
       (result.notes ? `${result.notes}\n\n` : '') +
+      'O sistema web (telas, PDV, salão) atualiza só com pull no servidor + Recarregar — sem novo Setup.\n' +
       (result.downloadUrl
-        ? 'Clique em Baixar para abrir o instalador.'
-        : 'Peça o instalador atualizado ao suporte ou gere com npm run pack no servidor.'),
+        ? 'Este aviso é do app Desktop (shell). Baixe o instalador para atualizar impressão nativa e recursos locais.'
+        : 'Se a mudança for só visual/web, Recarregar basta. Novo Setup só quando o shell Electron mudar (impressoras, agent, etc.).'),
     buttons,
     defaultId: 0,
     cancelId: buttons.length - 1,
   });
   if (result.downloadUrl && response === 0) {
     await shell.openExternal(result.downloadUrl);
+    return;
+  }
+  const reloadIdx = result.downloadUrl ? 1 : 0;
+  if (response === reloadIdx && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.reload();
   }
 }
 

@@ -1,5 +1,5 @@
 {
-  "version": "1.0.31",
+  "version": "1.0.30",
   "downloadUrl": "",
-  "notes": "Leiaute compacto dos painéis de impressão no Desktop."
+  "notes": "Versão do shell Electron (impressão silenciosa, PDV, agent). Mudanças só do sistema web não exigem reinstalar — use Exibir → Recarregar."
 }
