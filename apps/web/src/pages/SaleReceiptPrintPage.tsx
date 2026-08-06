@@ -1,10 +1,16 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { api } from '../lib/api';
+import { companyUsesCustomLogo } from '../lib/company-branding';
 import { formatBRL, formatDate } from '../lib/format';
 import { consumeAutoPrintNonce } from '../lib/sale-receipt-print';
+import {
+  hardenSaleReceiptStyles,
+  inlineSaleReceiptImages,
+  waitSaleReceiptImages,
+} from '../lib/sale-receipt-harden';
 import { printDocument } from '../lib/desktop-print';
 import './sale-receipt-print.css';
 
@@ -115,12 +121,15 @@ export function SaleReceiptPrintPage() {
     retryDelay: 400,
   });
 
+  const docRef = useRef<HTMLElement | null>(null);
+  const [hardened, setHardened] = useState(false);
+
   const s = receiptQ.data?.sale;
   const c = receiptQ.data?.company;
   const loading = Boolean(saleId) && receiptQ.isLoading;
-  /** Libera impressão com venda + nome da empresa no DOM. */
-  const receiptReady = Boolean(s && (c?.legalName || c?.tradeName));
-  const companyOk = receiptReady;
+  const companyOk = Boolean(s && (c?.legalName || c?.tradeName));
+  /** Só libera impressão com empresa no DOM e layout já blindado. */
+  const receiptReady = companyOk && hardened;
 
   useEffect(() => {
     document.documentElement.classList.add('gv-sale-receipt-print');
@@ -130,6 +139,28 @@ export function SaleReceiptPrintPage() {
       document.body.classList.remove('gv-sale-receipt-print');
     };
   }, []);
+
+  /**
+   * Blinda o cupom antes de qualquer impressão: estilos `important` inline
+   * (imunes à folha injetada pelo shell) e logo em `data:` URL.
+   */
+  useEffect(() => {
+    const root = docRef.current;
+    if (!companyOk || !root) return;
+    let alive = true;
+    setHardened(false);
+    void (async () => {
+      hardenSaleReceiptStyles(root);
+      await inlineSaleReceiptImages(root);
+      await waitSaleReceiptImages(root);
+      if (!alive) return;
+      hardenSaleReceiptStyles(root);
+      setHardened(true);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [companyOk, receiptQ.dataUpdatedAt]);
 
   useEffect(() => {
     if (!wantClose) return;
@@ -181,6 +212,13 @@ export function SaleReceiptPrintPage() {
         <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
           Bobina 80 mm — não fiscal. No GestorVend Desktop, use a impressora configurada em
           Configurações → Impressão (PDV). No navegador, o diálogo do sistema escolhe a impressora.
+          {c && !companyUsesCustomLogo(c) ? (
+            <>
+              {' '}
+              <strong>Sem logotipo próprio:</strong> cadastre em Empresa → Identidade visual para
+              sair a marca da loja no cupom.
+            </>
+          ) : null}
           {c?.saleReceiptPrinterHint?.trim() ? (
             <>
               {' '}
@@ -212,9 +250,10 @@ export function SaleReceiptPrintPage() {
 
       {s && c && (
         <article
+          ref={docRef}
           className="sale-receipt-doc"
-          data-receipt-ready="1"
-          data-company-ok="1"
+          data-receipt-ready={receiptReady ? '1' : '0'}
+          data-company-ok={companyOk ? '1' : '0'}
         >
           <header className="sale-receipt-center sale-receipt-company">
             <CompanyLogo

@@ -1,5 +1,5 @@
 {
-  "version": "1.0.38",
+  "version": "1.0.39",
   "downloadUrl": "",
-  "notes": "Cupom PDV: venda+empresa no mesmo payload; impressão não trava sem logo."
+  "notes": "Cupom PDV: layout da empresa blindado contra sobrescrita de estilo na impressão."
 }

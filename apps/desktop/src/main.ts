@@ -393,11 +393,10 @@ function registerIpc() {
                 (() => {
                   const article = document.querySelector('article.sale-receipt-doc');
                   if (!article) return false;
-                  // Preferível: cabeçalho da empresa
-                  if (article.querySelector('.sale-receipt-title')) return true;
-                  // data-company-ok (build novo)
-                  if (article.getAttribute('data-company-ok') === '1') return true;
+                  // Build novo: só pronto após blindar estilos e embutir a logo.
                   if (article.getAttribute('data-receipt-ready') === '1') return true;
+                  // Build antigo do web: cabeçalho da empresa já renderizado.
+                  if (${tries} >= 12 && article.querySelector('.sale-receipt-title')) return true;
                   return false;
                 })()
               `);
