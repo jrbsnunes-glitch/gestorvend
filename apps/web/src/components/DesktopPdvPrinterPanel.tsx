@@ -22,6 +22,7 @@ export function DesktopPdvPrinterPanel({ onMessage }: Props) {
   const [hint, setHint] = useState('Carregando impressoras…');
   const [busy, setBusy] = useState(false);
   const [savedPrinter, setSavedPrinter] = useState<string | null>(null);
+  const [receiptScale, setReceiptScale] = useState(1.2);
 
   function resolvePrinter(): string | undefined {
     const m = manual.trim();
@@ -67,6 +68,9 @@ export function DesktopPdvPrinterPanel({ onMessage }: Props) {
       const cfg = await api?.getPdvPrinter?.();
       current = cfg?.printer ?? null;
       setSavedPrinter(current);
+      if (typeof cfg?.receiptScale === 'number' && Number.isFinite(cfg.receiptScale)) {
+        setReceiptScale(cfg.receiptScale);
+      }
     } catch {
       /* ignore */
     }
@@ -89,15 +93,16 @@ export function DesktopPdvPrinterPanel({ onMessage }: Props) {
     setBusy(true);
     try {
       const device = resolvePrinter() ?? null;
-      const res = await api.savePdvPrinter({ printer: device });
+      const res = await api.savePdvPrinter({ printer: device, receiptScale });
       if (!res.ok) {
         onMessage?.(res.error || 'Falha ao salvar impressora do PDV.', false);
         return;
       }
       setSavedPrinter(res.printer ?? null);
+      if (typeof res.receiptScale === 'number') setReceiptScale(res.receiptScale);
       onMessage?.(
         res.printer
-          ? `Impressora do PDV: ${res.printer} (térmica 80 mm).`
+          ? `Impressora do PDV: ${res.printer} (escala ${receiptScale}).`
           : 'Impressora do PDV removida — usará o diálogo do sistema.',
         true,
       );
@@ -174,6 +179,20 @@ export function DesktopPdvPrinterPanel({ onMessage }: Props) {
             onChange={(e) => setManual(e.target.value)}
             placeholder="Ex.: MP-4200 TH / Elgin i9"
           />
+        </label>
+
+        <label className="desktop-print-panel__field" style={{ gridColumn: '1 / -1' }}>
+          <span>Tamanho do cupom na bobina</span>
+          <select
+            value={String(receiptScale)}
+            onChange={(e) => setReceiptScale(Number(e.target.value))}
+          >
+            <option value="0.9">Compacto (0,9)</option>
+            <option value="1">Normal mercado (1,0)</option>
+            <option value="1.2">Padrão recomendado (1,2)</option>
+            <option value="1.4">Grande (1,4)</option>
+            <option value="1.6">Extra grande (1,6)</option>
+          </select>
         </label>
         <p className="desktop-print-panel__hint">{hint}</p>
       </div>

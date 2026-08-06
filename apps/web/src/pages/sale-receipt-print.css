@@ -219,16 +219,18 @@
 }
 
 @media print {
-  /* Comprovante 80 mm — tipografia de mercado (não minúscula nem gigante). */
+  /*
+   * Preenche a página do spooler (na térmica = bobina) com tipografia de mercado.
+   * NÃO usar width: 80mm fixo aqui — com alguns drivers isso miniaturiza o cupom.
+   */
   @page {
-    size: 80mm auto;
-    margin: 2mm;
+    margin: 0;
   }
 
   html,
   body {
-    width: 80mm !important;
-    max-width: 80mm !important;
+    width: 100% !important;
+    max-width: none !important;
     height: auto !important;
     min-height: 0 !important;
     margin: 0 !important;
@@ -246,8 +248,8 @@
     padding: 0 !important;
     height: auto !important;
     min-height: 0 !important;
-    width: 80mm !important;
-    max-width: 80mm !important;
+    width: 100% !important;
+    max-width: none !important;
     margin: 0 !important;
     overflow: visible !important;
   }
@@ -262,13 +264,13 @@
 
   .sale-receipt-doc {
     box-shadow: none !important;
-    width: 72mm !important;
-    max-width: 72mm !important;
-    margin: 0 auto !important;
-    padding: 1.5mm 1.5mm 3mm !important;
-    font-size: 11pt !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 2mm 2.5mm 3mm !important;
+    font-size: 12px !important;
     font-weight: 700 !important;
-    line-height: 1.3 !important;
+    line-height: 1.32 !important;
     color: #000 !important;
     height: auto !important;
     min-height: 0 !important;
@@ -278,22 +280,22 @@
   }
 
   .sale-receipt-logo {
-    max-width: 42mm !important;
+    max-width: 55% !important;
     max-height: 14mm !important;
   }
 
   .sale-receipt-title {
-    font-size: 13pt !important;
+    font-size: 15px !important;
     font-weight: 800 !important;
   }
 
   .sale-receipt-sub,
   .sale-receipt-legal {
-    font-size: 9pt !important;
+    font-size: 11px !important;
   }
 
   .sale-receipt-banner {
-    font-size: 11pt !important;
+    font-size: 12px !important;
   }
 
   .sale-receipt-meta,
@@ -302,26 +304,26 @@
   .sale-receipt-totals,
   .sale-receipt-payments {
     color: #000 !important;
-    font-size: 10pt !important;
+    font-size: 12px !important;
     font-weight: 700 !important;
   }
 
   .sale-receipt-item-sku,
   .sale-receipt-fiscal-note {
     color: #000 !important;
-    font-size: 8.5pt !important;
+    font-size: 10px !important;
   }
 
   .sale-receipt-totals-row.is-total {
-    font-size: 13pt !important;
+    font-size: 15px !important;
     font-weight: 800 !important;
   }
 
   .sale-receipt-foot {
-    font-size: 10pt !important;
+    font-size: 11px !important;
   }
 
   .sale-receipt-foot-muted {
-    font-size: 8.5pt !important;
+    font-size: 10px !important;
   }
 }

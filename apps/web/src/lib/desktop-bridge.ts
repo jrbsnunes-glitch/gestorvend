@@ -71,10 +71,11 @@ export type GestorVendDesktopApi = {
     deviceName?: string;
     pageSize?: '80mm' | 'A4';
   }) => Promise<{ ok: boolean; error?: string }>;
-  getPdvPrinter?: () => Promise<{ printer: string | null }>;
+  getPdvPrinter?: () => Promise<{ printer: string | null; receiptScale?: number }>;
   savePdvPrinter?: (body: {
     printer?: string | null;
-  }) => Promise<{ ok: boolean; error?: string; printer?: string | null }>;
+    receiptScale?: number | null;
+  }) => Promise<{ ok: boolean; error?: string; printer?: string | null; receiptScale?: number }>;
   getShellVersion?: () => Promise<{ version: string }>;
   checkForUpdates?: () => Promise<DesktopUpdateCheckResult>;
   openExternal?: (url: string) => Promise<void> | void;

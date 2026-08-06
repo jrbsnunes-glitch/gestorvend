@@ -16,6 +16,11 @@ export type StationConfig = {
 export type PdvPrinterConfig = {
   /** deviceName do Windows (cupom não fiscal e documentos fiscais térmicos) */
   printer?: string;
+  /**
+   * Escala tipográfica do cupom (0.8–2). Default 1.
+   * Use >1 se a térmica sair pequena; <1 se sair grande demais.
+   */
+  receiptScale?: number;
 };
 
 export type DesktopConfig = {
@@ -69,13 +74,22 @@ function normalizeStation(raw: unknown): StationConfig | undefined {
   };
 }
 
+function clampReceiptScale(n: unknown): number | undefined {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return undefined;
+  return Math.max(0.75, Math.min(2, Math.round(n * 100) / 100));
+}
+
 function normalizePdv(raw: unknown): PdvPrinterConfig | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const p = raw as Record<string, unknown>;
   const printer =
     typeof p.printer === 'string' && p.printer.trim() ? p.printer.trim() : undefined;
-  if (!printer) return undefined;
-  return { printer };
+  const receiptScale = clampReceiptScale(p.receiptScale);
+  if (!printer && receiptScale == null) return undefined;
+  return {
+    ...(printer ? { printer } : {}),
+    ...(receiptScale != null ? { receiptScale } : {}),
+  };
 }
 
 export function readConfig(): DesktopConfig | null {
@@ -116,8 +130,10 @@ export function writeConfig(cfg: DesktopConfig): void {
       printers: cfg.station.printers ?? {},
     };
   }
-  if (cfg.pdv?.printer?.trim()) {
-    payload.pdv = { printer: cfg.pdv.printer.trim() };
+  if (cfg.pdv?.printer?.trim() || cfg.pdv?.receiptScale != null) {
+    payload.pdv = {};
+    if (cfg.pdv.printer?.trim()) payload.pdv.printer = cfg.pdv.printer.trim();
+    if (cfg.pdv.receiptScale != null) payload.pdv.receiptScale = cfg.pdv.receiptScale;
   }
   fs.writeFileSync(configPath(), JSON.stringify(payload, null, 2), 'utf8');
 }
@@ -126,8 +142,12 @@ export function writeConfig(cfg: DesktopConfig): void {
 export function writePdvConfig(pdv: PdvPrinterConfig | null): DesktopConfig | null {
   const cfg = readConfig();
   if (!cfg) return null;
-  if (pdv?.printer?.trim()) {
-    cfg.pdv = { printer: pdv.printer.trim() };
+  if (pdv && (pdv.printer?.trim() || pdv.receiptScale != null)) {
+    cfg.pdv = {
+      printer: pdv.printer?.trim() || cfg.pdv?.printer,
+      receiptScale: pdv.receiptScale ?? cfg.pdv?.receiptScale,
+    };
+    if (!cfg.pdv.printer?.trim()) delete cfg.pdv.printer;
   } else {
     delete cfg.pdv;
   }

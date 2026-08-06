@@ -1,5 +1,5 @@
 {
-  "version": "1.0.34",
+  "version": "1.0.35",
   "downloadUrl": "",
-  "notes": "Cupom PDV em tipografia padrão de mercado (80 mm)."
+  "notes": "Cupom PDV: tamanho mercado + escala ajustável nas configurações."
 }

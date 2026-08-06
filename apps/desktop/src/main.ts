@@ -415,7 +415,11 @@ function registerIpc() {
         }
         await new Promise((r) => setTimeout(r, 250));
 
-        const contentHeightPx = await prepareSaleReceiptForThermalPrint(win.webContents);
+        const receiptScale = readConfig()?.pdv?.receiptScale ?? 1;
+        const contentHeightPx = await prepareSaleReceiptForThermalPrint(
+          win.webContents,
+          receiptScale,
+        );
         const pageSize = body?.pageSize ?? '80mm';
         const opts = buildThermalPrintOptions({
           deviceName: device,
@@ -455,7 +459,8 @@ function registerIpc() {
         let contentHeightPx: number | undefined;
         if (pageSize === '80mm') {
           try {
-            contentHeightPx = await prepareSaleReceiptForThermalPrint(wc);
+            const receiptScale = readConfig()?.pdv?.receiptScale ?? 1;
+            contentHeightPx = await prepareSaleReceiptForThermalPrint(wc, receiptScale);
           } catch {
             /* página sem cupom — imprime mesmo assim */
           }
@@ -485,22 +490,44 @@ function registerIpc() {
 
   ipcMain.handle('pdv:get', () => {
     const cfg = readConfig();
-    return { printer: cfg?.pdv?.printer ?? null };
+    return {
+      printer: cfg?.pdv?.printer ?? null,
+      receiptScale: cfg?.pdv?.receiptScale ?? 1,
+    };
   });
 
-  ipcMain.handle('pdv:save', (_e, body: { printer?: string | null }) => {
-    try {
-      const printer =
-        typeof body?.printer === 'string' && body.printer.trim() ? body.printer.trim() : null;
-      const updated = writePdvConfig(printer ? { printer } : null);
-      if (!updated) {
-        return { ok: false, error: 'Configure o servidor antes de definir a impressora do PDV.' };
+  ipcMain.handle(
+    'pdv:save',
+    (_e, body: { printer?: string | null; receiptScale?: number | null }) => {
+      try {
+        const printer =
+          typeof body?.printer === 'string' && body.printer.trim() ? body.printer.trim() : null;
+        const receiptScale =
+          typeof body?.receiptScale === 'number' && Number.isFinite(body.receiptScale)
+            ? body.receiptScale
+            : undefined;
+        const prev = readConfig()?.pdv;
+        const updated = writePdvConfig(
+          printer || receiptScale != null || prev
+            ? {
+                printer: printer ?? prev?.printer,
+                receiptScale: receiptScale ?? prev?.receiptScale ?? 1,
+              }
+            : null,
+        );
+        if (!updated) {
+          return { ok: false, error: 'Configure o servidor antes de definir a impressora do PDV.' };
+        }
+        return {
+          ok: true,
+          printer: updated.pdv?.printer ?? null,
+          receiptScale: updated.pdv?.receiptScale ?? 1,
+        };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Erro ao salvar.' };
       }
-      return { ok: true, printer: updated.pdv?.printer ?? null };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : 'Erro ao salvar.' };
-    }
-  });
+    },
+  );
   ipcMain.handle('shell:openExternal', async (_e, url: string) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
       await shell.openExternal(url);

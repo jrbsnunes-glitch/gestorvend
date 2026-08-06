@@ -35,12 +35,13 @@ contextBridge.exposeInMainWorld('gestorvend', {
       message: string;
     }>,
   getPdvPrinter: () =>
-    ipcRenderer.invoke('pdv:get') as Promise<{ printer: string | null }>,
-  savePdvPrinter: (body: { printer?: string | null }) =>
+    ipcRenderer.invoke('pdv:get') as Promise<{ printer: string | null; receiptScale?: number }>,
+  savePdvPrinter: (body: { printer?: string | null; receiptScale?: number | null }) =>
     ipcRenderer.invoke('pdv:save', body) as Promise<{
       ok: boolean;
       error?: string;
       printer?: string | null;
+      receiptScale?: number;
     }>,
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   retryLicense: () =>
