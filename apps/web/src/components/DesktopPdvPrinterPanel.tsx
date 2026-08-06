@@ -4,6 +4,7 @@ import {
   isGestorVendDesktop,
   type DesktopPrinter,
 } from '../lib/desktop-bridge';
+import './desktop-print-panels.css';
 
 type Props = {
   onMessage?: (msg: string, ok?: boolean) => void;
@@ -57,7 +58,7 @@ export function DesktopPdvPrinterPanel({ onMessage }: Props) {
       );
       return;
     }
-    setHint(`${list.length} impressora(s). Use bobina 80 mm para cupom e NFC-e.`);
+    setHint(`${list.length} impressora(s) · bobina 80 mm para cupom e NFC-e`);
   }
 
   async function load() {
@@ -79,6 +80,7 @@ export function DesktopPdvPrinterPanel({ onMessage }: Props) {
   }, [desktop]);
 
   if (!desktop) return null;
+
   async function save() {
     if (!api?.savePdvPrinter) {
       onMessage?.('App desktop desatualizado. Reinstale o GestorVend Desktop.', false);
@@ -119,37 +121,35 @@ export function DesktopPdvPrinterPanel({ onMessage }: Props) {
   }
 
   return (
-    <section
-      className="card"
-      style={{ marginBottom: '1rem', border: '2px solid var(--color-primary, #2563eb)' }}
-    >
-      <h2 style={{ marginTop: 0, fontSize: '1.1rem' }}>Impressora do PDV (este PC)</h2>
-      <p className="muted" style={{ marginTop: 0 }}>
-        Cupons de venda e NFC-e saem em silêncio nesta térmica <strong>80 mm</strong>, sem diálogo
-        do Windows. Independente da fila da cozinha.
+    <section className="desktop-print-panel desktop-print-panel--pdv">
+      <div className="desktop-print-panel__head">
+        <h2 className="desktop-print-panel__title">Impressora do PDV (este PC)</h2>
+      </div>
+      <p className="desktop-print-panel__lead">
+        Cupons e NFC-e saem em silêncio nesta térmica <strong>80 mm</strong>, sem diálogo do
+        Windows.
       </p>
       {savedPrinter ? (
-        <p className="alert alert-success" style={{ padding: '0.5rem 0.75rem' }}>
+        <p className="desktop-print-panel__status alert alert-success">
           Atual: <strong>{savedPrinter}</strong>
         </p>
       ) : (
-        <p className="muted" style={{ fontSize: '0.85rem' }}>
-          Nenhuma impressora salva — o PDV abrirá o diálogo Imprimir.
+        <p className="desktop-print-panel__lead" style={{ marginTop: '-0.25rem' }}>
+          Nenhuma salva — o PDV abrirá o diálogo Imprimir.
         </p>
       )}
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'end' }}>
-        <label style={{ flex: '1 1 240px' }}>
-          Impressora térmica 80 mm
+      <div className="desktop-print-panel__grid">
+        <label className="desktop-print-panel__field">
+          <span>Impressora térmica 80 mm</span>
           <select
             value={selected}
             onChange={(e) => {
               setSelected(e.target.value);
               if (e.target.value) setManual('');
             }}
-            style={{ width: '100%' }}
           >
-            <option value="">(escolha ou digite abaixo)</option>
+            <option value="">(escolha ou digite ao lado)</option>
             {printers.map((p) => (
               <option key={p.name} value={p.name}>
                 {p.displayName || p.name}
@@ -160,29 +160,27 @@ export function DesktopPdvPrinterPanel({ onMessage }: Props) {
         </label>
         <button
           type="button"
-          className="btn btn-secondary"
+          className="btn btn-secondary desktop-print-panel__refresh"
           disabled={busy}
           onClick={() => void refreshPrinters(resolvePrinter())}
         >
           Atualizar lista
         </button>
+
+        <label className="desktop-print-panel__field" style={{ gridColumn: '1 / -1' }}>
+          <span>Nome exato no Windows (opcional)</span>
+          <input
+            value={manual}
+            onChange={(e) => setManual(e.target.value)}
+            placeholder="Ex.: MP-4200 TH / Elgin i9"
+          />
+        </label>
+        <p className="desktop-print-panel__hint">{hint}</p>
       </div>
-      <p className="muted" style={{ fontSize: '0.82rem', margin: '0.25rem 0 0.75rem' }}>
-        {hint}
-      </p>
 
-      <label>
-        Ou digite o nome exato no Windows
-        <input
-          value={manual}
-          onChange={(e) => setManual(e.target.value)}
-          placeholder="Ex.: MP-4200 TH / Elgin i9"
-        />
-      </label>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+      <div className="desktop-print-panel__actions">
         <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void save()}>
-          {busy ? 'Salvando…' : 'Salvar impressora do PDV'}
+          {busy ? 'Salvando…' : 'Salvar'}
         </button>
         <button
           type="button"
@@ -190,7 +188,7 @@ export function DesktopPdvPrinterPanel({ onMessage }: Props) {
           disabled={busy}
           onClick={() => void testPrint()}
         >
-          Imprimir teste 80 mm
+          Teste 80 mm
         </button>
         <button
           type="button"

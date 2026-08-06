@@ -155,15 +155,14 @@ export function PrintStationsPage() {
       <header className="page-header">
         <div>
           <h1>Impressão</h1>
-          <p className="muted">
-            Cadastre a estação da cozinha (token), a impressora do PDV (cupom/NFC-e 80 mm) e
-            acompanhe a fila. No Desktop, as impressoras físicas são escolhidas abaixo.
+          <p className="muted" style={{ fontSize: '0.85rem', margin: '0.25rem 0 0' }}>
+            Cadastre a estação da cozinha, a impressora do PDV (80 mm) e acompanhe a fila.
           </p>
         </div>
         {inDesktop ? (
           <button
             type="button"
-            className="btn btn-secondary"
+            className="btn btn-secondary btn-sm"
             disabled={updateChecking}
             onClick={() => {
               setUpdateChecking(true);
@@ -213,7 +212,7 @@ export function PrintStationsPage() {
       )}
 
       {canPairHere ? (
-        <>
+        <div className="desktop-print-panels">
           <DesktopPdvPrinterPanel
             onMessage={(msg, ok) => {
               if (ok === false) setErr(msg);
@@ -236,7 +235,7 @@ export function PrintStationsPage() {
               }
             }}
           />
-        </>
+        </div>
       ) : electronShell || inDesktop ? (
         <div className="alert alert-error" style={{ marginBottom: '1rem' }}>
           <p style={{ margin: 0 }}>

@@ -16,7 +16,8 @@
     "db:migrate:central": "npm run prisma:migrate:central -w @gestorvend/api",
     "db:migrate:tenant": "npm run prisma:migrate:tenant -w @gestorvend/api",
     "desktop:dev": "npm run dev -w @gestorvend/desktop",
-    "desktop:build": "npm run pack -w @gestorvend/desktop"
+    "desktop:build": "npm run pack -w @gestorvend/desktop",
+    "pack": "npm run pack -w @gestorvend/desktop"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

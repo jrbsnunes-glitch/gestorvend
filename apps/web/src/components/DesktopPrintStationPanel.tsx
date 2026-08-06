@@ -4,6 +4,7 @@ import {
   type DesktopAgentStatus,
   type DesktopPrinter,
 } from '../lib/desktop-bridge';
+import './desktop-print-panels.css';
 
 type Props = {
   /** Token sugerido (ex.: acabou de gerar / Novo token). */
@@ -137,11 +138,11 @@ export function DesktopPrintStationPanel({ suggestedToken, onMessage }: Props) {
 
   if (apiMissing && !api?.listPrinters && !api?.saveStation) {
     return (
-      <section className="card" style={{ marginBottom: '1rem', borderColor: 'var(--color-danger, #b91c1c)' }}>
-        <h2 style={{ marginTop: 0, fontSize: '1.05rem' }}>Estação de impressão deste PC</h2>
-        <p className="muted">
-          O app Desktop está desatualizado e não expõe a API de impressoras. Feche o GestorVend,
-          rode <code>npm run desktop:dev</code> (ou reinstale o .exe) e abra de novo.
+      <section className="desktop-print-panel desktop-print-panel--error">
+        <h2 className="desktop-print-panel__title">Estação de impressão deste PC</h2>
+        <p className="desktop-print-panel__lead">
+          App Desktop desatualizado. Feche o GestorVend, rode <code>npm run desktop:dev</code> ou
+          reinstale o .exe.
         </p>
       </section>
     );
@@ -158,50 +159,48 @@ export function DesktopPrintStationPanel({ suggestedToken, onMessage }: Props) {
     : 'Agente: —';
 
   return (
-    <section
-      className="card"
-      style={{ marginBottom: '1rem', border: '2px solid var(--color-accent, #4ade9f)' }}
-    >
-      <h2 style={{ marginTop: 0, fontSize: '1.1rem' }}>Estação de impressão deste PC</h2>
-      <p className="muted" style={{ marginTop: 0 }}>
-        Pareie o token da estação e escolha a impressora do Windows. O job PENDING só sai depois
-        disso.
+    <section className="desktop-print-panel desktop-print-panel--station">
+      <div className="desktop-print-panel__head">
+        <h2 className="desktop-print-panel__title">Estação de impressão deste PC</h2>
+      </div>
+      <p className="desktop-print-panel__lead">
+        Pareie o token e escolha a impressora. Jobs PENDING só saem depois disso.
       </p>
 
       <p
-        className={agent?.lastError ? 'alert alert-error' : 'alert alert-success'}
-        style={{ marginBottom: '0.75rem', padding: '0.5rem 0.75rem' }}
+        className={
+          'desktop-print-panel__status ' +
+          (agent?.lastError ? 'alert alert-error' : 'alert alert-success')
+        }
       >
         {agentLabel}
       </p>
 
-      <label>
-        Token de pareamento
-        <textarea
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          rows={2}
-          placeholder="Cole o token (id.secret) gerado em Novo token"
-          style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.85rem' }}
-        />
-      </label>
+      <div className="desktop-print-panel__grid">
+        <label className="desktop-print-panel__field" style={{ gridColumn: '1 / -1' }}>
+          <span>Token de pareamento</span>
+          <textarea
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            rows={2}
+            placeholder="Cole o token (id.secret) gerado em Novo token"
+          />
+        </label>
 
-      <label>
-        Nome local (opcional)
-        <input
-          value={localName}
-          onChange={(e) => setLocalName(e.target.value)}
-          placeholder="Ex.: PC Cozinha"
-        />
-      </label>
+        <label className="desktop-print-panel__field" style={{ gridColumn: '1 / -1' }}>
+          <span>Nome local (opcional)</span>
+          <input
+            value={localName}
+            onChange={(e) => setLocalName(e.target.value)}
+            placeholder="Ex.: PC Cozinha"
+          />
+        </label>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'end' }}>
-        <label style={{ flex: '1 1 240px' }}>
-          Impressora — COZINHA
+        <label className="desktop-print-panel__field">
+          <span>Impressora — COZINHA</span>
           <select
             value={printerCozinha}
             onChange={(e) => setPrinterCozinha(e.target.value)}
-            style={{ width: '100%' }}
           >
             <option value="">(padrão do Windows)</option>
             {printers.map((p) => (
@@ -214,29 +213,27 @@ export function DesktopPrintStationPanel({ suggestedToken, onMessage }: Props) {
         </label>
         <button
           type="button"
-          className="btn btn-secondary"
+          className="btn btn-secondary desktop-print-panel__refresh"
           disabled={busy}
           onClick={() => void refreshPrinters(resolvePrinter())}
         >
           Atualizar lista
         </button>
+
+        <label className="desktop-print-panel__field" style={{ gridColumn: '1 / -1' }}>
+          <span>Nome exato da impressora (opcional)</span>
+          <input
+            value={printerManual}
+            onChange={(e) => setPrinterManual(e.target.value)}
+            placeholder="Ex.: MP-4200 TH"
+          />
+        </label>
+        <p className="desktop-print-panel__hint">{printerHint}</p>
       </div>
-      <p className="muted" style={{ fontSize: '0.82rem', margin: '0.25rem 0 0.75rem' }}>
-        {printerHint}
-      </p>
 
-      <label>
-        Ou digite o nome exato da impressora
-        <input
-          value={printerManual}
-          onChange={(e) => setPrinterManual(e.target.value)}
-          placeholder="Ex.: MP-4200 TH"
-        />
-      </label>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+      <div className="desktop-print-panel__actions">
         <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void save()}>
-          {busy ? 'Salvando…' : 'Salvar e iniciar agente neste PC'}
+          {busy ? 'Salvando…' : 'Salvar e iniciar agente'}
         </button>
         <button
           type="button"
