@@ -12,6 +12,7 @@ import {
   waitSaleReceiptImages,
 } from '../lib/sale-receipt-harden';
 import { printDocument } from '../lib/desktop-print';
+import { APP_VERSION } from '../version';
 import './sale-receipt-print.css';
 
 type Company = {
@@ -95,16 +96,54 @@ function formatAddressLine(c: Company): string {
   return [cityState, cep].filter(Boolean).join(' · ');
 }
 
+/** Venda fictícia do modo demonstração (`?demo=1`) — valida o layout na térmica. */
+function buildDemoSale(): SaleReceipt {
+  return {
+    id: 'demo-cupom-000000',
+    number: 0,
+    status: 'PAID',
+    subtotal: '38.40',
+    discount: '2.40',
+    total: '36.00',
+    createdAt: new Date().toISOString(),
+    notes: 'Cupom de teste — confira logo, CNPJ e alinhamento.',
+    customer: { name: 'Cliente de teste' },
+    user: { name: 'Operador' },
+    items: [
+      {
+        quantity: '2',
+        unitPrice: '12.90',
+        discount: '0',
+        totalLine: '25.80',
+        variant: { sku: 'TESTE-001', product: { name: 'Produto de demonstração' } },
+      },
+      {
+        quantity: '1',
+        unitPrice: '12.60',
+        discount: '0',
+        totalLine: '12.60',
+        variant: { sku: 'TESTE-002', product: { name: 'Item com nome mais longo para conferir a quebra de linha' } },
+      },
+    ],
+    payments: [{ method: 'CASH', amount: '36.00', installments: 1 }],
+  };
+}
+
 export function SaleReceiptPrintPage() {
   const [sp] = useSearchParams();
   const saleId = sp.get('id')?.trim() ?? '';
+  const demo = sp.get('demo') === '1' || sp.get('demo') === 'true';
   const wantAutoPrint = sp.get('autoprint') === '1' || sp.get('autoprint') === 'true';
   const wantClose = sp.get('close') === '1' || sp.get('close') === 'true';
   const np = sp.get('_np');
 
   const receiptQ = useQuery({
-    queryKey: ['sales', saleId, 'receipt'],
+    queryKey: demo ? ['sale-receipt', 'demo'] : ['sales', saleId, 'receipt'],
     queryFn: async (): Promise<ReceiptPayload> => {
+      if (demo) {
+        const company = await api<Company>('/company');
+        return { sale: buildDemoSale(), company };
+      }
       try {
         return await api<ReceiptPayload>(`/sales/${encodeURIComponent(saleId)}/receipt`);
       } catch {
@@ -116,7 +155,7 @@ export function SaleReceiptPrintPage() {
         return { sale, company };
       }
     },
-    enabled: Boolean(saleId),
+    enabled: demo || Boolean(saleId),
     retry: 2,
     retryDelay: 400,
   });
@@ -126,7 +165,7 @@ export function SaleReceiptPrintPage() {
 
   const s = receiptQ.data?.sale;
   const c = receiptQ.data?.company;
-  const loading = Boolean(saleId) && receiptQ.isLoading;
+  const loading = (demo || Boolean(saleId)) && receiptQ.isLoading;
   const companyOk = Boolean(s && (c?.legalName || c?.tradeName));
   /** Só libera impressão com empresa no DOM e layout já blindado. */
   const receiptReady = companyOk && hardened;
@@ -176,8 +215,8 @@ export function SaleReceiptPrintPage() {
   }, [wantClose]);
 
   useEffect(() => {
-    if (!wantAutoPrint || !saleId || !receiptReady) return;
-    if (!consumeAutoPrintNonce(np, saleId)) return;
+    if (!wantAutoPrint || !receiptReady) return;
+    if (!consumeAutoPrintNonce(np, saleId || 'demo')) return;
     const t = window.setTimeout(() => {
       void printDocument('80mm').then(() => {
         if (wantClose) {
@@ -210,6 +249,12 @@ export function SaleReceiptPrintPage() {
           Imprimir (Ctrl+P)
         </button>
         <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+          {demo ? (
+            <>
+              <strong>Modelo de teste</strong> — mesma formatação de um cupom real, com os dados da
+              sua empresa.{' '}
+            </>
+          ) : null}
           Bobina 80 mm — não fiscal. No GestorVend Desktop, use a impressora configurada em
           Configurações → Impressão (PDV). No navegador, o diálogo do sistema escolhe a impressora.
           {c && !companyUsesCustomLogo(c) ? (
@@ -228,7 +273,7 @@ export function SaleReceiptPrintPage() {
         </span>
       </div>
 
-      {!saleId && (
+      {!saleId && !demo && (
         <div className="sale-receipt-doc">
           <p>
             Informe o código da venda na URL: <strong>?id=</strong>…
@@ -236,13 +281,13 @@ export function SaleReceiptPrintPage() {
         </div>
       )}
 
-      {saleId && loading && (
+      {loading && (
         <div className="sale-receipt-doc">
           <p>Carregando cupom e dados da empresa…</p>
         </div>
       )}
 
-      {saleId && receiptQ.isError && (
+      {(saleId || demo) && receiptQ.isError && (
         <div className="sale-receipt-doc">
           <p>Não foi possível carregar o cupom. {(receiptQ.error as Error).message}</p>
         </div>
@@ -405,7 +450,7 @@ export function SaleReceiptPrintPage() {
           <footer className="sale-receipt-foot">
             <p style={{ margin: 0 }}>Obrigado pela preferência!</p>
             <p className="sale-receipt-foot-muted">
-              Cupom gerado pelo GestorVend · ID {s.id.slice(0, 8)}…
+              Cupom gerado pelo GestorVend v{APP_VERSION} · ID {s.id.slice(0, 8)}…
             </p>
           </footer>
         </article>

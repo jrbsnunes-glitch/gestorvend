@@ -4,6 +4,7 @@ import {
   isGestorVendDesktop,
   type DesktopPrinter,
 } from '../lib/desktop-bridge';
+import { tryDesktopPrintUrl } from '../lib/desktop-print';
 import './desktop-print-panels.css';
 
 type Props = {
@@ -111,14 +112,33 @@ export function DesktopPdvPrinterPanel({ onMessage }: Props) {
     }
   }
 
+  /**
+   * Imprime um cupom-modelo pelo mesmo caminho de uma venda real: valida logo,
+   * CNPJ e formatação. O antigo teste usava o ticket de cozinha, que sai sem o
+   * layout da empresa e dava a impressão de que o cupom estava "genérico".
+   */
   async function testPrint() {
-    if (!api?.testStationPrint) return;
     setBusy(true);
     try {
-      const res = await api.testStationPrint(resolvePrinter());
+      const nonce = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+      const ok = await tryDesktopPrintUrl(
+        `/vendas/impressao?demo=1&_np=${encodeURIComponent(nonce)}`,
+        '80mm',
+      );
+      if (ok) {
+        onMessage?.('Cupom-modelo enviado à impressora do PDV.', true);
+        return;
+      }
+      const w = window.open(
+        `/vendas/impressao?demo=1&autoprint=1&close=1&_np=${encodeURIComponent(nonce)}`,
+        'gv_sale_receipt_demo',
+        'width=420,height=720',
+      );
       onMessage?.(
-        res.ok ? 'Teste 80 mm enviado à impressora.' : res.error || 'Falha no teste.',
-        res.ok,
+        w
+          ? 'Abrindo cupom-modelo para impressão…'
+          : 'Não foi possível enviar o cupom-modelo. Confira a impressora do PDV.',
+        Boolean(w),
       );
     } finally {
       setBusy(false);
@@ -207,7 +227,7 @@ export function DesktopPdvPrinterPanel({ onMessage }: Props) {
           disabled={busy}
           onClick={() => void testPrint()}
         >
-          Teste 80 mm
+          Testar cupom 80 mm
         </button>
         <button
           type="button"
