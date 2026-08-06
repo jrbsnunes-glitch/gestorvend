@@ -11,7 +11,7 @@ import { RecordViewModal } from '../components/RecordViewModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
 import { validateDocumentIfCpf } from '../lib/cpf';
-import { formatBRL, formatCep, formatCpfCnpj } from '../lib/format';
+import { formatBRL, formatCep, formatCpfCnpj, formatDate } from '../lib/format';
 import { useListPagination } from '../hooks/useListPagination';
 
 type Customer = {
@@ -21,6 +21,7 @@ type Customer = {
   email: string | null;
   phone: string | null;
   creditLimit: string;
+  requisitionLimit?: string;
   street?: string | null;
   number?: string | null;
   complement?: string | null;
@@ -30,6 +31,31 @@ type Customer = {
   zip?: string | null;
   segment?: string | null;
   birthDate?: string | null;
+};
+
+type CreditStatement = {
+  kind: 'CREDIT' | 'REQUISITION';
+  limit: string;
+  used: string;
+  available: string;
+  lines: Array<{
+    date: string;
+    description: string;
+    items: Array<{
+      description: string;
+      quantity: string;
+      unitPrice: string;
+      totalLine: string;
+    }>;
+    quantity: string;
+    total: string;
+    saleNumber: number | null;
+    installmentLabel: string | null;
+    amountRemaining: string;
+    status: string;
+    limitAfter: string;
+    receivableId: string;
+  }>;
 };
 
 function birthDateInput(iso: string | null | undefined): string {
@@ -55,8 +81,11 @@ export function CustomersPage() {
   const [birthDate, setBirthDate] = useState('');
   const [addr, setAddr] = useState<AddressFormFields>(EMPTY_ADDRESS);
   const [creditLimit, setCreditLimit] = useState('0');
+  const [requisitionLimit, setRequisitionLimit] = useState('0');
   const [segment, setSegment] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [statementKind, setStatementKind] = useState<'CREDIT' | 'REQUISITION' | null>(null);
+  const [statementCustomer, setStatementCustomer] = useState<Customer | null>(null);
 
   const list = useQuery({
     queryKey: ['customers'],
@@ -78,6 +107,15 @@ export function CustomersPage() {
     enabled: viewOpen && !!viewId,
   });
 
+  const statementQ = useQuery({
+    queryKey: ['customers', statementCustomer?.id, 'credit-statement', statementKind],
+    queryFn: () =>
+      api<CreditStatement>(
+        `/customers/${statementCustomer!.id}/credit-statement?kind=${statementKind}`,
+      ),
+    enabled: Boolean(statementCustomer && statementKind),
+  });
+
   function resetForm() {
     setName('');
     setDocument('');
@@ -86,6 +124,7 @@ export function CustomersPage() {
     setBirthDate('');
     setAddr(EMPTY_ADDRESS);
     setCreditLimit('0');
+    setRequisitionLimit('0');
     setSegment('');
     setErr(null);
   }
@@ -106,6 +145,7 @@ export function CustomersPage() {
       state: c.state ?? '',
     });
     setCreditLimit(c.creditLimit ?? '0');
+    setRequisitionLimit(c.requisitionLimit ?? '0');
     setSegment(c.segment ?? '');
     setErr(null);
   }
@@ -127,6 +167,7 @@ export function CustomersPage() {
       state: addr.state || null,
       zip: addr.zip.replace(/\D/g, '') || null,
       creditLimit: creditLimit.replace(',', '.'),
+      requisitionLimit: requisitionLimit.replace(',', '.'),
       segment: segment || null,
     };
   }
@@ -240,6 +281,20 @@ export function CustomersPage() {
                 value={creditLimit}
                 onChange={(e) => setCreditLimit(e.target.value)}
               />
+              <span className="muted" style={{ fontSize: '0.78rem' }}>
+                Valor de crédito dado ao cliente previamente para ser usado em compras na loja.
+              </span>
+            </div>
+            <div className="field">
+              <label htmlFor="c-req-limit">Limite de requisição</label>
+              <input
+                id="c-req-limit"
+                value={requisitionLimit}
+                onChange={(e) => setRequisitionLimit(e.target.value)}
+              />
+              <span className="muted" style={{ fontSize: '0.78rem' }}>
+                Valor que o cliente pode comprar para pagar depois.
+              </span>
             </div>
             <div className="field">
               <label htmlFor="c-seg">Grupo</label>
@@ -276,6 +331,10 @@ export function CustomersPage() {
 
       <ModuleReportsModal open={reportsOpen} title="Clientes" onClose={() => setReportsOpen(false)}>
         <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
+          <li>
+            Extrato de limite de crédito / requisição — use o botão Consultar na linha do cliente ou
+            no detalhe do cadastro.
+          </li>
           <li>Lista de clientes com inadimplência (a implementar)</li>
           <li>Histórico de vendas por cliente</li>
         </ul>
@@ -301,21 +360,22 @@ export function CustomersPage() {
               <th>CPF/CNPJ</th>
               <th>Contato</th>
               <th>Local</th>
-              <th>Limite</th>
+              <th>Lim. crédito</th>
+              <th>Lim. requisição</th>
               <th className="col-actions">Ações</th>
             </tr>
           </thead>
           <tbody>
             {list.isLoading && (
               <tr>
-                <td colSpan={7} className="empty">
+                <td colSpan={8} className="empty">
                   Carregando…
                 </td>
               </tr>
             )}
             {!list.isLoading && !list.data?.length && (
               <tr>
-                <td colSpan={7} className="empty">
+                <td colSpan={8} className="empty">
                   Nenhum cliente cadastrado.
                 </td>
               </tr>
@@ -347,6 +407,7 @@ export function CustomersPage() {
                 </td>
                 <td>{c.city || c.state ? `${c.city ?? ''} ${c.state ?? ''}`.trim() : '—'}</td>
                 <td>{formatBRL(c.creditLimit)}</td>
+                <td>{formatBRL(c.requisitionLimit ?? '0')}</td>
                 <td className="col-actions">
                   <RowRecordActions
                     onEdit={() => openEdit(c)}
@@ -356,6 +417,28 @@ export function CustomersPage() {
                       setDeleteOpen(true);
                     }}
                   />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setStatementCustomer(c);
+                      setStatementKind('CREDIT');
+                    }}
+                  >
+                    Consultar crédito
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setStatementCustomer(c);
+                      setStatementKind('REQUISITION');
+                    }}
+                  >
+                    Consultar requisição
+                  </button>
                 </td>
               </tr>
             ))}
@@ -481,9 +564,40 @@ export function CustomersPage() {
                           .filter(Boolean)
                           .join(', ') || null,
                     },
-                    { label: 'Limite', value: formatBRL(viewData.creditLimit) },
+                    { label: 'Limite de crédito', value: formatBRL(viewData.creditLimit) },
+                    {
+                      label: 'Limite de requisição',
+                      value: formatBRL(viewData.requisitionLimit ?? '0'),
+                    },
                     { label: 'Segmento', value: viewData.segment },
                   ],
+                },
+                {
+                  title: 'Consultas de limite',
+                  content: (
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setStatementCustomer(viewData);
+                          setStatementKind('CREDIT');
+                        }}
+                      >
+                        Consultar crédito
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setStatementCustomer(viewData);
+                          setStatementKind('REQUISITION');
+                        }}
+                      >
+                        Consultar requisição
+                      </button>
+                    </div>
+                  ),
                 },
               ]
             : []
@@ -509,6 +623,117 @@ export function CustomersPage() {
                 onClick={() => remove.mutate(deleteCustomer.id)}
               >
                 Excluir
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {statementCustomer && statementKind && (
+        <FormModalBackdrop
+          className="no-print"
+          onClose={() => {
+            setStatementCustomer(null);
+            setStatementKind(null);
+          }}
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 'min(720px, 96vw)', maxHeight: '90vh', overflow: 'auto' }}
+          >
+            <h2>
+              Extrato — {statementKind === 'CREDIT' ? 'Limite de crédito' : 'Limite de requisição'}
+            </h2>
+            <p className="muted" style={{ marginTop: '-0.35rem' }}>
+              {statementCustomer.name}
+            </p>
+            {statementQ.isLoading && <p>Carregando…</p>}
+            {statementQ.isError && (
+              <div className="alert alert-error">{(statementQ.error as Error).message}</div>
+            )}
+            {statementQ.data && (
+              <>
+                <div className="form-row" style={{ marginBottom: '0.75rem' }}>
+                  <div className="field" style={{ margin: 0 }}>
+                    <span className="muted">Limite</span>
+                    <strong>{formatBRL(statementQ.data.limit)}</strong>
+                  </div>
+                  <div className="field" style={{ margin: 0 }}>
+                    <span className="muted">Em uso</span>
+                    <strong>{formatBRL(statementQ.data.used)}</strong>
+                  </div>
+                  <div className="field" style={{ margin: 0 }}>
+                    <span className="muted">Disponível</span>
+                    <strong>{formatBRL(statementQ.data.available)}</strong>
+                  </div>
+                </div>
+                {!statementQ.data.lines.length ? (
+                  <p className="muted">Nenhum uso registrado neste limite.</p>
+                ) : (
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Data</th>
+                          <th>Item</th>
+                          <th className="num">Qtd</th>
+                          <th className="num">Total</th>
+                          <th>Documento</th>
+                          <th className="num">Limite após</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {statementQ.data.lines.flatMap((line) => {
+                          const doc =
+                            line.saleNumber != null
+                              ? `Venda #${line.saleNumber}${
+                                  line.installmentLabel ? ` · ${line.installmentLabel}` : ''
+                                }`
+                              : line.description;
+                          if (line.items.length) {
+                            return line.items.map((it, idx) => (
+                              <tr key={`${line.receivableId ?? line.date}-${idx}`}>
+                                <td>{idx === 0 ? formatDate(line.date) : ''}</td>
+                                <td>{it.description}</td>
+                                <td className="num">{it.quantity}</td>
+                                <td className="num">{formatBRL(it.totalLine)}</td>
+                                <td>{idx === 0 ? doc : ''}</td>
+                                <td className="num">
+                                  {idx === 0 ? formatBRL(line.limitAfter) : ''}
+                                </td>
+                              </tr>
+                            ));
+                          }
+                          return [
+                            <tr key={line.receivableId ?? line.date}>
+                              <td>{formatDate(line.date)}</td>
+                              <td>{line.description}</td>
+                              <td className="num">{line.quantity}</td>
+                              <td className="num">{formatBRL(line.total)}</td>
+                              <td>{doc}</td>
+                              <td className="num">{formatBRL(line.limitAfter)}</td>
+                            </tr>,
+                          ];
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setStatementCustomer(null);
+                  setStatementKind(null);
+                }}
+              >
+                Fechar
               </button>
             </div>
           </div>

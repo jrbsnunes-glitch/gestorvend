@@ -135,7 +135,14 @@ export class PaymentFormsController {
     }
 
     const kind = (data.kind as PaymentFormKind | undefined) ?? (body.kind as PaymentFormKind | undefined);
-    const isCard = kind === PaymentFormKind.CARD || String(body.kind).toUpperCase() === 'CARD';
+    const kindStr = String(kind ?? body.kind ?? '').toUpperCase();
+    const isCard = kind === PaymentFormKind.CARD || kindStr === 'CARD';
+    const allowsInstallments =
+      isCard ||
+      kind === PaymentFormKind.CREDIT ||
+      kind === PaymentFormKind.REQUISITION ||
+      kindStr === 'CREDIT' ||
+      kindStr === 'REQUISITION';
 
     if (isCard) {
       if (body.cardBrand !== undefined || requireName) {
@@ -182,7 +189,27 @@ export class PaymentFormsController {
       data.adminFeeFixed = new Prisma.Decimal(0);
       data.passAdminFeeToCustomer = false;
       data.settlementDays = 0;
-      data.maxInstallments = 1;
+      if (allowsInstallments && (body.maxInstallments !== undefined || requireName)) {
+        const m = Number(body.maxInstallments ?? 1);
+        if (!Number.isFinite(m) || m < 1 || m > 48) {
+          throw new BadRequestException('Parcelas máximas inválidas (1–48).');
+        }
+        data.maxInstallments = Math.trunc(m);
+      } else if (!allowsInstallments) {
+        data.maxInstallments = 1;
+      } else if (body.maxInstallments !== undefined) {
+        const m = Number(body.maxInstallments ?? 1);
+        if (!Number.isFinite(m) || m < 1 || m > 48) {
+          throw new BadRequestException('Parcelas máximas inválidas (1–48).');
+        }
+        data.maxInstallments = Math.trunc(m);
+      }
+    } else if (allowsInstallments && body.maxInstallments !== undefined) {
+      const m = Number(body.maxInstallments ?? 1);
+      if (!Number.isFinite(m) || m < 1 || m > 48) {
+        throw new BadRequestException('Parcelas máximas inválidas (1–48).');
+      }
+      data.maxInstallments = Math.trunc(m);
     }
 
     return data;

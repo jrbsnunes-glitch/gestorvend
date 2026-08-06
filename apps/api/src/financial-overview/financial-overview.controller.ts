@@ -339,7 +339,7 @@ export class FinancialOverviewController {
      */
     /** Pagamentos de venda que entram no “pool” de caixa (exclui crediário). */
     const salePaymentBaseWhere = {
-      method: { not: PaymentMethod.CREDIT },
+      method: { notIn: [PaymentMethod.CREDIT, PaymentMethod.REQUISITION] },
     } satisfies Prisma.SalePaymentWhereInput;
 
     const [priorSalePayByMethod, periodSalePayByMethod] = await Promise.all([
@@ -616,7 +616,7 @@ export class FinancialOverviewController {
     ] = await Promise.all([
       db.salePayment.findMany({
         where: {
-          method: { not: PaymentMethod.CREDIT },
+          method: { notIn: [PaymentMethod.CREDIT, PaymentMethod.REQUISITION] },
           sale: { status: SaleStatus.COMPLETED, createdAt: { gte: from, lte: to } },
         },
         select: {

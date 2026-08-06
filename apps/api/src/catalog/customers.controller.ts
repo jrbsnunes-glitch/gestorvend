@@ -7,6 +7,7 @@ import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { validateCpf11 } from '../common/cpf.util';
 import { validateCnpj14 } from '../common/cnpj.util';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { CustomerCreditService } from './customer-credit.service';
 
 function normalizeDocument(raw: unknown): string | null {
   if (raw == null || raw === '') return null;
@@ -45,7 +46,10 @@ function strOrNull(v: unknown): string | null {
 @Controller('customers')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class CustomersController {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    private readonly customerCredit: CustomerCreditService,
+  ) {}
 
   @Get()
   @Roles('admin', 'manager', 'seller', 'finance')
@@ -56,13 +60,13 @@ export class CustomersController {
 
   /** Busca por nome, documento, telefone ou e-mail (PDV e cadastros). */
   @Get('search')
-  @Roles('admin', 'manager', 'seller', 'finance')
+  @Roles('admin', 'manager', 'seller', 'finance', 'waiter')
   async search(@CurrentUser() user: JwtPayload, @Query('q') q?: string) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const term = (q ?? '').trim();
     if (term.length < 1) return [];
 
-    return db.customer.findMany({
+    const rows = await db.customer.findMany({
       where: {
         OR: [
           { name: { contains: term, mode: 'insensitive' } },
@@ -75,6 +79,23 @@ export class CustomersController {
       orderBy: { name: 'asc' },
       select: { id: true, name: true, document: true, phone: true },
     });
+    return this.customerCredit.enrichSearchRows(user.tenantSlug, rows);
+  }
+
+  @Get(':id/credit-summary')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  creditSummary(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.customerCredit.getSummary(user.tenantSlug, id);
+  }
+
+  @Get(':id/credit-statement')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  creditStatement(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Query('kind') kind?: string,
+  ) {
+    return this.customerCredit.getStatement(user.tenantSlug, id, kind ?? '');
   }
 
   @Get(':id')
@@ -96,6 +117,7 @@ export class CustomersController {
         email: strOrNull(body.email),
         phone: strOrNull(body.phone),
         creditLimit: body.creditLimit != null ? String(body.creditLimit) : '0',
+        requisitionLimit: body.requisitionLimit != null ? String(body.requisitionLimit) : '0',
         street: strOrNull(body.street),
         number: strOrNull(body.number),
         complement: strOrNull(body.complement),
@@ -127,6 +149,7 @@ export class CustomersController {
         ...(body.email !== undefined && { email: strOrNull(body.email) }),
         ...(body.phone !== undefined && { phone: strOrNull(body.phone) }),
         ...(body.creditLimit != null && { creditLimit: String(body.creditLimit) }),
+        ...(body.requisitionLimit != null && { requisitionLimit: String(body.requisitionLimit) }),
         ...(body.street !== undefined && { street: strOrNull(body.street) }),
         ...(body.number !== undefined && { number: strOrNull(body.number) }),
         ...(body.complement !== undefined && { complement: strOrNull(body.complement) }),

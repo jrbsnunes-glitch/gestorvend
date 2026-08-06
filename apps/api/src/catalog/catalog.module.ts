@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { CategoriesController } from './categories.controller';
+import { CustomerCreditService } from './customer-credit.service';
 import { CustomerGroupsController } from './customer-groups.controller';
 import { CustomersController } from './customers.controller';
 import { FiscalCodesController } from './fiscal-codes.controller';
@@ -25,5 +26,7 @@ import { OperationNaturesController } from './operation-natures.controller';
     ProductsController,
     LookupsController,
   ],
+  providers: [CustomerCreditService],
+  exports: [CustomerCreditService],
 })
 export class CatalogModule {}

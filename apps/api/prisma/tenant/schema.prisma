@@ -300,6 +300,8 @@ model Customer {
   email        String?
   phone        String?
   creditLimit  Decimal  @default(0) @db.Decimal(14, 2)
+  /// Teto cadastral de requisição (compras para pagar depois) — disponível = limite − títulos abertos REQUISITION.
+  requisitionLimit Decimal @default(0) @db.Decimal(14, 2)
   street       String?
   number       String?
   complement   String?
@@ -746,9 +748,17 @@ enum PaymentMethod {
   CARD
   PIX
   CREDIT
+  /// Compra para pagar depois (limite de requisição do cliente).
+  REQUISITION
   OTHER
   /// Saída de caixa classificada como despesa (conciliação / justificativa de falta).
   EXPENSE
+}
+
+/// Tipo de limite do cliente vinculado ao título a receber (null = lançamento sem uso de limite).
+enum CreditKind {
+  CREDIT
+  REQUISITION
 }
 
 /// Origem da venda — permite separar PDV físico de pedidos vindos do GestorVendChat (WhatsApp).
@@ -851,6 +861,7 @@ enum PaymentFormKind {
   CARD
   PIX
   CREDIT
+  REQUISITION
   OTHER
 }
 
@@ -1086,13 +1097,35 @@ model AccountReceivable {
   parentRecurring   AccountReceivable? @relation("ReceivableRecurringChildren", fields: [parentRecurringId], references: [id])
   recurringChildren AccountReceivable[] @relation("ReceivableRecurringChildren")
   paymentMethod   PaymentMethod?
+  /// Uso de limite do cliente (crediário ou requisição). Null = título avulso.
+  creditKind      CreditKind?
   settledAmount   Decimal?    @db.Decimal(14, 2)
   cashSessionId   String?
   cashSession     CashRegisterSession? @relation(fields: [cashSessionId], references: [id])
+  /// Texto livre de controle do caixa quando ainda não há sessão vinculada.
+  cashControlNote String?     @db.VarChar(255)
   paymentNotes    String?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   settlements ReceivableSettlement[]
+  items       AccountReceivableItem[]
+
+  @@index([customerId, creditKind, status])
+}
+
+/// Itens que compõem o valor de um título a receber (venda ou lançamento manual).
+model AccountReceivableItem {
+  id           String            @id @default(uuid())
+  receivableId String
+  receivable   AccountReceivable @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+  description  String
+  quantity     Decimal           @db.Decimal(14, 4)
+  unitPrice    Decimal           @db.Decimal(14, 2)
+  totalLine    Decimal           @db.Decimal(14, 2)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([receivableId])
 }
 
 model ReceivableSettlement {

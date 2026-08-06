@@ -4,6 +4,7 @@ import {
   CardBrand,
   CardOperation,
   CardSettlementStatus,
+  CreditKind,
   PaymentMethod,
   Prisma,
   SaleSource,
@@ -15,6 +16,7 @@ import {
   UserPermissionCode,
 } from '../generated/tenant-client';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
+import { CustomerCreditService } from '../catalog/customer-credit.service';
 import { CompanyService } from '../company/company.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { UserPermissionsService } from '../users/user-permissions.service';
@@ -134,6 +136,29 @@ function roundMoney2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/** Divide centavos sem deixar resto na última parcela. */
+function splitInstallmentAmounts(total: number, installments: number): number[] {
+  const n = Math.max(1, Math.floor(installments));
+  const cents = Math.round(roundMoney2(total) * 100);
+  const each = Math.floor(cents / n);
+  const amounts: number[] = [];
+  let allocated = 0;
+  for (let i = 0; i < n; i++) {
+    const c = i === n - 1 ? cents - allocated : each;
+    amounts.push(c / 100);
+    allocated += c;
+  }
+  return amounts;
+}
+
+function isCustomerCreditMethod(method: PaymentMethod): boolean {
+  return method === PaymentMethod.CREDIT || method === PaymentMethod.REQUISITION;
+}
+
+function creditKindFromMethod(method: PaymentMethod): CreditKind {
+  return method === PaymentMethod.REQUISITION ? CreditKind.REQUISITION : CreditKind.CREDIT;
+}
+
 type NormalizedSalePayment = {
   method: PaymentMethod;
   amount: number;
@@ -229,6 +254,7 @@ export class SalesService {
     private readonly activityLog: ActivityLogService,
     private readonly permissions: UserPermissionsService,
     private readonly company: CompanyService,
+    private readonly customerCredit: CustomerCreditService,
   ) {}
 
   async create(input: CreateSaleInput) {
@@ -388,8 +414,11 @@ export class SalesService {
       return {
         method,
         amount,
-        installments: isCard
-          ? Math.min(p.installments, form?.maxInstallments ?? p.installments)
+        installments: isCard || isCustomerCreditMethod(method)
+          ? Math.min(
+              Math.max(1, p.installments),
+              form?.maxInstallments ?? (isCustomerCreditMethod(method) ? 48 : p.installments),
+            )
           : p.installments,
         paymentFormId: form?.id ?? null,
         authCode: p.authCode ?? null,
@@ -418,6 +447,28 @@ export class SalesService {
       });
       if (!nat || !nat.isActive) {
         throw new BadRequestException('Natureza da operação inválida ou inativa.');
+      }
+    }
+
+    const creditLike = paymentsToCreate.filter((p) => isCustomerCreditMethod(p.method));
+    if (creditLike.length) {
+      const customerId = input.customerId?.trim() || null;
+      if (!customerId) {
+        throw new BadRequestException(
+          'Informe o cliente para finalizar venda com crediário ou requisição.',
+        );
+      }
+      const byKind = new Map<PaymentMethod, number>();
+      for (const p of creditLike) {
+        byKind.set(p.method, roundMoney2((byKind.get(p.method) ?? 0) + p.amount));
+      }
+      for (const [method, amount] of byKind) {
+        await this.customerCredit.assertAvailable(
+          input.tenantSlug,
+          customerId,
+          creditKindFromMethod(method),
+          amount,
+        );
       }
     }
 
@@ -597,27 +648,85 @@ export class SalesService {
         });
       }
 
-      const credit = paymentsToCreate.filter((p) => p.method === PaymentMethod.CREDIT);
-      if (credit.length) {
-        const creditTotal = credit.reduce((s, p) => s + p.amount, 0);
-        const installments = Math.max(1, credit[0].installments ?? 1);
-        const parcel = creditTotal / installments;
-        const due = new Date();
-        for (let i = 0; i < installments; i++) {
-          const d = new Date(due);
-          d.setMonth(d.getMonth() + i);
-          const parcelStr = String(parcel.toFixed(2));
-          await tx.accountReceivable.create({
-            data: {
-              customerId: input.customerId ?? null,
-              saleId: sale.id,
-              description: `Parcela ${i + 1}/${installments} — venda #${sale.number}`,
-              amount: parcelStr,
-              amountRemaining: parcelStr,
-              dueDate: d,
-              status: BillStatus.OPEN,
-            },
-          });
+      const creditLikePay = paymentsToCreate.filter((p) => isCustomerCreditMethod(p.method));
+      if (creditLikePay.length) {
+        const customerId = input.customerId?.trim() || null;
+        if (!customerId) {
+          throw new BadRequestException(
+            'Informe o cliente para finalizar venda com crediário ou requisição.',
+          );
+        }
+        const saleItems = await tx.saleItem.findMany({
+          where: { saleId: sale.id },
+          include: {
+            variant: { include: { product: { select: { name: true } } } },
+          },
+        });
+        const saleItemsTotal = saleItems.reduce((s, it) => s + Number(it.totalLine), 0) || 1;
+
+        // Agrupa por método (crediário vs requisição) — cada um gera sua série de parcelas.
+        const groups = new Map<PaymentMethod, { amount: number; installments: number }>();
+        for (const p of creditLikePay) {
+          const prev = groups.get(p.method);
+          if (prev) {
+            prev.amount = roundMoney2(prev.amount + p.amount);
+            prev.installments = Math.max(prev.installments, p.installments ?? 1);
+          } else {
+            groups.set(p.method, {
+              amount: p.amount,
+              installments: Math.max(1, p.installments ?? 1),
+            });
+          }
+        }
+
+        for (const [method, group] of groups) {
+          const kind = creditKindFromMethod(method);
+          const parcels = splitInstallmentAmounts(group.amount, group.installments);
+          const due = new Date();
+          for (let i = 0; i < parcels.length; i++) {
+            const d = new Date(due);
+            d.setMonth(d.getMonth() + i);
+            const parcelStr = parcels[i].toFixed(2);
+            const label =
+              method === PaymentMethod.REQUISITION ? 'Requisição' : 'Crediário';
+            const receivable = await tx.accountReceivable.create({
+              data: {
+                customerId,
+                saleId: sale.id,
+                description: `${label} ${i + 1}/${parcels.length} — venda #${sale.number}`,
+                amount: parcelStr,
+                amountRemaining: parcelStr,
+                dueDate: d,
+                status: BillStatus.OPEN,
+                paymentMethod: method,
+                creditKind: kind,
+                recurrenceIndex: i + 1,
+                recurrenceCount: parcels.length,
+              },
+            });
+
+            // Espelha itens da venda, rateando o total da parcela.
+            let allocated = 0;
+            for (let j = 0; j < saleItems.length; j++) {
+              const it = saleItems[j];
+              const isLast = j === saleItems.length - 1;
+              const share = isLast
+                ? roundMoney2(parcels[i] - allocated)
+                : roundMoney2((Number(it.totalLine) / saleItemsTotal) * parcels[i]);
+              allocated = roundMoney2(allocated + share);
+              const qty = Number(it.quantity);
+              const unit = qty > 0 ? roundMoney2(share / qty) : share;
+              await tx.accountReceivableItem.create({
+                data: {
+                  receivableId: receivable.id,
+                  description: it.variant.product?.name ?? 'Item',
+                  quantity: String(it.quantity),
+                  unitPrice: unit.toFixed(2),
+                  totalLine: share.toFixed(2),
+                },
+              });
+            }
+          }
         }
       }
 
@@ -660,10 +769,10 @@ export class SalesService {
         );
       }
 
-      const hasCredit = sale.payments.some((p) => p.method === PaymentMethod.CREDIT);
+      const hasCredit = sale.payments.some((p) => isCustomerCreditMethod(p.method));
       if (hasCredit) {
         throw new BadRequestException(
-          'Remoção de item automática não disponível quando há crediário. Cancele a venda inteira ou ajuste no financeiro.',
+          'Remoção de item automática não disponível quando há crediário ou requisição. Cancele a venda inteira ou ajuste no financeiro.',
         );
       }
 
@@ -1075,6 +1184,16 @@ export class SalesService {
       });
       if (sale.status === SaleStatus.CANCELLED) {
         throw new BadRequestException('Venda já cancelada');
+      }
+
+      const receivables = await tx.accountReceivable.findMany({
+        where: { saleId },
+        include: { settlements: { select: { id: true }, take: 1 } },
+      });
+      if (receivables.some((r) => r.settlements.length > 0 || Number(r.amountRemaining) < Number(r.amount) - 0.005)) {
+        throw new BadRequestException(
+          'Não é possível cancelar: há parcela de crediário/requisição com baixa parcial ou total. Estorne no financeiro antes.',
+        );
       }
 
       const defaultLoc = await getDefaultStockLocation(tx);

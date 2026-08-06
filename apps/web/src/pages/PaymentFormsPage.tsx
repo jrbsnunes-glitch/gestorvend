@@ -84,6 +84,8 @@ function draftToBody(d: Draft) {
     body.passAdminFeeToCustomer = d.passAdminFeeToCustomer;
     body.settlementDays = Number(d.settlementDays) || 0;
     body.maxInstallments = Number(d.maxInstallments) || 1;
+  } else if (d.kind === 'CREDIT' || d.kind === 'REQUISITION') {
+    body.maxInstallments = Number(d.maxInstallments) || 1;
   }
   return body;
 }
@@ -128,6 +130,8 @@ export function PaymentFormsPage() {
   });
 
   const isCard = draft.kind === 'CARD';
+  const allowsInstallments =
+    isCard || draft.kind === 'CREDIT' || draft.kind === 'REQUISITION';
 
   const formFields = useMemo(
     () => (
@@ -164,6 +168,23 @@ export function PaymentFormsPage() {
             />
           </div>
         </div>
+
+        {!isCard && allowsInstallments && (
+          <div className="form-row">
+            <div className="field">
+              <label>Máx. parcelas</label>
+              <input
+                value={draft.maxInstallments}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, maxInstallments: e.target.value }))
+                }
+              />
+              <span className="muted" style={{ fontSize: '0.78rem' }}>
+                Parcelas geradas em Contas a Receber na venda.
+              </span>
+            </div>
+          </div>
+        )}
 
         {isCard && (
           <>
@@ -437,7 +458,9 @@ export function PaymentFormsPage() {
                           { label: 'Dias p/ baixa (D+N)', value: viewing.settlementDays },
                           { label: 'Máx. parcelas', value: viewing.maxInstallments },
                         ]
-                      : []),
+                      : viewing.kind === 'CREDIT' || viewing.kind === 'REQUISITION'
+                        ? [{ label: 'Máx. parcelas', value: viewing.maxInstallments }]
+                        : []),
                     { label: 'Ordem', value: viewing.sortOrder },
                     { label: 'Situação', value: viewing.isActive ? 'Ativa' : 'Inativa' },
                     { label: 'Observações', value: viewing.notes },

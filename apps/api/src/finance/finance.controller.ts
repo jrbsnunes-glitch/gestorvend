@@ -254,6 +254,7 @@ const receivableInclude = {
   customer: true,
   sale: true,
   cashSession: { include: { user: { select: { id: true, name: true, email: true } } } },
+  items: { orderBy: { createdAt: 'asc' as const } },
 } as const;
 
 const settlementDetailInclude = {
@@ -668,6 +669,14 @@ export class FinanceController {
       dueDate: string;
       recurrence?: RecurrenceInput;
       recurrenceCount?: number;
+      cashSessionId?: string | null;
+      cashControlNote?: string | null;
+      items?: Array<{
+        description: string;
+        quantity: number | string;
+        unitPrice: number | string;
+        totalLine?: number | string;
+      }>;
     },
   ) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
@@ -675,7 +684,31 @@ export class FinanceController {
     if (!description) {
       throw new BadRequestException('Descrição é obrigatória.');
     }
-    const amount = Number(body.amount);
+    let amount = Number(body.amount);
+    const rawItems = Array.isArray(body.items) ? body.items : [];
+    const items = rawItems
+      .map((it) => {
+        const desc = String(it.description ?? '').trim();
+        const quantity = Number(String(it.quantity ?? '0').replace(',', '.'));
+        const unitPrice = Number(String(it.unitPrice ?? '0').replace(',', '.'));
+        const totalLine =
+          it.totalLine != null
+            ? Number(String(it.totalLine).replace(',', '.'))
+            : Math.round(quantity * unitPrice * 100) / 100;
+        return { description: desc, quantity, unitPrice, totalLine };
+      })
+      .filter((it) => it.description && Number.isFinite(it.totalLine) && it.totalLine > 0);
+
+    if (items.length) {
+      const itemsSum = Math.round(items.reduce((s, it) => s + it.totalLine, 0) * 100) / 100;
+      if (!Number.isFinite(amount) || amount <= 0) {
+        amount = itemsSum;
+      } else if (Math.abs(amount - itemsSum) > 0.02) {
+        throw new BadRequestException(
+          `Soma dos itens (R$ ${itemsSum.toFixed(2)}) difere do valor do título (R$ ${amount.toFixed(2)}).`,
+        );
+      }
+    }
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException('Valor inválido.');
     }
@@ -683,20 +716,99 @@ export class FinanceController {
     if (Number.isNaN(firstDue.getTime())) {
       throw new BadRequestException('Vencimento inválido.');
     }
+
+    let cashSessionId: string | null =
+      body.cashSessionId != null && String(body.cashSessionId).trim() !== ''
+        ? String(body.cashSessionId).trim()
+        : null;
+    if (cashSessionId) {
+      const sess = await db.cashRegisterSession.findFirst({
+        where: { id: cashSessionId, status: CashSessionStatus.OPEN },
+        select: { id: true },
+      });
+      if (!sess) {
+        throw new BadRequestException('Sessão de caixa inválida ou já fechada.');
+      }
+    }
+    const cashControlNote =
+      body.cashControlNote != null && String(body.cashControlNote).trim() !== ''
+        ? String(body.cashControlNote).trim().slice(0, 255)
+        : null;
+
     const recurrence: RecurrenceInput = body.recurrence ?? 'NONE';
     const plan = planBillSeries(amount, firstDue, recurrence, body.recurrenceCount ?? 1);
 
+    const createItemsFor = async (
+      tx: Prisma.TransactionClient | typeof db,
+      receivableId: string,
+      parcelAmount: number,
+      parcelIndex: number,
+      parcelCount: number,
+    ) => {
+      if (!items.length) return;
+      if (parcelCount === 1) {
+        for (const it of items) {
+          await tx.accountReceivableItem.create({
+            data: {
+              receivableId,
+              description: it.description,
+              quantity: String(it.quantity),
+              unitPrice: it.unitPrice.toFixed(2),
+              totalLine: it.totalLine.toFixed(2),
+            },
+          });
+        }
+        return;
+      }
+      // Rateia itens entre parcelas
+      let allocated = 0;
+      for (let j = 0; j < items.length; j++) {
+        const it = items[j];
+        const isLast = j === items.length - 1;
+        const share = isLast
+          ? Math.round((parcelAmount - allocated) * 100) / 100
+          : Math.round((it.totalLine / amount) * parcelAmount * 100) / 100;
+        allocated = Math.round((allocated + share) * 100) / 100;
+        const qty = it.quantity;
+        const unit = qty > 0 ? Math.round((share / qty) * 100) / 100 : share;
+        await tx.accountReceivableItem.create({
+          data: {
+            receivableId,
+            description: it.description,
+            quantity: String(qty),
+            unitPrice: unit.toFixed(2),
+            totalLine: share.toFixed(2),
+          },
+        });
+      }
+      void parcelIndex;
+    };
+
     if (plan.count === 1) {
-      return db.accountReceivable.create({
-        data: {
-          customerId: body.customerId ?? null,
-          description,
-          amount: plan.amounts[0].toFixed(2),
-          amountRemaining: plan.amounts[0].toFixed(2),
-          dueDate: plan.dues[0],
-          status: BillStatus.OPEN,
-          recurrence: plan.dbRecurrence,
-        },
+      return db.$transaction(async (tx) => {
+        const created = await tx.accountReceivable.create({
+          data: {
+            customerId: body.customerId ?? null,
+            description,
+            amount: plan.amounts[0].toFixed(2),
+            amountRemaining: plan.amounts[0].toFixed(2),
+            dueDate: plan.dues[0],
+            status: BillStatus.OPEN,
+            recurrence: plan.dbRecurrence,
+            cashSessionId,
+            cashControlNote,
+          },
+          include: { items: true, cashSession: true },
+        });
+        await createItemsFor(tx, created.id, plan.amounts[0], 1, 1);
+        return tx.accountReceivable.findUniqueOrThrow({
+          where: { id: created.id },
+          include: {
+            items: true,
+            cashSession: { include: { user: { select: { id: true, name: true, email: true } } } },
+            customer: { select: { name: true, segment: true } },
+          },
+        });
       });
     }
 
@@ -717,14 +829,24 @@ export class FinanceController {
             recurrenceIndex: i + 1,
             recurrenceCount: plan.count,
             parentRecurringId: parentId,
+            cashSessionId,
+            cashControlNote,
           },
         });
+        await createItemsFor(tx, created.id, plan.amounts[i], i + 1, plan.count);
         if (i === 0) {
           parentId = created.id;
           parent = created;
         }
       }
-      return parent!;
+      return tx.accountReceivable.findUniqueOrThrow({
+        where: { id: parent!.id },
+        include: {
+          items: true,
+          cashSession: { include: { user: { select: { id: true, name: true, email: true } } } },
+          customer: { select: { name: true, segment: true } },
+        },
+      });
     });
   }
 

@@ -47,6 +47,7 @@ import {
   calcAdminFee,
   cardBrandLabel,
   cardOperationLabel,
+  isCustomerCreditKind,
   kindIcon,
   type PaymentForm,
 } from '../lib/payment-forms';
@@ -117,13 +118,26 @@ type ProductSearchRow = {
   minStock: string;
 };
 
-type Customer = { id: string; name: string };
+type Customer = {
+  id: string;
+  name: string;
+  creditLimit?: string;
+  requisitionLimit?: string;
+  creditAvailable?: string;
+  requisitionAvailable?: string;
+};
 type CustomerSearchRow = {
   id: string;
   name: string;
   document: string | null;
   phone: string | null;
+  creditLimit?: string;
+  requisitionLimit?: string;
+  creditAvailable?: string;
+  requisitionAvailable?: string;
 };
+
+type PaymentKind = 'CASH' | 'CARD' | 'PIX' | 'CREDIT' | 'REQUISITION' | 'OTHER';
 
 type CashSession = {
   id: string;
@@ -169,11 +183,6 @@ type CartLine = {
   fromComanda?: boolean;
 };
 
-type PaymentKind = 'CASH' | 'CARD' | 'PIX' | 'CREDIT' | 'OTHER';
-
-/** Inclui `EXPENSE` só no fechamento (não é forma de pagamento de venda). */
-type CloseMethodKey = PaymentKind | 'EXPENSE';
-
 type CartPayment = {
   id: string;
   method: PaymentKind;
@@ -187,11 +196,15 @@ type CartPayment = {
  * Constantes / utilitários
  * ------------------------------------------------------------------------- */
 
+/** Inclui `EXPENSE` só no fechamento (não é forma de pagamento de venda). */
+type CloseMethodKey = PaymentKind | 'EXPENSE';
+
 const PAY_METHODS: Array<{ key: PaymentKind; label: string; icon: string }> = [
   { key: 'CASH', label: 'Dinheiro', icon: '💵' },
   { key: 'CARD', label: 'Cartão', icon: '💳' },
   { key: 'PIX', label: 'Pix', icon: '⚡' },
   { key: 'CREDIT', label: 'Crediário', icon: '🧾' },
+  { key: 'REQUISITION', label: 'Requisição', icon: '📋' },
   { key: 'OTHER', label: 'Outro', icon: '➕' },
 ];
 
@@ -969,6 +982,7 @@ function PosScreen({
     CARD: '',
     PIX: '',
     CREDIT: '',
+    REQUISITION: '',
     OTHER: '',
     EXPENSE: '',
   });
@@ -1043,7 +1057,73 @@ function PosScreen({
     setSurcharge(Math.max(0, value));
   }
 
-  function requestFinalizeSale() {
+  async function requestFinalizeSale() {
+    const creditPays = payments.filter((p) => isCustomerCreditKind(p.method));
+    if (creditPays.length) {
+      if (!customer?.id) {
+        setToast({
+          kind: 'err',
+          text: 'Informe o cliente para finalizar com crediário ou requisição.',
+        });
+        setCustomerOpen(true);
+        return;
+      }
+      let cust = customer;
+      if (
+        cust.creditAvailable == null ||
+        cust.requisitionAvailable == null ||
+        cust.creditLimit == null ||
+        cust.requisitionLimit == null
+      ) {
+        try {
+          const summary = await api<{
+            creditLimit: string;
+            requisitionLimit: string;
+            creditAvailable: string;
+            requisitionAvailable: string;
+          }>(`/customers/${cust.id}/credit-summary`);
+          cust = {
+            ...cust,
+            creditLimit: summary.creditLimit,
+            requisitionLimit: summary.requisitionLimit,
+            creditAvailable: summary.creditAvailable,
+            requisitionAvailable: summary.requisitionAvailable,
+          };
+          setCustomer(cust);
+        } catch (e) {
+          setToast({
+            kind: 'err',
+            text: e instanceof Error ? e.message : 'Não foi possível consultar o limite do cliente.',
+          });
+          return;
+        }
+      }
+      const byKind = new Map<string, number>();
+      for (const p of creditPays) {
+        byKind.set(p.method, Math.round(((byKind.get(p.method) ?? 0) + p.amount) * 100) / 100);
+      }
+      for (const [method, amount] of byKind) {
+        const available =
+          method === 'REQUISITION'
+            ? Number(cust.requisitionAvailable ?? cust.requisitionLimit ?? NaN)
+            : Number(cust.creditAvailable ?? cust.creditLimit ?? NaN);
+        const limit =
+          method === 'REQUISITION'
+            ? Number(cust.requisitionLimit ?? 0)
+            : Number(cust.creditLimit ?? 0);
+        if (Number.isFinite(available) && amount > available + 0.005) {
+          const label = method === 'REQUISITION' ? 'requisição' : 'crédito';
+          setToast({
+            kind: 'err',
+            text:
+              `Limite de ${label} insuficiente. Limite: ${formatBRL(limit)}; ` +
+              `disponível: ${formatBRL(available)}; valor: ${formatBRL(amount)}.`,
+          });
+          return;
+        }
+      }
+    }
+
     const hasItemDiscount = lines.some((l) => l.discount > 0.005);
     if ((discount > 0 || hasItemDiscount) && !isAdmin()) {
       if (!canApplyDiscount) {
@@ -1494,7 +1574,11 @@ function PosScreen({
             method: p.method,
             amount: p.amount,
             installments:
-              p.method === 'CREDIT' || p.method === 'CARD' ? p.installments : 1,
+              p.method === 'CREDIT' ||
+              p.method === 'REQUISITION' ||
+              p.method === 'CARD'
+                ? p.installments
+                : 1,
             paymentFormId: p.paymentFormId ?? null,
           })),
         },
@@ -1838,12 +1922,23 @@ function PosScreen({
     closeCustomerDialog();
   }
 
+  function selectCustomerFromSearch(c: CustomerSearchRow) {
+    selectCustomer({
+      id: c.id,
+      name: c.name,
+      creditLimit: c.creditLimit,
+      requisitionLimit: c.requisitionLimit,
+      creditAvailable: c.creditAvailable,
+      requisitionAvailable: c.requisitionAvailable,
+    });
+  }
+
   function handleCustomerSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     const results = customerSearchQ.data ?? [];
     if (e.key === 'Enter') {
       e.preventDefault();
       const picked = results[customerSearchIdx];
-      if (picked) selectCustomer({ id: picked.id, name: picked.name });
+      if (picked) selectCustomerFromSearch(picked);
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       setCustomerSearchIdx((i) => Math.min(Math.max(results.length - 1, 0), i + 1));
@@ -2010,7 +2105,15 @@ function PosScreen({
         onExit={tryExit}
         onCloseCash={() => {
           setCloseOpen(true);
-          setClosingByMethod({ CASH: '', CARD: '', PIX: '', CREDIT: '', OTHER: '', EXPENSE: '' });
+          setClosingByMethod({
+            CASH: '',
+            CARD: '',
+            PIX: '',
+            CREDIT: '',
+            REQUISITION: '',
+            OTHER: '',
+            EXPENSE: '',
+          });
           setClosingNotes('');
           setCloseErr(null);
         }}
@@ -2696,7 +2799,7 @@ function PosScreen({
                       (customer?.id === c.id ? ' is-selected' : '')
                     }
                     onMouseEnter={() => setCustomerSearchIdx(i)}
-                    onClick={() => selectCustomer({ id: c.id, name: c.name })}
+                    onClick={() => selectCustomerFromSearch(c)}
                   >
                     <div>
                       <strong>{c.name}</strong>
@@ -3734,7 +3837,7 @@ function PaymentOverlay({
   }, [selectedId]);
 
   const showInstallments =
-    method === 'CREDIT' ||
+    isCustomerCreditKind(method) ||
     (method === 'CARD' &&
       selected?.form?.cardOperation === 'CREDIT' &&
       (selected.form.maxInstallments ?? 1) > 1);
@@ -3940,7 +4043,7 @@ function PaymentOverlay({
                     <span aria-hidden>{meta?.icon ?? '💳'}</span>
                     <span style={{ flex: 1, fontWeight: 600 }}>
                       {p.paymentFormName ?? meta?.label ?? p.method}
-                      {(p.method === 'CREDIT' || p.method === 'CARD') &&
+                      {(isCustomerCreditKind(p.method) || p.method === 'CARD') &&
                         p.installments > 1 &&
                         ` · ${p.installments}×`}
                     </span>

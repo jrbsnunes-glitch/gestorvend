@@ -173,7 +173,7 @@ export async function buildProfitabilityReport(
     }),
     db.salePayment.aggregate({
       where: {
-        method: { not: PaymentMethod.CREDIT },
+        method: { notIn: [PaymentMethod.CREDIT, PaymentMethod.REQUISITION] },
         sale: { status: SaleStatus.COMPLETED, createdAt: { gte: from, lte: to } },
       },
       _sum: { amount: true },

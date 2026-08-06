@@ -48,8 +48,17 @@ type Receivable = {
   paymentMethod?: string | null;
   paymentNotes?: string | null;
   settledAmount?: string | null;
+  cashControlNote?: string | null;
+  creditKind?: string | null;
   customer: { name: string; segment?: string | null } | null;
   cashSession?: { controlNumber: number; user: { name: string } | null } | null;
+  items?: Array<{
+    id: string;
+    description: string;
+    quantity: string;
+    unitPrice: string;
+    totalLine: string;
+  }>;
   recurrence?: 'NONE' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
   recurrenceIndex?: number | null;
   recurrenceCount?: number | null;
@@ -58,6 +67,12 @@ type Receivable = {
 type Tab = 'pagar' | 'receber';
 type Recurrence = 'NONE' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
 
+type ReceivableItemDraft = {
+  description: string;
+  quantity: string;
+  unitPrice: string;
+};
+
 type FormState = {
   description: string;
   amount: string;
@@ -65,6 +80,9 @@ type FormState = {
   partyId: string;
   recurrence: Recurrence;
   recurrenceCount: number;
+  cashSessionId: string;
+  cashControlNote: string;
+  items: ReceivableItemDraft[];
 };
 
 type SettlementState = {
@@ -84,6 +102,9 @@ const EMPTY_FORM: FormState = {
   partyId: '',
   recurrence: 'NONE',
   recurrenceCount: 1,
+  cashSessionId: '',
+  cashControlNote: '',
+  items: [],
 };
 
 const EMPTY_SETTLE: SettlementState = {
@@ -198,7 +219,7 @@ export function FinancePage() {
   const openCashSessions = useQuery({
     queryKey: ['cash', 'sessions', 'OPEN', 'finance'],
     queryFn: () => api<CashSessionRow[]>('/cash/sessions?status=OPEN'),
-    enabled: !!settleBill,
+    enabled: !!settleBill || openTab === 'receber',
   });
 
   const sessionsToday = useMemo(() => {
@@ -238,8 +259,15 @@ export function FinancePage() {
   });
 
   const createReceivable = useMutation({
-    mutationFn: () =>
-      api('/finance/receivables', {
+    mutationFn: () => {
+      const items = form.items
+        .map((it) => ({
+          description: it.description.trim(),
+          quantity: parseFloat(it.quantity.replace(',', '.')) || 0,
+          unitPrice: parseFloat(it.unitPrice.replace(',', '.')) || 0,
+        }))
+        .filter((it) => it.description && it.quantity > 0);
+      return api('/finance/receivables', {
         method: 'POST',
         json: {
           description: form.description,
@@ -248,8 +276,12 @@ export function FinancePage() {
           customerId: form.partyId || null,
           recurrence: form.recurrence,
           recurrenceCount: form.recurrenceCount,
+          cashSessionId: form.cashSessionId || null,
+          cashControlNote: form.cashControlNote.trim() || null,
+          items: items.length ? items : undefined,
         },
-      }),
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['receivables'] });
       closeModal();
@@ -666,7 +698,24 @@ export function FinancePage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                         <span>{r.description}</span>
                         {recurrenceBadge(r.recurrence, r.recurrenceIndex, r.recurrenceCount)}
+                        {r.creditKind === 'CREDIT' && (
+                          <span className="badge badge-warn">Crediário</span>
+                        )}
+                        {r.creditKind === 'REQUISITION' && (
+                          <span className="badge badge-warn">Requisição</span>
+                        )}
                       </div>
+                      {(r.items?.length || r.cashControlNote || r.cashSession) && (
+                        <div className="muted" style={{ fontSize: '0.78rem', marginTop: 2 }}>
+                          {r.items?.length ? `${r.items.length} item(ns)` : null}
+                          {r.items?.length && (r.cashControlNote || r.cashSession) ? ' · ' : null}
+                          {r.cashSession
+                            ? `Caixa #${r.cashSession.controlNumber}`
+                            : r.cashControlNote
+                              ? r.cashControlNote
+                              : null}
+                        </div>
+                      )}
                     </td>
                     <td>{r.customer?.name ?? '—'}</td>
                     <td>{formatBRL(r.amount)}</td>
@@ -814,6 +863,120 @@ export function FinancePage() {
                 />
               </div>
             </div>
+
+            {openTab === 'receber' && (
+              <>
+                <div className="form-row">
+                  <div className="field">
+                    <label htmlFor="fp-cash">Controle do caixa</label>
+                    <select
+                      id="fp-cash"
+                      value={form.cashSessionId}
+                      onChange={(e) => setForm({ ...form, cashSessionId: e.target.value })}
+                    >
+                      <option value="">— Sem sessão —</option>
+                      {(openCashSessions.data ?? []).map((s) => (
+                        <option key={s.id} value={s.id}>
+                          Caixa #{s.controlNumber}
+                          {s.user?.name ? ` · ${s.user.name}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field" style={{ flex: 2 }}>
+                    <label htmlFor="fp-cash-note">Nota do controle</label>
+                    <input
+                      id="fp-cash-note"
+                      value={form.cashControlNote}
+                      onChange={(e) => setForm({ ...form, cashControlNote: e.target.value })}
+                      placeholder="Ex.: caixa do dia, balcão…"
+                    />
+                  </div>
+                </div>
+
+                <fieldset
+                  style={{
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 8,
+                    padding: '0.6rem 0.85rem',
+                    marginTop: '0.4rem',
+                  }}
+                >
+                  <legend style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', padding: '0 0.4rem' }}>
+                    Itens do título
+                  </legend>
+                  {form.items.map((it, idx) => (
+                    <div key={idx} className="form-row" style={{ alignItems: 'end' }}>
+                      <div className="field" style={{ flex: 2, marginBottom: 0 }}>
+                        <label>Descrição</label>
+                        <input
+                          value={it.description}
+                          onChange={(e) => {
+                            const items = [...form.items];
+                            items[idx] = { ...it, description: e.target.value };
+                            setForm({ ...form, items });
+                          }}
+                        />
+                      </div>
+                      <div className="field" style={{ flex: '0 0 5rem', marginBottom: 0 }}>
+                        <label>Qtd</label>
+                        <input
+                          value={it.quantity}
+                          onChange={(e) => {
+                            const items = [...form.items];
+                            items[idx] = { ...it, quantity: e.target.value };
+                            setForm({ ...form, items });
+                          }}
+                        />
+                      </div>
+                      <div className="field" style={{ flex: '0 0 7rem', marginBottom: 0 }}>
+                        <label>Unitário</label>
+                        <input
+                          value={it.unitPrice}
+                          onChange={(e) => {
+                            const items = [...form.items];
+                            items[idx] = { ...it, unitPrice: e.target.value };
+                            setForm({ ...form, items });
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() =>
+                          setForm({
+                            ...form,
+                            items: form.items.filter((_, i) => i !== idx),
+                          })
+                        }
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ marginTop: '0.5rem' }}
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        items: [...form.items, { description: '', quantity: '1', unitPrice: '' }],
+                      })
+                    }
+                  >
+                    + Item
+                  </button>
+                  {form.items.length > 0 && (
+                    <p className="muted" style={{ fontSize: '0.78rem', margin: '0.4rem 0 0' }}>
+                      A soma dos itens deve bater com o valor do título (ou deixe o valor em branco
+                      para preencher pela soma).
+                    </p>
+                  )}
+                </fieldset>
+              </>
+            )}
+
             {form.recurrenceCount > 1 && form.recurrence === 'NONE' && (
               <p style={{ margin: '0 0 0.35rem', color: 'var(--color-text-muted)', fontSize: '0.78rem' }}>
                 O valor total será dividido em <strong>{form.recurrenceCount}</strong> parcelas iguais, com

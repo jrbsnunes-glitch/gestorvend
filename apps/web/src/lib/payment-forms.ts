@@ -1,6 +1,6 @@
 /** Catálogo compartilhado: formas de pagamento e bandeiras (Brasil). */
 
-export type PaymentFormKind = 'CASH' | 'CARD' | 'PIX' | 'CREDIT' | 'OTHER';
+export type PaymentFormKind = 'CASH' | 'CARD' | 'PIX' | 'CREDIT' | 'REQUISITION' | 'OTHER';
 export type CardBrand =
   | 'VISA'
   | 'MASTERCARD'
@@ -37,6 +37,7 @@ export const PAYMENT_FORM_KIND_LABELS: Record<PaymentFormKind, string> = {
   CARD: 'Cartão',
   PIX: 'Pix',
   CREDIT: 'Crediário',
+  REQUISITION: 'Requisição',
   OTHER: 'Outro',
 };
 
@@ -71,7 +72,13 @@ export function kindIcon(kind: PaymentFormKind): string {
   if (kind === 'CARD') return '💳';
   if (kind === 'PIX') return '⚡';
   if (kind === 'CREDIT') return '🧾';
+  if (kind === 'REQUISITION') return '📋';
   return '➕';
+}
+
+/** Crediário e requisição usam limite do cliente e geram contas a receber. */
+export function isCustomerCreditKind(kind: string | null | undefined): boolean {
+  return kind === 'CREDIT' || kind === 'REQUISITION';
 }
 
 export function calcAdminFee(
