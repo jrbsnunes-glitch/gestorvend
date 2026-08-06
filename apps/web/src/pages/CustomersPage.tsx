@@ -58,9 +58,43 @@ type CreditStatement = {
   }>;
 };
 
+type CreditSummary = {
+  customerId: string;
+  customerName: string;
+  creditLimit: string;
+  requisitionLimit: string;
+  creditUsed: string;
+  requisitionUsed: string;
+  creditAvailable: string;
+  requisitionAvailable: string;
+};
+
+type CreditAdjustment = {
+  id: string;
+  kind: 'CREDIT' | 'REQUISITION';
+  amount: string;
+  balanceAfter: string;
+  mode: 'ADD' | 'SET';
+  userName: string;
+  createdAt: string;
+};
+
 function birthDateInput(iso: string | null | undefined): string {
   if (!iso) return '';
   return String(iso).slice(0, 10);
+}
+
+function parseMoneyInput(raw: string): number {
+  return Number(String(raw).replace(',', '.')) || 0;
+}
+
+function statementDocumentControl(line: CreditStatement['lines'][number]): string {
+  if (line.saleNumber != null) {
+    return line.installmentLabel
+      ? `${line.saleNumber} · ${line.installmentLabel}`
+      : String(line.saleNumber);
+  }
+  return line.description?.trim() || line.receivableId.slice(0, 8).toUpperCase();
 }
 
 export function CustomersPage() {
@@ -86,6 +120,10 @@ export function CustomersPage() {
   const [err, setErr] = useState<string | null>(null);
   const [statementKind, setStatementKind] = useState<'CREDIT' | 'REQUISITION' | null>(null);
   const [statementCustomer, setStatementCustomer] = useState<Customer | null>(null);
+  const [limitEditKind, setLimitEditKind] = useState<'CREDIT' | 'REQUISITION' | null>(null);
+  const [limitEditMode, setLimitEditMode] = useState<'ADD' | 'SET'>('ADD');
+  const [limitEditValue, setLimitEditValue] = useState('');
+  const [limitEditErr, setLimitEditErr] = useState<string | null>(null);
 
   const list = useQuery({
     queryKey: ['customers'],
@@ -115,6 +153,87 @@ export function CustomersPage() {
       ),
     enabled: Boolean(statementCustomer && statementKind),
   });
+
+  const creditSummaryQ = useQuery({
+    queryKey: ['customers', editCustomer?.id, 'credit-summary'],
+    queryFn: () => api<CreditSummary>(`/customers/${editCustomer!.id}/credit-summary`),
+    enabled: Boolean(editOpen && editCustomer?.id),
+  });
+
+  const adjustmentsQ = useQuery({
+    queryKey: ['customers', editCustomer?.id, 'credit-adjustments', limitEditKind],
+    queryFn: () =>
+      api<CreditAdjustment[]>(
+        `/customers/${editCustomer!.id}/credit-adjustments?kind=${limitEditKind}`,
+      ),
+    enabled: Boolean(limitEditKind && editCustomer?.id && (limitEditMode === 'ADD' || limitEditKind === 'REQUISITION')),
+  });
+
+  const saveLimit = useMutation({
+    mutationFn: async () => {
+      if (!limitEditKind) return null;
+      const value = limitEditValue.replace(',', '.');
+      if (Number.isNaN(Number(value)) || Number(value) < 0) {
+        throw new Error('Informe um valor válido (zero ou maior).');
+      }
+      if (limitEditMode === 'ADD' && Number(value) <= 0) {
+        throw new Error('Informe um valor maior que zero.');
+      }
+      if (editOpen && editCustomer) {
+        return api<{
+          customer: Customer;
+          adjustment: CreditAdjustment;
+        }>(`/customers/${editCustomer.id}/credit-adjustments`, {
+          method: 'POST',
+          json: { kind: limitEditKind, amount: value, mode: limitEditMode },
+        });
+      }
+      // Novo cliente (ainda sem id): aplica só no formulário local.
+      const current =
+        limitEditKind === 'CREDIT'
+          ? parseMoneyInput(creditLimit)
+          : parseMoneyInput(requisitionLimit);
+      const next = limitEditMode === 'ADD' ? current + Number(value) : Number(value);
+      return {
+        customer: {
+          creditLimit: limitEditKind === 'CREDIT' ? String(next) : creditLimit,
+          requisitionLimit: limitEditKind === 'REQUISITION' ? String(next) : requisitionLimit,
+        } as Customer,
+        localOnly: true as const,
+      };
+    },
+    onSuccess: (res) => {
+      if (!limitEditKind || !res) return;
+      const cust = res.customer;
+      if (limitEditKind === 'CREDIT') setCreditLimit(String(cust.creditLimit ?? '0'));
+      else setRequisitionLimit(String(cust.requisitionLimit ?? '0'));
+      if (editCustomer && 'id' in cust && cust.id) {
+        setEditCustomer({ ...editCustomer, ...cust });
+      }
+      void qc.invalidateQueries({ queryKey: ['customers'] });
+      void qc.invalidateQueries({ queryKey: ['customers', editCustomer?.id, 'credit-summary'] });
+      void qc.invalidateQueries({
+        queryKey: ['customers', editCustomer?.id, 'credit-statement'],
+      });
+      void qc.invalidateQueries({
+        queryKey: ['customers', editCustomer?.id, 'credit-adjustments'],
+      });
+      setLimitEditValue('');
+      setLimitEditErr(null);
+      // Mantém a janela aberta no modo ADD para ver o histórico; fecha no SET.
+      if (limitEditMode === 'SET') {
+        setLimitEditKind(null);
+      }
+    },
+    onError: (e: Error) => setLimitEditErr(e.message),
+  });
+
+  function openLimitEdit(kind: 'CREDIT' | 'REQUISITION', mode: 'ADD' | 'SET') {
+    setLimitEditKind(kind);
+    setLimitEditMode(mode);
+    setLimitEditValue(mode === 'SET' ? (kind === 'CREDIT' ? creditLimit : requisitionLimit) : '');
+    setLimitEditErr(null);
+  }
 
   function resetForm() {
     setName('');
@@ -187,6 +306,9 @@ export function CustomersPage() {
       api<Customer>(`/customers/${id}`, { method: 'PATCH', json: payload() }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customers'] });
+      if (editCustomer?.id) {
+        void qc.invalidateQueries({ queryKey: ['customers', editCustomer.id, 'credit-summary'] });
+      }
       setEditOpen(false);
       setEditCustomer(null);
       resetForm();
@@ -274,27 +396,79 @@ export function CustomersPage() {
         onChange={(patch) => setAddr((a) => ({ ...a, ...patch }))}
         extra={
           <>
-            <div className="field">
-              <label htmlFor="c-limit">Limite de crédito</label>
-              <input
-                id="c-limit"
-                value={creditLimit}
-                onChange={(e) => setCreditLimit(e.target.value)}
-              />
-              <span className="muted" style={{ fontSize: '0.78rem' }}>
-                Valor de crédito dado ao cliente previamente para ser usado em compras na loja.
-              </span>
-            </div>
-            <div className="field">
-              <label htmlFor="c-req-limit">Limite de requisição</label>
-              <input
-                id="c-req-limit"
-                value={requisitionLimit}
-                onChange={(e) => setRequisitionLimit(e.target.value)}
-              />
-              <span className="muted" style={{ fontSize: '0.78rem' }}>
-                Valor que o cliente pode comprar para pagar depois.
-              </span>
+            <div className="customer-limits-panel">
+              <div className="form-row form-row--limits">
+                <div className="field">
+                  <label>Limite de crédito</label>
+                  {editOpen && editCustomer && creditSummaryQ.data ? (
+                    <strong style={{ fontSize: '0.95rem' }}>
+                      Saldo restante: {formatBRL(creditSummaryQ.data.creditAvailable)}
+                    </strong>
+                  ) : (
+                    <strong style={{ fontSize: '0.95rem' }}>
+                      Saldo restante: {formatBRL(creditLimit || '0')}
+                    </strong>
+                  )}
+                  <div className="customer-limits-panel__actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ paddingInline: 0 }}
+                      onClick={() => openLimitEdit('CREDIT', 'ADD')}
+                    >
+                      Atualizar Saldo
+                    </button>
+                    {editOpen && editCustomer && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ paddingInline: 0 }}
+                        onClick={() => {
+                          setStatementCustomer(editCustomer);
+                          setStatementKind('CREDIT');
+                        }}
+                      >
+                        Consultar crédito
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="field">
+                  <label>Limite de requisição</label>
+                  {editOpen && editCustomer && creditSummaryQ.data ? (
+                    <strong style={{ fontSize: '0.95rem' }}>
+                      Saldo restante: {formatBRL(creditSummaryQ.data.requisitionAvailable)}
+                    </strong>
+                  ) : (
+                    <strong style={{ fontSize: '0.95rem' }}>
+                      Saldo restante: {formatBRL(requisitionLimit || '0')}
+                    </strong>
+                  )}
+                  <div className="customer-limits-panel__actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ paddingInline: 0 }}
+                      onClick={() => openLimitEdit('REQUISITION', 'ADD')}
+                    >
+                      Valor de Requisição
+                    </button>
+                    {editOpen && editCustomer && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ paddingInline: 0 }}
+                        onClick={() => {
+                          setStatementCustomer(editCustomer);
+                          setStatementKind('REQUISITION');
+                        }}
+                      >
+                        Consultar requisição
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
             <div className="field">
               <label htmlFor="c-seg">Grupo</label>
@@ -323,6 +497,7 @@ export function CustomersPage() {
       <CrudToolbar
         onInclude={() => {
           resetForm();
+          setEditCustomer(null);
           setCreateOpen(true);
         }}
         onPrint={() => window.print()}
@@ -332,8 +507,8 @@ export function CustomersPage() {
       <ModuleReportsModal open={reportsOpen} title="Clientes" onClose={() => setReportsOpen(false)}>
         <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
           <li>
-            Extrato de limite de crédito / requisição — use o botão Consultar na linha do cliente ou
-            no detalhe do cadastro.
+            Extrato de limite de crédito / requisição — abra Alterar no cliente; o saldo restante
+            aparece no cadastro e as consultas ficam ao lado dos limites.
           </li>
           <li>Lista de clientes com inadimplência (a implementar)</li>
           <li>Histórico de vendas por cliente</li>
@@ -417,28 +592,6 @@ export function CustomersPage() {
                       setDeleteOpen(true);
                     }}
                   />
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setStatementCustomer(c);
-                      setStatementKind('CREDIT');
-                    }}
-                  >
-                    Consultar crédito
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setStatementCustomer(c);
-                      setStatementKind('REQUISITION');
-                    }}
-                  >
-                    Consultar requisição
-                  </button>
                 </td>
               </tr>
             ))}
@@ -471,7 +624,11 @@ export function CustomersPage() {
             setErr(null);
           }}
         >
-          <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal modal--wide customer-form-modal"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Novo cliente</h2>
             {err && <div className="alert alert-error">{err}</div>}
             {formFields}
@@ -500,7 +657,11 @@ export function CustomersPage() {
 
       {editCustomer && editOpen && (
         <FormModalBackdrop className="no-print" onClose={() => setEditOpen(false)}>
-          <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal modal--wide customer-form-modal"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Alterar cliente</h2>
             {err && <div className="alert alert-error">{err}</div>}
             {formFields}
@@ -666,7 +827,7 @@ export function CustomersPage() {
                     <strong>{formatBRL(statementQ.data.used)}</strong>
                   </div>
                   <div className="field" style={{ margin: 0 }}>
-                    <span className="muted">Disponível</span>
+                    <span className="muted">Saldo restante</span>
                     <strong>{formatBRL(statementQ.data.available)}</strong>
                   </div>
                 </div>
@@ -678,46 +839,20 @@ export function CustomersPage() {
                       <thead>
                         <tr>
                           <th>Data</th>
-                          <th>Item</th>
-                          <th className="num">Qtd</th>
-                          <th className="num">Total</th>
-                          <th>Documento</th>
-                          <th className="num">Limite após</th>
+                          <th>Controle do documento</th>
+                          <th className="num">Valor total</th>
+                          <th className="num">Saldo restante</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {statementQ.data.lines.flatMap((line) => {
-                          const doc =
-                            line.saleNumber != null
-                              ? `Venda #${line.saleNumber}${
-                                  line.installmentLabel ? ` · ${line.installmentLabel}` : ''
-                                }`
-                              : line.description;
-                          if (line.items.length) {
-                            return line.items.map((it, idx) => (
-                              <tr key={`${line.receivableId ?? line.date}-${idx}`}>
-                                <td>{idx === 0 ? formatDate(line.date) : ''}</td>
-                                <td>{it.description}</td>
-                                <td className="num">{it.quantity}</td>
-                                <td className="num">{formatBRL(it.totalLine)}</td>
-                                <td>{idx === 0 ? doc : ''}</td>
-                                <td className="num">
-                                  {idx === 0 ? formatBRL(line.limitAfter) : ''}
-                                </td>
-                              </tr>
-                            ));
-                          }
-                          return [
-                            <tr key={line.receivableId ?? line.date}>
-                              <td>{formatDate(line.date)}</td>
-                              <td>{line.description}</td>
-                              <td className="num">{line.quantity}</td>
-                              <td className="num">{formatBRL(line.total)}</td>
-                              <td>{doc}</td>
-                              <td className="num">{formatBRL(line.limitAfter)}</td>
-                            </tr>,
-                          ];
-                        })}
+                        {statementQ.data.lines.map((line) => (
+                          <tr key={line.receivableId}>
+                            <td>{formatDate(line.date)}</td>
+                            <td>{statementDocumentControl(line)}</td>
+                            <td className="num">{formatBRL(line.total)}</td>
+                            <td className="num">{formatBRL(line.limitAfter)}</td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -725,6 +860,16 @@ export function CustomersPage() {
               </>
             )}
             <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  if (!statementKind) return;
+                  openLimitEdit(statementKind, 'ADD');
+                }}
+              >
+                {statementKind === 'CREDIT' ? 'Atualizar Saldo' : 'Valor de Requisição'}
+              </button>
               <button
                 type="button"
                 className="btn btn-primary"
@@ -736,6 +881,110 @@ export function CustomersPage() {
                 Fechar
               </button>
             </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {limitEditKind && (
+        <FormModalBackdrop
+          className="no-print"
+          onClose={() => {
+            setLimitEditKind(null);
+            setLimitEditErr(null);
+          }}
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 'min(560px, 96vw)', maxHeight: '90vh', overflow: 'auto' }}
+          >
+            <h2>
+              {limitEditKind === 'CREDIT' ? 'Atualizar Saldo' : 'Valor de Requisição'}
+            </h2>
+            <p className="muted" style={{ marginTop: '-0.35rem' }}>
+              {limitEditKind === 'CREDIT'
+                ? 'Informe o valor a somar ao saldo restante de crédito.'
+                : 'Informe o valor a somar ao limite de requisição do cliente.'}
+            </p>
+            {editCustomer && (
+              <p style={{ margin: '0 0 0.75rem', fontWeight: 600 }}>
+                Saldo atual:{' '}
+                {formatBRL(
+                  limitEditKind === 'CREDIT'
+                    ? creditSummaryQ.data?.creditAvailable ?? creditLimit
+                    : creditSummaryQ.data?.requisitionAvailable ?? requisitionLimit,
+                )}
+              </p>
+            )}
+            {limitEditErr && <div className="alert alert-error">{limitEditErr}</div>}
+            <div className="field">
+              <label htmlFor="limit-edit-value">Valor a incluir</label>
+              <input
+                id="limit-edit-value"
+                value={limitEditValue}
+                onChange={(e) => setLimitEditValue(e.target.value)}
+                inputMode="decimal"
+                autoFocus
+              />
+            </div>
+            <div className="modal-actions" style={{ marginBottom: '0.75rem' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setLimitEditKind(null);
+                  setLimitEditErr(null);
+                }}
+              >
+                Fechar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={saveLimit.isPending}
+                onClick={() => saveLimit.mutate()}
+              >
+                Salvar
+              </button>
+            </div>
+
+            {(limitEditMode === 'ADD' || limitEditKind === 'REQUISITION') && (
+              <>
+                <h3 style={{ fontSize: '0.95rem', margin: '0 0 0.5rem' }}>Histórico</h3>
+                {!editCustomer ? (
+                  <p className="muted">Salve o cliente para registrar o histórico.</p>
+                ) : adjustmentsQ.isLoading ? (
+                  <p>Carregando…</p>
+                ) : adjustmentsQ.isError ? (
+                  <div className="alert alert-error">{(adjustmentsQ.error as Error).message}</div>
+                ) : !adjustmentsQ.data?.length ? (
+                  <p className="muted">Nenhuma inclusão registrada ainda.</p>
+                ) : (
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Usuário</th>
+                          <th>Data</th>
+                          <th className="num">Valor</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adjustmentsQ.data.map((row) => (
+                          <tr key={row.id}>
+                            <td>{row.userName}</td>
+                            <td>{formatDate(row.createdAt)}</td>
+                            <td className="num">{formatBRL(row.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </FormModalBackdrop>
       )}

@@ -1486,6 +1486,69 @@
   margin-bottom: 1rem;
 }
 
+/** Cadastro de cliente: cabe na viewport e limita scroll interno */
+.modal.modal--wide.customer-form-modal {
+  max-width: min(720px, calc(100vw - 1rem));
+  max-height: min(92vh, 900px);
+  overflow-y: auto;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding: 1rem 1.25rem 1.15rem;
+}
+
+.modal.modal--wide.customer-form-modal > h2 {
+  margin-top: 0;
+  margin-bottom: 0.65rem;
+  font-size: 1.15rem;
+}
+
+.modal.modal--wide.customer-form-modal .field {
+  margin-bottom: 0.55rem;
+}
+
+.modal.modal--wide.customer-form-modal .form-row {
+  gap: 0.65rem;
+  margin-bottom: 0;
+}
+
+.modal.modal--wide.customer-form-modal .form-row--limits {
+  grid-template-columns: 1fr 1fr;
+}
+
+.customer-limits-panel {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted, var(--color-surface));
+  padding: 0.75rem 0.9rem 0.35rem;
+  margin-bottom: 0.65rem;
+}
+
+.customer-limits-panel .field {
+  margin-bottom: 0.45rem;
+}
+
+.customer-limits-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1rem;
+  margin-top: 0.2rem;
+}
+
+@media (max-width: 520px) {
+  .modal.modal--wide.customer-form-modal .form-row--limits {
+    grid-template-columns: 1fr;
+  }
+}
+
+.modal.modal--wide.customer-form-modal .modal-actions {
+  margin-top: 0.75rem;
+  position: sticky;
+  bottom: 0;
+  background: var(--color-surface);
+  padding-top: 0.5rem;
+}
+
 /** Duas colunas em telas médias+ (categoria × fiscal, etc.) */
 .modal-wide-split {
   display: grid;

@@ -98,6 +98,36 @@ export class CustomersController {
     return this.customerCredit.getStatement(user.tenantSlug, id, kind ?? '');
   }
 
+  @Get(':id/credit-adjustments')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  creditAdjustments(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Query('kind') kind?: string,
+  ) {
+    return this.customerCredit.listAdjustments(user.tenantSlug, id, kind ?? '');
+  }
+
+  @Post(':id/credit-adjustments')
+  @Roles('admin', 'manager')
+  applyCreditAdjustment(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      kind?: string;
+      amount?: number | string;
+      mode?: 'ADD' | 'SET';
+    },
+  ) {
+    return this.customerCredit.applyAdjustment(user.tenantSlug, id, {
+      kind: body.kind ?? '',
+      amount: body.amount ?? 0,
+      mode: body.mode === 'SET' ? 'SET' : 'ADD',
+      userId: user.sub,
+    });
+  }
+
   @Get(':id')
   @Roles('admin', 'manager', 'seller', 'finance')
   async get(@CurrentUser() user: JwtPayload, @Param('id') id: string) {

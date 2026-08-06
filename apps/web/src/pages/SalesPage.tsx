@@ -1574,11 +1574,11 @@ function PosScreen({
             method: p.method,
             amount: p.amount,
             installments:
-              p.method === 'CREDIT' ||
-              p.method === 'REQUISITION' ||
-              p.method === 'CARD'
-                ? p.installments
-                : 1,
+              p.method === 'CREDIT'
+                ? 1
+                : p.method === 'REQUISITION' || p.method === 'CARD'
+                  ? p.installments
+                  : 1,
             paymentFormId: p.paymentFormId ?? null,
           })),
         },
@@ -3837,7 +3837,7 @@ function PaymentOverlay({
   }, [selectedId]);
 
   const showInstallments =
-    isCustomerCreditKind(method) ||
+    method === 'REQUISITION' ||
     (method === 'CARD' &&
       selected?.form?.cardOperation === 'CREDIT' &&
       (selected.form.maxInstallments ?? 1) > 1);
@@ -4043,7 +4043,7 @@ function PaymentOverlay({
                     <span aria-hidden>{meta?.icon ?? '💳'}</span>
                     <span style={{ flex: 1, fontWeight: 600 }}>
                       {p.paymentFormName ?? meta?.label ?? p.method}
-                      {(isCustomerCreditKind(p.method) || p.method === 'CARD') &&
+                      {(p.method === 'REQUISITION' || p.method === 'CARD') &&
                         p.installments > 1 &&
                         ` · ${p.installments}×`}
                     </span>

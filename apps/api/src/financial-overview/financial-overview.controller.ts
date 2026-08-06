@@ -124,7 +124,7 @@ export class FinancialOverviewController {
    * - omita ou `ALL`: união usada em relatórios (4, 5 e 6).
    */
   @Get('cost-centers')
-  @Roles('admin', 'manager', 'finance')
+  @Roles('admin', 'manager', 'finance', 'seller')
   async costCenters(
     @CurrentUser() user: JwtPayload,
     @Query('flow') flowRaw?: string,

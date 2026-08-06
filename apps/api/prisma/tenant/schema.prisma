@@ -319,6 +319,26 @@ model Customer {
   sales        Sale[]
   receivables  AccountReceivable[]
   serviceTabs  ServiceTab[]
+  creditAdjustments CustomerCreditAdjustment[]
+}
+
+/// Histórico de inclusão/atualização de saldo de crédito ou valor de requisição.
+model CustomerCreditAdjustment {
+  id           String     @id @default(uuid())
+  customerId   String
+  customer     Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  kind         CreditKind
+  /// Valor informado nesta operação (acréscimo ou definição absoluta).
+  amount       Decimal    @db.Decimal(14, 2)
+  /// Saldo/limite após a operação.
+  balanceAfter Decimal    @db.Decimal(14, 2)
+  /// ADD = soma ao restante; SET = define o valor absoluto (editar).
+  mode         String     @db.VarChar(8)
+  userId       String?
+  userName     String
+  createdAt    DateTime   @default(now())
+
+  @@index([customerId, kind, createdAt])
 }
 
 model Supplier {

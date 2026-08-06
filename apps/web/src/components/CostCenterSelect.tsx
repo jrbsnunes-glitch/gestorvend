@@ -50,6 +50,12 @@ export function CostCenterSelect(props: {
           {(q.error as Error).message}
         </small>
       )}
+      {!q.isLoading && !q.isError && (q.data?.length ?? 0) === 0 && (
+        <small style={{ color: 'var(--color-danger, #b91c1c)' }}>
+          Nenhum centro de custo cadastrado. Importe o plano referencial no tenant
+          (npm run import:referential-accounts:all).
+        </small>
+      )}
     </div>
   );
 }

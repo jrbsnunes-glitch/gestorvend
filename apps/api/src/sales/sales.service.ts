@@ -414,12 +414,16 @@ export class SalesService {
       return {
         method,
         amount,
-        installments: isCard || isCustomerCreditMethod(method)
-          ? Math.min(
-              Math.max(1, p.installments),
-              form?.maxInstallments ?? (isCustomerCreditMethod(method) ? 48 : p.installments),
-            )
-          : p.installments,
+        installments:
+          method === PaymentMethod.CREDIT
+            ? 1
+            : isCard || method === PaymentMethod.REQUISITION
+              ? Math.min(
+                  Math.max(1, p.installments),
+                  form?.maxInstallments ??
+                    (method === PaymentMethod.REQUISITION ? 48 : p.installments),
+                )
+              : p.installments,
         paymentFormId: form?.id ?? null,
         authCode: p.authCode ?? null,
         cardBrand,
@@ -656,56 +660,57 @@ export class SalesService {
             'Informe o cliente para finalizar venda com crediário ou requisição.',
           );
         }
-        const saleItems = await tx.saleItem.findMany({
-          where: { saleId: sale.id },
-          include: {
-            variant: { include: { product: { select: { name: true } } } },
-          },
-        });
-        const saleItemsTotal = saleItems.reduce((s, it) => s + Number(it.totalLine), 0) || 1;
 
-        // Agrupa por método (crediário vs requisição) — cada um gera sua série de parcelas.
-        const groups = new Map<PaymentMethod, { amount: number; installments: number }>();
-        for (const p of creditLikePay) {
-          const prev = groups.get(p.method);
-          if (prev) {
-            prev.amount = roundMoney2(prev.amount + p.amount);
-            prev.installments = Math.max(prev.installments, p.installments ?? 1);
-          } else {
-            groups.set(p.method, {
-              amount: p.amount,
-              installments: Math.max(1, p.installments ?? 1),
-            });
-          }
+        // Crediário = venda à vista com saldo pré-pago: debita o saldo, sem Contas a Receber.
+        const creditTotal = roundMoney2(
+          creditLikePay
+            .filter((p) => p.method === PaymentMethod.CREDIT)
+            .reduce((s, p) => s + p.amount, 0),
+        );
+        if (creditTotal > 0) {
+          await this.customerCredit.consumeCreditBalance(tx, customerId, creditTotal);
         }
 
-        for (const [method, group] of groups) {
-          const kind = creditKindFromMethod(method);
-          const parcels = splitInstallmentAmounts(group.amount, group.installments);
+        // Requisição continua gerando títulos a receber.
+        const requisitionPay = creditLikePay.filter((p) => p.method === PaymentMethod.REQUISITION);
+        if (requisitionPay.length) {
+          const saleItems = await tx.saleItem.findMany({
+            where: { saleId: sale.id },
+            include: {
+              variant: { include: { product: { select: { name: true } } } },
+            },
+          });
+          const saleItemsTotal = saleItems.reduce((s, it) => s + Number(it.totalLine), 0) || 1;
+
+          let reqAmount = 0;
+          let reqInstallments = 1;
+          for (const p of requisitionPay) {
+            reqAmount = roundMoney2(reqAmount + p.amount);
+            reqInstallments = Math.max(reqInstallments, Math.max(1, p.installments ?? 1));
+          }
+
+          const parcels = splitInstallmentAmounts(reqAmount, reqInstallments);
           const due = new Date();
           for (let i = 0; i < parcels.length; i++) {
             const d = new Date(due);
             d.setMonth(d.getMonth() + i);
             const parcelStr = parcels[i].toFixed(2);
-            const label =
-              method === PaymentMethod.REQUISITION ? 'Requisição' : 'Crediário';
             const receivable = await tx.accountReceivable.create({
               data: {
                 customerId,
                 saleId: sale.id,
-                description: `${label} ${i + 1}/${parcels.length} — venda #${sale.number}`,
+                description: `Requisição ${i + 1}/${parcels.length} — venda #${sale.number}`,
                 amount: parcelStr,
                 amountRemaining: parcelStr,
                 dueDate: d,
                 status: BillStatus.OPEN,
-                paymentMethod: method,
-                creditKind: kind,
+                paymentMethod: PaymentMethod.REQUISITION,
+                creditKind: CreditKind.REQUISITION,
                 recurrenceIndex: i + 1,
                 recurrenceCount: parcels.length,
               },
             });
 
-            // Espelha itens da venda, rateando o total da parcela.
             let allocated = 0;
             for (let j = 0; j < saleItems.length; j++) {
               const it = saleItems[j];
@@ -1180,7 +1185,7 @@ export class SalesService {
     return db.$transaction(async (tx) => {
       const sale = await tx.sale.findUniqueOrThrow({
         where: { id: saleId },
-        include: { items: true },
+        include: { items: true, payments: true },
       });
       if (sale.status === SaleStatus.CANCELLED) {
         throw new BadRequestException('Venda já cancelada');
@@ -1192,7 +1197,7 @@ export class SalesService {
       });
       if (receivables.some((r) => r.settlements.length > 0 || Number(r.amountRemaining) < Number(r.amount) - 0.005)) {
         throw new BadRequestException(
-          'Não é possível cancelar: há parcela de crediário/requisição com baixa parcial ou total. Estorne no financeiro antes.',
+          'Não é possível cancelar: há parcela de requisição com baixa parcial ou total. Estorne no financeiro antes.',
         );
       }
 
@@ -1235,6 +1240,16 @@ export class SalesService {
       }
 
       await tx.accountReceivable.deleteMany({ where: { saleId } });
+
+      // Devolve saldo de crédito pré-pago debitado na venda.
+      if (sale.customerId) {
+        const creditTotal = sale.payments
+          .filter((p) => p.method === PaymentMethod.CREDIT)
+          .reduce((s, p) => s + Number(p.amount), 0);
+        if (creditTotal > 0) {
+          await this.customerCredit.restoreCreditBalance(tx, sale.customerId, creditTotal);
+        }
+      }
 
       const updated = await tx.sale.update({
         where: { id: saleId },

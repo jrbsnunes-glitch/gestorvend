@@ -1,6 +1,7 @@
 import * as bcrypt from 'bcrypt';
 import { Prisma, PrismaClient } from '../generated/tenant-client';
 import { assertValidUsername, usernameFromEmail } from '../users/username.util';
+import { ensureReferentialAccountsSeeded } from './seed-referential-accounts';
 
 export type TenantMinimalSeedOptions = {
   adminEmail: string;
@@ -149,6 +150,9 @@ export async function seedTenantMinimal(
       },
       update: {},
     });
+
+    // Plano referencial mínimo (grupos 4/5) — necessário para dropdown de centro de custo no caixa.
+    await ensureReferentialAccountsSeeded(tenant);
   } finally {
     await tenant.$disconnect();
   }

@@ -9,6 +9,13 @@ const requireTenant = createRequire(__filename);
 
 function instantiateTenantPrisma(url: string): PrismaClient {
   const tenantClientPath = join(__dirname, '..', 'generated', 'tenant-client', 'index.js');
+  // Garante client gerado após migrate (evita findMany em undefined se o processo
+  // ainda tivesse o index.js antigo em cache do require).
+  try {
+    delete requireTenant.cache[requireTenant.resolve(tenantClientPath)];
+  } catch {
+    /* ignore */
+  }
   const { PrismaClient: TenantPrismaClient } = requireTenant(tenantClientPath) as {
     PrismaClient: new (options: { datasources: { db: { url: string } } }) => PrismaClient;
   };

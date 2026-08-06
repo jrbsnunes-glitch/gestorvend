@@ -19,6 +19,7 @@ import {
   BillStatus,
   CashMovementType,
   CashSessionStatus,
+  CreditKind,
   PaymentMethod,
   Prisma,
   Recurrence,
@@ -637,6 +638,14 @@ export class FinanceController {
     if (segment != null && String(segment).trim() !== '') {
       where.customer = { segment: String(segment).trim() };
     }
+
+    // Crediário (limite de crédito) é venda à vista — não lista em Contas a Receber.
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+      {
+        OR: [{ creditKind: null }, { creditKind: CreditKind.REQUISITION }],
+      },
+    ];
 
     return db.accountReceivable.findMany({
       where,

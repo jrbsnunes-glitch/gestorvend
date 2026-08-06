@@ -84,7 +84,9 @@ function draftToBody(d: Draft) {
     body.passAdminFeeToCustomer = d.passAdminFeeToCustomer;
     body.settlementDays = Number(d.settlementDays) || 0;
     body.maxInstallments = Number(d.maxInstallments) || 1;
-  } else if (d.kind === 'CREDIT' || d.kind === 'REQUISITION') {
+  } else if (d.kind === 'CREDIT') {
+    body.maxInstallments = 1;
+  } else if (d.kind === 'REQUISITION') {
     body.maxInstallments = Number(d.maxInstallments) || 1;
   }
   return body;
@@ -130,8 +132,7 @@ export function PaymentFormsPage() {
   });
 
   const isCard = draft.kind === 'CARD';
-  const allowsInstallments =
-    isCard || draft.kind === 'CREDIT' || draft.kind === 'REQUISITION';
+  const allowsInstallments = draft.kind === 'REQUISITION';
 
   const formFields = useMemo(
     () => (
@@ -458,7 +459,7 @@ export function PaymentFormsPage() {
                           { label: 'Dias p/ baixa (D+N)', value: viewing.settlementDays },
                           { label: 'Máx. parcelas', value: viewing.maxInstallments },
                         ]
-                      : viewing.kind === 'CREDIT' || viewing.kind === 'REQUISITION'
+                      : viewing.kind === 'REQUISITION'
                         ? [{ label: 'Máx. parcelas', value: viewing.maxInstallments }]
                         : []),
                     { label: 'Ordem', value: viewing.sortOrder },
