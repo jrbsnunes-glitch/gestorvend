@@ -6,15 +6,19 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { MenuAccessService } from '../users/menu-access.service';
 
 /** Saídas de estoque que não são venda (avaria, perda, consumo interno, amostras…). */
 @Controller('stock-exits')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class StockExitsController {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    private readonly menuAccess: MenuAccessService,
+  ) {}
 
   @Post()
-  @Roles('admin', 'manager')
+  @Roles('admin', 'manager', 'seller')
   async create(
     @CurrentUser() user: JwtPayload,
     @Body()
@@ -25,8 +29,17 @@ export class StockExitsController {
       /** Obrigatório — classificação da saída (ex.: Avaria, Perda) */
       reason: string;
       reference?: string | null;
+      managerPassword?: string;
     },
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'create',
+      body.managerPassword,
+    );
     const reason = (body.reason ?? '').trim();
     if (!reason) {
       throw new BadRequestException('Informe o motivo da saída');

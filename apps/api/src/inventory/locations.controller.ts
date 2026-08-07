@@ -5,15 +5,20 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { MenuAccessService } from '../users/menu-access.service';
 
 @Controller('stock-locations')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class LocationsController {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    private readonly menuAccess: MenuAccessService,
+  ) {}
 
   @Get()
   @Roles('admin', 'manager', 'seller', 'finance')
   async list(@CurrentUser() user: JwtPayload) {
+    // Locais são usados em PDV/financeiro/relatórios — sem gate de menu na listagem.
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     return db.stockLocation.findMany({ orderBy: { name: 'asc' } });
   }
@@ -26,11 +31,26 @@ export class LocationsController {
   }
 
   @Post()
-  @Roles('admin', 'manager')
+  @Roles('admin', 'manager', 'seller')
   async create(
     @CurrentUser() user: JwtPayload,
-    @Body() body: { code: string; name: string; isDefault?: boolean; parentId?: string | null },
+    @Body()
+    body: {
+      code: string;
+      name: string;
+      isDefault?: boolean;
+      parentId?: string | null;
+      managerPassword?: string;
+    },
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'create',
+      body.managerPassword,
+    );
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     if (body.isDefault) {
       await db.stockLocation.updateMany({ data: { isDefault: false } });
@@ -46,12 +66,27 @@ export class LocationsController {
   }
 
   @Patch(':id')
-  @Roles('admin', 'manager')
+  @Roles('admin', 'manager', 'seller')
   async update(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
-    @Body() body: { name?: string; code?: string; isDefault?: boolean; parentId?: string | null },
+    @Body()
+    body: {
+      name?: string;
+      code?: string;
+      isDefault?: boolean;
+      parentId?: string | null;
+      managerPassword?: string;
+    },
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'update',
+      body.managerPassword,
+    );
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     if (body.isDefault) {
       await db.stockLocation.updateMany({ data: { isDefault: false } });
@@ -68,8 +103,20 @@ export class LocationsController {
   }
 
   @Delete(':id')
-  @Roles('admin', 'manager')
-  async remove(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+  @Roles('admin', 'manager', 'seller')
+  async remove(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body?: { managerPassword?: string },
+  ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'delete',
+      body?.managerPassword,
+    );
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const mv = await db.stockMovement.count({ where: { locationId: id } });
     if (mv > 0) throw new BadRequestException('Local possui movimentações');

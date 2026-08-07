@@ -18,6 +18,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { MenuAccessService } from '../users/menu-access.service';
 import {
   GoodsReceiptService,
   type PayableOptionsDto,
@@ -49,6 +50,7 @@ export class GoodsReceiptController {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly goodsReceipts: GoodsReceiptService,
+    private readonly menuAccess: MenuAccessService,
   ) {}
 
   @Get()
@@ -104,7 +106,7 @@ export class GoodsReceiptController {
   }
 
   @Post()
-  @Roles('admin', 'manager')
+  @Roles('admin', 'manager', 'seller')
   async post(
     @CurrentUser() user: JwtPayload,
     @Body()
@@ -121,8 +123,17 @@ export class GoodsReceiptController {
       notes?: string | null;
       items: ReceiptItemDto[];
       payable?: PayableOptionsDto | null;
+      managerPassword?: string;
     },
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'create',
+      body.managerPassword,
+    );
     return this.goodsReceipts.create(user.tenantSlug, {
       ...body,
       userId: user.sub,
@@ -130,7 +141,7 @@ export class GoodsReceiptController {
   }
 
   @Patch(':id')
-  @Roles('admin', 'manager')
+  @Roles('admin', 'manager', 'seller')
   async update(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
@@ -142,8 +153,17 @@ export class GoodsReceiptController {
       issueDate?: string | null;
       natureOperation?: string | null;
       notes?: string | null;
+      managerPassword?: string;
     },
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'update',
+      body.managerPassword,
+    );
     try {
       const db = await this.tenantPrisma.getClient(user.tenantSlug);
       const current = await db.goodsReceipt.findUnique({ where: { id }, select: { status: true } });
@@ -184,12 +204,20 @@ export class GoodsReceiptController {
    * Não cancela a NF-e na SEFAZ — isso só o emitente (fornecedor) pode fazer.
    */
   @Post(':id/cancel')
-  @Roles('admin', 'manager')
+  @Roles('admin', 'manager', 'seller')
   async cancel(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
-    @Body() body?: { reason?: string | null },
+    @Body() body?: { reason?: string | null; managerPassword?: string },
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'delete',
+      body?.managerPassword,
+    );
     return this.goodsReceipts.cancel(user.tenantSlug, id, {
       userId: user.sub,
       reason: body?.reason ?? null,

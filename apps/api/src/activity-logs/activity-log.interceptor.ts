@@ -60,7 +60,7 @@ export class ActivityLogInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       tap((body) => {
-        const entityRef = pickEntityRef(body);
+        const entityRef = pickEntityRef(body) ?? pickEntityRef(req.body);
         this.activityLog.record({
           tenantSlug: user.tenantSlug,
           userId: user.sub,
@@ -70,6 +70,7 @@ export class ActivityLogInterceptor implements NestInterceptor {
             resource,
             subPath,
             entityRef,
+            requestBody: req.body,
           }),
           entityType: resource,
           entityRef,

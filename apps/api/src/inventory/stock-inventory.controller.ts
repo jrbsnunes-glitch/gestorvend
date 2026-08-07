@@ -21,6 +21,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { MenuAccessService } from '../users/menu-access.service';
 import {
   AddInventoryItemBody,
   StockInventoryService,
@@ -28,14 +29,30 @@ import {
 
 const CSV_UPLOAD_LIMIT = 2 * 1024 * 1024; // 2 MB
 
+function managerPasswordFrom(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const v = (body as { managerPassword?: unknown }).managerPassword;
+  return typeof v === 'string' ? v : undefined;
+}
+
 @Controller('stock-inventories')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class StockInventoryController {
-  constructor(private readonly inventories: StockInventoryService) {}
+  constructor(
+    private readonly inventories: StockInventoryService,
+    private readonly menuAccess: MenuAccessService,
+  ) {}
 
   @Get()
   @Roles('admin', 'manager', 'seller')
-  list(@CurrentUser() user: JwtPayload, @Query('status') status?: string) {
+  async list(@CurrentUser() user: JwtPayload, @Query('status') status?: string) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'view',
+    );
     return this.inventories.list(user.tenantSlug, status);
   }
 
@@ -46,6 +63,13 @@ export class StockInventoryController {
     @Param('id') id: string,
     @Res() res: Response,
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'view',
+    );
     const { filename, body } = await this.inventories.exportCsv(user.tenantSlug, id);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -54,31 +78,54 @@ export class StockInventoryController {
 
   @Get(':id')
   @Roles('admin', 'manager', 'seller')
-  get(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+  async get(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'view',
+    );
     return this.inventories.get(user.tenantSlug, id);
   }
 
   @Post()
-  @Roles('admin', 'manager')
-  create(
+  @Roles('admin', 'manager', 'seller')
+  async create(
     @CurrentUser() user: JwtPayload,
-    @Body() body: { locationId?: string; notes?: string | null },
+    @Body() body: { locationId?: string; notes?: string | null; managerPassword?: string },
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'create',
+      body.managerPassword,
+    );
     return this.inventories.create(user.tenantSlug, user.sub, body);
   }
 
   @Patch(':id')
-  @Roles('admin', 'manager')
-  updateHeader(
+  @Roles('admin', 'manager', 'seller')
+  async updateHeader(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
-    @Body() body: { notes?: string | null },
+    @Body() body: { notes?: string | null; managerPassword?: string },
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'update',
+      body.managerPassword,
+    );
     return this.inventories.updateHeader(user.tenantSlug, id, body);
   }
 
   @Post(':id/import-csv')
-  @Roles('admin', 'manager')
+  @Roles('admin', 'manager', 'seller')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -90,7 +137,16 @@ export class StockInventoryController {
     @Param('id') id: string,
     @UploadedFile()
     file: { buffer: Buffer; originalname?: string; mimetype?: string } | undefined,
+    @Body() body?: { managerPassword?: string },
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'update',
+      body?.managerPassword,
+    );
     if (!file?.buffer?.length) {
       throw new BadRequestException('Envie o arquivo CSV.');
     }
@@ -103,61 +159,140 @@ export class StockInventoryController {
   }
 
   @Post(':id/items/bulk')
-  @Roles('admin', 'manager')
-  addItemsBulk(
+  @Roles('admin', 'manager', 'seller')
+  async addItemsBulk(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
-    @Body() body: { scope?: 'all' | 'category'; categoryId?: string | null },
+    @Body()
+    body: {
+      scope?: 'all' | 'category';
+      categoryId?: string | null;
+      managerPassword?: string;
+    },
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'update',
+      body.managerPassword,
+    );
     return this.inventories.addItemsBulk(user.tenantSlug, id, body);
   }
 
   @Post(':id/items')
-  @Roles('admin', 'manager')
-  addItem(
+  @Roles('admin', 'manager', 'seller')
+  async addItem(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
-    @Body() body: AddInventoryItemBody,
+    @Body() body: AddInventoryItemBody & { managerPassword?: string },
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'update',
+      body.managerPassword,
+    );
     return this.inventories.addItem(user.tenantSlug, id, body);
   }
 
   @Patch(':id/items/:itemId')
-  @Roles('admin', 'manager')
-  updateItem(
+  @Roles('admin', 'manager', 'seller')
+  async updateItem(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
     @Param('itemId') itemId: string,
-    @Body() body: { countedQty?: string | number | null; notes?: string | null },
+    @Body()
+    body: {
+      countedQty?: string | number | null;
+      notes?: string | null;
+      managerPassword?: string;
+    },
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'update',
+      body.managerPassword,
+    );
     return this.inventories.updateItem(user.tenantSlug, id, itemId, body);
   }
 
   @Delete(':id/items/:itemId')
-  @Roles('admin', 'manager')
-  removeItem(
+  @Roles('admin', 'manager', 'seller')
+  async removeItem(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
     @Param('itemId') itemId: string,
+    @Body() body?: { managerPassword?: string },
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'delete',
+      body?.managerPassword,
+    );
     return this.inventories.removeItem(user.tenantSlug, id, itemId);
   }
 
   @Post(':id/post')
-  @Roles('admin', 'manager')
-  post(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+  @Roles('admin', 'manager', 'seller')
+  async post(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body?: { managerPassword?: string },
+  ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'update',
+      body?.managerPassword,
+    );
     return this.inventories.post(user.tenantSlug, id, user.sub);
   }
 
   @Post(':id/cancel')
-  @Roles('admin', 'manager')
-  cancel(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+  @Roles('admin', 'manager', 'seller')
+  async cancel(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body?: { managerPassword?: string },
+  ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'delete',
+      body?.managerPassword,
+    );
     return this.inventories.cancel(user.tenantSlug, id);
   }
 
   @Delete(':id')
-  @Roles('admin', 'manager')
-  remove(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+  @Roles('admin', 'manager', 'seller')
+  async remove(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body?: { managerPassword?: string },
+  ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'delete',
+      managerPasswordFrom(body),
+    );
     return this.inventories.removeDraft(user.tenantSlug, id);
   }
 }

@@ -27,6 +27,7 @@ import {
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { ActivityLogAction } from '../generated/tenant-client';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
+import { describeMapChanges, describePaymentMethodAmounts } from '../activity-logs/activity-log.helpers';
 import { referentialCodeMatchesFlow } from '../common/referential-account-flow';
 import { assertLastSaleAllowsPdvEntry } from './pdv-entry.guard';
 import {
@@ -1310,7 +1311,15 @@ export class CashController {
 
     const total = computeClosingBalanceFromDeclared(normalized);
 
-    return db.cashRegisterSession.update({
+    const beforeMap = isPlainObjectRecord(session.closingByMethod)
+      ? (session.closingByMethod as Record<string, unknown>)
+      : {};
+    const afterMap = normalized as Record<string, unknown>;
+    const changes =
+      describeMapChanges(beforeMap, afterMap, { valuePrefix: 'R$ ' }) ??
+      'valores apresentados atualizados';
+
+    const updated = await db.cashRegisterSession.update({
       where: { id },
       data: {
         closingByMethod: normalized,
@@ -1320,6 +1329,17 @@ export class CashController {
           : {}),
       },
     });
+
+    this.activityLog.record({
+      tenantSlug: user.tenantSlug,
+      userId: user.sub,
+      action: ActivityLogAction.UPDATE,
+      summary: `Caixa controle ${session.controlNumber} — ${changes}`,
+      entityType: 'cash_session',
+      entityRef: `controle ${session.controlNumber}`,
+    });
+
+    return updated;
   }
 
   /**
@@ -1341,7 +1361,7 @@ export class CashController {
     if (session.reconciledAt) {
       throw new BadRequestException('Este caixa já foi conferido.');
     }
-    return db.cashRegisterSession.update({
+    const updated = await db.cashRegisterSession.update({
       where: { id },
       data: {
         reconciledAt: new Date(),
@@ -1352,6 +1372,15 @@ export class CashController {
             : null,
       },
     });
+    this.activityLog.record({
+      tenantSlug: user.tenantSlug,
+      userId: user.sub,
+      action: ActivityLogAction.UPDATE,
+      summary: `Conferiu caixa controle ${session.controlNumber}`,
+      entityType: 'cash_session',
+      entityRef: `controle ${session.controlNumber}`,
+    });
+    return updated;
   }
 
   /**
@@ -1369,7 +1398,7 @@ export class CashController {
     if (!session.reconciledAt) {
       throw new BadRequestException('Este caixa não está conferido.');
     }
-    return db.cashRegisterSession.update({
+    const updated = await db.cashRegisterSession.update({
       where: { id },
       data: {
         reconciledAt: null,
@@ -1377,6 +1406,15 @@ export class CashController {
         reconciliationNotes: null,
       },
     });
+    this.activityLog.record({
+      tenantSlug: user.tenantSlug,
+      userId: user.sub,
+      action: ActivityLogAction.UPDATE,
+      summary: `Reabriu conferência do caixa controle ${session.controlNumber}`,
+      entityType: 'cash_session',
+      entityRef: `controle ${session.controlNumber}`,
+    });
+    return updated;
   }
 
   @Post('open')
@@ -1397,13 +1435,14 @@ export class CashController {
       },
     });
     const fund = Number(body.openingBalance ?? 0);
+    const control = session.controlNumber;
     this.activityLog.record({
       tenantSlug: user.tenantSlug,
       userId: user.sub,
       action: ActivityLogAction.CASH_OPEN,
-      summary: `Abriu caixa no PDV (fundo R$ ${fund.toFixed(2)})`,
+      summary: `Abriu caixa controle ${control} — fundo de troco R$ ${fund.toFixed(2)}`,
       entityType: 'cash_session',
-      entityRef: session.id,
+      entityRef: `controle ${control}`,
     });
     return session;
   }
@@ -1450,13 +1489,17 @@ export class CashController {
         closedAt: new Date(),
       },
     });
+    const control = updated.controlNumber;
+    const presentedLine =
+      describePaymentMethodAmounts(normalized as Record<string, unknown> | null) ??
+      `total R$ ${closingBalance.toFixed(2)}`;
     this.activityLog.record({
       tenantSlug: user.tenantSlug,
       userId: user.sub,
       action: ActivityLogAction.CASH_CLOSE,
-      summary: `Fechou caixa no PDV (R$ ${closingBalance.toFixed(2)})`,
+      summary: `Fechou caixa controle ${control} — apresentados: ${presentedLine}`,
       entityType: 'cash_session',
-      entityRef: updated.id,
+      entityRef: `controle ${control}`,
     });
     return updated;
   }

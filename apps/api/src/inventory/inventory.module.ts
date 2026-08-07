@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { UsersModule } from '../users/users.module';
 import { GoodsReceiptController } from './goods-receipt.controller';
 import { GoodsReceiptService } from './goods-receipt.service';
 import { LocationsController } from './locations.controller';
@@ -9,6 +10,7 @@ import { StockMovementsController } from './stock-movements.controller';
 import { StockTransfersController } from './stock-transfers.controller';
 
 @Module({
+  imports: [UsersModule],
   controllers: [
     LocationsController,
     StockMovementsController,

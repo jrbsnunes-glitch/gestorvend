@@ -6,6 +6,7 @@ import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { Prisma, StockMovementSource, StockMovementType } from '../generated/tenant-client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { MenuAccessService } from '../users/menu-access.service';
 
 function startOfDay(d: Date): Date {
   const x = new Date(d);
@@ -32,7 +33,10 @@ function parseQueryDate(raw: string, mode: 'start' | 'end'): Date {
 @Controller('stock-movements')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class StockMovementsController {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    private readonly menuAccess: MenuAccessService,
+  ) {}
 
   /**
    * Faixa de números de controle existentes (min/max/count).
@@ -289,7 +293,7 @@ export class StockMovementsController {
   }
 
   @Post()
-  @Roles('admin', 'manager')
+  @Roles('admin', 'manager', 'seller')
   async create(
     @CurrentUser() user: JwtPayload,
     @Body()
@@ -301,8 +305,17 @@ export class StockMovementsController {
       unitCost?: string | number | null;
       reference?: string | null;
       outboundReason?: string | null;
+      managerPassword?: string;
     },
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'create',
+      body.managerPassword,
+    );
     if (body.type === StockMovementType.TRANSFER) {
       throw new BadRequestException('Use duas movimentações ou endpoint de transferência (futuro).');
     }

@@ -8,15 +8,19 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { MenuAccessService } from '../users/menu-access.service';
 
 /** Transferência interna entre locais: saída no origem + entrada no destino (mesmo ID de referência). */
 @Controller('stock-transfers')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class StockTransfersController {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    private readonly menuAccess: MenuAccessService,
+  ) {}
 
   @Post()
-  @Roles('admin', 'manager')
+  @Roles('admin', 'manager', 'seller')
   async create(
     @CurrentUser() user: JwtPayload,
     @Body()
@@ -26,8 +30,17 @@ export class StockTransfersController {
       variantId: string;
       quantity: number;
       notes?: string | null;
+      managerPassword?: string;
     },
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'stock',
+      'create',
+      body.managerPassword,
+    );
     const fromId = (body.fromLocationId ?? '').trim();
     const toId = (body.toLocationId ?? '').trim();
     if (!fromId || !toId) {

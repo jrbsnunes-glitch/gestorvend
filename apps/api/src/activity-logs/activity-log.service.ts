@@ -25,7 +25,7 @@ export class ActivityLogService {
   }
 
   private async recordAsync(input: RecordActivityInput): Promise<void> {
-    const summary = input.summary.trim().slice(0, 500);
+    const summary = input.summary.trim().slice(0, 1200);
     if (!summary) return;
 
     const db = await this.tenantPrisma.getClient(input.tenantSlug);

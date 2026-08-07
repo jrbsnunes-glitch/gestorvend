@@ -27,6 +27,10 @@ type LogItem = {
 
 type LogsResponse = { take: number; count: number; items: LogItem[] };
 
+function looksLikeUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
 function buildQuery(params: {
   userId: string;
   action: string;
@@ -219,8 +223,10 @@ export function LogsPage() {
                 </td>
                 <td style={{ whiteSpace: 'nowrap', fontSize: '0.85rem' }}>{row.actionLabel}</td>
                 <td>
-                  <strong>{row.summary}</strong>
-                  {row.entityRef && row.entityRef !== row.summary && (
+                  <strong style={{ fontWeight: 600 }}>{row.summary}</strong>
+                  {row.entityRef &&
+                    row.entityRef !== row.summary &&
+                    !looksLikeUuid(row.entityRef) && (
                     <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: '0.15rem' }}>
                       {row.entityRef}
                     </div>
