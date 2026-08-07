@@ -23,15 +23,3 @@ export function hasUserPermission(
   return data.permissions.some((p) => p.code === code && p.enabled);
 }
 
-/** Gerente/admin: liberado. Caixa com grant: liberado (ainda pode pedir senha na API). */
-export function canAttemptPermission(
-  data: UserPermissionsResponse | undefined,
-  code: UserPermissionCode,
-  opts?: { isManager?: boolean },
-): boolean {
-  if (opts?.isManager) return true;
-  if (!data) return true; // caixa tenta com senha do gerente
-  if (data.isAdmin) return true;
-  return true;
-}
-

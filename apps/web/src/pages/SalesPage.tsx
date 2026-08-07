@@ -18,7 +18,7 @@ import {
   companyUsesCustomLogo,
   useCompanyBranding,
 } from '../lib/company-branding';
-import { hasRestaurantPlan, isAdmin, isManager, profileLabel, type UserProfile } from '../lib/auth';
+import { hasRestaurantPlan, isManager, profileLabel, type UserProfile } from '../lib/auth';
 import { calcRestaurantFees, type RestaurantFeesCompany } from '../lib/restaurant-fees';
 import { formatServiceTabLabel } from '../lib/service-tab';
 import {
