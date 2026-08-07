@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 
 import { api, apiUpload } from '../lib/api';
 import { resolveCompanyAssetUrl } from '../lib/company-branding';
-import { isManager } from '../lib/auth';
+import { useMenuAccess } from '../hooks/useMenuAccess';
 import { digitsOnly, formatCep, formatCnpj } from '../lib/format';
 import { lookupCep } from '../lib/lookups';
 
@@ -533,10 +533,13 @@ function IssuerEmissorCard() {
 
 export function CompanyPage() {
   const qc = useQueryClient();
-  const manager = isManager();
+  const menuAccess = useMenuAccess();
+  const canViewCompany = menuAccess.canView('company');
+  const canUpdateCompany = menuAccess.canUpdate('company');
   const company = useQuery({
     queryKey: ['company'],
     queryFn: () => api<Company>('/company'),
+    enabled: canViewCompany,
   });
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -584,12 +587,12 @@ export function CompanyPage() {
     },
   });
 
-  if (!manager) {
+  if (!canViewCompany) {
     return (
       <div className="page">
         <h1 className="page-title">Empresa</h1>
         <div className="alert alert-error">
-          Apenas usuários com perfil <strong>Gerente</strong> podem acessar este cadastro.
+          Sem permissão para acessar o menu <strong>Empresa</strong>. Solicite ao gerente.
         </div>
       </div>
     );
@@ -1148,7 +1151,8 @@ export function CompanyPage() {
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={!touched || save.isPending}
+              disabled={!touched || save.isPending || !canUpdateCompany}
+              title={!canUpdateCompany ? 'Sem permissão para alterar Empresa' : undefined}
             >
               {save.isPending ? 'Salvando…' : 'Salvar alterações'}
             </button>

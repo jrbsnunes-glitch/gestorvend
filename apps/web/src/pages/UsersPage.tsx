@@ -10,6 +10,7 @@ import {
   type UserPermissionsResponse,
 } from '../lib/user-permissions';
 import { type MenuAccessFlags, type MenuAccessResponse } from '../lib/menu-access';
+import { useMenuAccess } from '../hooks/useMenuAccess';
 
 type SystemUser = {
   id: string;
@@ -51,7 +52,13 @@ const EMPTY_FORM: FormState = {
 export function UsersPage() {
   const qc = useQueryClient();
   const identity = useMemo(() => getIdentity(), []);
-  const canManage = isManager();
+  const menuAccess = useMenuAccess();
+  const isMgr = isManager();
+  const canViewUsers = menuAccess.canView('users');
+  const canCreateUsers = menuAccess.canCreate('users');
+  const canUpdateUsers = menuAccess.canUpdate('users');
+  const canDeleteUsers = menuAccess.canDelete('users');
+  const canManage = canViewUsers;
 
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
@@ -297,11 +304,10 @@ export function UsersPage() {
       <div className="page">
         <h1 className="page-title">Usuários</h1>
         <p className="page-desc">
-          Esta área é exclusiva para usuários com perfil de <strong>Gerente</strong>.
-          Caixas só podem operar o PDV e o caixa.
+          Sem permissão para acessar o menu <strong>Usuários</strong>. Solicite ao gerente.
         </p>
         <div className="alert alert-error" role="alert">
-          Acesso negado. Solicite a um gerente que conceda permissão.
+          Acesso negado.
         </div>
       </div>
     );
@@ -322,8 +328,8 @@ export function UsersPage() {
         <div>
           <h1 className="page-title">Usuários do sistema</h1>
           <p className="page-desc" style={{ marginBottom: 0 }}>
-            Cadastre operadores e defina o perfil de acesso. Apenas gerentes podem
-            criar, editar ou desativar usuários.
+            Cadastre operadores e defina o perfil de acesso. A matriz de menus por
+            operador só pode ser editada pelo gerente.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -338,9 +344,11 @@ export function UsersPage() {
               minWidth: 260,
             }}
           />
-          <button type="button" className="btn btn-primary" onClick={openCreate}>
-            + Novo usuário
-          </button>
+          {canCreateUsers && (
+            <button type="button" className="btn btn-primary" onClick={openCreate}>
+              + Novo usuário
+            </button>
+          )}
         </div>
       </div>
 
@@ -447,47 +455,55 @@ export function UsersPage() {
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', gap: '0.35rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          style={{ padding: '0.3rem 0.65rem', fontSize: '0.82rem' }}
-                          onClick={() => openEdit(u)}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          style={{ padding: '0.3rem 0.65rem', fontSize: '0.82rem' }}
-                          onClick={() => {
-                            setPasswordTarget(u);
-                            setNewPassword('');
-                            setConfirmNewPassword('');
-                            setErr(null);
-                          }}
-                        >
-                          Trocar senha
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          style={{ padding: '0.3rem 0.65rem', fontSize: '0.82rem' }}
-                          disabled={isSelf || toggleActive.isPending}
-                          title={isSelf ? 'Você não pode desativar a si mesmo' : ''}
-                          onClick={() => toggleActive.mutate(u)}
-                        >
-                          {u.isActive ? 'Desativar' : 'Ativar'}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-danger"
-                          style={{ padding: '0.3rem 0.65rem', fontSize: '0.82rem' }}
-                          disabled={isSelf}
-                          title={isSelf ? 'Você não pode remover a si mesmo' : ''}
-                          onClick={() => setRemoving(u)}
-                        >
-                          Remover
-                        </button>
+                        {canUpdateUsers && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ padding: '0.3rem 0.65rem', fontSize: '0.82rem' }}
+                            onClick={() => openEdit(u)}
+                          >
+                            Editar
+                          </button>
+                        )}
+                        {canUpdateUsers && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ padding: '0.3rem 0.65rem', fontSize: '0.82rem' }}
+                            onClick={() => {
+                              setPasswordTarget(u);
+                              setNewPassword('');
+                              setConfirmNewPassword('');
+                              setErr(null);
+                            }}
+                          >
+                            Trocar senha
+                          </button>
+                        )}
+                        {canUpdateUsers && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ padding: '0.3rem 0.65rem', fontSize: '0.82rem' }}
+                            disabled={isSelf || toggleActive.isPending}
+                            title={isSelf ? 'Você não pode desativar a si mesmo' : ''}
+                            onClick={() => toggleActive.mutate(u)}
+                          >
+                            {u.isActive ? 'Desativar' : 'Ativar'}
+                          </button>
+                        )}
+                        {canDeleteUsers && (
+                          <button
+                            type="button"
+                            className="btn btn-danger"
+                            style={{ padding: '0.3rem 0.65rem', fontSize: '0.82rem' }}
+                            disabled={isSelf}
+                            title={isSelf ? 'Você não pode remover a si mesmo' : ''}
+                            onClick={() => setRemoving(u)}
+                          >
+                            Remover
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -527,7 +543,7 @@ export function UsersPage() {
           >
             <h2>{editing ? `Editar “${editing.name}”` : 'Novo usuário'}</h2>
 
-            {editing && (
+            {editing && isMgr && (
               <div className="user-modal-tabs" role="tablist" aria-label="Seções do cadastro">
                 <button
                   type="button"
