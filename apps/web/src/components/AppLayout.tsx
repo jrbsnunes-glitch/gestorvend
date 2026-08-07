@@ -8,6 +8,8 @@ import { NavIcon, type NavIconName } from './nav-icons';
 import { api } from '../lib/api';
 import { companyDisplayName } from '../lib/company-branding';
 import { getIdentity, hasRestaurantPlan, isAdmin, isWaiter, profileFromRoles, profileLabel } from '../lib/auth';
+import { navPathToMenuKey } from '../lib/menu-access';
+import { useMenuAccess } from '../hooks/useMenuAccess';
 import { APP_VERSION } from '../version';
 import './layout.css';
 
@@ -112,6 +114,8 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
     staleTime: 10 * 60_000,
   });
 
+  const menuAccess = useMenuAccess();
+
   const items = NAV_ITEMS.filter((it) => {
     if (waiterOnly) {
       return Boolean(it.waiterAllowed);
@@ -121,9 +125,23 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
       if (!restaurantOk) return false;
       if (company.isSuccess && company.data.restaurantModuleEnabled !== true) return false;
     }
-    if (it.managerOnly) {
-      const ok = isManager || (it.allowFinanceRole === true && hasFinance);
-      if (!ok) return false;
+    // Caixa: visibilidade controlada pela matriz de menus (padrão oculta Balanço/Empresa/Impressão/Usuários).
+    if (!isManager) {
+      const menuKey = navPathToMenuKey(it.to);
+      if (menuKey) {
+        if (menuAccess.isLoading && !menuAccess.data) {
+          // Enquanto carrega, mantém o comportamento antigo (managerOnly).
+          if (it.managerOnly) {
+            const ok = it.allowFinanceRole === true && hasFinance;
+            if (!ok) return false;
+          }
+        } else if (!menuAccess.canView(menuKey)) {
+          return false;
+        }
+      } else if (it.managerOnly) {
+        const ok = it.allowFinanceRole === true && hasFinance;
+        if (!ok) return false;
+      }
     }
     return true;
   });

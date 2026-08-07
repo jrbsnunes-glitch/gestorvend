@@ -59,7 +59,7 @@ export function PermissionPasswordModal({
           }}
         >
           <div className="field">
-            <label htmlFor="perm-pwd-input">Senha de autorização</label>
+            <label htmlFor="perm-pwd-input">Senha do gerente</label>
             <input
               ref={inputRef}
               id="perm-pwd-input"

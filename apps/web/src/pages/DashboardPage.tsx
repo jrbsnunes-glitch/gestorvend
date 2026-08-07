@@ -6,6 +6,7 @@ import { BillPaymentsButton } from '../components/BillSettlementsModal';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { api } from '../lib/api';
 import { companyDisplayName, useCompanyBranding } from '../lib/company-branding';
+import { isManager } from '../lib/auth';
 import { formatBRL, formatDate } from '../lib/format';
 
 const DASH_PREVIEW_LIMIT = 5;
@@ -268,6 +269,7 @@ const PANEL_MODAL_TITLES: Record<DashPanelKey, string> = {
 
 export function DashboardPage() {
   const company = useCompanyBranding();
+  const showMonthRevenue = isManager();
   const [expandedPanel, setExpandedPanel] = useState<DashPanelKey | null>(null);
   const overview = useQuery({
     queryKey: ['dashboard', 'overview'],
@@ -329,16 +331,18 @@ export function DashboardPage() {
             {data?.sales.today ?? 0} venda(s) concluída(s)
           </span>
         </article>
-        <article className="dash-hero-card dash-hero-month">
-          <span className="dash-hero-label">Faturamento do mês</span>
-          <strong className="dash-hero-value">
-            {overview.isLoading ? '…' : formatBRL(data?.revenue.month ?? 0)}
-          </strong>
-          <span className="dash-hero-foot">
-            {data?.sales.month ?? 0} venda(s) · ticket médio{' '}
-            <strong>{formatBRL(data?.sales.avgTicketMonth ?? 0)}</strong>
-          </span>
-        </article>
+        {showMonthRevenue && (
+          <article className="dash-hero-card dash-hero-month">
+            <span className="dash-hero-label">Faturamento do mês</span>
+            <strong className="dash-hero-value">
+              {overview.isLoading ? '…' : formatBRL(data?.revenue.month ?? 0)}
+            </strong>
+            <span className="dash-hero-foot">
+              {data?.sales.month ?? 0} venda(s) · ticket médio{' '}
+              <strong>{formatBRL(data?.sales.avgTicketMonth ?? 0)}</strong>
+            </span>
+          </article>
+        )}
         <article className="dash-hero-card dash-hero-sessions">
           <span className="dash-hero-label">Caixas abertos</span>
           <strong className="dash-hero-value">{data?.openSessions.length ?? 0}</strong>

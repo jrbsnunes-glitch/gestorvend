@@ -9,6 +9,7 @@ import {
   type UserPermissionRow,
   type UserPermissionsResponse,
 } from '../lib/user-permissions';
+import { type MenuAccessFlags, type MenuAccessResponse } from '../lib/menu-access';
 
 type SystemUser = {
   id: string;
@@ -61,6 +62,7 @@ export function UsersPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [userModalTab, setUserModalTab] = useState<UserModalTab>('dados');
   const [permRows, setPermRows] = useState<PermFormRow[]>([]);
+  const [menuRows, setMenuRows] = useState<MenuAccessFlags[]>([]);
   const [permErr, setPermErr] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
@@ -91,6 +93,7 @@ export function UsersPage() {
     setForm(EMPTY_FORM);
     setUserModalTab('dados');
     setPermRows([]);
+    setMenuRows([]);
     setPermErr(null);
     setErr(null);
   }
@@ -98,6 +101,12 @@ export function UsersPage() {
   const editingPermsQ = useQuery({
     queryKey: ['users', editing?.id, 'permissions'],
     queryFn: () => api<UserPermissionsResponse>(`/users/${editing!.id}/permissions`),
+    enabled: !!editing,
+  });
+
+  const editingMenuQ = useQuery({
+    queryKey: ['users', editing?.id, 'menu-access'],
+    queryFn: () => api<MenuAccessResponse>(`/users/${editing!.id}/menu-access`),
     enabled: !!editing,
   });
 
@@ -112,8 +121,13 @@ export function UsersPage() {
     );
   }, [editing, editingPermsQ.data]);
 
+  useEffect(() => {
+    if (!editing || !editingMenuQ.data) return;
+    setMenuRows(editingMenuQ.data.menus);
+  }, [editing, editingMenuQ.data]);
+
   const savePermissions = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!editing) throw new Error('Nenhum usuário selecionado.');
       for (const row of permRows) {
         if (!row.enabled) continue;
@@ -126,6 +140,24 @@ export function UsersPage() {
         if (row.hasPassword && row.password && row.password.length < 4) {
           throw new Error(`Nova senha de «${row.label}» precisa ter pelo menos 4 caracteres.`);
         }
+      }
+      const isPrivileged =
+        editing.profile === 'manager' ||
+        editing.roles.includes('admin') ||
+        editing.roles.includes('manager');
+      if (!isPrivileged) {
+        await api(`/users/${editing.id}/menu-access`, {
+          method: 'PATCH',
+          json: {
+            grants: menuRows.map((m) => ({
+              menuKey: m.menuKey,
+              canView: m.canView,
+              canCreate: m.canCreate,
+              canUpdate: m.canUpdate,
+              canDelete: m.canDelete,
+            })),
+          },
+        });
       }
       return api(`/users/${editing.id}/permissions`, {
         method: 'PATCH',
@@ -140,7 +172,9 @@ export function UsersPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users', editing?.id, 'permissions'] });
+      qc.invalidateQueries({ queryKey: ['users', editing?.id, 'menu-access'] });
       qc.invalidateQueries({ queryKey: ['users', 'me', 'permissions'] });
+      qc.invalidateQueries({ queryKey: ['users', 'me', 'menu-access'] });
       setPermErr(null);
       setEditing(null);
       resetForm();
@@ -624,79 +658,196 @@ export function UsersPage() {
 
             {editing && userModalTab === 'permissoes' && (
               <div className="user-permissions-panel">
-                <p style={{ marginTop: 0, color: 'var(--color-text-secondary)', fontSize: '0.88rem' }}>
-                  Conceda permissões operacionais com senha de autorização. O{' '}
-                  <strong>Administrador</strong> possui acesso total e não utiliza estas senhas.
-                </p>
-                {editing.roles.includes('admin') ? (
+                {editing.profile === 'manager' ||
+                editing.roles.includes('admin') ||
+                editing.roles.includes('manager') ? (
                   <div className="alert alert-info">
-                    Este usuário é <strong>Administrador</strong> e pode realizar todas as operações sem senha
-                    adicional.
+                    Este usuário é <strong>Gerente</strong> (ou administrador) e possui acesso total —
+                    não precisa de senha para ações e vê todos os menus.
                   </div>
-                ) : editingPermsQ.isLoading ? (
-                  <p>Carregando permissões…</p>
                 ) : (
-                  <div className="user-permissions-list">
-                    {permRows.map((row, idx) => (
-                      <div key={row.code} className="user-permission-card">
-                        <label className="user-permission-toggle">
-                          <input
-                            type="checkbox"
-                            checked={row.enabled}
-                            onChange={(e) =>
-                              setPermRows((rows) =>
-                                rows.map((r, i) =>
-                                  i === idx ? { ...r, enabled: e.target.checked } : r,
-                                ),
-                              )
-                            }
-                          />
-                          <span>
-                            <strong>{row.label}</strong>
-                            <span className="user-permission-desc">{row.description}</span>
-                          </span>
-                        </label>
-                        {row.enabled && (
-                          <div className="form-row">
-                            <div className="field">
-                              <label htmlFor={`perm-pwd-${row.code}`}>
-                                {row.hasPassword ? 'Nova senha (opcional)' : 'Senha de autorização *'}
-                              </label>
-                              <input
-                                id={`perm-pwd-${row.code}`}
-                                type="password"
-                                autoComplete="new-password"
-                                value={row.password}
-                                onChange={(e) =>
-                                  setPermRows((rows) =>
-                                    rows.map((r, i) =>
-                                      i === idx ? { ...r, password: e.target.value } : r,
-                                    ),
-                                  )
-                                }
-                              />
-                            </div>
-                            <div className="field">
-                              <label htmlFor={`perm-pwd2-${row.code}`}>Confirmar senha</label>
-                              <input
-                                id={`perm-pwd2-${row.code}`}
-                                type="password"
-                                autoComplete="new-password"
-                                value={row.confirmPassword}
-                                onChange={(e) =>
-                                  setPermRows((rows) =>
-                                    rows.map((r, i) =>
-                                      i === idx ? { ...r, confirmPassword: e.target.value } : r,
-                                    ),
-                                  )
-                                }
-                              />
-                            </div>
-                          </div>
-                        )}
+                  <>
+                    <p style={{ marginTop: 0, color: 'var(--color-text-secondary)', fontSize: '0.88rem' }}>
+                      Marque o que o <strong>Caixa</strong> pode fazer sem senha. Se a ação estiver
+                      desmarcada, será pedida a <strong>senha do gerente</strong>. Desmarque{' '}
+                      <em>Exibir</em> para ocultar o menu.
+                    </p>
+                    {editingMenuQ.isLoading ? (
+                      <p>Carregando menus…</p>
+                    ) : (
+                      <div className="table-wrap" style={{ marginBottom: '1rem' }}>
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                              <th>Menu</th>
+                              <th className="num">Exibir</th>
+                              <th className="num">Incluir</th>
+                              <th className="num">Alterar</th>
+                              <th className="num">Excluir</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {menuRows.map((row) => (
+                              <tr key={row.menuKey}>
+                                <td>
+                                  <strong>{row.label}</strong>
+                                </td>
+                                <td className="num">
+                                  <input
+                                    type="checkbox"
+                                    checked={row.canView}
+                                    onChange={(e) =>
+                                      setMenuRows((rows) =>
+                                        rows.map((r) =>
+                                          r.menuKey === row.menuKey
+                                            ? { ...r, canView: e.target.checked }
+                                            : r,
+                                        ),
+                                      )
+                                    }
+                                    aria-label={`Exibir ${row.label}`}
+                                  />
+                                </td>
+                                <td className="num">
+                                  {row.supportsMutations ? (
+                                    <input
+                                      type="checkbox"
+                                      checked={row.canCreate}
+                                      onChange={(e) =>
+                                        setMenuRows((rows) =>
+                                          rows.map((r) =>
+                                            r.menuKey === row.menuKey
+                                              ? { ...r, canCreate: e.target.checked }
+                                              : r,
+                                          ),
+                                        )
+                                      }
+                                      aria-label={`Incluir ${row.label}`}
+                                    />
+                                  ) : (
+                                    '—'
+                                  )}
+                                </td>
+                                <td className="num">
+                                  {row.supportsMutations ? (
+                                    <input
+                                      type="checkbox"
+                                      checked={row.canUpdate}
+                                      onChange={(e) =>
+                                        setMenuRows((rows) =>
+                                          rows.map((r) =>
+                                            r.menuKey === row.menuKey
+                                              ? { ...r, canUpdate: e.target.checked }
+                                              : r,
+                                          ),
+                                        )
+                                      }
+                                      aria-label={`Alterar ${row.label}`}
+                                    />
+                                  ) : (
+                                    '—'
+                                  )}
+                                </td>
+                                <td className="num">
+                                  {row.supportsDelete ? (
+                                    <input
+                                      type="checkbox"
+                                      checked={row.canDelete}
+                                      onChange={(e) =>
+                                        setMenuRows((rows) =>
+                                          rows.map((r) =>
+                                            r.menuKey === row.menuKey
+                                              ? { ...r, canDelete: e.target.checked }
+                                              : r,
+                                          ),
+                                        )
+                                      }
+                                      aria-label={`Excluir ${row.label}`}
+                                    />
+                                  ) : (
+                                    '—'
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
-                    ))}
-                  </div>
+                    )}
+
+                    <h3 style={{ fontSize: '0.95rem', margin: '0.5rem 0' }}>
+                      Permissões do PDV (opcional)
+                    </h3>
+                    <p style={{ marginTop: 0, color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
+                      Se marcar abaixo, o caixa usa a senha própria da permissão. Se não marcar, usa a
+                      senha do gerente.
+                    </p>
+                    {editingPermsQ.isLoading ? (
+                      <p>Carregando…</p>
+                    ) : (
+                      <div className="user-permissions-list">
+                        {permRows.map((row, idx) => (
+                          <div key={row.code} className="user-permission-card">
+                            <label className="user-permission-toggle">
+                              <input
+                                type="checkbox"
+                                checked={row.enabled}
+                                onChange={(e) =>
+                                  setPermRows((rows) =>
+                                    rows.map((r, i) =>
+                                      i === idx ? { ...r, enabled: e.target.checked } : r,
+                                    ),
+                                  )
+                                }
+                              />
+                              <span>
+                                <strong>{row.label}</strong>
+                                <span className="user-permission-desc">{row.description}</span>
+                              </span>
+                            </label>
+                            {row.enabled && (
+                              <div className="form-row">
+                                <div className="field">
+                                  <label htmlFor={`perm-pwd-${row.code}`}>
+                                    {row.hasPassword ? 'Nova senha (opcional)' : 'Senha de autorização *'}
+                                  </label>
+                                  <input
+                                    id={`perm-pwd-${row.code}`}
+                                    type="password"
+                                    autoComplete="new-password"
+                                    value={row.password}
+                                    onChange={(e) =>
+                                      setPermRows((rows) =>
+                                        rows.map((r, i) =>
+                                          i === idx ? { ...r, password: e.target.value } : r,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className="field">
+                                  <label htmlFor={`perm-pwd2-${row.code}`}>Confirmar senha</label>
+                                  <input
+                                    id={`perm-pwd2-${row.code}`}
+                                    type="password"
+                                    autoComplete="new-password"
+                                    value={row.confirmPassword}
+                                    onChange={(e) =>
+                                      setPermRows((rows) =>
+                                        rows.map((r, i) =>
+                                          i === idx ? { ...r, confirmPassword: e.target.value } : r,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -718,9 +869,12 @@ export function UsersPage() {
                   type="button"
                   className="btn btn-primary"
                   disabled={
+                    editing.profile === 'manager' ||
                     editing.roles.includes('admin') ||
+                    editing.roles.includes('manager') ||
                     savePermissions.isPending ||
-                    editingPermsQ.isLoading
+                    editingPermsQ.isLoading ||
+                    editingMenuQ.isLoading
                   }
                   onClick={() => savePermissions.mutate()}
                 >

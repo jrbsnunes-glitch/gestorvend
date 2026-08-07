@@ -1033,22 +1033,22 @@ function PosScreen({
     staleTime: 30_000,
   });
 
-  const canApplyDiscount =
-    isAdmin() || hasUserPermission(permissionsQ.data, 'SALE_DISCOUNT');
-  const canCancelSale =
-    isAdmin() || hasUserPermission(permissionsQ.data, 'SALE_CANCEL');
-  const canCancelFiscalDoc =
-    isAdmin() || hasUserPermission(permissionsQ.data, 'FISCAL_DOC_CANCEL');
+  const managerBypass = isManager();
+  const hasDiscountGrant = hasUserPermission(permissionsQ.data, 'SALE_DISCOUNT');
+  const hasCancelGrant = hasUserPermission(permissionsQ.data, 'SALE_CANCEL');
+  const hasFiscalCancelGrant = hasUserPermission(permissionsQ.data, 'FISCAL_DOC_CANCEL');
+  /** Gerente não pede senha; caixa pode tentar (senha da permissão ou do gerente). */
+  const canApplyDiscount = managerBypass || true;
+  const canCancelSale = managerBypass || true;
+  const canCancelFiscalDoc = managerBypass || true;
+  const discountNeedsPassword = !managerBypass;
+  const authPasswordHint = (hasGrant: boolean) =>
+    hasGrant
+      ? 'Informe a senha de autorização cadastrada para esta permissão.'
+      : 'Informe a senha do gerente para autorizar esta operação.';
 
   function applyDiscount(value: number) {
     const v = Math.max(0, value);
-    if (v > 0 && !canApplyDiscount) {
-      setToast({
-        kind: 'err',
-        text: 'Sem permissão para desconto. Solicite ao administrador.',
-      });
-      return;
-    }
     setDiscount(v);
   }
 
@@ -1125,14 +1125,7 @@ function PosScreen({
     }
 
     const hasItemDiscount = lines.some((l) => l.discount > 0.005);
-    if ((discount > 0 || hasItemDiscount) && !isAdmin()) {
-      if (!canApplyDiscount) {
-        setToast({
-          kind: 'err',
-          text: 'Sem permissão para desconto (item ou total). Solicite ao administrador.',
-        });
-        return;
-      }
+    if ((discount > 0 || hasItemDiscount) && discountNeedsPassword) {
       setPermModalError(null);
       setPermModal({ kind: 'discount_finish' });
       return;
@@ -3174,7 +3167,7 @@ function PosScreen({
                                         `e eventuais títulos de crediário vinculados a este cupom serão removidos.`,
                                     )
                                   ) {
-                                    if (isAdmin()) {
+                                    if (managerBypass) {
                                       cancelSale.mutate({ id: s.id, permissionPassword: '' });
                                     } else {
                                       setPermModalError(null);
@@ -3203,7 +3196,7 @@ function PosScreen({
                                             `O registro local será marcado como cancelado.`,
                                         )
                                       ) {
-                                        if (isAdmin()) {
+                                        if (managerBypass) {
                                           cancelFiscalDocMut.mutate({
                                             docId: s.fiscalDocument!.id,
                                             permissionPassword: '',
@@ -3395,13 +3388,6 @@ function PosScreen({
                             ? Math.round(((gross * raw) / 100) * 100) / 100
                             : raw;
                         disc = Math.max(0, Math.min(gross, disc));
-                        if (disc > 0 && !canApplyDiscount) {
-                          setToast({
-                            kind: 'err',
-                            text: 'Sem permissão para desconto. Solicite ao administrador.',
-                          });
-                          return;
-                        }
                         setLines((prev) =>
                           prev.map((l) =>
                             l.variantId === line.variantId ? { ...l, discount: disc } : l,
@@ -3444,13 +3430,6 @@ function PosScreen({
                           ? Math.round(((gross * raw) / 100) * 100) / 100
                           : raw;
                       disc = Math.max(0, Math.min(gross, disc));
-                      if (disc > 0 && !canApplyDiscount) {
-                        setToast({
-                          kind: 'err',
-                          text: 'Sem permissão para desconto. Solicite ao administrador.',
-                        });
-                        return;
-                      }
                       setLines((prev) =>
                         prev.map((l) =>
                           l.variantId === line.variantId ? { ...l, discount: disc } : l,
@@ -3478,15 +3457,15 @@ function PosScreen({
         }
         description={
           permModal?.kind === 'discount_finish'
-            ? `Informe a senha de autorização para concluir a venda com desconto${
+            ? `${authPasswordHint(hasDiscountGrant)} Concluir venda com desconto${
                 discount > 0 ? ` de ${formatBRL(discount)} no total` : ''
               }${
                 lines.some((l) => l.discount > 0.005) ? ' (inclui desconto em item)' : ''
               }.`
             : permModal?.kind === 'cancel_sale'
-              ? `Informe a senha de autorização para cancelar a venda #${permModal.saleNumber}.`
+              ? `${authPasswordHint(hasCancelGrant)} Cancelar a venda #${permModal.saleNumber}.`
               : permModal?.kind === 'fiscal_cancel'
-                ? `Informe a senha de autorização para cancelar a nota fiscal da venda #${permModal.saleNumber}.`
+                ? `${authPasswordHint(hasFiscalCancelGrant)} Cancelar a nota fiscal da venda #${permModal.saleNumber}.`
                 : ''
         }
         busy={createSale.isPending || cancelSale.isPending || cancelFiscalDocMut.isPending}

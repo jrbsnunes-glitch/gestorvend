@@ -14,6 +14,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { UserPermissionCode } from '../generated/tenant-client';
+import { MenuAccessService, type MenuAccessGrantInput } from './menu-access.service';
 import { UserPermissionsService } from './user-permissions.service';
 import { UsersService } from './users.service';
 
@@ -28,6 +29,7 @@ export class UsersController {
   constructor(
     private readonly users: UsersService,
     private readonly permissions: UserPermissionsService,
+    private readonly menuAccess: MenuAccessService,
   ) {}
 
   /** Catálogo de permissões disponíveis para concessão. */
@@ -37,11 +39,34 @@ export class UsersController {
     return this.permissions.catalog();
   }
 
+  @Get('menu-access-types')
+  @Roles('admin', 'manager')
+  menuAccessTypes() {
+    return this.menuAccess.catalog();
+  }
+
   /** Permissões do usuário logado (para UI do PDV). */
   @Get('me/permissions')
   @Roles('admin', 'manager', 'seller', 'finance')
   myPermissions(@CurrentUser() user: JwtPayload) {
     return this.permissions.listForUser(user.tenantSlug, user.sub, user.roles);
+  }
+
+  /** Matriz de acesso por menu do usuário logado (sidebar / CRUD). */
+  @Get('me/menu-access')
+  @Roles('admin', 'manager', 'seller', 'finance', 'waiter')
+  myMenuAccess(@CurrentUser() user: JwtPayload) {
+    return this.menuAccess.listForUser(user.tenantSlug, user.sub, user.roles);
+  }
+
+  @Post('verify-manager-password')
+  @Roles('admin', 'manager', 'seller', 'finance', 'waiter')
+  async verifyManagerPassword(
+    @CurrentUser() user: JwtPayload,
+    @Body() body: { password?: string },
+  ) {
+    await this.menuAccess.verifyManagerPassword(user.tenantSlug, body.password ?? '');
+    return { ok: true };
   }
 
   /** Identidade do usuário corrente — usada pelo front para exibir nome/perfil. */
@@ -78,6 +103,27 @@ export class UsersController {
     },
   ) {
     return this.users.updatePermissions(user.tenantSlug, id, body.grants ?? []);
+  }
+
+  @Get(':id/menu-access')
+  @Roles('admin', 'manager')
+  getMenuAccess(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.users.getMenuAccess(user.tenantSlug, id);
+  }
+
+  @Patch(':id/menu-access')
+  @Roles('admin', 'manager')
+  updateMenuAccess(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: { grants?: MenuAccessGrantInput[] },
+  ) {
+    return this.menuAccess.updateForUser(
+      user.tenantSlug,
+      user.roles,
+      id,
+      body.grants ?? [],
+    );
   }
 
   @Get(':id')

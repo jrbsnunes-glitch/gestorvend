@@ -7,6 +7,7 @@ import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { validateCpf11 } from '../common/cpf.util';
 import { validateCnpj14 } from '../common/cnpj.util';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { MenuAccessService } from '../users/menu-access.service';
 import { CustomerCreditService } from './customer-credit.service';
 
 function normalizeDocument(raw: unknown): string | null {
@@ -49,11 +50,19 @@ export class CustomersController {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly customerCredit: CustomerCreditService,
+    private readonly menuAccess: MenuAccessService,
   ) {}
 
   @Get()
   @Roles('admin', 'manager', 'seller', 'finance')
   async list(@CurrentUser() user: JwtPayload) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'clients',
+      'view',
+    );
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     return db.customer.findMany({ orderBy: { name: 'asc' } });
   }
@@ -136,8 +145,16 @@ export class CustomersController {
   }
 
   @Post()
-  @Roles('admin', 'manager')
+  @Roles('admin', 'manager', 'seller')
   async create(@CurrentUser() user: JwtPayload, @Body() body: Record<string, unknown>) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'clients',
+      'create',
+      typeof body.managerPassword === 'string' ? body.managerPassword : undefined,
+    );
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const birthDate = parseBirthDate(body.birthDate);
     return db.customer.create({
@@ -163,12 +180,20 @@ export class CustomersController {
   }
 
   @Patch(':id')
-  @Roles('admin', 'manager')
+  @Roles('admin', 'manager', 'seller')
   async update(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
     @Body() body: Record<string, unknown>,
   ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'clients',
+      'update',
+      typeof body.managerPassword === 'string' ? body.managerPassword : undefined,
+    );
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const birthDate = parseBirthDate(body.birthDate);
     return db.customer.update({
@@ -199,8 +224,20 @@ export class CustomersController {
   }
 
   @Delete(':id')
-  @Roles('admin', 'manager')
-  async remove(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+  @Roles('admin', 'manager', 'seller')
+  async remove(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body?: { managerPassword?: string },
+  ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'clients',
+      'delete',
+      body?.managerPassword,
+    );
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const n = await db.sale.count({ where: { customerId: id } });
     if (n > 0) {

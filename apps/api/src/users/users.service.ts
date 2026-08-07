@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { MenuAccessService } from './menu-access.service';
 import { PermissionGrantInput, UserPermissionsService } from './user-permissions.service';
 import { assertValidUsername } from './username.util';
 
@@ -41,6 +42,7 @@ export class UsersService {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly permissions: UserPermissionsService,
+    private readonly menuAccess: MenuAccessService,
   ) {}
 
   /**
@@ -330,5 +332,19 @@ export class UsersService {
   ) {
     const permissions = await this.permissions.updateForUser(tenantSlug, userId, grants);
     return { permissions };
+  }
+
+  async getMenuAccess(tenantSlug: string, userId: string) {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const u = await db.user.findUnique({
+      where: { id: userId },
+      include: { roles: true },
+    });
+    if (!u) throw new NotFoundException('Usuário não encontrado.');
+    return this.menuAccess.listForUser(
+      tenantSlug,
+      userId,
+      u.roles.map((r) => r.name),
+    );
   }
 }

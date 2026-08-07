@@ -232,6 +232,7 @@ model User {
   stockInventories StockInventory[]
   activityLogs   UserActivityLog[]
   permissions    UserPermission[]
+  menuAccess     MenuAccessGrant[]
   serviceTabsOpened ServiceTab[] @relation("ServiceTabOpenedBy")
 }
 
@@ -252,6 +253,24 @@ model UserPermission {
   updatedAt    DateTime           @updatedAt
 
   @@unique([userId, code])
+  @@index([userId])
+}
+
+/// Acesso por menu do sistema (perfil Caixa). Gerente/admin ignoram estas regras.
+model MenuAccessGrant {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Chave estável do menu (ex.: clients, cash, company).
+  menuKey    String   @db.VarChar(40)
+  canView    Boolean  @default(false)
+  canCreate  Boolean  @default(false)
+  canUpdate  Boolean  @default(false)
+  canDelete  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, menuKey])
   @@index([userId])
 }
 

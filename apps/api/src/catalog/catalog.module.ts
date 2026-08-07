@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { UsersModule } from '../users/users.module';
 import { CategoriesController } from './categories.controller';
 import { CustomerCreditService } from './customer-credit.service';
 import { CustomerGroupsController } from './customer-groups.controller';
@@ -13,6 +14,7 @@ import { LookupsController } from './lookups.controller';
 import { OperationNaturesController } from './operation-natures.controller';
 
 @Module({
+  imports: [UsersModule],
   controllers: [
     CustomersController,
     CustomerGroupsController,

@@ -32,6 +32,10 @@ export class UserPermissionsService {
     return roles.includes('admin');
   }
 
+  isManagerOrAdmin(roles: string[]): boolean {
+    return roles.includes('admin') || roles.includes('manager');
+  }
+
   catalog() {
     return USER_PERMISSION_CATALOG;
   }
@@ -41,9 +45,9 @@ export class UserPermissionsService {
     userId: string,
     roles: string[],
   ): Promise<{ isAdmin: boolean; permissions: UserPermissionSummary[] }> {
-    if (this.isAdminRole(roles)) {
+    if (this.isManagerOrAdmin(roles)) {
       return {
-        isAdmin: true,
+        isAdmin: this.isAdminRole(roles),
         permissions: USER_PERMISSION_CATALOG.map((p) => ({
           code: p.code,
           label: p.label,
@@ -135,7 +139,7 @@ export class UserPermissionsService {
     return permissions.some((p) => p.code === code && p.enabled);
   }
 
-  /** Admin ignora; demais precisam permissão + senha correta. */
+  /** Gerente/admin ignora; caixa com grant usa senha da permissão; sem grant usa senha do gerente. */
   async assertPermission(
     tenantSlug: string,
     userId: string,
@@ -143,27 +147,47 @@ export class UserPermissionsService {
     code: UserPermissionCode,
     permissionPassword?: string,
   ): Promise<void> {
-    if (this.isAdminRole(roles)) return;
+    if (this.isManagerOrAdmin(roles)) return;
 
     const db = await this.tenantPrisma.getClient(tenantSlug);
     const row = await db.userPermission.findUnique({
       where: { userId_code: { userId, code } },
     });
-    if (!row) {
-      const meta = USER_PERMISSION_CATALOG.find((p) => p.code === code);
-      throw new ForbiddenException(
-        meta ? `Sem permissão: ${meta.label}. Solicite ao administrador.` : 'Sem permissão.',
+
+    const pwd = typeof permissionPassword === 'string' ? permissionPassword.trim() : '';
+    if (!pwd) {
+      throw new BadRequestException(
+        row
+          ? 'Informe a senha de autorização para esta operação.'
+          : 'Informe a senha do gerente para autorizar esta operação.',
       );
     }
 
-    const pwd = typeof permissionPassword === 'string' ? permissionPassword : '';
-    if (!pwd.trim()) {
-      throw new BadRequestException('Informe a senha de autorização para esta operação.');
+    if (row) {
+      const ok = await bcrypt.compare(pwd, row.passwordHash);
+      if (!ok) throw new ForbiddenException('Senha de autorização inválida.');
+      return;
     }
 
-    const ok = await bcrypt.compare(pwd, row.passwordHash);
-    if (!ok) {
-      throw new ForbiddenException('Senha de autorização inválida.');
+    // Sem grant: autoriza com senha de qualquer gerente/admin ativo.
+    const managers = await db.user.findMany({
+      where: {
+        isActive: true,
+        roles: { some: { name: { in: ['admin', 'manager'] } } },
+      },
+      select: { passwordHash: true },
+    });
+    if (!managers.length) {
+      const meta = USER_PERMISSION_CATALOG.find((p) => p.code === code);
+      throw new ForbiddenException(
+        meta
+          ? `Sem permissão: ${meta.label}. Solicite ao gerente.`
+          : 'Sem permissão.',
+      );
     }
+    for (const m of managers) {
+      if (await bcrypt.compare(pwd, m.passwordHash)) return;
+    }
+    throw new ForbiddenException('Senha do gerente inválida.');
   }
 }
