@@ -1986,7 +1986,7 @@ function SessionDetailDrawer({
                 </span>
               )}
             </h2>
-            <button type="button" className="pos-btn pos-btn-ghost" onClick={onClose} style={{ flexShrink: 0 }}>
+            <button type="button" className="btn btn-ghost" onClick={onClose} style={{ flexShrink: 0 }}>
               Fechar
             </button>
           </div>

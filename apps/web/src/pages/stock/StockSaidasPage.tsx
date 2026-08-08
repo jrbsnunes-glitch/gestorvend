@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { CrudToolbar } from '../../components/CrudToolbar';
 import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
+import { ProductSearchModal, type ProductSearchRow } from '../../components/ProductSearchModal';
 import { api } from '../../lib/api';
 
 const MOTIVES = ['Avaria', 'Perda / quebra', 'Consumo interno', 'Amostra / brinde', 'Vencido', 'Outro'];
@@ -21,7 +22,9 @@ export function StockSaidasPage() {
   const qc = useQueryClient();
   const [includeOpen, setIncludeOpen] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
+  const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [variantId, setVariantId] = useState('');
+  const [productLabel, setProductLabel] = useState('');
   const [locationId, setLocationId] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [reason, setReason] = useState(MOTIVES[0]);
@@ -38,23 +41,22 @@ export function StockSaidasPage() {
     queryFn: () => api<Array<{ id: string; code: string; name: string }>>('/stock-locations'),
   });
 
-  const variantOptions = useQuery({
-    queryKey: ['products-for-select'],
-    queryFn: async () => {
-      const products = await api<Array<{ name: string; variants: Array<{ id: string; sku: string }> }>>('/products');
-      return products.flatMap((p) => p.variants.map((v) => ({ id: v.id, label: `${v.sku} — ${p.name}` })));
-    },
-  });
-
   const recentExits = useMemo(() => (exits.data ?? []).slice(0, 50), [exits.data]);
 
   function resetSaidaForm() {
     setVariantId('');
+    setProductLabel('');
     setLocationId('');
     setQuantity('1');
     setReason(MOTIVES[0]);
     setReference('');
     setErr(null);
+  }
+
+  function pickProduct(row: ProductSearchRow) {
+    setVariantId(row.variantId);
+    setProductLabel(`${row.sku} — ${row.productName}`);
+    setProductSearchOpen(false);
   }
 
   const exitMut = useMutation({
@@ -175,15 +177,22 @@ export function StockSaidasPage() {
             </p>
             {err && <div className="alert alert-error">{err}</div>}
             <div className="field">
-              <label>Produto (SKU) *</label>
-              <select value={variantId} onChange={(e) => setVariantId(e.target.value)}>
-                <option value="">— Selecione —</option>
-                {variantOptions.data?.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.label}
-                  </option>
-                ))}
-              </select>
+              <label>Produto *</label>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  readOnly
+                  value={productLabel}
+                  placeholder="Nenhum produto selecionado"
+                  style={{ flex: '1 1 12rem', minWidth: 0 }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setProductSearchOpen(true)}
+                >
+                  Pesquisar
+                </button>
+              </div>
             </div>
             <div className="field">
               <label>Local *</label>
@@ -239,6 +248,13 @@ export function StockSaidasPage() {
           </div>
         </FormModalBackdrop>
       )}
+
+      <ProductSearchModal
+        open={productSearchOpen}
+        title="Pesquisar produto para saída"
+        onClose={() => setProductSearchOpen(false)}
+        onPick={pickProduct}
+      />
     </div>
   );
 }

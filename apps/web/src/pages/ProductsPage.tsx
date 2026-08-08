@@ -195,6 +195,14 @@ export function ProductsPage() {
   const [searchActionErr, setSearchActionErr] = useState<string | null>(null);
   const searchQ = useDeferredValue(searchInput.trim());
 
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterDescDraft, setFilterDescDraft] = useState('');
+  const [filterCodeMinDraft, setFilterCodeMinDraft] = useState('');
+  const [filterCodeMaxDraft, setFilterCodeMaxDraft] = useState('');
+  const [appliedFilterDesc, setAppliedFilterDesc] = useState('');
+  const [appliedFilterCodeMin, setAppliedFilterCodeMin] = useState<number | null>(null);
+  const [appliedFilterCodeMax, setAppliedFilterCodeMax] = useState<number | null>(null);
+
   useEffect(() => {
     const q = searchParams.get('q')?.trim();
     if (!q) return;
@@ -292,7 +300,19 @@ export function ProductsPage() {
       return a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' });
     });
 
-    return sortedProducts.flatMap((p) => {
+    const desc = appliedFilterDesc.trim().toLowerCase();
+    const filteredProducts = sortedProducts.filter((p) => {
+      if (desc) {
+        const hay = `${p.name} ${p.description ?? ''}`.toLowerCase();
+        if (!hay.includes(desc)) return false;
+      }
+      const code = p.controlNumber ?? 0;
+      if (appliedFilterCodeMin != null && code < appliedFilterCodeMin) return false;
+      if (appliedFilterCodeMax != null && code > appliedFilterCodeMax) return false;
+      return true;
+    });
+
+    return filteredProducts.flatMap((p) => {
       const variants = [...p.variants].sort((a, b) =>
         a.sku.localeCompare(b.sku, 'pt-BR', { sensitivity: 'base' }),
       );
@@ -300,7 +320,40 @@ export function ProductsPage() {
         ? variants.map((v) => ({ product: p, variant: v }))
         : [{ product: p, variant: null as Variant | null }];
     });
-  }, [list.data]);
+  }, [list.data, appliedFilterDesc, appliedFilterCodeMin, appliedFilterCodeMax]);
+
+  const filtersActive =
+    appliedFilterDesc.trim() !== '' ||
+    appliedFilterCodeMin != null ||
+    appliedFilterCodeMax != null;
+
+  function openFiltersModal() {
+    setFilterDescDraft(appliedFilterDesc);
+    setFilterCodeMinDraft(appliedFilterCodeMin != null ? String(appliedFilterCodeMin) : '');
+    setFilterCodeMaxDraft(appliedFilterCodeMax != null ? String(appliedFilterCodeMax) : '');
+    setFiltersOpen(true);
+  }
+
+  function applyFilters() {
+    const minRaw = filterCodeMinDraft.trim().replace(/\D/g, '');
+    const maxRaw = filterCodeMaxDraft.trim().replace(/\D/g, '');
+    const minN = minRaw ? parseInt(minRaw, 10) : NaN;
+    const maxN = maxRaw ? parseInt(maxRaw, 10) : NaN;
+    setAppliedFilterDesc(filterDescDraft.trim());
+    setAppliedFilterCodeMin(Number.isFinite(minN) ? minN : null);
+    setAppliedFilterCodeMax(Number.isFinite(maxN) ? maxN : null);
+    setFiltersOpen(false);
+  }
+
+  function clearFilters() {
+    setFilterDescDraft('');
+    setFilterCodeMinDraft('');
+    setFilterCodeMaxDraft('');
+    setAppliedFilterDesc('');
+    setAppliedFilterCodeMin(null);
+    setAppliedFilterCodeMax(null);
+    setFiltersOpen(false);
+  }
 
   const pagination = useListPagination(rows, 20);
 
@@ -681,17 +734,31 @@ export function ProductsPage() {
 
       <CrudToolbar
         leadingPrimary={
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => {
-              setSearchInput('');
-              setSearchActionErr(null);
-              setSearchOpen(true);
-            }}
-          >
-            Pesquisar
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                setSearchInput('');
+                setSearchActionErr(null);
+                setSearchOpen(true);
+              }}
+            >
+              Pesquisar
+            </button>
+            <button
+              type="button"
+              className={filtersActive ? 'btn btn-primary' : 'btn btn-secondary'}
+              onClick={() => openFiltersModal()}
+              title={
+                filtersActive
+                  ? 'Filtros ativos — clique para alterar'
+                  : 'Filtrar listagem por descrição e faixa de código'
+              }
+            >
+              Filtros{filtersActive ? ' ●' : ''}
+            </button>
+          </>
         }
         onInclude={() => {
           resetCreateForm();
@@ -704,6 +771,66 @@ export function ProductsPage() {
       <ModuleReportsModal open={reportsOpen} title="Produtos" compactLauncher onClose={() => setReportsOpen(false)}>
         <ProductReportsPanel />
       </ModuleReportsModal>
+
+      {filtersOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setFiltersOpen(false)}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-labelledby="product-filters-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 420 }}
+          >
+            <h2 id="product-filters-title">Filtros da listagem</h2>
+            <p style={{ margin: '0 0 0.85rem', fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
+              Combine descrição e/ou faixa de código do produto. Deixe em branco o que não quiser filtrar.
+            </p>
+            <div className="field">
+              <label htmlFor="pf-desc">Descrição</label>
+              <input
+                id="pf-desc"
+                value={filterDescDraft}
+                onChange={(e) => setFilterDescDraft(e.target.value)}
+                placeholder="Nome ou descrição parcial…"
+                autoFocus
+              />
+            </div>
+            <div className="form-row">
+              <div className="field">
+                <label htmlFor="pf-code-min">Código min</label>
+                <input
+                  id="pf-code-min"
+                  inputMode="numeric"
+                  value={filterCodeMinDraft}
+                  onChange={(e) => setFilterCodeMinDraft(e.target.value)}
+                  placeholder="Ex.: 1"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="pf-code-max">Código max</label>
+                <input
+                  id="pf-code-max"
+                  inputMode="numeric"
+                  value={filterCodeMaxDraft}
+                  onChange={(e) => setFilterCodeMaxDraft(e.target.value)}
+                  placeholder="Ex.: 100"
+                />
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => clearFilters()}>
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setFiltersOpen(false)}>
+                Cancelar
+              </button>
+              <button type="button" className="btn btn-primary" onClick={() => applyFilters()}>
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
 
       {searchOpen && (
         <div
@@ -835,10 +962,16 @@ export function ProductsPage() {
       <div className="toolbar no-print">
         <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
           {list.data?.length ?? 0} produto(s)
-          {pagination.totalItems > pagination.pageSize
+          {filtersActive ? ` · filtrado: ${pagination.totalItems} linha(s)` : ''}
+          {!filtersActive && pagination.totalItems > pagination.pageSize
             ? ` · ${pagination.totalItems} linha(s) na grade`
             : ''}
         </span>
+        {filtersActive && (
+          <button type="button" className="btn btn-ghost btn-compact" onClick={() => clearFilters()}>
+            Limpar filtros
+          </button>
+        )}
       </div>
 
       {list.isError && <div className="alert alert-error">{(list.error as Error).message}</div>}
@@ -879,7 +1012,9 @@ export function ProductsPage() {
             {!list.isLoading && !rows.length && (
               <tr>
                 <td colSpan={10} className="empty">
-                  Nenhum produto.
+                  {filtersActive
+                    ? 'Nenhum produto com os filtros atuais. Ajuste ou limpe os filtros.'
+                    : 'Nenhum produto.'}
                 </td>
               </tr>
             )}
