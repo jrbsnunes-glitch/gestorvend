@@ -290,9 +290,17 @@ export class ProductsController {
 
   @Get()
   @Roles('admin', 'manager', 'seller', 'finance')
-  async list(@CurrentUser() user: JwtPayload) {
+  async list(
+    @CurrentUser() user: JwtPayload,
+    @Query('includeInactive') includeInactiveRaw?: string,
+  ) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const includeInactive =
+      includeInactiveRaw === '1' ||
+      includeInactiveRaw === 'true' ||
+      includeInactiveRaw === 'yes';
     return db.product.findMany({
+      where: includeInactive ? undefined : { isActive: true },
       include: productDetailInclude,
       orderBy: [{ controlNumber: 'asc' }],
     });
@@ -327,9 +335,14 @@ export class ProductsController {
     //    (evita EAN curto colidir com código sequencial de outro produto).
     const exactBarcode = await db.productVariant.findMany({
       where: {
-        OR: [
-          { barcode: { equals: term, mode: 'insensitive' } },
-          { product: { defaultBarcode: { equals: term, mode: 'insensitive' } } },
+        AND: [
+          { product: { isActive: true } },
+          {
+            OR: [
+              { barcode: { equals: term, mode: 'insensitive' } },
+              { product: { defaultBarcode: { equals: term, mode: 'insensitive' } } },
+            ],
+          },
         ],
       },
       take: 80,
@@ -344,7 +357,7 @@ export class ProductsController {
     const controlNumber = this.parseProductControlSearch(term);
     if (controlNumber != null) {
       const exactByCode = await db.productVariant.findMany({
-        where: { product: { controlNumber } },
+        where: { product: { controlNumber, isActive: true } },
         take: 80,
         orderBy: [{ sku: 'asc' }],
         include,
@@ -357,12 +370,17 @@ export class ProductsController {
     // 3) Busca parcial (nome, descrição, SKU, EAN variante e EAN padrão).
     const variants = await db.productVariant.findMany({
       where: {
-        OR: [
-          { product: { name: { contains: term, mode: 'insensitive' } } },
-          { product: { description: { contains: term, mode: 'insensitive' } } },
-          { product: { defaultBarcode: { contains: term, mode: 'insensitive' } } },
-          { sku: { contains: term, mode: 'insensitive' } },
-          { barcode: { contains: term, mode: 'insensitive' } },
+        AND: [
+          { product: { isActive: true } },
+          {
+            OR: [
+              { product: { name: { contains: term, mode: 'insensitive' } } },
+              { product: { description: { contains: term, mode: 'insensitive' } } },
+              { product: { defaultBarcode: { contains: term, mode: 'insensitive' } } },
+              { sku: { contains: term, mode: 'insensitive' } },
+              { barcode: { contains: term, mode: 'insensitive' } },
+            ],
+          },
         ],
       },
       take: 80,

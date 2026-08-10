@@ -199,9 +199,11 @@ export function ProductsPage() {
   const [filterDescDraft, setFilterDescDraft] = useState('');
   const [filterCodeMinDraft, setFilterCodeMinDraft] = useState('');
   const [filterCodeMaxDraft, setFilterCodeMaxDraft] = useState('');
+  const [filterStatusDraft, setFilterStatusDraft] = useState<'active' | 'inactive' | 'all'>('active');
   const [appliedFilterDesc, setAppliedFilterDesc] = useState('');
   const [appliedFilterCodeMin, setAppliedFilterCodeMin] = useState<number | null>(null);
   const [appliedFilterCodeMax, setAppliedFilterCodeMax] = useState<number | null>(null);
+  const [appliedFilterStatus, setAppliedFilterStatus] = useState<'active' | 'inactive' | 'all'>('active');
 
   useEffect(() => {
     const q = searchParams.get('q')?.trim();
@@ -240,8 +242,8 @@ export function ProductsPage() {
   const [supplierLinks, setSupplierLinks] = useState<SupplierLinkDraft[]>([]);
 
   const list = useQuery({
-    queryKey: ['products'],
-    queryFn: () => api<Product[]>('/products'),
+    queryKey: ['products', 'includeInactive'],
+    queryFn: () => api<Product[]>('/products?includeInactive=1'),
   });
 
   const fiscalSituationsQ = useQuery({
@@ -302,6 +304,8 @@ export function ProductsPage() {
 
     const desc = appliedFilterDesc.trim().toLowerCase();
     const filteredProducts = sortedProducts.filter((p) => {
+      if (appliedFilterStatus === 'active' && !p.isActive) return false;
+      if (appliedFilterStatus === 'inactive' && p.isActive) return false;
       if (desc) {
         const hay = `${p.name} ${p.description ?? ''}`.toLowerCase();
         if (!hay.includes(desc)) return false;
@@ -320,17 +324,25 @@ export function ProductsPage() {
         ? variants.map((v) => ({ product: p, variant: v }))
         : [{ product: p, variant: null as Variant | null }];
     });
-  }, [list.data, appliedFilterDesc, appliedFilterCodeMin, appliedFilterCodeMax]);
+  }, [
+    list.data,
+    appliedFilterDesc,
+    appliedFilterCodeMin,
+    appliedFilterCodeMax,
+    appliedFilterStatus,
+  ]);
 
   const filtersActive =
     appliedFilterDesc.trim() !== '' ||
     appliedFilterCodeMin != null ||
-    appliedFilterCodeMax != null;
+    appliedFilterCodeMax != null ||
+    appliedFilterStatus !== 'active';
 
   function openFiltersModal() {
     setFilterDescDraft(appliedFilterDesc);
     setFilterCodeMinDraft(appliedFilterCodeMin != null ? String(appliedFilterCodeMin) : '');
     setFilterCodeMaxDraft(appliedFilterCodeMax != null ? String(appliedFilterCodeMax) : '');
+    setFilterStatusDraft(appliedFilterStatus);
     setFiltersOpen(true);
   }
 
@@ -342,6 +354,7 @@ export function ProductsPage() {
     setAppliedFilterDesc(filterDescDraft.trim());
     setAppliedFilterCodeMin(Number.isFinite(minN) ? minN : null);
     setAppliedFilterCodeMax(Number.isFinite(maxN) ? maxN : null);
+    setAppliedFilterStatus(filterStatusDraft);
     setFiltersOpen(false);
   }
 
@@ -349,9 +362,11 @@ export function ProductsPage() {
     setFilterDescDraft('');
     setFilterCodeMinDraft('');
     setFilterCodeMaxDraft('');
+    setFilterStatusDraft('active');
     setAppliedFilterDesc('');
     setAppliedFilterCodeMin(null);
     setAppliedFilterCodeMax(null);
+    setAppliedFilterStatus('active');
     setFiltersOpen(false);
   }
 
@@ -790,8 +805,22 @@ export function ProductsPage() {
           >
             <h2 id="product-filters-title">Filtros da listagem</h2>
             <p style={{ margin: '0 0 0.85rem', fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
-              Combine descrição e/ou faixa de código do produto. Deixe em branco o que não quiser filtrar.
+              Por padrão só aparecem produtos ativos. Use o status para ver inativos e reativá-los.
             </p>
+            <div className="field">
+              <label htmlFor="pf-status">Status</label>
+              <select
+                id="pf-status"
+                value={filterStatusDraft}
+                onChange={(e) =>
+                  setFilterStatusDraft(e.target.value as 'active' | 'inactive' | 'all')
+                }
+              >
+                <option value="active">Somente ativos</option>
+                <option value="inactive">Somente inativos</option>
+                <option value="all">Todos</option>
+              </select>
+            </div>
             <div className="field">
               <label htmlFor="pf-desc">Descrição</label>
               <input
