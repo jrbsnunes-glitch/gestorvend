@@ -980,7 +980,7 @@ export class ProductsController {
           ...(nextStockComponent !== undefined && {
             stockComponentVariantId: nextStockComponent,
           }),
-          ...(body.isActive != null && { isActive: Boolean(body.isActive) }),
+          ...(body.isActive !== undefined && { isActive: Boolean(body.isActive) }),
           ...(body.categoryId !== undefined && {
             categoryId: body.categoryId ? String(body.categoryId) : null,
           }),
@@ -1019,16 +1019,31 @@ export class ProductsController {
   }
 
   @Delete(':id')
-  @Roles('admin', 'manager')
+  @Roles('admin', 'manager', 'seller')
   async remove(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const existing = await db.product.findUnique({ where: { id }, select: { id: true, isActive: true } });
+    if (!existing) {
+      throw new BadRequestException('Produto não encontrado.');
+    }
+
     try {
       await db.product.delete({ where: { id } });
+      return { ok: true, deactivated: false };
     } catch {
-      throw new BadRequestException(
-        'Não foi possível excluir (verifique vendas ou movimentos vinculados às variações)',
-      );
+      // Com vendas/movimentos vinculados a exclusão física falha — inativa em vez de apagar.
+      if (!existing.isActive) {
+        throw new BadRequestException(
+          'Produto já está inativo e não pode ser excluído (há vendas ou movimentos vinculados).',
+        );
+      }
+      await db.product.update({ where: { id }, data: { isActive: false } });
+      return {
+        ok: true,
+        deactivated: true,
+        message:
+          'Produto não pôde ser excluído (há movimentação/vendas). Foi marcado como inativo.',
+      };
     }
-    return { ok: true };
   }
 }

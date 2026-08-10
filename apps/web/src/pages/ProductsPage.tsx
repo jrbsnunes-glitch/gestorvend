@@ -534,6 +534,7 @@ export function ProductsPage() {
               : null,
           fiscalSituationId: fiscalSituationId || null,
           categoryId: categoryId || null,
+          isActive,
           variantPrices: payload.product.variants.map((v) => {
             const row = variantPrices[v.id];
             return {
@@ -562,12 +563,18 @@ export function ProductsPage() {
   });
 
   const remove = useMutation({
-    mutationFn: (id: string) => api(`/products/${id}`, { method: 'DELETE' }),
-    onSuccess: () => {
+    mutationFn: (id: string) =>
+      api<{ ok: boolean; deactivated?: boolean; message?: string }>(`/products/${id}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['products'] });
       setDeleteOpen(false);
       setDeleteProduct(null);
       setErr(null);
+      if (res.deactivated && res.message) {
+        alert(res.message);
+      }
     },
     onError: (e: Error) => setErr(e.message),
   });
@@ -1910,6 +1917,10 @@ export function ProductsPage() {
             <h2>Excluir produto</h2>
             <p>
               Confirma a exclusão de <strong>{deleteProduct.name}</strong> e todas as suas variações?
+            </p>
+            <p style={{ fontSize: '0.88rem', color: 'var(--color-text-secondary)', marginTop: 0 }}>
+              Se o produto já tiver vendas ou movimentos de estoque, ele será apenas{' '}
+              <strong>inativado</strong> (não apagado).
             </p>
             {err && <div className="alert alert-error">{err}</div>}
             <div className="modal-actions">
