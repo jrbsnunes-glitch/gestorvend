@@ -8,7 +8,7 @@ import { Request } from 'express';
 import { Observable, from, switchMap } from 'rxjs';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import {
-  managerPasswordFromBody,
+  managerPasswordFromRequest,
   resolveMenuAccessEnforcement,
 } from './menu-access.route-map';
 import { MenuAccessService } from './menu-access.service';
@@ -46,7 +46,7 @@ export class MenuAccessInterceptor implements NestInterceptor {
         user.roles,
         enforcement.menuKey,
         enforcement.action,
-        managerPasswordFromBody(req.body),
+        managerPasswordFromRequest(req),
       ),
     ).pipe(switchMap(() => next.handle()));
   }

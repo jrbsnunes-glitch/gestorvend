@@ -1515,12 +1515,23 @@ export class CashController {
       method?: PaymentMethod | null;
       reason?: string | null;
       referentialAccountId?: string | null;
+      /** Gerente/admin: lança no caixa aberto de outro operador. */
+      sessionId?: string | null;
     },
   ) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
-    const open = await db.cashRegisterSession.findFirst({
-      where: { userId: user.sub, status: CashSessionStatus.OPEN },
-    });
+    const isManager = user.roles.includes('admin') || user.roles.includes('manager');
+    const targetSessionId =
+      typeof body.sessionId === 'string' && body.sessionId.trim() !== ''
+        ? body.sessionId.trim()
+        : null;
+
+    const open = targetSessionId
+      ? await this.resolveMovementTargetSession(db, targetSessionId, user.sub, isManager)
+      : await db.cashRegisterSession.findFirst({
+          where: { userId: user.sub, status: CashSessionStatus.OPEN },
+          include: { user: { select: { id: true, name: true } } },
+        });
     if (!open) throw new BadRequestException('Abra o caixa antes');
 
     const method = body.method ?? null;
@@ -1562,7 +1573,7 @@ export class CashController {
       throw new BadRequestException('Despesas de caixa exigem centro de custo.');
     }
 
-    return db.cashMovement.create({
+    const created = await db.cashMovement.create({
       data: {
         sessionId: open.id,
         type: body.type,
@@ -1572,5 +1583,53 @@ export class CashController {
         referentialAccountId,
       },
     });
+
+    const kindLabel =
+      body.type === CashMovementType.IN
+        ? 'suprimento'
+        : method === PaymentMethod.EXPENSE
+          ? 'despesa'
+          : 'sangria';
+    const operatorName = open.user?.name ?? 'operador';
+    const ownCash = open.userId === user.sub;
+    this.activityLog.record({
+      tenantSlug: user.tenantSlug,
+      userId: user.sub,
+      action: ActivityLogAction.UPDATE,
+      summary:
+        `Lançou ${kindLabel} de R$ ${Number(body.amount ?? 0).toFixed(2)} no caixa controle ${open.controlNumber}` +
+        (ownCash ? '' : ` do operador ${operatorName}`) +
+        (body.reason ? ` — motivo: ${body.reason}` : ''),
+      entityType: 'cash_movement',
+      entityRef: `controle ${open.controlNumber}`,
+    });
+
+    return created;
+  }
+
+  /**
+   * Caixa alvo de um lançamento explícito (`sessionId`). Gerente/admin podem
+   * movimentar o caixa aberto de qualquer operador; os demais, só o próprio.
+   */
+  private async resolveMovementTargetSession(
+    db: PrismaClient,
+    sessionId: string,
+    userId: string,
+    isManager: boolean,
+  ) {
+    const target = await db.cashRegisterSession.findUnique({
+      where: { id: sessionId },
+      include: { user: { select: { id: true, name: true } } },
+    });
+    if (!target) throw new NotFoundException('Caixa não encontrado.');
+    if (target.status !== CashSessionStatus.OPEN) {
+      throw new BadRequestException('Caixa já fechado — não é possível lançar movimento.');
+    }
+    if (target.userId !== userId && !isManager) {
+      throw new ForbiddenException(
+        'Somente gerente pode lançar movimento no caixa de outro operador.',
+      );
+    }
+    return target;
   }
 }

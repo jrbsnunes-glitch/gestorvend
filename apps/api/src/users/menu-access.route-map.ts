@@ -198,3 +198,28 @@ export function managerPasswordFromBody(body: unknown): string | undefined {
   const v = (body as { managerPassword?: unknown }).managerPassword;
   return typeof v === 'string' ? v : undefined;
 }
+
+/** Header usado quando a requisição não tem corpo JSON (GET/DELETE). */
+export const MANAGER_PASSWORD_HEADER = 'x-manager-password';
+
+/**
+ * Senha do gerente enviada pelo front: corpo JSON (`managerPassword`) ou
+ * header `x-manager-password` (valor em `encodeURIComponent`, para aceitar
+ * acentos/símbolos que headers HTTP não transportam crus).
+ */
+export function managerPasswordFromRequest(req: {
+  body?: unknown;
+  headers?: Record<string, unknown>;
+}): string | undefined {
+  const fromBody = managerPasswordFromBody(req.body);
+  if (fromBody) return fromBody;
+
+  const raw = req.headers?.[MANAGER_PASSWORD_HEADER];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== 'string' || value === '') return fromBody;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}

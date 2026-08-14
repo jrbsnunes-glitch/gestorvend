@@ -10,6 +10,10 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onSuccess?: (msg: string) => void;
+  /** Caixa alvo — gerente pode lançar no caixa aberto de outro operador. */
+  sessionId?: string | null;
+  /** Rótulo do caixa alvo (ex.: «#12 · Rayelle») exibido no cabeçalho. */
+  sessionLabel?: string | null;
 };
 
 const KIND_LABEL: Record<PdvProcedureKind, string> = {
@@ -20,9 +24,16 @@ const KIND_LABEL: Record<PdvProcedureKind, string> = {
 
 /**
  * Overlay do PDV (F3): sangria, despesa (caixa aberto) ou suprimento.
- * Usa POST /cash/movement — sempre no caixa OPEN do operador logado.
+ * Usa POST /cash/movement — no caixa OPEN do operador logado ou, quando
+ * `sessionId` é informado por um gerente, no caixa de outro operador.
  */
-export function PdvProceduresOverlay({ open, onClose, onSuccess }: Props) {
+export function PdvProceduresOverlay({
+  open,
+  onClose,
+  onSuccess,
+  sessionId = null,
+  sessionLabel = null,
+}: Props) {
   const qc = useQueryClient();
   const amountRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<'pick' | 'form'>('pick');
@@ -77,6 +88,7 @@ export function PdvProceduresOverlay({ open, onClose, onSuccess }: Props) {
       const json: Record<string, unknown> = {
         amount: v,
         reason: notes.trim() || null,
+        ...(sessionId ? { sessionId } : {}),
       };
       if (kind === 'SUPPLY') {
         json.type = 'IN';
@@ -95,7 +107,11 @@ export function PdvProceduresOverlay({ open, onClose, onSuccess }: Props) {
       qc.invalidateQueries({ queryKey: ['cash', 'sessions'] });
       qc.invalidateQueries({ queryKey: ['cash'] });
       const label = kind ? KIND_LABEL[kind] : 'Procedimento';
-      onSuccess?.(`${label} registrado(a) no caixa aberto.`);
+      onSuccess?.(
+        sessionLabel
+          ? `${label} registrado(a) no caixa ${sessionLabel}.`
+          : `${label} registrado(a) no caixa aberto.`,
+      );
       onClose();
     },
     onError: (e: Error) => setErr(e.message),
@@ -117,7 +133,9 @@ export function PdvProceduresOverlay({ open, onClose, onSuccess }: Props) {
       <div className="pos-payment-shell" style={{ maxWidth: 520 }}>
         <div className="pos-payment-header">
           <div>
-            <span className="pos-payment-eyebrow">Caixa aberto</span>
+            <span className="pos-payment-eyebrow">
+              {sessionLabel ? `Caixa ${sessionLabel}` : 'Caixa aberto'}
+            </span>
             <h2>Procedimentos</h2>
           </div>
           <button type="button" className="pos-btn pos-btn-ghost" onClick={onClose}>
@@ -128,7 +146,9 @@ export function PdvProceduresOverlay({ open, onClose, onSuccess }: Props) {
         {step === 'pick' ? (
           <div className="pos-procedures-pick">
             <p className="pos-procedures-lead">
-              Lançamentos no seu caixa atual. Despesas ficam atreladas à sessão aberta.
+              {sessionLabel
+                ? `Lançamentos no caixa ${sessionLabel}. Despesas ficam atreladas a essa sessão.`
+                : 'Lançamentos no seu caixa atual. Despesas ficam atreladas à sessão aberta.'}
             </p>
             <button type="button" className="pos-procedures-tile" onClick={() => choose('WITHDRAWAL')}>
               <strong>Retirada / Sangria</strong>

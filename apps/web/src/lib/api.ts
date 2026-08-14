@@ -330,10 +330,64 @@ export class ApiHttpError extends Error {
   }
 }
 
-export async function api<T>(
+/** Dados mostrados ao operador quando a API exige senha de gerente. */
+export type ManagerPasswordRequest = {
+  method: string;
+  path: string;
+  /** Motivo devolvido pela API (ex.: «Sem permissão para incluir…»). */
+  message: string;
+  /** Mensagem da tentativa anterior quando a senha digitada não conferiu. */
+  retryError: string | null;
+};
+
+type ManagerPasswordPrompt = (
+  request: ManagerPasswordRequest,
+) => Promise<string | null>;
+
+let managerPasswordPrompt: ManagerPasswordPrompt | null = null;
+
+/**
+ * Registra quem pede a senha do gerente (ver `ManagerPasswordGate`). Com isso
+ * qualquer chamada que a API recuse por falta de autorização abre o modal em
+ * primeiro plano e é reenviada com a senha — sem cada tela ter o próprio fluxo.
+ */
+export function setManagerPasswordPrompt(fn: ManagerPasswordPrompt | null): void {
+  managerPasswordPrompt = fn;
+}
+
+/** Header para requisições sem corpo JSON (GET/DELETE). */
+const MANAGER_PASSWORD_HEADER = 'x-manager-password';
+const MANAGER_PASSWORD_MAX_ATTEMPTS = 3;
+
+function apiAsksForManagerPassword(status: number, message: string): boolean {
+  if (status !== 400 && status !== 403) return false;
+  return /informe a senha (do gerente|de autoriza)/iu.test(message);
+}
+
+function apiRejectedManagerPassword(status: number, message: string): boolean {
+  if (status !== 400 && status !== 403) return false;
+  return /senha[^.]{0,40}inv[áa]lida/iu.test(message);
+}
+
+function withManagerPassword(json: unknown, password: string): unknown {
+  if (json === null || typeof json !== 'object' || Array.isArray(json)) return json;
+  return {
+    ...(json as Record<string, unknown>),
+    managerPassword: password,
+    permissionPassword: password,
+  };
+}
+
+async function sendApiRequest(
   path: string,
-  options: RequestInit & { json?: unknown } = {},
-): Promise<T> {
+  options: RequestInit & { json?: unknown },
+  managerPassword?: string,
+): Promise<Response> {
+  const jsonBody =
+    options.json !== undefined && managerPassword
+      ? withManagerPassword(options.json, managerPassword)
+      : options.json;
+
   const buildHeaders = (): HeadersInit => {
     const headers: HeadersInit = {
       ...(options.json !== undefined ? { 'Content-Type': 'application/json' } : {}),
@@ -343,10 +397,15 @@ export async function api<T>(
     if (token) {
       (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
     }
+    if (managerPassword) {
+      // Header só aceita ASCII — codifica para preservar acentos/símbolos.
+      (headers as Record<string, string>)[MANAGER_PASSWORD_HEADER] =
+        encodeURIComponent(managerPassword);
+    }
     return headers;
   };
 
-  const body = options.json !== undefined ? JSON.stringify(options.json) : options.body;
+  const body = jsonBody !== undefined ? JSON.stringify(jsonBody) : options.body;
 
   const request = () =>
     fetch(resolveApiUrl(path), {
@@ -373,21 +432,59 @@ export async function api<T>(
     }
   }
 
-  if (!res.ok) {
+  return res;
+}
+
+export async function api<T>(
+  path: string,
+  options: RequestInit & { json?: unknown; skipManagerPasswordPrompt?: boolean } = {},
+): Promise<T> {
+  let managerPassword: string | undefined;
+  let passwordAttempts = 0;
+
+  for (;;) {
+    const res = await sendApiRequest(path, options, managerPassword);
+
+    if (res.ok) {
+      if (res.status === 204) return undefined as T;
+      return res.json() as Promise<T>;
+    }
+
     const text = await res.text();
     if (res.status === 401 || (res.status === 403 && isLicenseDenied(res.status, text))) {
       handleAuthFailure(res.status, res.statusText, text);
     }
+    const message = formatApiErrorBody(res.status, res.statusText, text);
+
+    const canAskPassword =
+      managerPasswordPrompt !== null &&
+      !options.skipManagerPasswordPrompt &&
+      passwordAttempts < MANAGER_PASSWORD_MAX_ATTEMPTS &&
+      (apiAsksForManagerPassword(res.status, message) ||
+        (managerPassword !== undefined && apiRejectedManagerPassword(res.status, message)));
+
+    if (canAskPassword) {
+      passwordAttempts += 1;
+      const typed = await managerPasswordPrompt!({
+        method: String(options.method ?? 'GET').toUpperCase(),
+        path,
+        message,
+        retryError: managerPassword === undefined ? null : message,
+      });
+      if (typed) {
+        managerPassword = typed;
+        continue;
+      }
+    }
+
     let payload: unknown;
     try {
       payload = JSON.parse(text);
     } catch {
       payload = undefined;
     }
-    throw new ApiHttpError(formatApiErrorBody(res.status, res.statusText, text), res.status, payload);
+    throw new ApiHttpError(message, res.status, payload);
   }
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
 }
 
 /** Download autenticado (ex.: CSV de inventário) — dispara save no navegador. */

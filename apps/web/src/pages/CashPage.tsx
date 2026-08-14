@@ -149,6 +149,9 @@ const STATUS_FILTERS = [
 
 type StatusFilter = (typeof STATUS_FILTERS)[number]['value'];
 
+/** Acima disso, as vendas do caixa aparecem em lista suspensa minimizada. */
+const SALES_COLLAPSE_THRESHOLD = 5;
+
 const PAYMENT_LABELS: Record<string, string> = {
   CASH: 'Dinheiro',
   CARD: 'Cartão',
@@ -494,6 +497,18 @@ export function CashPage() {
     });
   }, [list.data, search]);
 
+  /**
+   * Caixa alvo do lançamento. O gerente pode movimentar o caixa aberto de
+   * qualquer operador; por isso o `sessionId` vai explícito para a API.
+   */
+  const movTarget = useMemo(() => {
+    if (!movOpenForId) return null;
+    const fromList = (list.data ?? []).find((s) => s.id === movOpenForId);
+    if (fromList) return fromList;
+    const fromDetail = detail.data?.session;
+    return fromDetail && fromDetail.id === movOpenForId ? fromDetail : null;
+  }, [movOpenForId, list.data, detail.data]);
+
   const movement = useMutation({
     mutationFn: () => {
       const amount = parseFloat(movAmount.replace(',', '.')) || 0;
@@ -507,6 +522,7 @@ export function CashPage() {
         type: movType,
         amount,
         reason: movReason.trim() || null,
+        sessionId: movOpenForId,
       };
       if (movType === 'OUT') {
         if (movOutKind === 'EXPENSE') {
@@ -1105,10 +1121,23 @@ export function CashPage() {
             onClick={(e) => e.stopPropagation()}
             style={{ maxWidth: 460 }}
           >
-            <h2>Movimentar caixa</h2>
+            <h2>
+              Movimentar caixa
+              {movTarget ? ` #${movTarget.controlNumber}` : ''}
+            </h2>
             <p style={{ marginTop: 0, color: 'var(--color-text-secondary)', fontSize: '0.88rem' }}>
               Lance sangria, suprimento ou <strong>despesa</strong> (com centro de custo do plano
-              referencial) no seu caixa atual. Operadores só podem movimentar o próprio caixa.
+              referencial){' '}
+              {movTarget?.user?.name ? (
+                <>
+                  no caixa de <strong>{movTarget.user.name}</strong>.
+                </>
+              ) : (
+                'no caixa selecionado.'
+              )}{' '}
+              {manager
+                ? 'Como gerente, você pode lançar em qualquer caixa aberto.'
+                : 'Operadores só podem movimentar o próprio caixa.'}
             </p>
             {movErr && <div className="alert alert-error">{movErr}</div>}
             <div className="form-row">
@@ -1961,6 +1990,14 @@ function SessionDetailDrawer({
   const sum = detail?.summary;
   const [expandedSale, setExpandedSale] = useState<string | null>(null);
 
+  /** Muitas vendas: vira lista suspensa, minimizada por padrão. */
+  const salesCollapsible = sales.length > SALES_COLLAPSE_THRESHOLD;
+  const [salesOpen, setSalesOpen] = useState(true);
+  useEffect(() => {
+    setSalesOpen(!salesCollapsible);
+    setExpandedSale(null);
+  }, [s?.id, salesCollapsible]);
+
   return (
     <div className="pos-history-drawer" role="presentation" onClick={onClose}>
       <div
@@ -2133,13 +2170,27 @@ function SessionDetailDrawer({
                 </div>
               )}
 
-              <strong style={{ display: 'block', margin: '0.5rem 0 0.5rem', fontSize: '0.9rem' }}>
-                Vendas realizadas ({sales.length})
-              </strong>
+              {salesCollapsible ? (
+                <button
+                  type="button"
+                  className="cash-detail-sales-toggle"
+                  onClick={() => setSalesOpen((v) => !v)}
+                  aria-expanded={salesOpen}
+                >
+                  <span>Vendas realizadas ({sales.length})</span>
+                  <span className="cash-detail-sales-toggle__hint">
+                    {salesOpen ? '▾ ocultar' : '▸ ver vendas'}
+                  </span>
+                </button>
+              ) : (
+                <strong style={{ display: 'block', margin: '0.5rem 0 0.5rem', fontSize: '0.9rem' }}>
+                  Vendas realizadas ({sales.length})
+                </strong>
+              )}
 
               {sales.length === 0 ? (
                 <div className="pos-items-empty">Nenhuma venda no período.</div>
-              ) : (
+              ) : !salesOpen ? null : (
                 <div className="cash-detail-stack">
                   {sales.map((sale) => {
                     const expanded = expandedSale === sale.id;
@@ -2287,6 +2338,7 @@ function SessionDetailDrawer({
                     onClick={() => onOpenMovement(s.id)}
                   >
                     Lançar movimento (sangria / despesa / suprimento)
+                    {s.user?.name ? ` — caixa de ${s.user.name}` : ''}
                   </button>
                 </div>
               )}

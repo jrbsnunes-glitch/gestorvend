@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from './components/AppLayout';
+import { ManagerPasswordGate } from './components/ManagerPasswordGate';
 import { ResponsiveTablesBootstrap } from './components/ResponsiveTablesBootstrap';
 import {
   GV_AUTH_CHANGED_EVENT,
@@ -422,6 +423,7 @@ export default function App() {
   return (
     <QueryClientProvider client={qc}>
       <ResponsiveTablesBootstrap />
+      <ManagerPasswordGate />
       <AppInner />
     </QueryClientProvider>
   );

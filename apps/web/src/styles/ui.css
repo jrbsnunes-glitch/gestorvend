@@ -973,6 +973,33 @@
   white-space: nowrap;
 }
 
+/* Cabeçalho suspenso das vendas do caixa (a partir de 6 vendas) */
+.cash-detail-sales-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 10px;
+  background: var(--color-surface-elevated);
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  min-height: 2.5rem;
+}
+
+.cash-detail-sales-toggle__hint {
+  font-weight: 600;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
 .cash-detail-sale {
   cursor: pointer;
   text-align: left;

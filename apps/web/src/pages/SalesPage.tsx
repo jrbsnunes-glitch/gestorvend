@@ -158,6 +158,7 @@ type Operator = {
 type OpenSessionSummary = {
   id: string;
   status: 'OPEN' | 'CLOSED';
+  controlNumber?: number;
   openingBalance: string;
   openedAt: string;
   userId: string;
@@ -615,6 +616,9 @@ function PosGateway({
 }) {
   const [opening, setOpening] = useState('0,00');
   const [err, setErr] = useState<string | null>(null);
+  /** Gerente: caixa (de qualquer operador) escolhido para lançar movimento. */
+  const [movementTarget, setMovementTarget] = useState<OpenSessionSummary | null>(null);
+  const [movementNotice, setMovementNotice] = useState<string | null>(null);
 
   const openMut = useMutation({
     mutationFn: () =>
@@ -843,31 +847,58 @@ function PosGateway({
             <ManagerOpenSessions
               sessions={openSessions}
               currentUserId={currentUserId}
+              notice={movementNotice}
+              onDismissNotice={() => setMovementNotice(null)}
               onSelect={onSelectOtherSession}
+              onLaunchMovement={(target) => {
+                setMovementNotice(null);
+                setMovementTarget(target);
+              }}
             />
           )}
 
           {err && <div className="pos-gateway-error">{err}</div>}
         </div>
       </div>
+
+      <PdvProceduresOverlay
+        open={Boolean(movementTarget)}
+        sessionId={movementTarget?.id ?? null}
+        sessionLabel={movementTarget ? openSessionLabel(movementTarget) : null}
+        onClose={() => setMovementTarget(null)}
+        onSuccess={(msg) => setMovementNotice(msg)}
+      />
     </div>
   );
 }
 
+/** «#12 · Rayelle» — identifica o caixa alvo nos lançamentos do gerente. */
+function openSessionLabel(session: OpenSessionSummary): string {
+  const control = session.controlNumber ? `#${session.controlNumber}` : null;
+  const name = session.user?.name?.trim() || null;
+  return [control, name].filter(Boolean).join(' · ') || 'aberto';
+}
+
 /**
- * Lista compacta dos caixas abertos por outros operadores — apenas visível
- * para perfis gerentes. Permite que o gerente acompanhe quem está com caixa
- * em aberto e navegue para o menu Caixa caso queira detalhar / fechar / ver
- * vendas.
+ * Lista compacta dos caixas abertos (inclusive de outros operadores) — apenas
+ * visível para perfis gerentes. Além de acompanhar quem está com caixa aberto,
+ * o gerente lança sangria/despesa/suprimento direto em qualquer um deles ou
+ * navega para o menu Caixa para detalhar / fechar / ver vendas.
  */
 function ManagerOpenSessions({
   sessions,
   currentUserId,
+  notice,
+  onDismissNotice,
   onSelect,
+  onLaunchMovement,
 }: {
   sessions: OpenSessionSummary[];
   currentUserId: string | null;
+  notice: string | null;
+  onDismissNotice: () => void;
   onSelect: () => void;
+  onLaunchMovement: (session: OpenSessionSummary) => void;
 }) {
   const others = sessions.filter((s) => s.userId !== currentUserId);
 
@@ -880,6 +911,16 @@ function ManagerOpenSessions({
           {sessions.length === 1 ? 'caixa aberto' : 'caixas abertos'}
         </span>
       </header>
+      {notice && (
+        <p
+          className="pos-gateway-manager-notice"
+          role="status"
+          onClick={onDismissNotice}
+          title="Clique para dispensar"
+        >
+          ✓ {notice}
+        </p>
+      )}
       {sessions.length === 0 ? (
         <p className="pos-gateway-manager-empty">
           Nenhum caixa aberto no momento.
@@ -895,6 +936,7 @@ function ManagerOpenSessions({
                 </div>
                 <div className="pos-gateway-manager-info">
                   <strong>
+                    {s.controlNumber ? `#${s.controlNumber} · ` : ''}
                     {s.user?.name ?? '—'}
                     {mine && <span className="pos-gateway-manager-tag">você</span>}
                   </strong>
@@ -906,6 +948,14 @@ function ManagerOpenSessions({
                 <span className="pos-gateway-manager-balance">
                   +{formatBRL(s.movementsIn)} / −{formatBRL(s.movementsOut)}
                 </span>
+                <button
+                  type="button"
+                  className="pos-gateway-manager-action"
+                  onClick={() => onLaunchMovement(s)}
+                  title="Sangria, despesa ou suprimento neste caixa"
+                >
+                  Lançar movimento
+                </button>
               </li>
             );
           })}
