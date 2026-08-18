@@ -27,6 +27,9 @@ function startOfMonth(d: Date): Date {
   return x;
 }
 
+/** Teto do painel "Estoque crítico" (o card mostra 5; o "ver mais" abre o resto). */
+const LOW_STOCK_LIMIT = 100;
+
 /**
  * Dashboard "do dono da loja": entrega TODAS as métricas em uma única
  * requisição para que o frontend faça apenas uma chamada e renderize
@@ -141,29 +144,39 @@ export class DashboardController {
       };
     });
 
-    // Estoque crítico (produtos com saldo <= minStock).
-    const lowStockVariants = await db.productVariant.findMany({
-      where: { minStock: { gt: 0 } },
-      include: {
-        product: { select: { name: true } },
-        stockBalances: { select: { quantity: true } },
-      },
-      take: 200,
-    });
-    const lowStock = lowStockVariants
+    // Estoque crítico (saldo <= minStock). O recorte é feito DEPOIS de comparar
+    // saldo × mínimo — cortar candidatos antes esconderia produtos que zeraram.
+    // Produto inativo não gera alerta de compra; em produto composto (pack) vale
+    // o saldo da variante componente, como na listagem de produtos.
+    const [criticalCandidates, balanceTotals] = await Promise.all([
+      db.productVariant.findMany({
+        where: { minStock: { gt: 0 }, product: { isActive: true } },
+        select: {
+          id: true,
+          sku: true,
+          minStock: true,
+          product: { select: { name: true, stockComponentVariantId: true } },
+        },
+      }),
+      db.stockBalance.groupBy({ by: ['variantId'], _sum: { quantity: true } }),
+    ]);
+    const onHandByVariant = new Map(
+      balanceTotals.map((b) => [b.variantId, Number(b._sum.quantity ?? 0)]),
+    );
+    const lowStock = criticalCandidates
       .map((v) => {
-        const onHand = v.stockBalances.reduce((a, b) => a + Number(b.quantity), 0);
+        const stockVariantId = v.product.stockComponentVariantId?.trim() || v.id;
         return {
           variantId: v.id,
           sku: v.sku,
           productName: v.product.name,
           minStock: Number(v.minStock),
-          onHand,
+          onHand: onHandByVariant.get(stockVariantId) ?? 0,
         };
       })
       .filter((row) => row.onHand <= row.minStock)
       .sort((a, b) => a.onHand - a.minStock - (b.onHand - b.minStock))
-      .slice(0, 10);
+      .slice(0, LOW_STOCK_LIMIT);
 
     return {
       revenue: {
