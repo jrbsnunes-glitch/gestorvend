@@ -1,3 +1,4 @@
+import './timezone';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { PrismaKnownRequestExceptionFilter } from './common/prisma-known-request-exception.filter';
@@ -19,7 +20,10 @@ async function bootstrap() {
   const host = process.env.HOST ?? '0.0.0.0';
   await app.listen(port, host);
   // eslint-disable-next-line no-console
-  console.log(`API http://${host}:${port}/api`);
+  console.log(
+    `API http://${host}:${port}/api — fuso ${process.env.TZ} ` +
+      `(agora: ${new Date().toLocaleString('pt-BR')})`,
+  );
 }
 
 bootstrap();

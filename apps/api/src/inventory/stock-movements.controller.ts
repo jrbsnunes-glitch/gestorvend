@@ -359,6 +359,26 @@ export class StockMovementsController {
         update: { quantity: String(next) },
       });
 
+      const isManualOut = body.type === StockMovementType.OUT;
+
+      /**
+       * Saída avulsa lançada aqui também vira documento, senão não apareceria
+       * (nem poderia ser cancelada) na tela Saídas, que lista por documento.
+       */
+      const exit = isManualOut
+        ? await tx.stockExit.create({
+            data: {
+              locationId: body.locationId,
+              reason: body.outboundReason?.trim() || 'Saída manual',
+              reference: body.reference ?? null,
+              userId: user.sub,
+              items: {
+                create: [{ variantId: body.variantId, quantity: String(Math.abs(qtyNum)) }],
+              },
+            },
+          })
+        : null;
+
       const mov = await tx.stockMovement.create({
         data: {
           type: body.type,
@@ -375,6 +395,7 @@ export class StockMovementsController {
           reference: body.reference ?? null,
           outboundReason: body.outboundReason ?? null,
           userId: user.sub,
+          stockExitId: exit?.id ?? null,
         },
       });
 
