@@ -133,3 +133,91 @@ export function sumReconciliationTotals(
     totalDeclared: Math.round(totalDeclared * 100) / 100,
   };
 }
+
+function roundMoney2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/** Quando a despesa é analítica, explica diferença em dinheiro ≈ valor da despesa. */
+export type CashExpenseDiffExplain = {
+  expenseAmount: number;
+  cashDiff: number;
+  /** Apresentado em dinheiro − esperado ≈ despesa (informou vendas brutas em dinheiro). */
+  expenseExplainsCashDiff: boolean;
+  /** Dinheiro apresentado + despesa apresentada ≈ vendas brutas em dinheiro. */
+  cashPlusExpenseMatchesGross: boolean;
+  grossCashSales: number;
+};
+
+export function analyzeCashExpenseDiff(params: {
+  includeExpenseInPresentedTotal: boolean;
+  cashExpected: number;
+  cashDeclared: number | null;
+  expenseExpected: number;
+  expenseDeclared: number | null;
+  grossCashSales?: number;
+}): CashExpenseDiffExplain | null {
+  if (params.includeExpenseInPresentedTotal) return null;
+  const expenseAmount = roundMoney2(params.expenseExpected);
+  if (expenseAmount <= 0) return null;
+  if (params.cashDeclared == null) return null;
+
+  const cashDiff = roundMoney2(params.cashDeclared - params.cashExpected);
+  const grossCashSales = roundMoney2(
+    params.grossCashSales ?? params.cashExpected + expenseAmount,
+  );
+  const expenseDeclared = params.expenseDeclared ?? 0;
+
+  const expenseExplainsCashDiff = Math.abs(cashDiff - expenseAmount) < 0.01;
+  const cashPlusExpenseMatchesGross =
+    Math.abs(params.cashDeclared + expenseDeclared - grossCashSales) < 0.01;
+
+  if (!expenseExplainsCashDiff && !cashPlusExpenseMatchesGross) return null;
+
+  return {
+    expenseAmount,
+    cashDiff,
+    expenseExplainsCashDiff,
+    cashPlusExpenseMatchesGross,
+    grossCashSales,
+  };
+}
+
+export function cashExpenseExplainMessage(explain: CashExpenseDiffExplain): string {
+  if (explain.cashPlusExpenseMatchesGross) {
+    return `Conferido: dinheiro + despesa = vendas em dinheiro (${formatHintMoney(explain.grossCashSales)}).`;
+  }
+  if (explain.expenseExplainsCashDiff) {
+    return `Diferença de ${formatHintMoney(explain.cashDiff)} = despesa retirada — caixa conferido (informou o total em dinheiro das vendas).`;
+  }
+  return '';
+}
+
+export type ReconDiffTone = 'ok' | 'over' | 'short' | 'neutral' | 'explained';
+
+/** Rótulo da diferença; trata despesa analítica que explica o gap em dinheiro. */
+export function reconDiffDisplay(
+  diff: number | null,
+  cashExpenseExplain: CashExpenseDiffExplain | null,
+  forCashRow = false,
+): { label: string; tone: ReconDiffTone; explainNote: string | null } {
+  if (diff == null) return { label: '—', tone: 'neutral', explainNote: null };
+  if (Math.abs(diff) < 0.005) return { label: 'OK', tone: 'ok', explainNote: null };
+  if (forCashRow && cashExpenseExplain) {
+    return {
+      label: 'OK',
+      tone: 'explained',
+      explainNote: cashExpenseExplainMessage(cashExpenseExplain),
+    };
+  }
+  return {
+    label: (diff > 0 ? '+' : '') + formatHintMoney(diff),
+    tone: diff > 0 ? 'over' : 'short',
+    explainNote: null,
+  };
+}
+
+export function analyticalExpenseReconFootnote(expenseAmount: number): string | null {
+  if (expenseAmount <= 0) return null;
+  return `Despesas analíticas (${formatHintMoney(expenseAmount)}) não entram no total esperado de meios — somam ao registrado em vendas.`;
+}

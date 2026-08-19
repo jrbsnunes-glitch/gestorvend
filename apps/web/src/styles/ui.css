@@ -1186,6 +1186,31 @@
   color: #b91c1c;
 }
 
+.cash-detail-recon-diff.is-explained {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+
+.cash-detail-recon-explained-note {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  line-height: 1.35;
+}
+
+.cash-detail-recon-footnote {
+  margin: 0.55rem 0 0;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-elevated);
+  border-radius: 6px;
+  border-left: 3px solid var(--color-primary);
+  line-height: 1.4;
+}
+
 @media screen and (max-width: 720px) {
   .cash-detail-recon-grid {
     grid-template-columns: 1fr;

@@ -11,10 +11,13 @@ import { api } from '../lib/api';
 import { isManager } from '../lib/auth';
 import { formatBRL } from '../lib/format';
 import {
+  analyzeCashExpenseDiff,
+  analyticalExpenseReconFootnote,
   expectedFinalForReconKey,
   expensePresentedTotalHint,
   formatCashExpectedHint,
   presentedTotalFromSession,
+  reconDiffDisplay,
   reconciliationTotalLabel,
   sumReconciliationTotals,
   type CashMovementBreakdown,
@@ -137,6 +140,7 @@ type SessionDetail = {
     /** Somatório de acréscimos comerciais (sale.surcharge) em vendas concluídas. */
     totalSurcharges: number;
     byMethod: Record<string, number>;
+    salesByMethod?: Record<string, number>;
     salesByPaymentForm?: Record<string, number>;
     cardPayments?: CardPaymentInSession[];
     movementBreakdown?: CashMovementBreakdown;
@@ -2128,6 +2132,7 @@ function SessionDetailDrawer({
               <PaymentReconciliation
                 session={s}
                 expected={sum.byMethod}
+                salesByMethod={sum.salesByMethod}
                 movementBreakdown={sum.movementBreakdown}
                 includeExpenseInPresentedTotal={includeExpenseInPresentedTotal}
               />
@@ -2390,11 +2395,13 @@ function SessionDetailDrawer({
 function PaymentReconciliation({
   session,
   expected,
+  salesByMethod,
   movementBreakdown,
   includeExpenseInPresentedTotal,
 }: {
   session: SessionDetail['session'];
   expected: Record<string, number>;
+  salesByMethod?: Record<string, number>;
   movementBreakdown?: CashMovementBreakdown;
   includeExpenseInPresentedTotal: boolean;
 }) {
@@ -2404,12 +2411,28 @@ function PaymentReconciliation({
 
   const opening = parseFloat(session.openingBalance) || 0;
 
+  const cashRow = visible.find((r) => r.key === 'CASH');
+  const expenseRow = visible.find((r) => r.key === 'EXPENSE');
+  const expenseExpected = expenseRow?.expectedFinal ?? movementBreakdown?.despesas ?? 0;
+  const cashExpenseExplain = analyzeCashExpenseDiff({
+    includeExpenseInPresentedTotal,
+    cashExpected: cashRow?.expectedFinal ?? 0,
+    cashDeclared: cashRow?.declaredVal ?? null,
+    expenseExpected,
+    expenseDeclared: expenseRow?.declaredVal ?? null,
+    grossCashSales: salesByMethod?.CASH,
+  });
+
   const { totalExpected, totalDeclared } = sumReconciliationTotals(
     visible,
     includeExpenseInPresentedTotal,
   );
   const totalDiff = declared ? totalDeclared - totalExpected : null;
   const reconTotalLabels = reconciliationTotalLabel(includeExpenseInPresentedTotal);
+  const expenseFootnote =
+    !includeExpenseInPresentedTotal && expenseExpected > 0
+      ? analyticalExpenseReconFootnote(expenseExpected)
+      : null;
 
   const reconExpenseLines =
     Array.isArray(session.reconciliationExpenseDetails) && session.reconciliationExpenseDetails.length
@@ -2431,14 +2454,11 @@ function PaymentReconciliation({
       <div>
         {visible.map((r) => {
           const label = PAYMENT_LABELS[r.key] ?? r.key;
-          const diffClass =
-            r.diff == null
-              ? ''
-              : Math.abs(r.diff) < 0.005
-                ? 'is-ok'
-                : r.diff > 0
-                  ? 'is-over'
-                  : 'is-short';
+          const diffDisplay = reconDiffDisplay(
+            r.diff,
+            r.key === 'CASH' ? cashExpenseExplain : null,
+            r.key === 'CASH',
+          );
           const hint =
             r.key === 'CASH'
               ? formatCashExpectedHint(opening, movementBreakdown)
@@ -2465,13 +2485,14 @@ function PaymentReconciliation({
                   {r.diff == null ? (
                     '—'
                   ) : (
-                    <span
-                      className={`cash-detail-recon-diff ${diffClass}`}
-                    >
-                      {Math.abs(r.diff) < 0.005
-                        ? 'OK'
-                        : (r.diff > 0 ? '+' : '') + formatBRL(r.diff)}
-                    </span>
+                    <>
+                      <span className={`cash-detail-recon-diff ${diffDisplay.tone === 'explained' ? 'is-explained' : diffDisplay.tone === 'ok' ? 'is-ok' : diffDisplay.tone === 'over' ? 'is-over' : 'is-short'}`}>
+                        {diffDisplay.label}
+                      </span>
+                      {diffDisplay.explainNote ? (
+                        <span className="cash-detail-recon-explained-note">{diffDisplay.explainNote}</span>
+                      ) : null}
+                    </>
                   )}
                 </div>
               </div>
@@ -2532,6 +2553,9 @@ function PaymentReconciliation({
             </div>
           </div>
         </div>
+        {expenseFootnote ? (
+          <p className="cash-detail-recon-footnote">{expenseFootnote}</p>
+        ) : null}
       </div>
     </div>
   );

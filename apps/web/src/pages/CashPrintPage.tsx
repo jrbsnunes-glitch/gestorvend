@@ -5,8 +5,10 @@ import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
 import {
-  isExcludedFromClosingTotal,
+  analyzeCashExpenseDiff,
+  analyticalExpenseReconFootnote,
   presentedTotalFromSession,
+  reconDiffDisplay,
   sumDeclaredForClosingBalance,
 } from '../lib/cash-reconciliation';
 import './cash-print.css';
@@ -261,8 +263,8 @@ export function CashPrintPage() {
     Object.keys(report.data?.totals.salesByMethod ?? {}).forEach((k) => set.add(k));
     Object.keys(report.data?.totals.expectedByMethod ?? {}).forEach((k) => set.add(k));
     Object.keys(report.data?.totals.declaredByMethod ?? {}).forEach((k) => set.add(k));
-    const order = ['CASH', 'CARD', 'PIX', 'CREDIT', 'OTHER', 'EXPENSE'];
-    return [...set].sort((a, b) => {
+    const order = ['CASH', 'CARD', 'PIX', 'CREDIT', 'OTHER'];
+    return [...set].filter((k) => k !== 'EXPENSE').sort((a, b) => {
       const ai = order.indexOf(a);
       const bi = order.indexOf(b);
       if (ai === -1 && bi === -1) return a.localeCompare(b);
@@ -394,26 +396,17 @@ export function CashPrintPage() {
                 </p>
               )}
               {((data.totals.movementBreakdown?.suprimentos ?? 0) > 0 ||
-                (data.totals.movementBreakdown?.sangrias ?? 0) > 0 ||
-                (data.totals.movementBreakdown?.despesas ?? 0) > 0) && (
+                (data.totals.movementBreakdown?.sangrias ?? 0) > 0) && (
                 <p className="print-summary-line">
                   {(data.totals.movementBreakdown?.suprimentos ?? 0) > 0
                     ? `Suprimentos ${formatBRL(data.totals.movementBreakdown.suprimentos)}`
                     : null}
                   {(data.totals.movementBreakdown?.suprimentos ?? 0) > 0 &&
-                  ((data.totals.movementBreakdown?.sangrias ?? 0) > 0 ||
-                    (data.totals.movementBreakdown?.despesas ?? 0) > 0)
+                  (data.totals.movementBreakdown?.sangrias ?? 0) > 0
                     ? ' · '
                     : null}
                   {(data.totals.movementBreakdown?.sangrias ?? 0) > 0
                     ? `Sangrias ${formatBRL(data.totals.movementBreakdown.sangrias)}`
-                    : null}
-                  {(data.totals.movementBreakdown?.sangrias ?? 0) > 0 &&
-                  (data.totals.movementBreakdown?.despesas ?? 0) > 0
-                    ? ' · '
-                    : null}
-                  {(data.totals.movementBreakdown?.despesas ?? 0) > 0
-                    ? `Despesas ${formatBRL(data.totals.movementBreakdown.despesas)}`
                     : null}
                 </p>
               )}
@@ -421,7 +414,7 @@ export function CashPrintPage() {
 
             <section className="print-section">
               <h2>Apresentado (conferência)</h2>
-              <ReconTable
+              <ReconSection
                 methods={allMethods}
                 sales={data.totals.salesByMethod}
                 expected={data.totals.expectedByMethod}
@@ -429,6 +422,11 @@ export function CashPrintPage() {
                   Object.keys(data.totals.declaredByMethod ?? {}).length
                     ? data.totals.declaredByMethod
                     : null
+                }
+                expenseAmount={
+                  data.totals.expectedByMethod?.EXPENSE ??
+                  data.totals.movementBreakdown?.despesas ??
+                  0
                 }
                 includeExpenseInPresentedTotal={closingOptions.includeExpenseInPresentedTotal}
               />
@@ -451,21 +449,21 @@ export function CashPrintPage() {
   );
 }
 
-function ReconTable({
-  methods,
-  sales,
-  expected,
-  declared,
-  includeExpenseInPresentedTotal = false,
-}: {
-  methods: string[];
-  sales: Record<string, number>;
-  expected: Record<string, number>;
-  declared: Record<string, number> | null;
-  includeExpenseInPresentedTotal?: boolean;
-}) {
-  const closingOptions = { includeExpenseInPresentedTotal };
-  const rows = methods
+type ReconRow = {
+  k: string;
+  saleVal: number;
+  ex: number;
+  dec: number | null;
+  diff: number | null;
+};
+
+function buildReconRows(
+  methods: string[],
+  sales: Record<string, number>,
+  expected: Record<string, number>,
+  declared: Record<string, number> | null,
+): ReconRow[] {
+  return methods
     .map((k) => {
       const saleVal = sales[k] ?? 0;
       const ex = expected[k] ?? 0;
@@ -474,49 +472,175 @@ function ReconTable({
       return { k, saleVal, ex, dec, diff };
     })
     .filter((r) => r.saleVal > 0 || r.ex > 0 || (r.dec != null && r.dec > 0));
+}
 
-  if (rows.length === 0) {
-    return <p className="print-empty">Sem valores para conferência neste filtro.</p>;
-  }
-
-  const totalRows = rows.filter((r) => !isExcludedFromClosingTotal(r.k, closingOptions));
-  const totalSales = totalRows.reduce((s, r) => s + r.saleVal, 0);
-  const totalExpected = totalRows.reduce((s, r) => s + r.ex, 0);
-  const totalDeclared = totalRows.reduce((s, r) => s + (r.dec ?? 0), 0);
-  const totalDiff = declared ? totalDeclared - totalExpected : null;
-
+function ReconTableBody({
+  rows,
+  cashExpenseExplain,
+  declared,
+}: {
+  rows: ReconRow[];
+  cashExpenseExplain: ReturnType<typeof analyzeCashExpenseDiff>;
+  declared: Record<string, number> | null;
+}) {
   return (
-    <table className="print-table print-table-compact">
-      <thead>
-        <tr>
-          <th>Forma</th>
-          <th className="num">Registrado</th>
-          <th className="num">Apresentado</th>
-          <th className="num">Esperado</th>
-          <th className="num">Dif.</th>
-        </tr>
-      </thead>
+    <>
       <tbody>
-        {rows.map((r) => (
-          <tr key={r.k}>
-            <td>{PAYMENT_LABELS[r.k] ?? r.k}</td>
-            <td className="num">{r.saleVal > 0 ? formatBRL(r.saleVal) : '—'}</td>
-            <td className="num">{r.dec == null ? '—' : formatBRL(r.dec)}</td>
-            <td className="num">{formatBRL(r.ex)}</td>
-            <td className={'num ' + diffClass(r.diff)}>{fmtDiff(r.diff)}</td>
-          </tr>
-        ))}
+        {rows.map((r) => {
+          const diffDisplay = reconDiffDisplay(
+            r.diff,
+            r.k === 'CASH' ? cashExpenseExplain : null,
+            r.k === 'CASH',
+          );
+          return (
+            <tr key={r.k}>
+              <td>{PAYMENT_LABELS[r.k] ?? r.k}</td>
+              <td className="num">{r.saleVal > 0 ? formatBRL(r.saleVal) : '—'}</td>
+              <td className="num">{r.dec == null ? '—' : formatBRL(r.dec)}</td>
+              <td className="num">{formatBRL(r.ex)}</td>
+              <td className={'num ' + diffToneClass(diffDisplay.tone)}>
+                {diffDisplay.label}
+                {diffDisplay.explainNote ? (
+                  <span className="print-recon-explained-note">{diffDisplay.explainNote}</span>
+                ) : null}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
       <tfoot>
         <tr>
           <th>Total</th>
-          <th className="num">{formatBRL(totalSales)}</th>
-          <th className="num">{declared ? formatBRL(totalDeclared) : '—'}</th>
-          <th className="num">{formatBRL(totalExpected)}</th>
-          <th className={'num ' + diffClass(totalDiff)}>{fmtDiff(totalDiff)}</th>
+          <th className="num">{formatBRL(rows.reduce((s, r) => s + r.saleVal, 0))}</th>
+          <th className="num">
+            {declared ? formatBRL(rows.reduce((s, r) => s + (r.dec ?? 0), 0)) : '—'}
+          </th>
+          <th className="num">{formatBRL(rows.reduce((s, r) => s + r.ex, 0))}</th>
+          <th className="num">
+            {declared
+              ? fmtDiff(
+                  rows.reduce((s, r) => s + (r.dec ?? 0), 0) -
+                    rows.reduce((s, r) => s + r.ex, 0),
+                )
+              : '—'}
+          </th>
         </tr>
       </tfoot>
-    </table>
+    </>
+  );
+}
+
+function ReconSection({
+  methods,
+  sales,
+  expected,
+  declared,
+  expenseAmount,
+  includeExpenseInPresentedTotal = false,
+}: {
+  methods: string[];
+  sales: Record<string, number>;
+  expected: Record<string, number>;
+  declared: Record<string, number> | null;
+  expenseAmount: number;
+  includeExpenseInPresentedTotal?: boolean;
+}) {
+  const paymentRows = buildReconRows(methods, sales, expected, declared);
+
+  const expenseExpected = expected.EXPENSE ?? expenseAmount;
+  const expenseDeclared = declared ? (declared.EXPENSE ?? 0) : null;
+  const expenseDiff = expenseDeclared == null ? null : expenseDeclared - expenseExpected;
+  const showExpenseTable =
+    expenseExpected > 0 ||
+    (expenseDeclared != null && expenseDeclared > 0) ||
+    includeExpenseInPresentedTotal;
+
+  const cashRow = paymentRows.find((r) => r.k === 'CASH');
+  const cashExpenseExplain = analyzeCashExpenseDiff({
+    includeExpenseInPresentedTotal,
+    cashExpected: cashRow?.ex ?? expected.CASH ?? 0,
+    cashDeclared: cashRow?.dec ?? null,
+    expenseExpected,
+    expenseDeclared,
+    grossCashSales: sales.CASH,
+  });
+
+  const expenseFootnote =
+    !includeExpenseInPresentedTotal && expenseExpected > 0
+      ? analyticalExpenseReconFootnote(expenseExpected)
+      : null;
+
+  if (paymentRows.length === 0 && !showExpenseTable) {
+    return <p className="print-empty">Sem valores para conferência neste filtro.</p>;
+  }
+
+  const reconHead = (
+    <thead>
+      <tr>
+        <th>Forma</th>
+        <th className="num">Registrado</th>
+        <th className="num">Apresentado</th>
+        <th className="num">Esperado</th>
+        <th className="num">Dif.</th>
+      </tr>
+    </thead>
+  );
+
+  return (
+    <div className="print-recon-block">
+      {paymentRows.length > 0 ? (
+        <>
+          <h3 className="print-recon-subtitle">Formas de pagamento</h3>
+          <table className="print-table print-table-compact">
+            {reconHead}
+            <ReconTableBody
+              rows={paymentRows}
+              cashExpenseExplain={cashExpenseExplain}
+              declared={declared}
+            />
+          </table>
+        </>
+      ) : null}
+
+      {showExpenseTable ? (
+        <>
+          <h3 className="print-recon-subtitle print-recon-subtitle--expense">Despesas do caixa</h3>
+          <table className="print-table print-table-compact print-table-expense">
+            {reconHead}
+            <tbody>
+              <tr>
+                <td>{PAYMENT_LABELS.EXPENSE}</td>
+                <td className="num">—</td>
+                <td className="num">{expenseDeclared == null ? '—' : formatBRL(expenseDeclared)}</td>
+                <td className="num">{formatBRL(expenseExpected)}</td>
+                <td className={'num ' + diffToneClass(reconDiffDisplay(expenseDiff, null).tone)}>
+                  {fmtDiff(expenseDiff)}
+                </td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr>
+                <th>Total despesas</th>
+                <th className="num">—</th>
+                <th className="num">{expenseDeclared == null ? '—' : formatBRL(expenseDeclared)}</th>
+                <th className="num">{formatBRL(expenseExpected)}</th>
+                <th className="num">{fmtDiff(expenseDiff)}</th>
+              </tr>
+            </tfoot>
+          </table>
+        </>
+      ) : null}
+
+      {expenseFootnote ? <p className="print-recon-footnote">{expenseFootnote}</p> : null}
+
+      {paymentRows.length > 0 && showExpenseTable && !includeExpenseInPresentedTotal ? (
+        <p className="print-recon-footnote print-recon-footnote--muted">
+          Total registrado em vendas ({formatBRL(paymentRows.reduce((s, r) => s + r.saleVal, 0))}) −
+          despesas ({formatBRL(expenseExpected)}) = total esperado de meios (
+          {formatBRL(paymentRows.reduce((s, r) => s + r.ex, 0))}).
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -551,10 +675,11 @@ function SoldItemsCompact({ items }: { items: SoldItemRow[] }) {
   );
 }
 
-function diffClass(diff: number | null): string {
-  if (diff == null) return '';
-  if (Math.abs(diff) < 0.005) return 'is-ok';
-  return diff > 0 ? 'is-over' : 'is-short';
+function diffToneClass(tone: string): string {
+  if (tone === 'explained' || tone === 'ok') return 'is-ok is-explained';
+  if (tone === 'over') return 'is-over';
+  if (tone === 'short') return 'is-short';
+  return '';
 }
 
 function fmtDiff(diff: number | null): string {
