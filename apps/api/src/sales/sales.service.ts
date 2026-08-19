@@ -20,6 +20,7 @@ import { CustomerCreditService } from '../catalog/customer-credit.service';
 import { CompanyService } from '../company/company.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { UserPermissionsService } from '../users/user-permissions.service';
+import { parseQueryDate } from '../common/date-range.util';
 import { resolveSaleStockQuantity } from '../common/product-conversion.util';
 import { calcRestaurantFees } from '../restaurant/restaurant-fees';
 
@@ -118,6 +119,11 @@ export type CreateSaleInput = {
    * No PDV fica nulo: lá o vínculo com o caixa é por operador + janela de tempo.
    */
   cashSessionId?: string | null;
+  /**
+   * Primeiro vencimento das parcelas de requisição. Se omitido, usa o dia do lançamento.
+   * Parcelas seguintes avançam um mês a partir desta data.
+   */
+  requisitionDueDate?: string | Date | null;
   /** Referência externa (ex.: ID do pedido no GestorVendChat) para conciliação. */
   externalRef?: string | null;
   items: Array<{
@@ -154,6 +160,28 @@ function splitInstallmentAmounts(total: number, installments: number): number[] 
     allocated += c;
   }
   return amounts;
+}
+
+/** Primeiro vencimento da requisição: YYYY-MM-DD em horário local (sem deslocar UTC). */
+function resolveRequisitionFirstDue(raw: string | Date | null | undefined): Date {
+  if (raw == null || raw === '') {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  }
+  if (raw instanceof Date) {
+    if (Number.isNaN(raw.getTime())) {
+      throw new BadRequestException('Vencimento inválido.');
+    }
+    const d = new Date(raw);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+  const parsed = parseQueryDate(String(raw).trim(), 'start');
+  if (Number.isNaN(parsed.getTime())) {
+    throw new BadRequestException('Vencimento inválido.');
+  }
+  return parsed;
 }
 
 function isCustomerCreditMethod(method: PaymentMethod): boolean {
@@ -696,7 +724,7 @@ export class SalesService {
           }
 
           const parcels = splitInstallmentAmounts(reqAmount, reqInstallments);
-          const due = new Date();
+          const due = resolveRequisitionFirstDue(input.requisitionDueDate);
           for (let i = 0; i < parcels.length; i++) {
             const d = new Date(due);
             d.setMonth(d.getMonth() + i);

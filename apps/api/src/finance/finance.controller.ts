@@ -286,6 +286,30 @@ type SettlementNoteRow = {
   notes?: string | null;
 };
 
+type BillHeaderRow = {
+  status: BillStatus;
+  amount: unknown;
+  amountRemaining: unknown;
+  settlements?: Array<{ id: string }>;
+};
+
+function assertBillEditableForHeader(row: BillHeaderRow, label: string) {
+  if (row.status !== BillStatus.OPEN && row.status !== BillStatus.OVERDUE) {
+    throw new BadRequestException(`${label} quitado ou cancelado não pode ser alterado.`);
+  }
+  if ((row.settlements?.length ?? 0) > 0) {
+    throw new BadRequestException(`${label} com baixa parcial não pode ser alterado.`);
+  }
+  const face = prismaMoney(row.amount);
+  const remaining = prismaMoney(row.amountRemaining);
+  if (!Number.isFinite(face) || !Number.isFinite(remaining)) {
+    throw new BadRequestException(`${label} com valores inválidos.`);
+  }
+  if (Math.abs(face - remaining) > 0.005) {
+    throw new BadRequestException(`${label} com saldo diferente do valor original não pode ser alterado.`);
+  }
+}
+
 function resolveBillStatusAfterSettlement(
   dueDate: Date,
   remainingCents: number,
@@ -468,6 +492,75 @@ export class FinanceController {
         }
       }
       return parent!;
+    });
+  }
+
+  @Patch('payables/:id')
+  @Roles('admin', 'manager', 'finance')
+  async updatePayable(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      supplierId?: string | null;
+      description?: string;
+      category?: string | null;
+      amount?: number;
+      dueDate?: string;
+    },
+  ) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    return db.$transaction(async (tx) => {
+      const row = await tx.accountPayable.findUnique({
+        where: { id },
+        include: { settlements: { select: { id: true } } },
+      });
+      if (!row) throw new NotFoundException('Conta a pagar não encontrada.');
+      assertBillEditableForHeader(row, 'Conta a pagar');
+
+      const data: Prisma.AccountPayableUpdateInput = {};
+      if (body.description !== undefined) {
+        const description = String(body.description).trim();
+        if (!description) throw new BadRequestException('Descrição é obrigatória.');
+        data.description = description;
+      }
+      if (body.category !== undefined) {
+        data.category = body.category?.trim() || null;
+      }
+      if (body.dueDate !== undefined) {
+        const due = parseDay(body.dueDate, 'start');
+        if (!due) throw new BadRequestException('Vencimento inválido (use YYYY-MM-DD).');
+        data.dueDate = due;
+      }
+      if (body.amount !== undefined) {
+        const amount = Number(body.amount);
+        if (!Number.isFinite(amount) || amount <= 0) {
+          throw new BadRequestException('Valor inválido.');
+        }
+        const amtStr = amount.toFixed(2);
+        data.amount = amtStr;
+        data.amountRemaining = amtStr;
+      }
+      if (body.supplierId !== undefined) {
+        data.supplier = body.supplierId
+          ? { connect: { id: String(body.supplierId).trim() } }
+          : { disconnect: true };
+      }
+
+      const dueDate = (data.dueDate as Date | undefined) ?? row.dueDate;
+      const face = data.amount ?? row.amount;
+      const remaining = data.amountRemaining ?? row.amountRemaining;
+      data.status = resolveBillStatusAfterSettlement(
+        dueDate,
+        moneyCents(Number(remaining)),
+        moneyCents(Number(face)),
+      );
+
+      return tx.accountPayable.update({
+        where: { id },
+        data,
+        include: payableInclude,
+      });
     });
   }
 
@@ -855,6 +948,88 @@ export class FinanceController {
           cashSession: { include: { user: { select: { id: true, name: true, email: true } } } },
           customer: { select: { name: true, segment: true } },
         },
+      });
+    });
+  }
+
+  @Patch('receivables/:id')
+  @Roles('admin', 'manager', 'finance')
+  async updateReceivable(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      customerId?: string | null;
+      description?: string;
+      amount?: number;
+      dueDate?: string;
+      cashControlNote?: string | null;
+    },
+  ) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    return db.$transaction(async (tx) => {
+      const row = await tx.accountReceivable.findUnique({
+        where: { id },
+        include: { settlements: { select: { id: true } } },
+      });
+      if (!row) throw new NotFoundException('Conta a receber não encontrada.');
+      assertBillEditableForHeader(row, 'Conta a receber');
+
+      const isRequisitionTitle =
+        row.creditKind === CreditKind.REQUISITION && row.saleId != null;
+      if (isRequisitionTitle) {
+        if (body.amount !== undefined || body.customerId !== undefined) {
+          throw new BadRequestException(
+            'Título de requisição: altere valor e cliente pela tela Requisições.',
+          );
+        }
+      }
+
+      const data: Prisma.AccountReceivableUpdateInput = {};
+      if (body.description !== undefined) {
+        const description = String(body.description).trim();
+        if (!description) throw new BadRequestException('Descrição é obrigatória.');
+        data.description = description;
+      }
+      if (body.dueDate !== undefined) {
+        const due = parseDay(body.dueDate, 'start');
+        if (!due) throw new BadRequestException('Vencimento inválido (use YYYY-MM-DD).');
+        data.dueDate = due;
+      }
+      if (body.amount !== undefined) {
+        const amount = Number(body.amount);
+        if (!Number.isFinite(amount) || amount <= 0) {
+          throw new BadRequestException('Valor inválido.');
+        }
+        const amtStr = amount.toFixed(2);
+        data.amount = amtStr;
+        data.amountRemaining = amtStr;
+      }
+      if (body.customerId !== undefined) {
+        data.customer = body.customerId
+          ? { connect: { id: String(body.customerId).trim() } }
+          : { disconnect: true };
+      }
+      if (body.cashControlNote !== undefined) {
+        data.cashControlNote =
+          body.cashControlNote != null && String(body.cashControlNote).trim() !== ''
+            ? String(body.cashControlNote).trim().slice(0, 255)
+            : null;
+      }
+
+      const dueDate = (data.dueDate as Date | undefined) ?? row.dueDate;
+      const face = data.amount ?? row.amount;
+      const remaining = data.amountRemaining ?? row.amountRemaining;
+      data.status = resolveBillStatusAfterSettlement(
+        dueDate,
+        moneyCents(Number(remaining)),
+        moneyCents(Number(face)),
+      );
+
+      return tx.accountReceivable.update({
+        where: { id },
+        data,
+        include: receivableInclude,
       });
     });
   }

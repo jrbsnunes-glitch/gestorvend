@@ -27,8 +27,15 @@ export type CreateRequisitionInput = {
   /** Caixa aberto que responde pelo lançamento. */
   cashSessionId: string;
   installments?: number;
+  /** Primeiro vencimento (YYYY-MM-DD). Obrigatório na inclusão manual. */
+  dueDate: string;
   notes?: string | null;
   items: RequisitionItemInput[];
+};
+
+export type UpdateRequisitionInput = {
+  notes?: string | null;
+  receivables?: Array<{ id: string; dueDate: string }>;
 };
 
 type ActingUser = { sub: string; roles: string[] };
@@ -37,6 +44,32 @@ const MAX_INSTALLMENTS = 48;
 
 function roundMoney2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+function parseDayStart(raw: string): Date | null {
+  const s = String(raw).trim();
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (dateOnly) {
+    const [, y, m, d] = dateOnly;
+    const date = new Date(Number(y), Number(m) - 1, Number(d));
+    date.setHours(0, 0, 0, 0);
+    return date;
+  }
+  const date = new Date(s);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function billStatusFromDue(
+  dueDate: Date,
+  remaining: number,
+  face: number,
+): BillStatus {
+  if (remaining <= 0 && face > 0) return BillStatus.PAID;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0);
+  return due < today ? BillStatus.OVERDUE : BillStatus.OPEN;
 }
 
 function isManagerRole(roles: string[]): boolean {
@@ -323,6 +356,10 @@ export class RequisitionsService {
         'Inclua ao menos um produto na requisição.',
       );
     }
+    const dueDateRaw = String(input?.dueDate ?? '').trim();
+    if (!dueDateRaw) {
+      throw new BadRequestException('Informe o vencimento da requisição.');
+    }
 
     const db = await this.tenantPrisma.getClient(tenantSlug);
 
@@ -390,6 +427,7 @@ export class RequisitionsService {
       cashSessionId: session.id,
       source: SaleSource.REQUISITION,
       notes: input.notes?.trim() || null,
+      requisitionDueDate: dueDateRaw,
       items: items.map((it) => ({
         variantId: it.variantId,
         quantity: it.quantity,
@@ -407,7 +445,7 @@ export class RequisitionsService {
       summary:
         `Lançou requisição #${sale.number} de R$ ${total.toFixed(2)} no caixa controle ` +
         `${session.controlNumber} (operador ${session.user?.name ?? '—'}) — ` +
-        `${items.length} produto(s), ${installments}x`,
+        `${items.length} produto(s), ${installments}x, vencimento ${dueDateRaw}`,
       entityType: 'requisition',
       entityRef: `#${sale.number}`,
     });
@@ -440,5 +478,85 @@ export class RequisitionsService {
       user.roles,
       permissionPassword,
     );
+  }
+
+  /** Altera observações e vencimentos das parcelas em aberto (sem baixa parcial). */
+  async update(
+    tenantSlug: string,
+    user: { sub: string },
+    id: string,
+    input: UpdateRequisitionInput,
+  ) {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+
+    await db.$transaction(async (tx) => {
+      const sale = await tx.sale.findUnique({
+        where: { id },
+        include: {
+          payments: { select: { method: true } },
+          receivables: {
+            include: { settlements: { select: { id: true } } },
+          },
+        },
+      });
+      if (!sale) throw new NotFoundException('Requisição não encontrada.');
+      this.assertIsRequisition(sale.payments);
+      if (sale.status === SaleStatus.CANCELLED) {
+        throw new BadRequestException('Requisição cancelada não pode ser alterada.');
+      }
+
+      if (input.notes !== undefined) {
+        await tx.sale.update({
+          where: { id },
+          data: { notes: input.notes?.trim() || null },
+        });
+      }
+
+      if (input.receivables?.length) {
+        const byId = new Map(sale.receivables.map((r) => [r.id, r]));
+        for (const patch of input.receivables) {
+          const row = byId.get(String(patch.id ?? '').trim());
+          if (!row) {
+            throw new BadRequestException('Parcela não pertence a esta requisição.');
+          }
+          if (row.status !== BillStatus.OPEN && row.status !== BillStatus.OVERDUE) {
+            throw new BadRequestException(
+              `Parcela "${row.description}" não está em aberto.`,
+            );
+          }
+          if (row.settlements.length > 0) {
+            throw new BadRequestException(
+              `Parcela "${row.description}" já possui baixa parcial.`,
+            );
+          }
+          const due = parseDayStart(patch.dueDate);
+          if (!due) {
+            throw new BadRequestException('Vencimento inválido (use YYYY-MM-DD).');
+          }
+          const face = Number(row.amount);
+          const remaining = Number(row.amountRemaining);
+          await tx.accountReceivable.update({
+            where: { id: row.id },
+            data: {
+              dueDate: due,
+              status: billStatusFromDue(due, remaining, face),
+            },
+          });
+        }
+      }
+    });
+
+    const updated = await this.detail(tenantSlug, id);
+
+    this.activityLog.record({
+      tenantSlug,
+      userId: user.sub,
+      action: ActivityLogAction.UPDATE,
+      summary: `Alterou requisição #${updated.number}`,
+      entityType: 'requisition',
+      entityRef: `#${updated.number}`,
+    });
+
+    return updated;
   }
 }

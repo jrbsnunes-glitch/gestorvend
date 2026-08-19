@@ -4,7 +4,7 @@
  * sempre amarradas a um caixa aberto. Gravar baixa o estoque; cancelar estorna.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CrudToolbar } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
@@ -108,6 +108,27 @@ function formatQty(n: number): string {
   return n.toLocaleString('pt-BR', { maximumFractionDigits: 4 });
 }
 
+function todayInputValue(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function dueDateInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return todayInputValue();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function receivableEditable(r: { status: string; amount: number; amountRemaining: number }) {
+  return (r.status === 'OPEN' || r.status === 'OVERDUE') && r.amountRemaining >= r.amount - 0.005;
+}
+
 const SOURCE_LABELS: Record<string, string> = {
   PDV: 'PDV',
   REQUISITION: 'Manual',
@@ -128,6 +149,10 @@ export function RequisicoesPage() {
   const [reportsOpen, setReportsOpen] = useState(false);
   const [includeOpen, setIncludeOpen] = useState(false);
   const [viewingId, setViewingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editNotes, setEditNotes] = useState('');
+  const [editDueDates, setEditDueDates] = useState<Record<string, string>>({});
+  const [editErr, setEditErr] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'COMPLETED' | 'CANCELLED'>('ALL');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -137,6 +162,7 @@ export function RequisicoesPage() {
   const [customerOpen, setCustomerOpen] = useState(false);
   const [cashSessionId, setCashSessionId] = useState('');
   const [installments, setInstallments] = useState('1');
+  const [dueDate, setDueDate] = useState(todayInputValue);
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [productSearchOpen, setProductSearchOpen] = useState(false);
@@ -159,6 +185,25 @@ export function RequisicoesPage() {
     queryFn: () => api<RequisitionDetail>(`/requisitions/${viewingId}`),
     enabled: viewingId != null,
   });
+
+  const editDetail = useQuery({
+    queryKey: ['requisitions', 'edit', editingId],
+    queryFn: () => api<RequisitionDetail>(`/requisitions/${editingId}`),
+    enabled: editingId != null,
+  });
+
+  useEffect(() => {
+    const d = editDetail.data;
+    if (!d || editingId !== d.id) return;
+    setEditNotes(d.notes ?? '');
+    const dates: Record<string, string> = {};
+    for (const r of d.receivables) {
+      if (receivableEditable(r)) {
+        dates[r.id] = dueDateInput(r.dueDate);
+      }
+    }
+    setEditDueDates(dates);
+  }, [editDetail.data, editingId]);
 
   const openSessions = useQuery({
     queryKey: ['requisitions', 'open-cash-sessions'],
@@ -210,6 +255,7 @@ export function RequisicoesPage() {
     setCustomerOpen(false);
     setCashSessionId('');
     setInstallments('1');
+    setDueDate(todayInputValue());
     setNotes('');
     setLines([]);
     setErr(null);
@@ -248,6 +294,7 @@ export function RequisicoesPage() {
           customerId: customer?.id,
           cashSessionId,
           installments: Math.max(1, parseInt(installments, 10) || 1),
+          dueDate,
           notes: notes.trim() || null,
           items: lines.map((l) => ({
             variantId: l.variantId,
@@ -282,6 +329,37 @@ export function RequisicoesPage() {
     },
     onError: (e: Error) => alert(e.message),
   });
+
+  const updateMut = useMutation({
+    mutationFn: () =>
+      api(`/requisitions/${editingId}`, {
+        method: 'PATCH',
+        json: {
+          notes: editNotes.trim() || null,
+          receivables: Object.entries(editDueDates).map(([id, dueDate]) => ({ id, dueDate })),
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['requisitions'] });
+      qc.invalidateQueries({ queryKey: ['receivables'] });
+      setEditingId(null);
+      setEditErr(null);
+      alert('Requisição alterada.');
+    },
+    onError: (e: Error) => setEditErr(e.message),
+  });
+
+  function openEdit(id: string) {
+    setEditingId(id);
+    setEditErr(null);
+  }
+
+  function closeEdit() {
+    setEditingId(null);
+    setEditNotes('');
+    setEditDueDates({});
+    setEditErr(null);
+  }
 
   function confirmCancel(row: { id: string; number: number; status: string }) {
     if (row.status === 'CANCELLED') {
@@ -319,6 +397,12 @@ export function RequisicoesPage() {
                 : null,
             },
             { label: 'Parcelas', value: `${d.installments}x` },
+            {
+              label: d.installments > 1 ? 'Primeiro vencimento' : 'Vencimento',
+              value: d.receivables[0]?.dueDate
+                ? new Date(d.receivables[0].dueDate).toLocaleDateString('pt-BR')
+                : null,
+            },
             { label: 'Total', value: money(d.total) },
             { label: 'Situação', value: d.status === 'CANCELLED' ? 'Cancelada' : 'Efetivada' },
             { label: 'Observação', value: d.notes },
@@ -493,6 +577,16 @@ export function RequisicoesPage() {
                       >
                         Visualizar
                       </button>
+                      {r.status !== 'CANCELLED' && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-compact"
+                          disabled={updateMut.isPending}
+                          onClick={() => openEdit(r.id)}
+                        >
+                          Alterar
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="btn btn-danger btn-compact"
@@ -636,6 +730,18 @@ export function RequisicoesPage() {
                   onChange={(e) => setInstallments(e.target.value)}
                 />
               </div>
+              <div className="field">
+                <label>
+                  {Math.max(1, parseInt(installments, 10) || 1) > 1
+                    ? 'Primeiro vencimento *'
+                    : 'Vencimento *'}
+                </label>
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                />
+              </div>
             </div>
 
             <div className="field">
@@ -747,6 +853,7 @@ export function RequisicoesPage() {
                 disabled={
                   !customer ||
                   !cashSessionId ||
+                  !dueDate ||
                   lines.length === 0 ||
                   draftTotal <= 0 ||
                   lines.some((l) => parseNum(l.quantity) <= 0) ||
@@ -757,6 +864,105 @@ export function RequisicoesPage() {
                 Gravar requisição
               </button>
             </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {editingId && (
+        <FormModalBackdrop className="no-print" onClose={closeEdit}>
+          <div
+            className="modal"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 640 }}
+          >
+            <h2>
+              {editDetail.data ? `Alterar requisição #${editDetail.data.number}` : 'Alterar requisição'}
+            </h2>
+            <p className="page-desc" style={{ marginBottom: '1rem' }}>
+              Altere observações e vencimentos das parcelas em aberto. Itens, cliente e valores não podem
+              ser modificados aqui.
+            </p>
+            {editErr && <div className="alert alert-error">{editErr}</div>}
+            {editDetail.isLoading && <p className="muted">Carregando…</p>}
+            {editDetail.isError && (
+              <div className="alert alert-error">{(editDetail.error as Error).message}</div>
+            )}
+            {editDetail.data && (
+              <>
+                <div className="form-row">
+                  <div className="field">
+                    <label>Cliente</label>
+                    <input readOnly value={editDetail.data.customer?.name ?? '—'} />
+                  </div>
+                  <div className="field">
+                    <label>Total</label>
+                    <input readOnly value={money(editDetail.data.total)} />
+                  </div>
+                </div>
+                <div className="field">
+                  <label htmlFor="req-edit-notes">Observações</label>
+                  <textarea
+                    id="req-edit-notes"
+                    rows={3}
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                  />
+                </div>
+                {editDetail.data.receivables.length > 0 && (
+                  <div className="table-wrap" style={{ marginTop: '0.75rem' }}>
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Parcela</th>
+                          <th>Valor</th>
+                          <th>Status</th>
+                          <th>Vencimento</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {editDetail.data.receivables.map((rec) => (
+                          <tr key={rec.id}>
+                            <td>{rec.description}</td>
+                            <td className="num">{money(rec.amount)}</td>
+                            <td>{TITLE_STATUS_LABELS[rec.status] ?? rec.status}</td>
+                            <td>
+                              {receivableEditable(rec) ? (
+                                <input
+                                  type="date"
+                                  value={editDueDates[rec.id] ?? dueDateInput(rec.dueDate)}
+                                  onChange={(e) =>
+                                    setEditDueDates((prev) => ({
+                                      ...prev,
+                                      [rec.id]: e.target.value,
+                                    }))
+                                  }
+                                />
+                              ) : (
+                                dueDateInput(rec.dueDate)
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <div className="modal-actions">
+                  <button type="button" className="btn btn-secondary" onClick={closeEdit}>
+                    Fechar
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={updateMut.isPending}
+                    onClick={() => updateMut.mutate()}
+                  >
+                    Salvar
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </FormModalBackdrop>
       )}

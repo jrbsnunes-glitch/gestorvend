@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -71,6 +72,7 @@ export class RequisitionsController {
       customerId: string;
       cashSessionId: string;
       installments?: number;
+      dueDate: string;
       notes?: string | null;
       items: RequisitionItemInput[];
       managerPassword?: string;
@@ -91,6 +93,7 @@ export class RequisitionsController {
         customerId: body.customerId,
         cashSessionId: body.cashSessionId,
         installments: body.installments,
+        dueDate: body.dueDate,
         notes: body.notes ?? null,
         items: body.items ?? [],
       },
@@ -118,6 +121,37 @@ export class RequisitionsController {
       { sub: user.sub, roles: user.roles },
       id,
       body?.permissionPassword ?? body?.managerPassword,
+    );
+  }
+
+  @Patch(':id')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  async update(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      notes?: string | null;
+      receivables?: Array<{ id: string; dueDate: string }>;
+      managerPassword?: string;
+    },
+  ) {
+    await this.menuAccess.assertMenuAction(
+      user.tenantSlug,
+      user.sub,
+      user.roles,
+      'requisitions',
+      'update',
+      body?.managerPassword,
+    );
+    return this.requisitions.update(
+      user.tenantSlug,
+      { sub: user.sub },
+      id,
+      {
+        notes: body.notes,
+        receivables: body.receivables,
+      },
     );
   }
 }

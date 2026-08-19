@@ -30,6 +30,7 @@ type Payable = {
   paymentMethod?: string | null;
   paymentNotes?: string | null;
   settledAmount?: string | null;
+  supplierId?: string | null;
   supplier: { legalName: string; segment?: string | null } | null;
   cashSession?: { controlNumber: number; user: { name: string } | null } | null;
   recurrence?: 'NONE' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
@@ -50,6 +51,7 @@ type Receivable = {
   settledAmount?: string | null;
   cashControlNote?: string | null;
   creditKind?: string | null;
+  customerId?: string | null;
   customer: { name: string; segment?: string | null } | null;
   cashSession?: { controlNumber: number; user: { name: string } | null } | null;
   items?: Array<{
@@ -151,6 +153,24 @@ function isSameLocalDay(a: Date, b: Date): boolean {
   );
 }
 
+function toDateInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function canEditBill(row: Payable | Receivable): boolean {
+  if (row.status !== 'OPEN' && row.status !== 'OVERDUE') return false;
+  return !hasInformedPayment(row);
+}
+
+function isRequisitionReceivable(row: Receivable): boolean {
+  return row.creditKind === 'REQUISITION';
+}
+
 function monthRangeDefaults(): { from: string; to: string } {
   const n = new Date();
   const start = new Date(n.getFullYear(), n.getMonth(), 1);
@@ -173,6 +193,8 @@ export function FinancePage() {
     urlTab === 'receber' || filterCustomerId ? 'receber' : urlTab === 'pagar' || filterSupplierId ? 'pagar' : 'pagar';
   const [tab, setTab] = useState<Tab>(initialTab);
   const [openTab, setOpenTab] = useState<Tab | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editRequisitionTitle, setEditRequisitionTitle] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [err, setErr] = useState<string | null>(null);
   const [settleBill, setSettleBill] = useState<Payable | Receivable | null>(null);
@@ -289,6 +311,47 @@ export function FinancePage() {
     onError: (e: Error) => setErr(e.message),
   });
 
+  const updatePayable = useMutation({
+    mutationFn: () =>
+      api(`/finance/payables/${editingId}`, {
+        method: 'PATCH',
+        json: {
+          description: form.description,
+          amount: parseFloat(form.amount.replace(',', '.')) || 0,
+          dueDate: form.dueDate,
+          supplierId: form.partyId || null,
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['payables'] });
+      closeModal();
+    },
+    onError: (e: Error) => setErr(e.message),
+  });
+
+  const updateReceivable = useMutation({
+    mutationFn: () => {
+      const json: Record<string, unknown> = {
+        description: form.description,
+        dueDate: form.dueDate,
+        cashControlNote: form.cashControlNote.trim() || null,
+      };
+      if (!editRequisitionTitle) {
+        json.amount = parseFloat(form.amount.replace(',', '.')) || 0;
+        json.customerId = form.partyId || null;
+      }
+      return api(`/finance/receivables/${editingId}`, {
+        method: 'PATCH',
+        json,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['receivables'] });
+      closeModal();
+    },
+    onError: (e: Error) => setErr(e.message),
+  });
+
   const payOne = useMutation({
     mutationFn: ({
       id,
@@ -356,6 +419,8 @@ export function FinancePage() {
   });
 
   function openModal(t: Tab) {
+    setEditingId(null);
+    setEditRequisitionTitle(false);
     setOpenTab(t);
     setForm({
       ...EMPTY_FORM,
@@ -364,8 +429,39 @@ export function FinancePage() {
     setErr(null);
   }
 
+  function openEditPayable(p: Payable) {
+    setEditingId(p.id);
+    setEditRequisitionTitle(false);
+    setOpenTab('pagar');
+    setForm({
+      ...EMPTY_FORM,
+      description: p.description,
+      amount: String(Number(p.amount)),
+      dueDate: toDateInput(p.dueDate),
+      partyId: p.supplierId ?? '',
+    });
+    setErr(null);
+  }
+
+  function openEditReceivable(r: Receivable) {
+    setEditingId(r.id);
+    setEditRequisitionTitle(isRequisitionReceivable(r));
+    setOpenTab('receber');
+    setForm({
+      ...EMPTY_FORM,
+      description: r.description,
+      amount: String(Number(r.amount)),
+      dueDate: toDateInput(r.dueDate),
+      partyId: r.customerId ?? '',
+      cashControlNote: r.cashControlNote ?? '',
+    });
+    setErr(null);
+  }
+
   function closeModal() {
     setOpenTab(null);
+    setEditingId(null);
+    setEditRequisitionTitle(false);
     setForm(EMPTY_FORM);
     setErr(null);
   }
@@ -635,6 +731,17 @@ export function FinancePage() {
                             Baixar
                           </button>
                         )}
+                        {canEditBill(p) && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.82rem' }}
+                            disabled={updatePayable.isPending}
+                            onClick={() => openEditPayable(p)}
+                          >
+                            Alterar
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -776,6 +883,17 @@ export function FinancePage() {
                             Receber
                           </button>
                         )}
+                        {canEditBill(r) && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.82rem' }}
+                            disabled={updateReceivable.isPending}
+                            onClick={() => openEditReceivable(r)}
+                          >
+                            Alterar
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -789,8 +907,21 @@ export function FinancePage() {
       {openTab && (
         <FormModalBackdrop onClose={closeModal}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(560px, 96vw)' }}>
-            <h2>{openTab === 'pagar' ? 'Nova conta a pagar' : 'Nova conta a receber'}</h2>
+            <h2>
+              {editingId
+                ? openTab === 'pagar'
+                  ? 'Alterar conta a pagar'
+                  : 'Alterar conta a receber'
+                : openTab === 'pagar'
+                  ? 'Nova conta a pagar'
+                  : 'Nova conta a receber'}
+            </h2>
             {err && <div className="alert alert-error">{err}</div>}
+            {editingId && openTab === 'receber' && editRequisitionTitle && (
+              <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                Título de requisição: valor e cliente só podem ser alterados em Requisições.
+              </p>
+            )}
             <div className="field">
               <label htmlFor="fp-desc">Descrição *</label>
               <input
@@ -805,6 +936,7 @@ export function FinancePage() {
               <select
                 id="fp-party"
                 value={form.partyId}
+                disabled={editRequisitionTitle}
                 onChange={(e) => setForm({ ...form, partyId: e.target.value })}
               >
                 <option value="">— Não informado —</option>
@@ -831,14 +963,13 @@ export function FinancePage() {
                   type="number"
                   step="0.01"
                   min="0"
+                  disabled={editRequisitionTitle}
                   value={form.amount}
                   onChange={(e) => setForm({ ...form, amount: e.target.value })}
                 />
               </div>
               <div className="field">
-                <label htmlFor="fp-due">
-                  {form.recurrenceCount > 1 ? '1ª parcela *' : 'Vencimento *'}
-                </label>
+                <label htmlFor="fp-due">Vencimento *</label>
                 <input
                   id="fp-due"
                   type="date"
@@ -846,25 +977,39 @@ export function FinancePage() {
                   onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
                 />
               </div>
-              <div className="field">
-                <label htmlFor="fp-rec-n">Qtd. de parcelas</label>
-                <input
-                  id="fp-rec-n"
-                  type="number"
-                  min={1}
-                  max={120}
-                  value={form.recurrenceCount}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      recurrenceCount: Math.max(1, Math.min(120, Number(e.target.value) || 1)),
-                    })
-                  }
-                />
-              </div>
+              {!editingId && (
+                <div className="field">
+                  <label htmlFor="fp-rec-n">Qtd. de parcelas</label>
+                  <input
+                    id="fp-rec-n"
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={form.recurrenceCount}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        recurrenceCount: Math.max(1, Math.min(120, Number(e.target.value) || 1)),
+                      })
+                    }
+                  />
+                </div>
+              )}
             </div>
 
-            {openTab === 'receber' && (
+            {openTab === 'receber' && editingId && (
+              <div className="field">
+                <label htmlFor="fp-cash-note">Nota do controle</label>
+                <input
+                  id="fp-cash-note"
+                  value={form.cashControlNote}
+                  onChange={(e) => setForm({ ...form, cashControlNote: e.target.value })}
+                  placeholder="Ex.: caixa do dia, balcão…"
+                />
+              </div>
+            )}
+
+            {openTab === 'receber' && !editingId && (
               <>
                 <div className="form-row">
                   <div className="field">
@@ -977,13 +1122,14 @@ export function FinancePage() {
               </>
             )}
 
-            {form.recurrenceCount > 1 && form.recurrence === 'NONE' && (
+            {!editingId && form.recurrenceCount > 1 && form.recurrence === 'NONE' && (
               <p style={{ margin: '0 0 0.35rem', color: 'var(--color-text-muted)', fontSize: '0.78rem' }}>
                 O valor total será dividido em <strong>{form.recurrenceCount}</strong> parcelas iguais, com
                 vencimento mensal a partir da 1ª data.
               </p>
             )}
 
+            {!editingId && (
             <fieldset
               style={{
                 border: '1px solid var(--color-border)',
@@ -1017,6 +1163,7 @@ export function FinancePage() {
                 </p>
               )}
             </fieldset>
+            )}
 
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={closeModal}>
@@ -1027,12 +1174,17 @@ export function FinancePage() {
                 className="btn btn-primary"
                 disabled={
                   !form.description.trim() ||
-                  !form.amount ||
+                  (!editRequisitionTitle && !form.amount) ||
                   createPayable.isPending ||
-                  createReceivable.isPending
+                  createReceivable.isPending ||
+                  updatePayable.isPending ||
+                  updateReceivable.isPending
                 }
                 onClick={() => {
-                  if (openTab === 'pagar') createPayable.mutate();
+                  if (editingId) {
+                    if (openTab === 'pagar') updatePayable.mutate();
+                    else updateReceivable.mutate();
+                  } else if (openTab === 'pagar') createPayable.mutate();
                   else createReceivable.mutate();
                 }}
               >
