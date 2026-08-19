@@ -37,6 +37,7 @@ type CompanyInput = {
   waiterTipEnabled?: boolean;
   waiterTipMode?: 'PERCENT' | 'FIXED' | string;
   waiterTipValue?: number | string;
+  cashExpenseInPresentedTotal?: boolean;
 };
 
 /**
@@ -125,6 +126,10 @@ export class CompanyService {
 
     if (body.saleReceiptAutoPrint !== undefined) {
       data.saleReceiptAutoPrint = Boolean(body.saleReceiptAutoPrint);
+    }
+
+    if (body.cashExpenseInPresentedTotal !== undefined) {
+      data.cashExpenseInPresentedTotal = Boolean(body.cashExpenseInPresentedTotal);
     }
 
     if (body.restaurantModuleEnabled !== undefined) {

@@ -43,6 +43,7 @@ type Company = {
   waiterTipEnabled?: boolean;
   waiterTipMode?: 'PERCENT' | 'FIXED';
   waiterTipValue?: string | number | null;
+  cashExpenseInPresentedTotal?: boolean;
 };
 
 type FormState = Omit<Company, 'id'>;
@@ -82,6 +83,7 @@ const EMPTY_FORM: FormState = {
   waiterTipEnabled: false,
   waiterTipMode: 'PERCENT',
   waiterTipValue: 0,
+  cashExpenseInPresentedTotal: false,
 };
 
 function toForm(c: Company): FormState {
@@ -118,6 +120,7 @@ function toForm(c: Company): FormState {
     waiterTipEnabled: Boolean(c.waiterTipEnabled),
     waiterTipMode: c.waiterTipMode === 'FIXED' ? 'FIXED' : 'PERCENT',
     waiterTipValue: Number(c.waiterTipValue ?? 0),
+    cashExpenseInPresentedTotal: Boolean(c.cashExpenseInPresentedTotal),
   };
 }
 
@@ -846,6 +849,47 @@ export function CompanyPage() {
                   placeholder="Ex.: Epson TM-T20 · USB001 · IP 192.168.0.50"
                 />
               </div>
+            </div>
+          </section>
+
+          <section className="card">
+            <h2 className="company-form__h">Caixa</h2>
+            <p className="company-form__hint">
+              Define como as <strong>despesas retiradas do caixa</strong> entram na conferência de
+              fechamento (apresentados × esperado). O lançamento financeiro e o centro de custo
+              continuam iguais nos dois modos.
+            </p>
+            <div className="inline-checks" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+              <label>
+                <input
+                  type="radio"
+                  name="cash-expense-mode"
+                  checked={!form.cashExpenseInPresentedTotal}
+                  onChange={() => update('cashExpenseInPresentedTotal', false)}
+                />
+                <span>
+                  Despesa analítica (padrão)
+                  <span className="sub">
+                    Despesa fica em linha separada e <strong>não soma</strong> no total apresentado.
+                    O esperado em dinheiro já desconta as despesas lançadas.
+                  </span>
+                </span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="cash-expense-mode"
+                  checked={Boolean(form.cashExpenseInPresentedTotal)}
+                  onChange={() => update('cashExpenseInPresentedTotal', true)}
+                />
+                <span>
+                  Despesa soma no apresentado
+                  <span className="sub">
+                    Conferência por <strong>dinheiro na gaveta + despesa retirada</strong>, que deve
+                    bater com o total vendido em dinheiro (como no exemplo: R$ 50 + R$ 50 = R$ 100).
+                  </span>
+                </span>
+              </label>
             </div>
           </section>
 

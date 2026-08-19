@@ -36,6 +36,7 @@ import {
   computeClosingBalanceFromDeclared,
   computeReconciliationDifference,
   expectedFinalForMethodKey,
+  type CashReconClosingOptions,
 } from './cash-session-expected';
 import {
   clearReconciliationExpenseMovements,
@@ -84,7 +85,19 @@ function roundMoney(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-/** Agrega total de vendas concluídas e diferença líquida (meios de recebimento; despesas fora do total). */
+async function loadCashReconClosingOptions(
+  db: PrismaClient,
+): Promise<CashReconClosingOptions> {
+  const company = await db.company.findFirst({
+    orderBy: { createdAt: 'asc' },
+    select: { cashExpenseInPresentedTotal: true },
+  });
+  return {
+    includeExpenseInPresentedTotal: Boolean(company?.cashExpenseInPresentedTotal),
+  };
+}
+
+/** Agrega total de vendas concluídas e diferença líquida (meios de recebimento; despesas opcionais). */
 function computeSessionListAggregates(params: {
   sales: Array<{
     status: SaleStatus;
@@ -94,6 +107,7 @@ function computeSessionListAggregates(params: {
   movements: Array<{ type: CashMovementType; amount: unknown; method: PaymentMethod | null }>;
   openingBalance: unknown;
   closingByMethod: unknown;
+  closingOptions?: CashReconClosingOptions;
 }): { totalCompletedSales: number; reconciliationDifference: number | null } {
   let totalCompleted = 0;
   for (const sale of params.sales) {
@@ -124,6 +138,7 @@ function computeSessionListAggregates(params: {
     byMethod,
     declaredNormalized,
     opening,
+    params.closingOptions,
   );
 
   return {
@@ -388,6 +403,8 @@ export class CashController {
       take: 200,
     });
 
+    const closingOptions = await loadCashReconClosingOptions(db);
+
     const now = new Date();
     const saleWindowUserIds = [...new Set(sessions.map((s) => s.userId))];
 
@@ -452,6 +469,7 @@ export class CashController {
           movements: s.movements,
           openingBalance: s.openingBalance,
           closingByMethod: s.closingByMethod,
+          closingOptions,
         });
 
       const { movements: _movements, ...rest } = s;
@@ -549,6 +567,8 @@ export class CashController {
       orderBy: { openedAt: 'asc' },
     });
 
+    const closingOptions = await loadCashReconClosingOptions(db);
+
     // Para cada sessão, busca vendas dentro da janela (uniformizado com sessionDetail).
     const detailed = await Promise.all(
       sessions.map(async (s) => {
@@ -631,7 +651,7 @@ export class CashController {
 
         const presentedTotal =
           declaredNormalized != null
-            ? computeClosingBalanceFromDeclared(declaredNormalized)
+            ? computeClosingBalanceFromDeclared(declaredNormalized, closingOptions)
             : s.closingBalance != null
               ? roundMoney(Number(s.closingBalance))
               : null;
@@ -1123,6 +1143,8 @@ export class CashController {
       throw new ForbiddenException('Sem permissão para visualizar este caixa.');
     }
 
+    const closingOptions = await loadCashReconClosingOptions(db);
+
     const upper = session.closedAt ?? new Date();
     const sales = await db.sale.findMany({
       where: {
@@ -1309,7 +1331,8 @@ export class CashController {
       );
     }
 
-    const total = computeClosingBalanceFromDeclared(normalized);
+    const closingOptions = await loadCashReconClosingOptions(db);
+    const total = computeClosingBalanceFromDeclared(normalized, closingOptions);
 
     const beforeMap = isPlainObjectRecord(session.closingByMethod)
       ? (session.closingByMethod as Record<string, unknown>)
@@ -1470,13 +1493,15 @@ export class CashController {
     });
     if (!open) throw new BadRequestException('Nenhum caixa aberto');
 
+    const closingOptions = await loadCashReconClosingOptions(db);
+
     // Saneamento do JSON de fechamento: aceita valores numéricos ou strings
     // que representem números, normaliza a vírgula como separador decimal e
     // descarta entradas inválidas (ex.: NaN, números negativos).
     const normalized = normalizeClosingByMethodInput(body.closingByMethod);
     const closingBalance =
       normalized != null
-        ? computeClosingBalanceFromDeclared(normalized)
+        ? computeClosingBalanceFromDeclared(normalized, closingOptions)
         : roundMoney(Number(body.closingBalance ?? 0));
 
     const updated = await db.cashRegisterSession.update({

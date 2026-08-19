@@ -62,6 +62,8 @@ model Company {
   waiterTipEnabled Boolean @default(false)
   waiterTipMode    RestaurantFeeMode @default(PERCENT)
   waiterTipValue   Decimal @default(0) @db.Decimal(14, 4)
+  /// Despesas de caixa (EXPENSE) entram no total apresentado na conferência (dinheiro + despesa = vendas em dinheiro).
+  cashExpenseInPresentedTotal Boolean @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   fiscalIssuerSettings FiscalIssuerSettings?

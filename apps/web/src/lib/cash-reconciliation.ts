@@ -7,7 +7,16 @@ export type CashMovementBreakdown = {
   despesas: number;
 };
 
-export function isExcludedFromClosingTotal(methodKey: string): boolean {
+export type CashReconClosingOptions = {
+  /** Quando true, despesas (EXPENSE) entram no total apresentado na conferência. */
+  includeExpenseInPresentedTotal?: boolean;
+};
+
+export function isExcludedFromClosingTotal(
+  methodKey: string,
+  options?: CashReconClosingOptions,
+): boolean {
+  if (methodKey === 'EXPENSE' && options?.includeExpenseInPresentedTotal) return false;
   return (CASH_RECON_EXCLUDE_FROM_CLOSING_TOTAL as readonly string[]).includes(methodKey);
 }
 
@@ -23,11 +32,12 @@ export function expectedFinalForReconKey(
 
 export function sumDeclaredForClosingBalance(
   declared: Record<string, number | string> | null | undefined,
+  options?: CashReconClosingOptions,
 ): number {
   if (!declared || typeof declared !== 'object') return 0;
   let sum = 0;
   for (const [key, raw] of Object.entries(declared)) {
-    if (isExcludedFromClosingTotal(key)) continue;
+    if (isExcludedFromClosingTotal(key, options)) continue;
     const n =
       typeof raw === 'number' ? raw : parseFloat(String(raw ?? '').replace(',', '.'));
     if (Number.isFinite(n) && n > 0) sum += Math.round(n * 100) / 100;
@@ -37,11 +47,12 @@ export function sumDeclaredForClosingBalance(
 
 export function sumPaymentMethodsTotal(
   byMethod: Record<string, number | string> | null | undefined,
+  options?: CashReconClosingOptions,
 ): number {
   if (!byMethod || typeof byMethod !== 'object') return 0;
   let sum = 0;
   for (const [key, raw] of Object.entries(byMethod)) {
-    if (isExcludedFromClosingTotal(key)) continue;
+    if (isExcludedFromClosingTotal(key, options)) continue;
     const n =
       typeof raw === 'number' ? raw : parseFloat(String(raw ?? '').replace(',', '.'));
     if (Number.isFinite(n)) sum += Math.round(n * 100) / 100;
@@ -53,9 +64,10 @@ export function sumPaymentMethodsTotal(
 export function presentedTotalFromSession(
   closingByMethod: Record<string, number | string> | null | undefined,
   closingBalance: string | number | null | undefined,
+  options?: CashReconClosingOptions,
 ): number | null {
   if (closingByMethod && typeof closingByMethod === 'object' && Object.keys(closingByMethod).length > 0) {
-    return sumDeclaredForClosingBalance(closingByMethod);
+    return sumDeclaredForClosingBalance(closingByMethod, options);
   }
   if (closingBalance != null && closingBalance !== '') {
     const n =
@@ -82,6 +94,27 @@ export function formatCashExpectedHint(
 
 function formatHintMoney(n: number): string {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+export function expensePresentedTotalHint(includeExpenseInPresentedTotal: boolean): string {
+  return includeExpenseInPresentedTotal
+    ? 'soma no total apresentado (dinheiro + despesa = vendas em dinheiro)'
+    : 'analítico — não entra no total apresentado';
+}
+
+export function reconciliationTotalLabel(includeExpenseInPresentedTotal: boolean): {
+  title: string;
+  subtitle: string;
+} {
+  return includeExpenseInPresentedTotal
+    ? {
+        title: 'Total apresentado',
+        subtitle: 'inclui despesas do caixa',
+      }
+    : {
+        title: 'Total (meios)',
+        subtitle: 'sem linha de despesas',
+      };
 }
 
 export function sumReconciliationTotals(

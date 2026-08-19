@@ -162,9 +162,13 @@ function sessionStatusLabel(s: ReportSession): string {
   return s.status === 'OPEN' ? 'Aberto' : 'Fechado';
 }
 
-function sessionPresented(s: ReportSession): string {
+function sessionPresented(
+  s: ReportSession,
+  options?: { includeExpenseInPresentedTotal?: boolean },
+): string {
   const total =
-    s.presentedTotal ?? presentedTotalFromSession(s.declaredByMethod, s.closingBalance);
+    s.presentedTotal ??
+    presentedTotalFromSession(s.declaredByMethod, s.closingBalance, options);
   return total != null ? formatBRL(total) : '—';
 }
 
@@ -181,6 +185,14 @@ export function CashPrintPage() {
     params.get('includeItems') === '1' || params.get('detailItems') === '1';
   const hasControlFilter = Boolean(controlFrom || controlTo);
   const hasDateFilter = Boolean(from && to);
+
+  const companyQ = useQuery({
+    queryKey: ['company'],
+    queryFn: () => api<{ cashExpenseInPresentedTotal?: boolean }>('/company'),
+  });
+  const closingOptions = {
+    includeExpenseInPresentedTotal: Boolean(companyQ.data?.cashExpenseInPresentedTotal),
+  };
 
   const report = useQuery({
     queryKey: ['cash', 'report', { from, to, userId, controlFrom, controlTo, status }],
@@ -342,7 +354,7 @@ export function CashPrintPage() {
                         <td>{sessionStatusLabel(s)}</td>
                         <td className="num">{s.completedCount}</td>
                         <td className="num">{formatBRL(s.totalCompleted)}</td>
-                        <td className="num">{sessionPresented(s)}</td>
+                        <td className="num">{sessionPresented(s, closingOptions)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -358,7 +370,10 @@ export function CashPrintPage() {
                         {formatBRL(
                           data.totals.presentedTotal ??
                             (data.totals.closingBalance ||
-                              sumDeclaredForClosingBalance(data.totals.declaredByMethod)),
+                              sumDeclaredForClosingBalance(
+                                data.totals.declaredByMethod,
+                                closingOptions,
+                              )),
                         )}
                       </th>
                     </tr>
@@ -415,6 +430,7 @@ export function CashPrintPage() {
                     ? data.totals.declaredByMethod
                     : null
                 }
+                includeExpenseInPresentedTotal={closingOptions.includeExpenseInPresentedTotal}
               />
             </section>
 
@@ -440,12 +456,15 @@ function ReconTable({
   sales,
   expected,
   declared,
+  includeExpenseInPresentedTotal = false,
 }: {
   methods: string[];
   sales: Record<string, number>;
   expected: Record<string, number>;
   declared: Record<string, number> | null;
+  includeExpenseInPresentedTotal?: boolean;
 }) {
+  const closingOptions = { includeExpenseInPresentedTotal };
   const rows = methods
     .map((k) => {
       const saleVal = sales[k] ?? 0;
@@ -460,7 +479,7 @@ function ReconTable({
     return <p className="print-empty">Sem valores para conferência neste filtro.</p>;
   }
 
-  const totalRows = rows.filter((r) => !isExcludedFromClosingTotal(r.k));
+  const totalRows = rows.filter((r) => !isExcludedFromClosingTotal(r.k, closingOptions));
   const totalSales = totalRows.reduce((s, r) => s + r.saleVal, 0);
   const totalExpected = totalRows.reduce((s, r) => s + r.ex, 0);
   const totalDeclared = totalRows.reduce((s, r) => s + (r.dec ?? 0), 0);

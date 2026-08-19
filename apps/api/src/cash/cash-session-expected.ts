@@ -7,6 +7,11 @@ import {
 /** Chaves analíticas — não entram no saldo apresentado (soma dos meios de recebimento). */
 export const CASH_RECON_EXCLUDE_FROM_CLOSING_TOTAL = ['EXPENSE'] as const;
 
+export type CashReconClosingOptions = {
+  /** Quando true, despesas (EXPENSE) entram no total apresentado na conferência. */
+  includeExpenseInPresentedTotal?: boolean;
+};
+
 export type CashMovementForExpected = {
   type: CashMovementType;
   amount: unknown;
@@ -115,17 +120,23 @@ export function expectedFinalForMethodKey(
   return key === 'CASH' ? roundMoney(base + opening) : base;
 }
 
-export function isExcludedFromClosingTotal(methodKey: string): boolean {
+export function isExcludedFromClosingTotal(
+  methodKey: string,
+  options?: CashReconClosingOptions,
+): boolean {
+  if (methodKey === 'EXPENSE' && options?.includeExpenseInPresentedTotal) return false;
   return (CASH_RECON_EXCLUDE_FROM_CLOSING_TOTAL as readonly string[]).includes(methodKey);
 }
 
-/** Total apresentado operacional (meios de recebimento; sem despesas analíticas). */
+/** Total apresentado operacional (meios de recebimento; despesas opcionais). */
 export function computeClosingBalanceFromDeclared(
   declared: Record<string, number>,
+  options?: CashReconClosingOptions,
 ): number {
   return roundMoney(
     Object.entries(declared).reduce(
-      (acc, [key, val]) => (isExcludedFromClosingTotal(key) ? acc : acc + val),
+      (acc, [key, val]) =>
+        isExcludedFromClosingTotal(key, options) ? acc : acc + val,
       0,
     ),
   );
@@ -135,6 +146,7 @@ export function computeReconciliationDifference(
   expected: Record<string, number>,
   declared: Record<string, number> | null | undefined,
   opening: number,
+  options?: CashReconClosingOptions,
 ): number | null {
   if (!declared) return null;
 
@@ -147,7 +159,7 @@ export function computeReconciliationDifference(
   let anyVisibleRow = false;
 
   for (const key of methodKeys) {
-    if (isExcludedFromClosingTotal(key)) continue;
+    if (isExcludedFromClosingTotal(key, options)) continue;
 
     const expectedFinal = expectedFinalForMethodKey(key, expected, opening);
     const rawDeclared = declared[key];

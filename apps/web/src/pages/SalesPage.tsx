@@ -28,7 +28,9 @@ import {
 import { formatBRL, formatDate } from '../lib/format';
 import {
   expectedFinalForReconKey,
+  expensePresentedTotalHint,
   formatCashExpectedHint,
+  reconciliationTotalLabel,
   sumDeclaredForClosingBalance,
   type CashMovementBreakdown,
 } from '../lib/cash-reconciliation';
@@ -1197,6 +1199,7 @@ function PosScreen({
           scaleAutoConfirmMs?: number;
           barcodeWeightPattern?: string | null;
           restaurantModuleEnabled?: boolean;
+          cashExpenseInPresentedTotal?: boolean;
         }
       >('/company'),
     staleTime: 60_000,
@@ -1777,10 +1780,16 @@ function PosScreen({
   const electronicFiscalPlanned =
     companyQ.data?.pdvDocumentMode === 'ELECTRONIC_FISCAL_PLANNED';
 
+  const includeExpenseInPresentedTotal = Boolean(companyQ.data?.cashExpenseInPresentedTotal);
+  const closeReconTotalLabels = reconciliationTotalLabel(includeExpenseInPresentedTotal);
+
   // Soma de todos os valores contados por método -> total declarado.
   const closingTotal = useMemo(
-    () => sumDeclaredForClosingBalance(closingByMethod),
-    [closingByMethod],
+    () =>
+      sumDeclaredForClosingBalance(closingByMethod, {
+        includeExpenseInPresentedTotal,
+      }),
+    [closingByMethod, includeExpenseInPresentedTotal],
   );
 
   const closeCash = useMutation({
@@ -2923,7 +2932,7 @@ function PosScreen({
                               ({formatCashExpectedHint(openingNum, breakdown)})
                             </>
                           ) : m.key === 'EXPENSE' ? (
-                            ' (despesas lançadas · analítico)'
+                            ` (despesas · ${expensePresentedTotalHint(includeExpenseInPresentedTotal)})`
                           ) : (
                             ''
                           )}
@@ -2971,11 +2980,13 @@ function PosScreen({
             </div>
 
             <div className="pos-close-totals">
-              <span>Total apresentado (meios)</span>
+              <span>{closeReconTotalLabels.title}</span>
               <strong>{formatBRL(closingTotal)}</strong>
             </div>
             <p style={{ margin: '0.35rem 0 0', fontSize: '0.78rem', color: 'var(--pos-text-sub)' }}>
-              Despesas informadas acima são conferência analítica e não entram neste total.
+              {includeExpenseInPresentedTotal
+                ? 'Neste modo, dinheiro apresentado + despesas informadas devem bater com o total vendido em dinheiro.'
+                : 'Despesas informadas acima são conferência analítica e não entram neste total.'}
             </p>
 
             <div className="field" style={{ marginTop: '0.5rem' }}>

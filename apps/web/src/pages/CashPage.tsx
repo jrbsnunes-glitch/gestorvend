@@ -12,8 +12,10 @@ import { isManager } from '../lib/auth';
 import { formatBRL } from '../lib/format';
 import {
   expectedFinalForReconKey,
+  expensePresentedTotalHint,
   formatCashExpectedHint,
   presentedTotalFromSession,
+  reconciliationTotalLabel,
   sumReconciliationTotals,
   type CashMovementBreakdown,
 } from '../lib/cash-reconciliation';
@@ -437,6 +439,12 @@ export function CashPage() {
     staleTime: 5 * 60_000,
   });
 
+  const companyQ = useQuery({
+    queryKey: ['company'],
+    queryFn: () => api<{ cashExpenseInPresentedTotal?: boolean }>('/company'),
+  });
+  const includeExpenseInPresentedTotal = Boolean(companyQ.data?.cashExpenseInPresentedTotal);
+
   /** Intervalo atual de números de controle, para pré-preencher o modo Controle. */
   const controlRange = useQuery({
     queryKey: ['cash', 'control-range'],
@@ -818,7 +826,11 @@ export function CashPage() {
                     </td>
                     <td className="cash-ss-num" data-label="Sd. final">
                       {(() => {
-                        const total = presentedTotalFromSession(s.closingByMethod, s.closingBalance);
+                        const total = presentedTotalFromSession(
+                          s.closingByMethod,
+                          s.closingBalance,
+                          { includeExpenseInPresentedTotal },
+                        );
                         return total != null ? formatBRL(total) : '—';
                       })()}
                     </td>
@@ -1293,11 +1305,13 @@ function ManagerCashReconciliation({
   session,
   expected,
   movementBreakdown,
+  includeExpenseInPresentedTotal,
   onUpdated,
 }: {
   session: SessionDetail['session'];
   expected: Record<string, number>;
   movementBreakdown?: CashMovementBreakdown;
+  includeExpenseInPresentedTotal: boolean;
   onUpdated: () => void;
 }) {
   const qc = useQueryClient();
@@ -1633,8 +1647,10 @@ function ManagerCashReconciliation({
     <div className="card" style={{ marginBottom: '1rem', padding: '0.9rem 1rem' }}>
       <strong style={{ fontSize: '0.92rem' }}>Conferência do gerente</strong>
       <p style={{ margin: '0.35rem 0 0.75rem', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
-        Informe o que foi contado em cada forma de pagamento. Despesas são opcionais e ficam separadas do
-        total apresentado.
+        Informe o que foi contado em cada forma de pagamento. Despesas são opcionais
+        {includeExpenseInPresentedTotal
+          ? ' e, neste estabelecimento, somam junto com o dinheiro no total apresentado.'
+          : ' e ficam separadas do total apresentado.'}
       </p>
       {err && (
         <div className="alert alert-error" style={{ marginBottom: '0.65rem' }}>
@@ -1737,7 +1753,7 @@ function ManagerCashReconciliation({
                 marginTop: '0.15rem',
               }}
             >
-              Opcional · valor + centro de custo · não soma no apresentado
+              Opcional · valor + centro de custo · {expensePresentedTotalHint(includeExpenseInPresentedTotal)}
             </span>
           </div>
           {hasCommittedExpenseLines ? (
@@ -1990,6 +2006,12 @@ function SessionDetailDrawer({
   const sum = detail?.summary;
   const [expandedSale, setExpandedSale] = useState<string | null>(null);
 
+  const companyQ = useQuery({
+    queryKey: ['company'],
+    queryFn: () => api<{ cashExpenseInPresentedTotal?: boolean }>('/company'),
+  });
+  const includeExpenseInPresentedTotal = Boolean(companyQ.data?.cashExpenseInPresentedTotal);
+
   /** Muitas vendas: vira lista suspensa, minimizada por padrão. */
   const salesCollapsible = sales.length > SALES_COLLAPSE_THRESHOLD;
   const [salesOpen, setSalesOpen] = useState(true);
@@ -2070,18 +2092,20 @@ function SessionDetailDrawer({
                 <KpiCard label="Vendas canceladas" value={String(sum.cancelledCount)} small />
                 <KpiCard label="Saldo inicial" value={formatBRL(s.openingBalance)} />
                 {(() => {
-                  const total = presentedTotalFromSession(s.closingByMethod, s.closingBalance);
+                  const total = presentedTotalFromSession(
+                    s.closingByMethod,
+                    s.closingBalance,
+                    { includeExpenseInPresentedTotal },
+                  );
                   return total != null ? (
-                    <KpiCard label="Apresentado (meios)" value={formatBRL(total)} highlight />
+                    <KpiCard
+                      label={includeExpenseInPresentedTotal ? 'Apresentado (total)' : 'Apresentado (meios)'}
+                      value={formatBRL(total)}
+                      highlight
+                    />
                   ) : null;
                 })()}
               </div>
-
-              <PaymentReconciliation
-                session={s}
-                expected={sum.byMethod}
-                movementBreakdown={sum.movementBreakdown}
-              />
 
               {sum.salesByPaymentForm && Object.keys(sum.salesByPaymentForm).length > 0 && (
                 <div className="card" style={{ marginBottom: '1rem' }}>
@@ -2101,6 +2125,13 @@ function SessionDetailDrawer({
                 </div>
               )}
 
+              <PaymentReconciliation
+                session={s}
+                expected={sum.byMethod}
+                movementBreakdown={sum.movementBreakdown}
+                includeExpenseInPresentedTotal={includeExpenseInPresentedTotal}
+              />
+
               <SessionCardPaymentsEditor
                 cards={sum.cardPayments ?? []}
                 onUpdated={onRefresh}
@@ -2110,6 +2141,7 @@ function SessionDetailDrawer({
                 session={s}
                 expected={sum.byMethod}
                 movementBreakdown={sum.movementBreakdown}
+                includeExpenseInPresentedTotal={includeExpenseInPresentedTotal}
                 onUpdated={onRefresh}
               />
 
@@ -2359,10 +2391,12 @@ function PaymentReconciliation({
   session,
   expected,
   movementBreakdown,
+  includeExpenseInPresentedTotal,
 }: {
   session: SessionDetail['session'];
   expected: Record<string, number>;
   movementBreakdown?: CashMovementBreakdown;
+  includeExpenseInPresentedTotal: boolean;
 }) {
   const declared = session.closingByMethod ?? null;
   const visible = buildCashReconciliationRows(session, expected);
@@ -2370,8 +2404,12 @@ function PaymentReconciliation({
 
   const opening = parseFloat(session.openingBalance) || 0;
 
-  const { totalExpected, totalDeclared } = sumReconciliationTotals(visible, false);
+  const { totalExpected, totalDeclared } = sumReconciliationTotals(
+    visible,
+    includeExpenseInPresentedTotal,
+  );
   const totalDiff = declared ? totalDeclared - totalExpected : null;
+  const reconTotalLabels = reconciliationTotalLabel(includeExpenseInPresentedTotal);
 
   const reconExpenseLines =
     Array.isArray(session.reconciliationExpenseDetails) && session.reconciliationExpenseDetails.length
@@ -2379,10 +2417,10 @@ function PaymentReconciliation({
       : null;
 
   return (
-    <div className="card" style={{ marginBottom: '1rem', padding: 0, overflow: 'visible' }}>
-      <div style={{ padding: '0.85rem 1rem 0.4rem' }}>
-        <strong style={{ fontSize: '0.92rem', display: 'block' }}>Conciliação por forma de pagamento</strong>
-        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', display: 'block', marginTop: '0.25rem' }}>
+    <div className="card cash-detail-recon-card" style={{ marginBottom: '1rem', padding: 0, overflow: 'visible' }}>
+      <div className="cash-detail-recon-card__head">
+        <strong>Conciliação por forma de pagamento</strong>
+        <span>
           {session.reconciledAt
             ? 'Conferência registrada — apresentados conferidos pelo gerente'
             : declared
@@ -2401,20 +2439,18 @@ function PaymentReconciliation({
                 : r.diff > 0
                   ? 'is-over'
                   : 'is-short';
+          const hint =
+            r.key === 'CASH'
+              ? formatCashExpectedHint(opening, movementBreakdown)
+              : r.key === 'EXPENSE'
+                ? `${expensePresentedTotalHint(includeExpenseInPresentedTotal)}${reconExpenseLines ? ' · detalhes abaixo' : ''}`
+                : null;
           return (
             <div key={r.key} className="cash-detail-recon-row">
-              <strong style={{ fontSize: '0.88rem' }}>{label}</strong>
-              {r.key === 'CASH' && (
-                <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-                  {formatCashExpectedHint(opening, movementBreakdown)}
-                </span>
-              )}
-              {r.key === 'EXPENSE' && (
-                <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-                  analítico — não entra no total apresentado
-                  {reconExpenseLines ? ' · detalhes abaixo' : ''}
-                </span>
-              )}
+              <div className="cash-detail-recon-row__title">
+                <strong>{label}</strong>
+                {hint ? <span className="cash-detail-recon-row__hint">{hint}</span> : null}
+              </div>
               <div className="cash-detail-recon-grid">
                 <div>
                   <span>Esperado</span>
@@ -2430,24 +2466,7 @@ function PaymentReconciliation({
                     '—'
                   ) : (
                     <span
-                      style={{
-                        padding: '0.1rem 0.45rem',
-                        borderRadius: '999px',
-                        background:
-                          diffClass === 'is-ok'
-                            ? 'rgba(22,163,74,0.12)'
-                            : diffClass === 'is-over'
-                              ? 'rgba(37,99,235,0.12)'
-                              : 'rgba(220,38,38,0.12)',
-                        color:
-                          diffClass === 'is-ok'
-                            ? '#15803d'
-                            : diffClass === 'is-over'
-                              ? '#1d4ed8'
-                              : '#b91c1c',
-                        fontWeight: 700,
-                        fontSize: '0.85rem',
-                      }}
+                      className={`cash-detail-recon-diff ${diffClass}`}
                     >
                       {Math.abs(r.diff) < 0.005
                         ? 'OK'
@@ -2470,14 +2489,7 @@ function PaymentReconciliation({
                     return (
                       <div
                         key={`${r.key}-recon-detail-${ix}`}
-                        style={{
-                          marginTop: '0.45rem',
-                          padding: '0.4rem 0.55rem',
-                          background: 'var(--color-surface-elevated)',
-                          borderRadius: 8,
-                          fontSize: '0.78rem',
-                          border: '1px dashed var(--color-border-strong)',
-                        }}
+                        className="cash-detail-recon-expense-detail"
                       >
                         <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{formatBRL(amt)}</strong>
                         <span style={{ color: 'var(--color-text-muted)', marginLeft: '0.5rem' }}>· {cc}</span>
@@ -2500,22 +2512,10 @@ function PaymentReconciliation({
             </div>
           );
         })}
-        <div
-          className="cash-detail-recon-row"
-          style={{ background: 'var(--color-surface-elevated)', fontWeight: 800 }}
-        >
-          <div>
-            Total (meios)
-            <span
-              style={{
-                display: 'block',
-                fontSize: '0.68rem',
-                fontWeight: 500,
-                color: 'var(--color-text-muted)',
-              }}
-            >
-              sem linha de despesas
-            </span>
+        <div className="cash-detail-recon-row cash-detail-recon-row--total">
+          <div className="cash-detail-recon-row__title">
+            <strong>{reconTotalLabels.title}</strong>
+            <span className="cash-detail-recon-row__hint">{reconTotalLabels.subtitle}</span>
           </div>
           <div className="cash-detail-recon-grid">
             <div>

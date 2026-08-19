@@ -1073,9 +1073,43 @@
   font-weight: 600;
 }
 
+.cash-detail-recon-card__head {
+  padding: 0.55rem 0.75rem 0.35rem;
+}
+
+.cash-detail-recon-card__head strong {
+  font-size: 0.88rem;
+  display: block;
+}
+
+.cash-detail-recon-card__head span {
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  display: block;
+  margin-top: 0.12rem;
+}
+
 .cash-detail-recon-row {
-  padding: 0.65rem 0.85rem;
+  padding: 0.38rem 0.75rem;
   border-bottom: 1px solid var(--color-border);
+}
+
+.cash-detail-recon-row__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  line-height: 1.25;
+}
+
+.cash-detail-recon-row__title strong {
+  font-size: 0.84rem;
+}
+
+.cash-detail-recon-row__hint {
+  font-size: 0.68rem;
+  color: var(--color-text-muted);
+  font-weight: 400;
 }
 
 .cash-detail-recon-row:last-child {
@@ -1085,19 +1119,71 @@
 .cash-detail-recon-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.35rem 0.5rem;
-  margin-top: 0.4rem;
-  font-size: 0.8rem;
+  gap: 0.15rem 0.4rem;
+  margin-top: 0.22rem;
+  font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
 }
 
 .cash-detail-recon-grid span {
   display: block;
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   color: var(--color-text-muted);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  line-height: 1.2;
+  margin-bottom: 0.05rem;
+}
+
+.cash-detail-recon-row--total {
+  background: var(--color-surface-elevated);
+  font-weight: 800;
+  padding-top: 0.45rem;
+  padding-bottom: 0.45rem;
+}
+
+.cash-detail-recon-row--total .cash-detail-recon-row__title strong {
+  font-size: 0.82rem;
+}
+
+.cash-detail-recon-row--total .cash-detail-recon-row__hint {
+  display: block;
+  width: 100%;
+  font-size: 0.64rem;
+  font-weight: 500;
+}
+
+.cash-detail-recon-expense-detail {
+  margin-top: 0.3rem;
+  padding: 0.3rem 0.45rem;
+  background: var(--color-surface-elevated);
+  border-radius: 6px;
+  font-size: 0.74rem;
+  border: 1px dashed var(--color-border-strong);
+}
+
+.cash-detail-recon-diff {
+  display: inline-block;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.cash-detail-recon-diff.is-ok {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+
+.cash-detail-recon-diff.is-over {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+
+.cash-detail-recon-diff.is-short {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
 }
 
 @media screen and (max-width: 720px) {
