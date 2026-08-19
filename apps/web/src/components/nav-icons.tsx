@@ -9,6 +9,7 @@ export type NavIconName =
   | 'products'
   | 'suppliers'
   | 'stock'
+  | 'requisitions'
   | 'cash'
   | 'cards'
   | 'fiscal'
@@ -113,6 +114,14 @@ export function NavIcon({ name, title }: { name: NavIconName; title?: string }) 
           <path d="M4 8h16v12H4z" />
           <path d="M8 8V6a4 4 0 0 1 8 0v2" />
           <path d="M4 13h16" />
+        </Svg>
+      );
+    case 'requisitions':
+      return (
+        <Svg title={title}>
+          <path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1Z" />
+          <path d="M8 6H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-2" />
+          <path d="M8.5 12h7M8.5 16h4" />
         </Svg>
       );
     case 'cash':

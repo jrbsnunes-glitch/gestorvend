@@ -113,6 +113,11 @@ export type CreateSaleInput = {
   deductStock?: boolean;
   /** Origem da venda (PDV físico, WhatsApp via GestorVendChat, etc.). */
   source?: SaleSource;
+  /**
+   * Caixa alvo do lançamento — usado pela tela Requisições, que exige caixa aberto.
+   * No PDV fica nulo: lá o vínculo com o caixa é por operador + janela de tempo.
+   */
+  cashSessionId?: string | null;
   /** Referência externa (ex.: ID do pedido no GestorVendChat) para conciliação. */
   externalRef?: string | null;
   items: Array<{
@@ -484,6 +489,7 @@ export class SalesService {
           externalRef: input.externalRef ?? null,
           customerId: input.customerId ?? null,
           userId: input.userId,
+          cashSessionId: input.cashSessionId ?? null,
           subtotal: String(subtotal.toFixed(2)),
           discount: String(discount.toFixed(2)),
           surcharge: String(surcharge.toFixed(2)),

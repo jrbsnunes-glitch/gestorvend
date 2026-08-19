@@ -14,16 +14,16 @@ import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { MenuAccessService } from '../users/menu-access.service';
 import {
-  StockExitsService,
-  type StockExitItemInput,
-} from './stock-exits.service';
+  RequisitionsService,
+  type RequisitionItemInput,
+} from './requisitions.service';
 
-/** Saídas de estoque que não são venda (avaria, perda, consumo interno, amostras…). */
-@Controller('stock-exits')
+/** Requisições (compra para pagar depois): vendas do PDV + lançamentos manuais. */
+@Controller('requisitions')
 @UseGuards(JwtAuthGuard, RolesGuard)
-export class StockExitsController {
+export class RequisitionsController {
   constructor(
-    private readonly stockExits: StockExitsService,
+    private readonly requisitions: RequisitionsService,
     private readonly menuAccess: MenuAccessService,
   ) {}
 
@@ -32,18 +32,34 @@ export class StockExitsController {
   list(
     @CurrentUser() user: JwtPayload,
     @Query('status') status?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('customerId') customerId?: string,
     @Query('take') take?: string,
   ) {
-    return this.stockExits.list(user.tenantSlug, {
+    return this.requisitions.list(user.tenantSlug, {
       status,
+      from,
+      to,
+      customerId,
       take: take != null ? Number(take) : undefined,
+    });
+  }
+
+  /** Caixas abertos para vincular o lançamento (gerente vê todos). */
+  @Get('open-cash-sessions')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  openCashSessions(@CurrentUser() user: JwtPayload) {
+    return this.requisitions.openCashSessions(user.tenantSlug, {
+      sub: user.sub,
+      roles: user.roles,
     });
   }
 
   @Get(':id')
   @Roles('admin', 'manager', 'seller', 'finance')
   detail(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
-    return this.stockExits.detail(user.tenantSlug, id);
+    return this.requisitions.detail(user.tenantSlug, id);
   }
 
   @Post()
@@ -52,11 +68,11 @@ export class StockExitsController {
     @CurrentUser() user: JwtPayload,
     @Body()
     body: {
-      locationId: string;
-      /** Obrigatório — classificação da saída (ex.: Avaria, Perda) */
-      reason: string;
-      reference?: string | null;
-      items: StockExitItemInput[];
+      customerId: string;
+      cashSessionId: string;
+      installments?: number;
+      notes?: string | null;
+      items: RequisitionItemInput[];
       managerPassword?: string;
     },
   ) {
@@ -64,16 +80,21 @@ export class StockExitsController {
       user.tenantSlug,
       user.sub,
       user.roles,
-      'stock',
+      'requisitions',
       'create',
       body.managerPassword,
     );
-    return this.stockExits.create(user.tenantSlug, user.sub, {
-      locationId: body.locationId,
-      reason: body.reason,
-      reference: body.reference ?? null,
-      items: body.items ?? [],
-    });
+    return this.requisitions.create(
+      user.tenantSlug,
+      { sub: user.sub, roles: user.roles },
+      {
+        customerId: body.customerId,
+        cashSessionId: body.cashSessionId,
+        installments: body.installments,
+        notes: body.notes ?? null,
+        items: body.items ?? [],
+      },
+    );
   }
 
   @Post(':id/cancel')
@@ -81,21 +102,22 @@ export class StockExitsController {
   async cancel(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
-    @Body() body: { notes?: string | null; managerPassword?: string } = {},
+    @Body()
+    body: { permissionPassword?: string; managerPassword?: string } = {},
   ) {
     await this.menuAccess.assertMenuAction(
       user.tenantSlug,
       user.sub,
       user.roles,
-      'stock',
+      'requisitions',
       'delete',
       body?.managerPassword,
     );
-    return this.stockExits.cancel(
+    return this.requisitions.cancel(
       user.tenantSlug,
-      user.sub,
+      { sub: user.sub, roles: user.roles },
       id,
-      body?.notes ?? null,
+      body?.permissionPassword ?? body?.managerPassword,
     );
   }
 }

@@ -49,6 +49,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/produtos', label: 'Produtos', icon: 'products', group: 'catalogo', managerOnly: true },
   { to: '/fornecedores', label: 'Fornecedores', icon: 'suppliers', group: 'catalogo', managerOnly: true },
   { to: '/estoque', label: 'Estoque', icon: 'stock', group: 'catalogo', managerOnly: true },
+  { to: '/requisicoes', label: 'Requisições', icon: 'requisitions', group: 'gestao', managerOnly: true },
   { to: '/caixa', label: 'Caixa', icon: 'cash', group: 'gestao' },
   { to: '/cartoes', label: 'Cartões', icon: 'cards', group: 'gestao' },
   { to: '/notas-fiscais', label: 'Notas Fiscais', icon: 'fiscal', group: 'gestao' },

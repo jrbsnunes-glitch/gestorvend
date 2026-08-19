@@ -16,6 +16,7 @@ import { PublicReleaseController } from './public/public-release.controller';
 import { InventoryModule } from './inventory/inventory.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ReportsModule } from './reports/reports.module';
+import { RequisitionsModule } from './requisitions/requisitions.module';
 import { SalesModule } from './sales/sales.module';
 import { TenantModule } from './tenant/tenant.module';
 import { UsersModule } from './users/users.module';
@@ -40,6 +41,7 @@ import { PrintingModule } from './printing/printing.module';
     CatalogModule,
     InventoryModule,
     SalesModule,
+    RequisitionsModule,
     CashModule,
     FinanceModule,
     FinancialOverviewModule,

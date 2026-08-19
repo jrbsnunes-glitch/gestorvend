@@ -131,6 +131,9 @@ const ProfitabilityReportPage = lazy(() =>
 const ProductsPage = lazy(() =>
   import('./pages/ProductsPage').then((m) => ({ default: m.ProductsPage })),
 );
+const RequisicoesPage = lazy(() =>
+  import('./pages/RequisicoesPage').then((m) => ({ default: m.RequisicoesPage })),
+);
 const SaleReceiptPrintPage = lazy(() =>
   import('./pages/SaleReceiptPrintPage').then((m) => ({ default: m.SaleReceiptPrintPage })),
 );
@@ -390,6 +393,7 @@ function AppInner() {
               <Route path="movimentos" element={<StockMovimentosPage />} />
               <Route path="fechamento" element={<StockFechamentoPage />} />
             </Route>
+            <Route path="requisicoes" element={<RequisicoesPage />} />
             <Route path="caixa" element={<CashPage />} />
             <Route path="cartoes" element={<CardsPage />} />
             <Route path="notas-fiscais" element={<FiscalNotesPage />} />

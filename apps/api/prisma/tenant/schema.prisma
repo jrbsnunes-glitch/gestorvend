@@ -230,6 +230,7 @@ model User {
   cashSessionsReconciled CashRegisterSession[] @relation("CashSessionReconciledBy")
   goodsReceipts  GoodsReceipt[]
   stockInventories StockInventory[]
+  stockExits     StockExit[]
   activityLogs   UserActivityLog[]
   permissions    UserPermission[]
   menuAccess     MenuAccessGrant[]
@@ -512,6 +513,7 @@ model ProductVariant {
   movements          StockMovement[]
   goodsReceiptItems  GoodsReceiptItem[]
   inventoryItems     StockInventoryItem[]
+  exitItems          StockExitItem[]
   recipeIngredients  ProductRecipeItem[]
   serviceTabItems    ServiceTabItem[]
   priceHistory       ProductVariantPriceHistory[]
@@ -565,6 +567,7 @@ model StockLocation {
   balances  StockBalance[]
   movements StockMovement[]
   inventories StockInventory[]
+  exits     StockExit[]
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 }
@@ -577,6 +580,52 @@ model StockBalance {
   location   StockLocation   @relation(fields: [locationId], references: [id], onDelete: Cascade)
 
   @@id([variantId, locationId])
+}
+
+/// Situação do documento de saída manual.
+enum StockExitStatus {
+  POSTED
+  /// Saída estornada: o saldo baixado voltou ao estoque.
+  CANCELLED
+}
+
+/// Saída manual de estoque (avaria, perda, consumo interno): 1 documento, N produtos.
+/// O saldo baixa ao gravar; cancelar devolve a quantidade de cada item.
+model StockExit {
+  id            String          @id @default(uuid())
+  controlNumber Int             @unique @default(autoincrement())
+  locationId    String
+  location      StockLocation   @relation(fields: [locationId], references: [id])
+  /// Classificação da saída (ex.: Avaria, Perda, Consumo interno).
+  reason        String
+  reference     String?
+  status        StockExitStatus @default(POSTED)
+  userId        String?
+  user          User?           @relation(fields: [userId], references: [id])
+  cancelledAt   DateTime?
+  /// Justificativa informada no cancelamento.
+  cancellationNotes String?     @db.VarChar(500)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  items         StockExitItem[]
+  movements     StockMovement[]
+
+  @@index([status, createdAt])
+  @@index([locationId])
+}
+
+model StockExitItem {
+  id        String         @id @default(uuid())
+  exitId    String
+  exit      StockExit      @relation(fields: [exitId], references: [id], onDelete: Cascade)
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  quantity  Decimal        @db.Decimal(18, 4)
+  notes     String?
+  createdAt DateTime       @default(now())
+
+  @@unique([exitId, variantId])
+  @@index([variantId])
 }
 
 enum StockMovementType {
@@ -725,9 +774,12 @@ model StockMovement {
   goodsReceipt     GoodsReceipt?        @relation(fields: [goodsReceiptId], references: [id])
   stockInventoryId String?
   stockInventory   StockInventory?      @relation(fields: [stockInventoryId], references: [id], onDelete: SetNull)
+  stockExitId      String?
+  stockExit        StockExit?           @relation(fields: [stockExitId], references: [id], onDelete: SetNull)
   createdAt        DateTime             @default(now())
 
   @@index([stockInventoryId])
+  @@index([stockExitId])
 }
 
 /// Inventário físico: 1 a N produtos no mesmo documento/local.
@@ -808,6 +860,8 @@ enum SaleSource {
   NFE_FORM
   /// Fechamento de comanda do módulo restaurante.
   RESTAURANT
+  /// Requisição lançada fora do PDV (tela Requisições), vinculada a um caixa aberto.
+  REQUISITION
 }
 
 model Sale {
@@ -821,6 +875,10 @@ model Sale {
   customer      Customer?      @relation(fields: [customerId], references: [id])
   userId        String?
   user          User?          @relation(fields: [userId], references: [id])
+  /// Caixa ao qual o lançamento foi amarrado explicitamente (requisição fora do PDV).
+  /// No PDV o vínculo continua implícito: operador + janela de abertura/fechamento.
+  cashSessionId String?
+  cashSession   CashRegisterSession? @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
   subtotal      Decimal        @db.Decimal(14, 2)
   discount      Decimal        @default(0) @db.Decimal(14, 2)
   /// Acréscimo comercial no total da venda (NFC-e/NF-e: vOutro — outras despesas acessórias).
@@ -858,6 +916,7 @@ model Sale {
   serviceTab             ServiceTab?
 
   @@index([operationNatureId])
+  @@index([cashSessionId])
 }
 
 /// Metadados da fila de emissão DFe por venda (próximo passo: XML, assinatura, SEFAZ).
@@ -1023,6 +1082,7 @@ model CashRegisterSession {
   openedAt       DateTime        @default(now())
   closedAt       DateTime?
   movements      CashMovement[]
+  sales          Sale[]
   payableSettlements   AccountPayable[]
   receivableSettlements AccountReceivable[]
   payablePaymentSettlements    PayableSettlement[]    @relation("PayableSettlementSession")
