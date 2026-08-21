@@ -922,8 +922,8 @@ function openSessionLabel(session: OpenSessionSummary): string {
 
 /**
  * Lista compacta dos caixas abertos (inclusive de outros operadores) — apenas
- * visível para perfis gerentes. O gerente entra no PDV em qualquer caixa OPEN
- * (com todas as opções liberadas), lança movimentos ou navega ao menu Caixa.
+ * visível para perfis gerentes. O gerente entra no PDV de qualquer caixa OPEN
+ * (próprio ou de um operador Caixa), com opções liberadas.
  */
 function ManagerOpenSessions({
   sessions,
@@ -955,6 +955,10 @@ function ManagerOpenSessions({
           {sessions.length === 1 ? 'caixa aberto' : 'caixas abertos'}
         </span>
       </header>
+      <p className="pos-gateway-manager-hint">
+        Como <strong>gerente</strong>, use <strong>Entrar no PDV</strong> para operar o caixa
+        aberto de qualquer operador (ex.: Caixa), com todas as opções liberadas.
+      </p>
       {notice && (
         <p
           className="pos-gateway-manager-notice"
@@ -974,7 +978,7 @@ function ManagerOpenSessions({
           {sessions.map((s) => {
             const mine = s.userId === currentUserId;
             return (
-              <li key={s.id} className={mine ? 'is-mine' : ''}>
+              <li key={s.id} className={mine ? 'is-mine' : 'is-other'}>
                 <div className="pos-gateway-manager-avatar" aria-hidden>
                   {s.user?.name?.trim().slice(0, 1).toUpperCase() ?? '?'}
                 </div>
@@ -982,7 +986,11 @@ function ManagerOpenSessions({
                   <strong>
                     {s.controlNumber ? `#${s.controlNumber} · ` : ''}
                     {s.user?.name ?? '—'}
-                    {mine && <span className="pos-gateway-manager-tag">você</span>}
+                    {mine ? (
+                      <span className="pos-gateway-manager-tag">você</span>
+                    ) : (
+                      <span className="pos-gateway-manager-tag is-other">operador</span>
+                    )}
                   </strong>
                   <span>
                     Aberto em {new Date(s.openedAt).toLocaleString('pt-BR')} · fundo{' '}
@@ -995,7 +1003,11 @@ function ManagerOpenSessions({
                 <div className="pos-gateway-manager-actions">
                   <button
                     type="button"
-                    className="pos-gateway-manager-action is-primary"
+                    className={
+                      'pos-gateway-manager-action' +
+                      (mine ? '' : ' is-enter') +
+                      (mine ? '' : ' is-primary')
+                    }
                     disabled={gatewayBlocked}
                     onClick={() => onEnterSession(s.id)}
                     title={
@@ -1003,7 +1015,7 @@ function ManagerOpenSessions({
                         ? 'Regularize pendências antes de operar.'
                         : mine
                           ? 'Entrar no seu PDV'
-                          : 'Entrar no PDV neste caixa (gerente — opções liberadas)'
+                          : `Entrar no PDV no caixa de ${s.user?.name ?? 'operador'} (gerente)`
                     }
                   >
                     Entrar no PDV

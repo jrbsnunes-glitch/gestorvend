@@ -518,8 +518,37 @@
   color: #fff;
 }
 
+.pos-gateway-manager-action.is-enter {
+  background: #16a34a;
+  border-color: rgba(134, 239, 172, 0.55);
+  color: #fff;
+  font-size: 0.85rem;
+  padding: 0.55rem 0.85rem;
+}
+
+.pos-gateway-manager-action.is-enter:hover:not(:disabled) {
+  background: #15803d;
+}
+
 .pos-gateway-manager-action.is-primary:hover:not(:disabled) {
   background: rgba(29, 78, 216, 1);
+}
+
+.pos-gateway-manager-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: rgba(226, 232, 240, 0.78);
+}
+
+.pos-gateway-manager li.is-other {
+  border-color: rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.pos-gateway-manager-tag.is-other {
+  background: rgba(37, 99, 235, 0.35);
+  color: #bfdbfe;
 }
 
 .pos-gateway-manager-action:disabled {

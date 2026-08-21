@@ -938,7 +938,7 @@ export class CashController {
       }
       const sessions = await db.cashRegisterSession.findMany({
         where: sessionWhere,
-        select: { userId: true, openedAt: true, closedAt: true },
+        select: { id: true, userId: true, openedAt: true, closedAt: true },
       });
       if (sessions.length === 0) {
         return {
