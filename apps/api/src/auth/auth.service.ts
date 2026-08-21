@@ -39,12 +39,14 @@ export class AuthService {
 
     const roles = user.roles.map((r) => r.name);
     const tenant = await this.tenantService.getBySlug(dto.tenantSlug);
+    const enabledModules = await this.tenantService.getEnabledModules(dto.tenantSlug);
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
       tenantSlug: dto.tenantSlug,
       roles,
       planCode: tenant.planCode,
+      enabledModules,
     };
 
     const accessToken = this.jwt.sign(payload);
@@ -75,6 +77,7 @@ export class AuthService {
         name: user.name,
         roles,
         planCode: tenant.planCode,
+        enabledModules,
       },
     };
   }
@@ -110,12 +113,14 @@ export class AuthService {
 
     const roles = user.roles.map((r) => r.name);
     const tenant = await this.tenantService.getBySlug(decoded.tenantSlug);
+    const enabledModules = await this.tenantService.getEnabledModules(decoded.tenantSlug);
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
       tenantSlug: decoded.tenantSlug,
       roles,
       planCode: tenant.planCode,
+      enabledModules,
     };
 
     return { accessToken: this.jwt.sign(payload) };

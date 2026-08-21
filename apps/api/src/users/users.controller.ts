@@ -54,13 +54,13 @@ export class UsersController {
 
   /** Matriz de acesso por menu do usuário logado (sidebar / CRUD). */
   @Get('me/menu-access')
-  @Roles('admin', 'manager', 'seller', 'finance', 'waiter')
+  @Roles('admin', 'manager', 'seller', 'finance', 'waiter', 'technician')
   myMenuAccess(@CurrentUser() user: JwtPayload) {
     return this.menuAccess.listForUser(user.tenantSlug, user.sub, user.roles);
   }
 
   @Post('verify-manager-password')
-  @Roles('admin', 'manager', 'seller', 'finance', 'waiter')
+  @Roles('admin', 'manager', 'seller', 'finance', 'waiter', 'technician')
   async verifyManagerPassword(
     @CurrentUser() user: JwtPayload,
     @Body() body: { password?: string },
@@ -71,7 +71,7 @@ export class UsersController {
 
   /** Identidade do usuário corrente — usada pelo front para exibir nome/perfil. */
   @Get('me')
-  @Roles('admin', 'manager', 'seller', 'finance', 'waiter')
+  @Roles('admin', 'manager', 'seller', 'finance', 'waiter', 'technician')
   async me(@CurrentUser() user: JwtPayload) {
     return this.users.getById(user.tenantSlug, user.sub);
   }

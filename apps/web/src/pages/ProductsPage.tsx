@@ -34,6 +34,11 @@ import {
 /** Unidade tributária padrão em produtos novos (código em TaxUnitCode). */
 const DEFAULT_PRODUCT_TAX_UNIT = 'UN';
 
+function isServiceTaxUnit(taxUnit: string | null | undefined): boolean {
+  const u = (taxUnit ?? '').trim().toUpperCase();
+  return u === 'SERV' || u === 'SERVICO' || u === 'SERVIÇO';
+}
+
 type ProductFormTab = 'identificacao' | 'fiscal' | 'fornecedores';
 
 const PRODUCT_FORM_TABS: Array<{ id: ProductFormTab; label: string }> = [
@@ -110,6 +115,8 @@ type Product = {
   fiscalOrigin: string | null;
   taxUnit: string | null;
   conversion: string | null;
+  /** Produto de serviço (unidade SERV) — sem baixa de estoque. */
+  isService?: boolean;
   /** Itens unitários por caixa/pack (ex.: 12, 50). */
   packItemQty?: string | null;
   stockComponentVariantId?: string | null;
@@ -485,8 +492,9 @@ export function ProductsPage() {
   }
 
   const create = useMutation({
-    mutationFn: () =>
-      api<Product>('/products', {
+    mutationFn: () => {
+      const service = isServiceTaxUnit(taxUnit);
+      return api<Product>('/products', {
         method: 'POST',
         json: {
           name,
@@ -497,9 +505,10 @@ export function ProductsPage() {
           exTipi: exTipi.trim() || null,
           fiscalOrigin: fiscalOrigin || null,
           taxUnit: taxUnit.trim() || DEFAULT_PRODUCT_TAX_UNIT,
-          conversion: normalizeProductConversion(conversion.trim()) || null,
-          packItemQty: normalizePackItemQty(packItemQty),
+          conversion: service ? null : normalizeProductConversion(conversion.trim()) || null,
+          packItemQty: service ? null : normalizePackItemQty(packItemQty),
           stockComponentVariantId:
+            !service &&
             normalizeProductConversion(conversion.trim()) &&
             resolveConversionFactor(conversion, packItemQty) > 1
               ? stockComponentVariantId
@@ -513,12 +522,15 @@ export function ProductsPage() {
               barcode: defaultBarcode.trim() || null,
               retailPrice: parseFloat(retailPrice.replace(',', '.')) || 0,
               costAverage: parseFloat(costPrice.replace(',', '.')) || 0,
-              minStock: Math.max(1, parseFloat(minStockInput.replace(',', '.')) || 1),
+              minStock: service
+                ? 0
+                : Math.max(1, parseFloat(minStockInput.replace(',', '.')) || 1),
             },
           ],
           supplierLinks: linksToCreatePayload(supplierLinks),
         },
-      }),
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['products'] });
       resetCreateForm();
@@ -529,6 +541,7 @@ export function ProductsPage() {
 
   const update = useMutation({
     mutationFn: async (payload: { id: string; product: Product }) => {
+      const service = isServiceTaxUnit(taxUnit);
       const product = await api<Product>(`/products/${payload.id}`, {
         method: 'PATCH',
         json: {
@@ -540,9 +553,10 @@ export function ProductsPage() {
           exTipi: exTipi.trim() || null,
           fiscalOrigin: fiscalOrigin || null,
           taxUnit: taxUnit.trim() || DEFAULT_PRODUCT_TAX_UNIT,
-          conversion: normalizeProductConversion(conversion.trim()) || null,
-          packItemQty: normalizePackItemQty(packItemQty),
+          conversion: service ? null : normalizeProductConversion(conversion.trim()) || null,
+          packItemQty: service ? null : normalizePackItemQty(packItemQty),
           stockComponentVariantId:
+            !service &&
             normalizeProductConversion(conversion.trim()) &&
             resolveConversionFactor(conversion, packItemQty) > 1
               ? stockComponentVariantId
@@ -556,7 +570,12 @@ export function ProductsPage() {
               variantId: v.id,
               retailPrice: parseFloat((row?.retail ?? v.retailPrice).replace(',', '.')) || 0,
               costAverage: parseFloat((row?.cost ?? v.costAverage ?? '0').replace(',', '.')) || 0,
-              minStock: Math.max(1, parseFloat((row?.minStock ?? v.minStock ?? '1').replace(',', '.')) || 1),
+              minStock: service
+                ? 0
+                : Math.max(
+                    1,
+                    parseFloat((row?.minStock ?? v.minStock ?? '1').replace(',', '.')) || 1,
+                  ),
             };
           }),
         },
@@ -741,7 +760,7 @@ export function ProductsPage() {
     <div className="page print-area">
       <h1 className="page-title">Produtos</h1>
       <p className="page-desc">
-        Produtos e variações (SKU). Cada produto recebe um <strong>código sequencial único</strong> (1ª coluna) para pesquisa no PDV e filtros de relatório. Cadastro não aceita estoque mínimo abaixo de <strong>1</strong> por SKU.{' '}
+        Produtos e variações (SKU). Cada produto recebe um <strong>código sequencial único</strong> (1ª coluna) para pesquisa no PDV e filtros de relatório. Estoque mínimo a partir de <strong>1</strong> por SKU (exceto unidade <strong>SERV</strong> — serviço, sem estoque).{' '}
         <strong>Mín. SKU</strong> define o ponto de reposição no PDV/alertas. Categoria e dados fiscais no formulário.
       </p>
 
@@ -1184,12 +1203,15 @@ export function ProductsPage() {
                           id="p-minstock"
                           type="number"
                           step="1"
-                          min="1"
+                          min={isServiceTaxUnit(taxUnit) ? 0 : 1}
                           value={minStockInput}
                           onChange={(e) => setMinStockInput(e.target.value)}
+                          disabled={isServiceTaxUnit(taxUnit)}
                         />
                         <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                          Cadastro mínimo 1. PDV avisa quando o saldo ficar abaixo deste valor.
+                          {isServiceTaxUnit(taxUnit)
+                            ? 'Serviço: não controla estoque (mínimo 0).'
+                            : 'Cadastro mínimo 1. PDV avisa quando o saldo ficar abaixo deste valor.'}
                         </span>
                       </div>
                     </div>
@@ -1283,14 +1305,28 @@ export function ProductsPage() {
                         id="p-taxunit"
                         label="Unidade tributável"
                         value={taxUnit}
-                        onChange={setTaxUnit}
+                        onChange={(code) => {
+                          setTaxUnit(code);
+                          if (isServiceTaxUnit(code)) {
+                            setMinStockInput('0');
+                            setConversion('');
+                            setPackItemQty('');
+                            setStockComponentVariantId(null);
+                            setStockComponentLabel('');
+                          } else if (isServiceTaxUnit(taxUnit)) {
+                            setMinStockInput('1');
+                          }
+                        }}
                         hintLabel={taxUnit || null}
                       />
                       <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                         Padrão <strong>UN</strong> (Unidade). Use <strong>KG</strong> para venda a peso —
-                        no PDV a quantidade fica fracionada (ex.: 0,350 kg).
+                        no PDV a quantidade fica fracionada (ex.: 0,350 kg). Use <strong>SERV</strong>{' '}
+                        (Serviço) para mão de obra/serviço — sem controle de estoque.
                       </span>
                     </div>
+                    {!isServiceTaxUnit(taxUnit) ? (
+                    <>
                     <div className="field">
                       <label htmlFor="p-conversion">Conversão (entrada NF-e)</label>
                       <input
@@ -1442,6 +1478,13 @@ export function ProductsPage() {
                           </span>
                         )}
                     </div>
+                    </>
+                    ) : (
+                      <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', margin: 0 }}>
+                        Unidade <strong>SERV</strong>: produto de serviço — sem conversão NF-e, sem estoque
+                        composto e sem baixa de estoque na venda.
+                      </p>
+                    )}
                   </section>
                 </div>
               )}
@@ -1612,8 +1655,9 @@ export function ProductsPage() {
                                 id={`pe-m-${v.id}`}
                                 type="number"
                                 step="1"
-                                min="1"
-                                value={row.minStock}
+                                min={isServiceTaxUnit(taxUnit) ? 0 : 1}
+                                value={isServiceTaxUnit(taxUnit) ? '0' : row.minStock}
+                                disabled={isServiceTaxUnit(taxUnit)}
                                 onChange={(e) =>
                                   setVariantPrices((st) => ({
                                     ...st,
@@ -1621,6 +1665,11 @@ export function ProductsPage() {
                                   }))
                                 }
                               />
+                              {isServiceTaxUnit(taxUnit) ? (
+                                <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                                  Serviço: sem estoque.
+                                </span>
+                              ) : null}
                             </div>
                             <div className="field">
                               <span className="field-label-text">Lucro</span>
@@ -1725,14 +1774,32 @@ export function ProductsPage() {
                         id="pe-taxunit"
                         label="Unidade tributável"
                         value={taxUnit}
-                        onChange={setTaxUnit}
+                        onChange={(code) => {
+                          setTaxUnit(code);
+                          if (isServiceTaxUnit(code)) {
+                            setConversion('');
+                            setPackItemQty('');
+                            setStockComponentVariantId(null);
+                            setStockComponentLabel('');
+                            setVariantPrices((st) => {
+                              const next = { ...st };
+                              for (const id of Object.keys(next)) {
+                                next[id] = { ...next[id]!, minStock: '0' };
+                              }
+                              return next;
+                            });
+                          }
+                        }}
                         hintLabel={taxUnit || null}
                       />
                       <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                         Padrão <strong>UN</strong> (Unidade). Use <strong>KG</strong> para venda a peso —
-                        no PDV a quantidade fica fracionada (ex.: 0,350 kg).
+                        no PDV a quantidade fica fracionada (ex.: 0,350 kg). Use <strong>SERV</strong>{' '}
+                        (Serviço) para mão de obra/serviço — sem controle de estoque.
                       </span>
                     </div>
+                    {!isServiceTaxUnit(taxUnit) ? (
+                    <>
                     <div className="field">
                       <label htmlFor="pe-conversion">Conversão (entrada NF-e)</label>
                       <input
@@ -1884,6 +1951,13 @@ export function ProductsPage() {
                           </span>
                         )}
                     </div>
+                    </>
+                    ) : (
+                      <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', margin: 0 }}>
+                        Unidade <strong>SERV</strong>: produto de serviço — sem conversão NF-e, sem estoque
+                        composto e sem baixa de estoque na venda.
+                      </p>
+                    )}
                   </section>
                 </div>
               )}

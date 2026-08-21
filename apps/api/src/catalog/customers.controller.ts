@@ -69,7 +69,7 @@ export class CustomersController {
 
   /** Busca por nome, documento, telefone ou e-mail (PDV e cadastros). */
   @Get('search')
-  @Roles('admin', 'manager', 'seller', 'finance', 'waiter')
+  @Roles('admin', 'manager', 'seller', 'finance', 'waiter', 'technician')
   async search(@CurrentUser() user: JwtPayload, @Query('q') q?: string) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const term = (q ?? '').trim();

@@ -38,6 +38,11 @@ type CompanyInput = {
   waiterTipMode?: 'PERCENT' | 'FIXED' | string;
   waiterTipValue?: number | string;
   cashExpenseInPresentedTotal?: boolean;
+  serviceOrderModuleEnabled?: boolean;
+  serviceOrderDefaultBillingMode?: 'PDV' | 'INTERNAL' | 'CHOICE_PER_ORDER' | string;
+  serviceOrderRequireEquipment?: boolean;
+  serviceOrderAllowQuote?: boolean;
+  serviceOrderTermsText?: string | null;
 };
 
 /**
@@ -134,6 +139,28 @@ export class CompanyService {
 
     if (body.restaurantModuleEnabled !== undefined) {
       data.restaurantModuleEnabled = Boolean(body.restaurantModuleEnabled);
+    }
+
+    if (body.serviceOrderModuleEnabled !== undefined) {
+      data.serviceOrderModuleEnabled = Boolean(body.serviceOrderModuleEnabled);
+    }
+    if (body.serviceOrderRequireEquipment !== undefined) {
+      data.serviceOrderRequireEquipment = Boolean(body.serviceOrderRequireEquipment);
+    }
+    if (body.serviceOrderAllowQuote !== undefined) {
+      data.serviceOrderAllowQuote = Boolean(body.serviceOrderAllowQuote);
+    }
+    if (body.serviceOrderTermsText !== undefined) {
+      data.serviceOrderTermsText = trimOrNull(body.serviceOrderTermsText);
+    }
+    if (body.serviceOrderDefaultBillingMode !== undefined) {
+      const m = String(body.serviceOrderDefaultBillingMode).trim().toUpperCase();
+      if (m !== 'PDV' && m !== 'INTERNAL' && m !== 'CHOICE_PER_ORDER') {
+        throw new BadRequestException(
+          'Modo de faturamento de OS inválido (use PDV, INTERNAL ou CHOICE_PER_ORDER).',
+        );
+      }
+      data.serviceOrderDefaultBillingMode = m;
     }
 
     if (body.comandaNumberingMode !== undefined) {

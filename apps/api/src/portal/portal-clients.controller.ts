@@ -15,6 +15,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   LicenseStatus,
   PlanCode,
+  TenantModuleAddon,
   TenantProvisioningStatus,
 } from '../generated/central-client';
 import {
@@ -58,6 +59,18 @@ function parseMonthlyFee(raw: unknown): string | null {
   return n.toFixed(2);
 }
 
+const ADDON_VALUES = new Set<string>(Object.values(TenantModuleAddon));
+
+function normalizeAddons(raw: unknown): TenantModuleAddon[] {
+  if (!Array.isArray(raw)) return [];
+  const out: TenantModuleAddon[] = [];
+  for (const item of raw) {
+    const s = String(item ?? '').trim().toUpperCase();
+    if (ADDON_VALUES.has(s)) out.push(s as TenantModuleAddon);
+  }
+  return [...new Set(out)];
+}
+
 @Controller('portal/clients')
 @UseGuards(PortalAuthGuard)
 export class PortalClientsController {
@@ -79,31 +92,37 @@ export class PortalClientsController {
       raw.map((t) => this.tenantService.syncLicenseExpiryStatus(t)),
     );
     const now = Date.now();
-    return tenants.map((t) => ({
-      id: t.id,
-      slug: t.slug,
-      cnpj: t.cnpj,
-      companyName: t.companyName,
-      planCode: t.planCode,
-      licenseStatus: t.licenseStatus,
-      licenseValidFrom: t.licenseValidFrom,
-      licenseExpiresAt: t.licenseExpiresAt,
-      licenseLastValidatedAt: t.licenseLastValidatedAt,
-      remainingDays:
-        t.licenseExpiresAt
-          ? Math.ceil((new Date(t.licenseExpiresAt).getTime() - now) / (24 * 60 * 60 * 1000))
-          : null,
-      databaseName: t.databaseName,
-      provisioningStatus: t.provisioningStatus,
-      provisioningError: t.provisioningError,
-      provisioningUpdatedAt: t.provisioningUpdatedAt,
-      provisionAdminEmail: t.provisionAdminEmail,
-      provisionAdminUsername: t.provisionAdminEmail
-        ? usernameFromEmail(t.provisionAdminEmail)
-        : null,
-      monthlyFee: t.monthlyFee != null ? String(t.monthlyFee) : null,
-      createdAt: t.createdAt,
-    }));
+    return Promise.all(
+      tenants.map(async (t) => {
+        const enabledAddons = await this.tenantService.getEnabledModulesByTenantId(t.id);
+        return {
+          id: t.id,
+          slug: t.slug,
+          cnpj: t.cnpj,
+          companyName: t.companyName,
+          planCode: t.planCode,
+          enabledAddons,
+          licenseStatus: t.licenseStatus,
+          licenseValidFrom: t.licenseValidFrom,
+          licenseExpiresAt: t.licenseExpiresAt,
+          licenseLastValidatedAt: t.licenseLastValidatedAt,
+          remainingDays:
+            t.licenseExpiresAt
+              ? Math.ceil((new Date(t.licenseExpiresAt).getTime() - now) / (24 * 60 * 60 * 1000))
+              : null,
+          databaseName: t.databaseName,
+          provisioningStatus: t.provisioningStatus,
+          provisioningError: t.provisioningError,
+          provisioningUpdatedAt: t.provisioningUpdatedAt,
+          provisionAdminEmail: t.provisionAdminEmail,
+          provisionAdminUsername: t.provisionAdminEmail
+            ? usernameFromEmail(t.provisionAdminEmail)
+            : null,
+          monthlyFee: t.monthlyFee != null ? String(t.monthlyFee) : null,
+          createdAt: t.createdAt,
+        };
+      }),
+    );
   }
 
   /** Reexecuta CREATE DATABASE + migrate + seed (após falha ou pendente travado). */
@@ -223,6 +242,8 @@ export class PortalClientsController {
       /** Senha do primeiro admin (padrão interna Admin123!). */
       firstAdminPassword?: string;
       monthlyFee?: number | string | null;
+      /** Módulos adicionais (ex.: SERVICE_ORDER). */
+      enabledAddons?: TenantModuleAddon[] | string[];
     },
   ) {
     const cnpj = onlyDigits(body.cnpj);
@@ -298,7 +319,14 @@ export class PortalClientsController {
       adminPassword,
       adminUsername,
     });
-    return created;
+    const enabledAddons = normalizeAddons(body.enabledAddons);
+    if (enabledAddons.length) {
+      await this.tenantService.setEnabledModules(created.id, created.slug, enabledAddons);
+    }
+    return {
+      ...created,
+      enabledAddons: await this.tenantService.getEnabledModulesByTenantId(created.id),
+    };
   }
 
   /** Atualiza dados gerais e da licença. Aceita por CNPJ na URL para alinhar
@@ -316,6 +344,7 @@ export class PortalClientsController {
       monthlyFee?: number | string | null;
       /** Atalho: adicionar N dias na licença a partir de hoje. */
       renewDays?: number;
+      enabledAddons?: TenantModuleAddon[] | string[];
     },
   ) {
     const cnpj = onlyDigits(cnpjParam);
@@ -355,7 +384,20 @@ export class PortalClientsController {
       }
       data.licenseValidFrom = data.licenseValidFrom ?? new Date();
     }
-    return this.central.tenant.update({ where: { id: tenant.id }, data });
+    const updated = await this.central.tenant.update({ where: { id: tenant.id }, data });
+    if (body.enabledAddons !== undefined) {
+      await this.tenantService.setEnabledModules(
+        tenant.id,
+        tenant.slug,
+        normalizeAddons(body.enabledAddons),
+      );
+    } else {
+      this.tenantService.invalidateCaches(tenant.slug);
+    }
+    return {
+      ...updated,
+      enabledAddons: await this.tenantService.getEnabledModulesByTenantId(tenant.id),
+    };
   }
 
   /**

@@ -44,6 +44,11 @@ type Company = {
   waiterTipMode?: 'PERCENT' | 'FIXED';
   waiterTipValue?: string | number | null;
   cashExpenseInPresentedTotal?: boolean;
+  serviceOrderModuleEnabled?: boolean;
+  serviceOrderDefaultBillingMode?: 'PDV' | 'INTERNAL' | 'CHOICE_PER_ORDER';
+  serviceOrderRequireEquipment?: boolean;
+  serviceOrderAllowQuote?: boolean;
+  serviceOrderTermsText?: string | null;
 };
 
 type FormState = Omit<Company, 'id'>;
@@ -84,6 +89,11 @@ const EMPTY_FORM: FormState = {
   waiterTipMode: 'PERCENT',
   waiterTipValue: 0,
   cashExpenseInPresentedTotal: false,
+  serviceOrderModuleEnabled: false,
+  serviceOrderDefaultBillingMode: 'CHOICE_PER_ORDER',
+  serviceOrderRequireEquipment: false,
+  serviceOrderAllowQuote: true,
+  serviceOrderTermsText: '',
 };
 
 function toForm(c: Company): FormState {
@@ -121,6 +131,15 @@ function toForm(c: Company): FormState {
     waiterTipMode: c.waiterTipMode === 'FIXED' ? 'FIXED' : 'PERCENT',
     waiterTipValue: Number(c.waiterTipValue ?? 0),
     cashExpenseInPresentedTotal: Boolean(c.cashExpenseInPresentedTotal),
+    serviceOrderModuleEnabled: Boolean(c.serviceOrderModuleEnabled),
+    serviceOrderDefaultBillingMode:
+      c.serviceOrderDefaultBillingMode === 'PDV' ||
+      c.serviceOrderDefaultBillingMode === 'INTERNAL'
+        ? c.serviceOrderDefaultBillingMode
+        : 'CHOICE_PER_ORDER',
+    serviceOrderRequireEquipment: Boolean(c.serviceOrderRequireEquipment),
+    serviceOrderAllowQuote: c.serviceOrderAllowQuote !== false,
+    serviceOrderTermsText: c.serviceOrderTermsText ?? '',
   };
 }
 
@@ -891,6 +910,83 @@ export function CompanyPage() {
                 </span>
               </label>
             </div>
+          </section>
+
+          <section className="card">
+            <h2 className="company-form__h">Ordem de Serviços</h2>
+            <p className="company-form__hint">
+              Requer o adicional <strong>Ordem de Serviços</strong> no portal de licenças. Ativa o
+              menu, o faturamento e a busca de OS no PDV.
+            </p>
+            <div className="field">
+              <label
+                htmlFor="c-os-enabled"
+                style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}
+              >
+                <input
+                  id="c-os-enabled"
+                  type="checkbox"
+                  checked={Boolean(form.serviceOrderModuleEnabled)}
+                  onChange={(e) => update('serviceOrderModuleEnabled', e.target.checked)}
+                  style={{ marginTop: '0.15rem' }}
+                />
+                <span>
+                  Ativar módulo Ordem de Serviços neste estabelecimento
+                  <span className="sub" style={{ fontWeight: 400 }}>
+                    Exibe o menu quando o addon estiver contratado no portal.
+                  </span>
+                </span>
+              </label>
+            </div>
+            {form.serviceOrderModuleEnabled ? (
+              <>
+                <div className="field" style={{ marginTop: '0.75rem' }}>
+                  <label htmlFor="c-os-billing">Modo de faturamento padrão</label>
+                  <select
+                    id="c-os-billing"
+                    value={form.serviceOrderDefaultBillingMode ?? 'CHOICE_PER_ORDER'}
+                    onChange={(e) =>
+                      update(
+                        'serviceOrderDefaultBillingMode',
+                        e.target.value as FormState['serviceOrderDefaultBillingMode'],
+                      )
+                    }
+                  >
+                    <option value="CHOICE_PER_ORDER">Escolher por OS (PDV ou interno)</option>
+                    <option value="PDV">Somente no PDV</option>
+                    <option value="INTERNAL">Somente na tela da OS</option>
+                  </select>
+                </div>
+                <div className="inline-checks" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form.serviceOrderRequireEquipment)}
+                      onChange={(e) => update('serviceOrderRequireEquipment', e.target.checked)}
+                    />
+                    Exigir equipamento ou descrição do bem na abertura
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={form.serviceOrderAllowQuote !== false}
+                      onChange={(e) => update('serviceOrderAllowQuote', e.target.checked)}
+                    />
+                    Permitir fluxo de orçamento (QUOTE → Aprovada)
+                  </label>
+                </div>
+                <div className="field">
+                  <label htmlFor="c-os-terms">Termos no espelho da OS</label>
+                  <textarea
+                    id="c-os-terms"
+                    rows={3}
+                    value={form.serviceOrderTermsText ?? ''}
+                    onChange={(e) => update('serviceOrderTermsText', e.target.value)}
+                    placeholder="Texto impresso no espelho (garantia, responsabilidade…)"
+                  />
+                </div>
+              </>
+            ) : null}
           </section>
 
           <section className="card">

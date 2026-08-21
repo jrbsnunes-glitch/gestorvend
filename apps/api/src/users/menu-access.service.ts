@@ -41,6 +41,22 @@ export class MenuAccessService {
     return roles.includes('admin') || roles.includes('manager');
   }
 
+  /** Técnico: acesso operacional fixo às Ordens de Serviço (sem matriz de caixa). */
+  isTechnicianOnly(roles: string[]): boolean {
+    return roles.includes('technician') && !roles.includes('seller') && !this.isManagerOrAdmin(roles);
+  }
+
+  private technicianServiceOrderFlags(menuKey: string): MenuAccessFlags {
+    const allowed = menuKey === 'serviceOrders';
+    return {
+      menuKey,
+      canView: allowed,
+      canCreate: allowed,
+      canUpdate: allowed,
+      canDelete: false,
+    };
+  }
+
   catalog() {
     return MENU_ACCESS_CATALOG.map((m) => ({
       key: m.key,
@@ -68,6 +84,21 @@ export class MenuAccessService {
           canUpdate: true,
           canDelete: true,
         })),
+      };
+    }
+
+    if (this.isTechnicianOnly(roles)) {
+      return {
+        isFullAccess: false,
+        menus: MENU_ACCESS_CATALOG.map((m) => {
+          const base = this.technicianServiceOrderFlags(m.key);
+          return {
+            ...base,
+            label: m.label,
+            supportsMutations: m.supportsMutations !== false,
+            supportsDelete: Boolean(m.supportsDelete),
+          };
+        }),
       };
     }
 
@@ -120,6 +151,11 @@ export class MenuAccessService {
         'Gerente/administrador possui acesso total — permissões de menu não se aplicam.',
       );
     }
+    if (this.isTechnicianOnly(targetRoles)) {
+      throw new BadRequestException(
+        'Técnico possui acesso fixo às Ordens de Serviço — permissões de menu não se aplicam.',
+      );
+    }
 
     for (const g of grants) {
       if (!MENU_ACCESS_KEYS.includes(g.menuKey)) {
@@ -166,6 +202,9 @@ export class MenuAccessService {
         canUpdate: true,
         canDelete: true,
       };
+    }
+    if (this.isTechnicianOnly(roles)) {
+      return this.technicianServiceOrderFlags(menuKey);
     }
     const db = await this.tenantPrisma.getClient(tenantSlug);
     const row = await db.menuAccessGrant.findUnique({

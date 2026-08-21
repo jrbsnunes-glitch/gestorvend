@@ -1,5 +1,10 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { LicenseStatus, PlanCode, Tenant } from '../generated/central-client';
+import {
+  LicenseStatus,
+  PlanCode,
+  Tenant,
+  TenantModuleAddon,
+} from '../generated/central-client';
 import { CentralPrismaService } from '../prisma/central-prisma.service';
 
 type LicenseCacheEntry =
@@ -11,12 +16,17 @@ const LICENSE_CACHE_TTL_MS = 60_000;
 /** Carimbo licenseLastValidatedAt no máximo a cada 5 min por tenant. */
 const LICENSE_STAMP_MIN_MS = 5 * 60_000;
 const PLAN_CACHE_TTL_MS = 60_000;
+const MODULE_CACHE_TTL_MS = 60_000;
 
 @Injectable()
 export class TenantService {
   private readonly licenseCache = new Map<string, LicenseCacheEntry>();
   private readonly lastStampAt = new Map<string, number>();
   private readonly planCache = new Map<string, { planCode: PlanCode; checkedAt: number }>();
+  private readonly moduleCache = new Map<
+    string,
+    { modules: TenantModuleAddon[]; checkedAt: number }
+  >();
 
   constructor(private readonly central: CentralPrismaService) {}
 
@@ -50,6 +60,78 @@ export class TenantService {
   invalidateCaches(slug: string): void {
     this.licenseCache.delete(slug);
     this.planCache.delete(slug);
+    this.moduleCache.delete(slug);
+  }
+
+  async getEnabledModules(slug: string): Promise<TenantModuleAddon[]> {
+    const now = Date.now();
+    const cached = this.moduleCache.get(slug);
+    if (cached && now - cached.checkedAt < MODULE_CACHE_TTL_MS) {
+      return cached.modules;
+    }
+    const tenant = await this.central.tenant.findUnique({
+      where: { slug },
+      include: { moduleGrants: { select: { module: true } } },
+    });
+    if (!tenant) {
+      throw new NotFoundException(`Tenant "${slug}" não encontrado`);
+    }
+    const modules = tenant.moduleGrants.map((g) => g.module);
+    this.moduleCache.set(slug, { modules, checkedAt: now });
+    return modules;
+  }
+
+  async getEnabledModulesByTenantId(tenantId: string): Promise<TenantModuleAddon[]> {
+    const grants = await this.central.tenantModuleGrant.findMany({
+      where: { tenantId },
+      select: { module: true },
+    });
+    return grants.map((g) => g.module);
+  }
+
+  async setEnabledModules(
+    tenantId: string,
+    slug: string,
+    modules: TenantModuleAddon[],
+  ): Promise<TenantModuleAddon[]> {
+    const wanted = [...new Set(modules)];
+    const existing = await this.central.tenantModuleGrant.findMany({
+      where: { tenantId },
+    });
+    const existingSet = new Set(existing.map((g) => g.module));
+    const wantedSet = new Set(wanted);
+
+    const toDelete = existing.filter((g) => !wantedSet.has(g.module)).map((g) => g.id);
+    if (toDelete.length) {
+      await this.central.tenantModuleGrant.deleteMany({
+        where: { id: { in: toDelete } },
+      });
+    }
+    for (const mod of wanted) {
+      if (!existingSet.has(mod)) {
+        await this.central.tenantModuleGrant.create({
+          data: { tenantId, module: mod },
+        });
+      }
+    }
+    this.invalidateCaches(slug);
+    return wanted;
+  }
+
+  /**
+   * Garante que o tenant possui o módulo adicional contratado no portal.
+   */
+  async assertModule(slug: string, module: TenantModuleAddon): Promise<void> {
+    const modules = await this.getEnabledModules(slug);
+    if (!modules.includes(module)) {
+      const label =
+        module === TenantModuleAddon.SERVICE_ORDER
+          ? 'Ordem de Serviços'
+          : String(module);
+      throw new ForbiddenException(
+        `Módulo ${label} não contratado. Contate o suporte GestorVend.`,
+      );
+    }
   }
 
   async assertLicenseActive(slug: string): Promise<void> {
@@ -94,7 +176,6 @@ export class TenantService {
     });
     this.planCache.set(slug, { planCode: tenant.planCode, checkedAt: now });
 
-    // Carimbo de auditoria — throttle (não em toda request).
     const lastStamp = this.lastStampAt.get(slug) ?? 0;
     if (now - lastStamp >= LICENSE_STAMP_MIN_MS) {
       this.lastStampAt.set(slug, now);
@@ -107,10 +188,6 @@ export class TenantService {
     }
   }
 
-  /**
-   * Garante que o tenant possui um dos planos exigidos. Útil para liberar/bloquear
-   * funcionalidades opcionais (ex.: módulo WhatsApp).
-   */
   async assertPlan(slug: string, allowed: PlanCode[]): Promise<PlanCode> {
     const now = Date.now();
     const cached = this.planCache.get(slug);
@@ -139,31 +216,33 @@ export class TenantService {
     return planCode;
   }
 
-  /**
-   * Status público e enxuto da licença (app desktop / checagem antecipada).
-   * Não expõe dados sensíveis do tenant.
-   */
   async getPublicLicenseStatus(slug: string): Promise<{
     ok: boolean;
     status: string;
     planCode: string | null;
+    enabledModules: TenantModuleAddon[];
     expiresAt: string | null;
     remainingDays: number | null;
     message?: string;
   }> {
-    const raw = await this.central.tenant.findUnique({ where: { slug } });
+    const raw = await this.central.tenant.findUnique({
+      where: { slug },
+      include: { moduleGrants: { select: { module: true } } },
+    });
     if (!raw) {
       return {
         ok: false,
         status: 'not_found',
         planCode: null,
+        enabledModules: [],
         expiresAt: null,
         remainingDays: null,
         message: 'Empresa não encontrada.',
       };
     }
 
-    const tenant = await this.syncLicenseExpiryStatus(raw);
+    const { moduleGrants, ...tenantFields } = raw;
+    const tenant = await this.syncLicenseExpiryStatus(tenantFields);
     const now = new Date();
     const expiresAt = tenant.licenseExpiresAt
       ? tenant.licenseExpiresAt.toISOString()
@@ -198,6 +277,7 @@ export class TenantService {
       ok,
       status: tenant.licenseStatus,
       planCode: tenant.planCode,
+      enabledModules: moduleGrants.map((g) => g.module),
       expiresAt,
       remainingDays,
       message,

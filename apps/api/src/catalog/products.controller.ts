@@ -95,14 +95,19 @@ export class ProductsController {
     return id;
   }
 
-  /** Piso cadastral: variante sempre com reposição configurada como ≥ 1. */
-  private parseCadastroVariantMinStock(raw: unknown): string {
-    const n = Number(String(raw ?? '1').replace(',', '.'));
+  /** Piso cadastral: mercadoria ≥ 1; serviço (unidade SERV) permite 0 (sem estoque). */
+  private parseCadastroVariantMinStock(raw: unknown, allowZero = false): string {
+    const n = Number(String(raw ?? (allowZero ? '0' : '1')).replace(',', '.'));
     if (!Number.isFinite(n)) {
       throw new BadRequestException('Estoque mínimo da variação deve ser um número válido.');
     }
-    if (n < 1) {
-      throw new BadRequestException('O estoque mínimo cadastrado da variação deve ser no mínimo 1.');
+    const floor = allowZero ? 0 : 1;
+    if (n < floor) {
+      throw new BadRequestException(
+        allowZero
+          ? 'O estoque mínimo cadastrado da variação não pode ser negativo.'
+          : 'O estoque mínimo cadastrado da variação deve ser no mínimo 1.',
+      );
     }
     return String(n);
   }
@@ -114,6 +119,11 @@ export class ProductsController {
       .slice(0, 10)
       .toUpperCase();
     return trimmed || 'UN';
+  }
+
+  /** Unidade SERV (Serviço) → produto sem baixa de estoque. */
+  private isServiceTaxUnit(taxUnit: string): boolean {
+    return taxUnit === 'SERV' || taxUnit === 'SERVICO' || taxUnit === 'SERVIÇO';
   }
 
   private async syncProductInventoryControlMin(tx: Prisma.TransactionClient, productId: string) {
@@ -137,6 +147,7 @@ export class ProductsController {
       costAverage?: number | string;
       minStock?: number | string;
     }>,
+    allowZeroMinStock = false,
   ) {
     for (const vp of updates) {
       const v = await tx.productVariant.findFirst({
@@ -179,7 +190,7 @@ export class ProductsController {
         }
       }
       if (vp.minStock !== undefined) {
-        const newMinStr = this.parseCadastroVariantMinStock(vp.minStock);
+        const newMinStr = this.parseCadastroVariantMinStock(vp.minStock, allowZeroMinStock);
         const newMin = new Prisma.Decimal(newMinStr);
         if (!new Prisma.Decimal(v.minStock).equals(newMin)) {
           nextMinStock = newMin.toString();
@@ -233,6 +244,7 @@ export class ProductsController {
         tareKg: Prisma.Decimal | null;
         defaultBarcode?: string | null;
         stockComponentVariantId: string | null;
+        isService?: boolean;
       };
     }>,
   ) {
@@ -274,6 +286,7 @@ export class ProductsController {
         productControlNumber: v.product.controlNumber,
         productInventoryControlMin: String(v.product.inventoryControlMin),
         taxUnit: v.product.taxUnit ?? 'UN',
+        isService: Boolean(v.product.isService),
         tareKg: v.product.tareKg != null ? String(v.product.tareKg) : null,
         variantId: v.id,
         sku: v.sku,
@@ -308,7 +321,7 @@ export class ProductsController {
 
   /** Consulta em tempo real por código sequencial, nome, descrição, SKU ou código de barras. */
   @Get('search')
-  @Roles('admin', 'manager', 'seller', 'finance', 'waiter')
+  @Roles('admin', 'manager', 'seller', 'finance', 'waiter', 'technician')
   async search(@CurrentUser() user: JwtPayload, @Query('q') q?: string) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const term = (q ?? '').trim();
@@ -326,6 +339,7 @@ export class ProductsController {
           tareKg: true,
           defaultBarcode: true,
           stockComponentVariantId: true,
+          isService: true,
         },
       },
     } as const;
@@ -612,6 +626,9 @@ export class ProductsController {
       fiscalSituationId = fs.id;
     }
 
+    const taxUnitNorm = this.normalizeProductTaxUnit(body.taxUnit);
+    const isService = this.isServiceTaxUnit(taxUnitNorm);
+
     const createdId = await db.$transaction(async (tx) => {
       const prod = await tx.product.create({
         data: {
@@ -624,10 +641,11 @@ export class ProductsController {
           cest: body.cest ?? null,
           exTipi: body.exTipi?.trim() ? body.exTipi.trim().slice(0, 10) : null,
           fiscalOrigin: body.fiscalOrigin?.trim() ? body.fiscalOrigin.trim().slice(0, 2) : null,
-          taxUnit: this.normalizeProductTaxUnit(body.taxUnit),
-          conversion: normalizeProductConversion(body.conversion),
-          packItemQty: packItemQty != null ? String(packItemQty) : null,
-          stockComponentVariantId,
+          taxUnit: taxUnitNorm,
+          isService,
+          conversion: isService ? null : normalizeProductConversion(body.conversion),
+          packItemQty: isService ? null : packItemQty != null ? String(packItemQty) : null,
+          stockComponentVariantId: isService ? null : stockComponentVariantId,
           variants: {
             create: body.variants.map((v, idx) => ({
               sku: v.sku,
@@ -635,7 +653,10 @@ export class ProductsController {
               retailPrice: String(v.retailPrice),
               wholesalePrice: v.wholesalePrice != null ? String(v.wholesalePrice) : null,
               costAverage: v.costAverage != null ? String(v.costAverage) : '0',
-              minStock: this.parseCadastroVariantMinStock(v.minStock ?? 1),
+              minStock: this.parseCadastroVariantMinStock(
+                v.minStock ?? (isService ? 0 : 1),
+                isService,
+              ),
             })),
           },
         },
@@ -905,54 +926,70 @@ export class ProductsController {
 
     const current = await db.product.findUniqueOrThrow({
       where: { id },
-      select: { conversion: true, packItemQty: true, stockComponentVariantId: true },
+      select: {
+        conversion: true,
+        packItemQty: true,
+        stockComponentVariantId: true,
+        taxUnit: true,
+        isService: true,
+      },
     });
-    const nextConversion =
-      body.conversion !== undefined
+    const taxUnitNorm =
+      body.taxUnit !== undefined
+        ? this.normalizeProductTaxUnit(body.taxUnit)
+        : this.normalizeProductTaxUnit(current.taxUnit);
+    const isService = this.isServiceTaxUnit(taxUnitNorm);
+
+    const nextConversion = isService
+      ? null
+      : body.conversion !== undefined
         ? body.conversion
           ? normalizeProductConversion(String(body.conversion))
           : null
         : current.conversion;
-    const nextPackItemQty =
-      body.packItemQty !== undefined
+    const nextPackItemQty = isService
+      ? null
+      : body.packItemQty !== undefined
         ? normalizePackItemQty(body.packItemQty as number | string | null | undefined)
         : current.packItemQty != null
           ? Number(current.packItemQty)
           : null;
-    let nextStockComponent: string | null | undefined = undefined;
-    if (body.conversion !== undefined && !nextConversion) {
-      // Sem conversão não há pack composto.
-      nextStockComponent =
-        body.stockComponentVariantId !== undefined
-          ? await this.resolveStockComponentVariantId(db, {
-              productId: id,
-              stockComponentVariantId: body.stockComponentVariantId
-                ? String(body.stockComponentVariantId)
-                : null,
-              conversion: nextConversion,
-              packItemQty: nextPackItemQty,
-            })
-          : null;
-    } else if (body.stockComponentVariantId !== undefined) {
-      nextStockComponent = await this.resolveStockComponentVariantId(db, {
-        productId: id,
-        stockComponentVariantId: body.stockComponentVariantId
-          ? String(body.stockComponentVariantId)
-          : null,
-        conversion: nextConversion,
-        packItemQty: nextPackItemQty,
-      });
-    } else if (
-      (body.conversion !== undefined || body.packItemQty !== undefined) &&
-      current.stockComponentVariantId
-    ) {
-      // Recalcula validação se conversão/fator mudou mantendo vínculo.
-      nextStockComponent = await this.resolveStockComponentVariantId(db, {
-        productId: id,
-        stockComponentVariantId: current.stockComponentVariantId,
-        conversion: nextConversion,
-        packItemQty: nextPackItemQty,
-      });
+    let nextStockComponent: string | null | undefined = isService ? null : undefined;
+    if (!isService) {
+      if (body.conversion !== undefined && !nextConversion) {
+        // Sem conversão não há pack composto.
+        nextStockComponent =
+          body.stockComponentVariantId !== undefined
+            ? await this.resolveStockComponentVariantId(db, {
+                productId: id,
+                stockComponentVariantId: body.stockComponentVariantId
+                  ? String(body.stockComponentVariantId)
+                  : null,
+                conversion: nextConversion,
+                packItemQty: nextPackItemQty,
+              })
+            : null;
+      } else if (body.stockComponentVariantId !== undefined) {
+        nextStockComponent = await this.resolveStockComponentVariantId(db, {
+          productId: id,
+          stockComponentVariantId: body.stockComponentVariantId
+            ? String(body.stockComponentVariantId)
+            : null,
+          conversion: nextConversion,
+          packItemQty: nextPackItemQty,
+        });
+      } else if (
+        (body.conversion !== undefined || body.packItemQty !== undefined) &&
+        current.stockComponentVariantId
+      ) {
+        // Recalcula validação se conversão/fator mudou mantendo vínculo.
+        nextStockComponent = await this.resolveStockComponentVariantId(db, {
+          productId: id,
+          stockComponentVariantId: current.stockComponentVariantId,
+          conversion: nextConversion,
+          packItemQty: nextPackItemQty,
+        });
+      }
     }
 
     if (body.fiscalSituationId !== undefined && body.fiscalSituationId) {
@@ -986,15 +1023,10 @@ export class ProductsController {
           ...(body.fiscalOrigin !== undefined && {
             fiscalOrigin: body.fiscalOrigin ? String(body.fiscalOrigin).trim().slice(0, 2) : null,
           }),
-          ...(body.taxUnit !== undefined && {
-            taxUnit: this.normalizeProductTaxUnit(body.taxUnit),
-          }),
-          ...(body.conversion !== undefined && {
-            conversion: nextConversion,
-          }),
-          ...(body.packItemQty !== undefined && {
-            packItemQty: nextPackItemQty != null ? String(nextPackItemQty) : null,
-          }),
+          taxUnit: taxUnitNorm,
+          isService,
+          conversion: nextConversion,
+          packItemQty: nextPackItemQty != null ? String(nextPackItemQty) : null,
           ...(nextStockComponent !== undefined && {
             stockComponentVariantId: nextStockComponent,
           }),
@@ -1025,7 +1057,14 @@ export class ProductsController {
       }
 
       if (variantPrices.length) {
-        await this.applyVariantPriceUpdates(tx, id, variantPrices);
+        await this.applyVariantPriceUpdates(tx, id, variantPrices, isService);
+        await this.syncProductInventoryControlMin(tx, id);
+      } else if (isService && !current.isService) {
+        // Ao virar serviço, zera o estoque mínimo das variantes.
+        await tx.productVariant.updateMany({
+          where: { productId: id },
+          data: { minStock: new Prisma.Decimal(0) },
+        });
         await this.syncProductInventoryControlMin(tx, id);
       }
 

@@ -31,7 +31,7 @@ export class CompanyController {
   constructor(private readonly company: CompanyService) {}
 
   @Get()
-  @Roles('admin', 'manager', 'seller', 'finance', 'waiter')
+  @Roles('admin', 'manager', 'seller', 'finance', 'waiter', 'technician')
   get(@CurrentUser() user: JwtPayload) {
     return this.company.getOrCreate(user.tenantSlug);
   }

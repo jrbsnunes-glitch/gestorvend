@@ -471,7 +471,19 @@ export class SalesService {
     const total = roundMoney2(merchandiseTotal + cardFeeSurcharge);
 
     const defaultLoc = await getDefaultStockLocation(db);
-    if (deductStock && !defaultLoc) {
+    const saleVariants = await db.productVariant.findMany({
+      where: { id: { in: input.items.map((it) => it.variantId) } },
+      select: {
+        id: true,
+        product: { select: { isService: true, name: true } },
+      },
+    });
+    const serviceByVariant = new Map(
+      saleVariants.map((v) => [v.id, Boolean(v.product.isService)] as const),
+    );
+    const needsStockDeduction =
+      deductStock && saleVariants.some((v) => !v.product.isService);
+    if (needsStockDeduction && !defaultLoc) {
       throw new BadRequestException('Cadastre um local de estoque padrão');
     }
     if (!deductStock && !defaultLoc) {
@@ -573,6 +585,7 @@ export class SalesService {
 
       for (const it of input.items) {
         if (!deductStock || !defaultLoc) continue;
+        if (serviceByVariant.get(it.variantId)) continue;
         const q = Number(it.quantity);
         const soldVariant = await tx.productVariant.findUnique({
           where: { id: it.variantId },
@@ -584,6 +597,7 @@ export class SalesService {
             },
           },
         });
+        if (soldVariant?.product.isService) continue;
         const recipeItems = soldVariant?.product.recipe?.items ?? [];
 
         if (recipeItems.length > 0) {

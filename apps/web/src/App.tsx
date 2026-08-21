@@ -11,7 +11,7 @@ import {
   getToken,
   scheduleAccessTokenRefresh,
 } from './lib/api';
-import { hasRestaurantPlan, isAdmin, isWaiter } from './lib/auth';
+import { hasRestaurantPlan, hasServiceOrderModule, isAdmin, isTechnician, isWaiter } from './lib/auth';
 import { Login } from './pages/Login';
 import './index.css';
 import './styles/ui.css';
@@ -134,6 +134,12 @@ const ProductsPage = lazy(() =>
 const RequisicoesPage = lazy(() =>
   import('./pages/RequisicoesPage').then((m) => ({ default: m.RequisicoesPage })),
 );
+const ServiceOrdersPage = lazy(() =>
+  import('./pages/ServiceOrdersPage').then((m) => ({ default: m.ServiceOrdersPage })),
+);
+const ServiceOrderPrintPage = lazy(() =>
+  import('./pages/ServiceOrderPrintPage').then((m) => ({ default: m.ServiceOrderPrintPage })),
+);
 const SaleReceiptPrintPage = lazy(() =>
   import('./pages/SaleReceiptPrintPage').then((m) => ({ default: m.SaleReceiptPrintPage })),
 );
@@ -228,10 +234,18 @@ function RequireRestaurant({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-/** Garçom não opera PDV/caixa — redireciona para o Salão. */
+function RequireServiceOrder({ children }: { children: ReactNode }) {
+  const allowed = useMemo(() => hasServiceOrderModule(), []);
+  if (!allowed) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+/** Garçom / técnico não operam PDV/caixa — redirecionam ao módulo operacional. */
 function BlockWaiterFromPdv({ children }: { children: ReactNode }) {
-  const blocked = useMemo(() => isWaiter(), []);
-  if (blocked) return <Navigate to="/salao" replace />;
+  const waiterBlocked = useMemo(() => isWaiter(), []);
+  const technicianBlocked = useMemo(() => isTechnician(), []);
+  if (waiterBlocked) return <Navigate to="/salao" replace />;
+  if (technicianBlocked) return <Navigate to="/ordens-servico" replace />;
   return <>{children}</>;
 }
 
@@ -394,6 +408,22 @@ function AppInner() {
               <Route path="fechamento" element={<StockFechamentoPage />} />
             </Route>
             <Route path="requisicoes" element={<RequisicoesPage />} />
+            <Route
+              path="ordens-servico"
+              element={
+                <RequireServiceOrder>
+                  <ServiceOrdersPage />
+                </RequireServiceOrder>
+              }
+            />
+            <Route
+              path="ordens-servico/impressao"
+              element={
+                <RequireServiceOrder>
+                  <ServiceOrderPrintPage />
+                </RequireServiceOrder>
+              }
+            />
             <Route path="caixa" element={<CashPage />} />
             <Route path="cartoes" element={<CardsPage />} />
             <Route path="notas-fiscais" element={<FiscalNotesPage />} />

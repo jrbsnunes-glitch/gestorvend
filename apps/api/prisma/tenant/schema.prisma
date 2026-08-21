@@ -64,9 +64,26 @@ model Company {
   waiterTipValue   Decimal @default(0) @db.Decimal(14, 4)
   /// Despesas de caixa (EXPENSE) entram no total apresentado na conferência (dinheiro + despesa = vendas em dinheiro).
   cashExpenseInPresentedTotal Boolean @default(false)
+  /// Módulo Ordem de Serviços ativo neste tenant (só surte efeito se o addon SERVICE_ORDER estiver no portal).
+  serviceOrderModuleEnabled Boolean @default(false)
+  /// Como faturar OS: PDV, interno na OS, ou escolha por ordem.
+  serviceOrderDefaultBillingMode ServiceOrderBillingMode @default(CHOICE_PER_ORDER)
+  /// Exige equipamento cadastrado ao abrir OS.
+  serviceOrderRequireEquipment Boolean @default(false)
+  /// Permite fluxo de orçamento (QUOTE → APPROVED).
+  serviceOrderAllowQuote Boolean @default(true)
+  /// Termo impresso no espelho da OS.
+  serviceOrderTermsText String? @db.Text
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   fiscalIssuerSettings FiscalIssuerSettings?
+}
+
+/// Modo padrão de cobrança das Ordens de Serviço.
+enum ServiceOrderBillingMode {
+  PDV
+  INTERNAL
+  CHOICE_PER_ORDER
 }
 
 /// Modo de cobrança das taxas de salão (% sobre itens ou valor fixo em R$).
@@ -237,6 +254,8 @@ model User {
   permissions    UserPermission[]
   menuAccess     MenuAccessGrant[]
   serviceTabsOpened ServiceTab[] @relation("ServiceTabOpenedBy")
+  serviceOrdersOpened ServiceOrder[] @relation("ServiceOrderOpenedBy")
+  serviceOrdersAssigned ServiceOrder[] @relation("ServiceOrderAssignedTo")
 }
 
 /// Permissões operacionais concedidas pelo administrador (com senha de autorização).
@@ -342,6 +361,8 @@ model Customer {
   receivables  AccountReceivable[]
   serviceTabs  ServiceTab[]
   creditAdjustments CustomerCreditAdjustment[]
+  equipment    CustomerEquipment[]
+  serviceOrders ServiceOrder[]
 }
 
 /// Histórico de inclusão/atualização de saldo de crédito ou valor de requisição.
@@ -455,6 +476,8 @@ model Product {
   stockComponentVariantId String?
   stockComponentVariant   ProductVariant? @relation("ProductStockComponent", fields: [stockComponentVariantId], references: [id], onDelete: SetNull)
   isActive    Boolean          @default(true)
+  /// Produto de serviço/mão de obra — tipicamente sem baixa de estoque na venda.
+  isService   Boolean          @default(false)
   /// Número sequencial único para identificação rápida (listagem, PDV, pesquisa por código).
   controlNumber Int              @unique @default(autoincrement())
   /// Controle agregado do produto: menor `minStock` entre as variantes (recalculado ao salvar variantes). Piso 1 por política cadastral.
@@ -518,6 +541,7 @@ model ProductVariant {
   exitItems          StockExitItem[]
   recipeIngredients  ProductRecipeItem[]
   serviceTabItems    ServiceTabItem[]
+  serviceOrderItems  ServiceOrderItem[]
   priceHistory       ProductVariantPriceHistory[]
   supplierLinks      SupplierProductLink[]
 }
@@ -644,6 +668,7 @@ enum StockMovementSource {
   MANUAL_OUT
   ADJUSTMENT
   TRANSFER
+  SERVICE_ORDER
   OTHER
 }
 
@@ -864,6 +889,8 @@ enum SaleSource {
   RESTAURANT
   /// Requisição lançada fora do PDV (tela Requisições), vinculada a um caixa aberto.
   REQUISITION
+  /// Faturamento de Ordem de Serviço.
+  SERVICE_ORDER
 }
 
 model Sale {
@@ -916,6 +943,8 @@ model Sale {
   payments               SalePayment[]
   receivables            AccountReceivable[]
   serviceTab             ServiceTab?
+  serviceOrder           ServiceOrder?
+  serviceOrderDeposit    ServiceOrder? @relation("ServiceOrderDepositSale")
 
   @@index([operationNatureId])
   @@index([cashSessionId])
@@ -1464,4 +1493,128 @@ model PrintJob {
   @@index([sector, status])
   @@index([tabId])
   @@index([stationId])
+}
+
+// --- Ordem de Serviços ---
+
+enum ServiceOrderStatus {
+  DRAFT
+  QUOTE
+  APPROVED
+  IN_PROGRESS
+  WAITING_PARTS
+  READY
+  DELIVERED
+  BILLED
+  CANCELLED
+}
+
+enum ServiceOrderType {
+  CORRECTIVE
+  PREVENTIVE
+  WARRANTY
+  INSTALLATION
+  INSPECTION
+  OTHER
+}
+
+enum ServiceOrderItemKind {
+  PART
+  SERVICE
+  LABOR
+  OTHER
+}
+
+model CustomerEquipment {
+  id            String   @id @default(uuid())
+  customerId    String
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label         String   @db.VarChar(160)
+  equipmentType String?  @db.VarChar(64)
+  brand         String?  @db.VarChar(80)
+  model         String?  @db.VarChar(80)
+  serialNumber  String?  @db.VarChar(80)
+  plateOrTag    String?  @db.VarChar(40)
+  notes         String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  serviceOrders ServiceOrder[]
+
+  @@index([customerId])
+  @@index([serialNumber])
+  @@index([plateOrTag])
+}
+
+model ServiceOrder {
+  id               String             @id @default(uuid())
+  number           Int                @unique @default(autoincrement())
+  status           ServiceOrderStatus @default(DRAFT)
+  type             ServiceOrderType   @default(CORRECTIVE)
+  customerId       String
+  customer         Customer           @relation(fields: [customerId], references: [id])
+  equipmentId      String?
+  equipment        CustomerEquipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  assetDescription String?
+  problemReport    String?
+  diagnosis        String?
+  internalNotes    String?
+  /// Checklist de entrada (JSON: [{label, checked}]).
+  intakeChecklist  Json?
+  openedById       String?
+  openedBy         User?              @relation("ServiceOrderOpenedBy", fields: [openedById], references: [id], onDelete: SetNull)
+  assignedToId     String?
+  assignedTo       User?              @relation("ServiceOrderAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  openedAt         DateTime           @default(now())
+  promisedAt       DateTime?
+  completedAt      DateTime?
+  deliveredAt      DateTime?
+  saleId           String?            @unique
+  sale             Sale?              @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  depositAmount    Decimal            @default(0) @db.Decimal(14, 2)
+  depositSaleId    String?            @unique
+  depositSale      Sale?              @relation("ServiceOrderDepositSale", fields: [depositSaleId], references: [id], onDelete: SetNull)
+  items            ServiceOrderItem[]
+  statusHistory    ServiceOrderStatusLog[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([status, openedAt])
+  @@index([customerId])
+  @@index([equipmentId])
+  @@index([assignedToId])
+}
+
+model ServiceOrderItem {
+  id          String               @id @default(uuid())
+  orderId     String
+  order       ServiceOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  kind        ServiceOrderItemKind @default(PART)
+  variantId   String?
+  variant     ProductVariant?      @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  description String?
+  quantity    Decimal              @db.Decimal(18, 4)
+  unitPrice   Decimal              @db.Decimal(14, 4)
+  discount    Decimal              @default(0) @db.Decimal(14, 2)
+  totalLine   Decimal              @db.Decimal(14, 2)
+  /// Consumo antecipado de peça (antes do faturamento).
+  consumedAt  DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([orderId])
+  @@index([variantId])
+}
+
+model ServiceOrderStatusLog {
+  id         String             @id @default(uuid())
+  orderId    String
+  order      ServiceOrder       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus ServiceOrderStatus?
+  toStatus   ServiceOrderStatus
+  userId     String?
+  note       String?
+  createdAt  DateTime           @default(now())
+
+  @@index([orderId, createdAt])
 }

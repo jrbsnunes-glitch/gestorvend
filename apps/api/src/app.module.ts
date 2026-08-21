@@ -18,6 +18,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ReportsModule } from './reports/reports.module';
 import { RequisitionsModule } from './requisitions/requisitions.module';
 import { SalesModule } from './sales/sales.module';
+import { ServiceOrdersModule } from './service-orders/service-orders.module';
 import { TenantModule } from './tenant/tenant.module';
 import { UsersModule } from './users/users.module';
 import { WaChatModule } from './wachat/wachat.module';
@@ -42,6 +43,7 @@ import { PrintingModule } from './printing/printing.module';
     InventoryModule,
     SalesModule,
     RequisitionsModule,
+    ServiceOrdersModule,
     CashModule,
     FinanceModule,
     FinancialOverviewModule,

@@ -10,6 +10,7 @@ type Client = {
   cnpj: string;
   companyName: string;
   planCode: 'STANDARD' | 'WHATSAPP' | 'RESTAURANT';
+  enabledAddons?: Array<'SERVICE_ORDER'>;
   licenseStatus: 'trial' | 'active' | 'suspended' | 'expired';
   licenseValidFrom: string | null;
   licenseExpiresAt: string | null;
@@ -30,6 +31,7 @@ type CreateForm = {
   companyName: string;
   slug: string;
   planCode: Client['planCode'];
+  enabledAddons: Array<'SERVICE_ORDER'>;
   licenseStatus: Client['licenseStatus'];
   licenseValidFrom: string;
   licenseExpiresAt: string;
@@ -87,6 +89,7 @@ function statusColor(s: Client['licenseStatus'], days: number | null): { bg: str
 type EditForm = {
   companyName: string;
   planCode: Client['planCode'];
+  enabledAddons: Array<'SERVICE_ORDER'>;
   licenseStatus: Client['licenseStatus'];
   licenseValidFrom: string;
   licenseExpiresAt: string;
@@ -102,6 +105,7 @@ function clientToEditForm(c: Client): EditForm {
   return {
     companyName: c.companyName,
     planCode: c.planCode,
+    enabledAddons: c.enabledAddons ?? [],
     licenseStatus: c.licenseStatus,
     licenseValidFrom: toDateInput(c.licenseValidFrom),
     licenseExpiresAt: toDateInput(c.licenseExpiresAt),
@@ -114,6 +118,7 @@ const EMPTY_FORM: CreateForm = {
   companyName: '',
   slug: '',
   planCode: 'STANDARD',
+  enabledAddons: [],
   licenseStatus: 'trial',
   licenseValidFrom: new Date().toISOString().slice(0, 10),
   licenseExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
@@ -186,6 +191,7 @@ export function PortalClientsPage() {
           companyName: form.companyName,
           slug: form.slug || undefined,
           planCode: form.planCode,
+          enabledAddons: form.enabledAddons,
           licenseStatus: form.licenseStatus,
           licenseValidFrom: form.licenseValidFrom || null,
           licenseExpiresAt: form.licenseExpiresAt || null,
@@ -212,6 +218,7 @@ export function PortalClientsPage() {
         json: {
           companyName: payload.form.companyName.trim(),
           planCode: payload.form.planCode,
+          enabledAddons: payload.form.enabledAddons,
           licenseStatus: payload.form.licenseStatus,
           licenseValidFrom: payload.form.licenseValidFrom || null,
           licenseExpiresAt: payload.form.licenseExpiresAt || null,
@@ -453,6 +460,15 @@ export function PortalClientsPage() {
                       <span className="badge" style={{ background: '#eef2ff', color: '#4338ca' }}>
                         {PLAN_LABEL[c.planCode]}
                       </span>
+                      {(c.enabledAddons ?? []).includes('SERVICE_ORDER') ? (
+                        <span
+                          className="badge"
+                          style={{ background: '#fff7ed', color: '#9a3412', marginLeft: 4 }}
+                          title="Ordem de Serviços"
+                        >
+                          OS
+                        </span>
+                      ) : null}
                     </td>
                     <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                       {c.monthlyFee != null ? formatBRL(c.monthlyFee) : '—'}
@@ -676,6 +692,27 @@ export function PortalClientsPage() {
                 </select>
               </div>
             </div>
+            <div className="field" style={{ marginBottom: '0.75rem' }}>
+              <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                <input
+                  type="checkbox"
+                  checked={form.enabledAddons.includes('SERVICE_ORDER')}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      enabledAddons: e.target.checked ? ['SERVICE_ORDER'] : [],
+                    })
+                  }
+                  style={{ marginTop: '0.15rem' }}
+                />
+                <span>
+                  Adicional: Ordem de Serviços
+                  <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>
+                    Libera menu Ordens de Serviço, API e integração PDV
+                  </span>
+                </span>
+              </label>
+            </div>
             <div className="form-row">
               <div className="field">
                 <label htmlFor="pc-monthly">Mensalidade (R$)</label>
@@ -817,6 +854,29 @@ export function PortalClientsPage() {
                   ))}
                 </select>
               </div>
+            </div>
+            <div className="field" style={{ marginBottom: '0.75rem' }}>
+              <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                <input
+                  type="checkbox"
+                  checked={editForm.enabledAddons.includes('SERVICE_ORDER')}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      enabledAddons: e.target.checked ? ['SERVICE_ORDER'] : [],
+                    })
+                  }
+                  style={{ marginTop: '0.15rem' }}
+                />
+                <span>
+                  Adicional: Ordem de Serviços
+                  <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>
+                    Libera menu Ordens de Serviço, API e integração PDV
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="form-row">
               <div className="field">
                 <label htmlFor="pe-monthly">Mensalidade (R$)</label>
                 <input

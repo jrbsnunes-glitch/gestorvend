@@ -7,7 +7,7 @@ import { DesktopUpdateBanner } from './DesktopUpdateBanner';
 import { NavIcon, type NavIconName } from './nav-icons';
 import { api } from '../lib/api';
 import { companyDisplayName } from '../lib/company-branding';
-import { getIdentity, hasRestaurantPlan, isAdmin, isWaiter, profileFromRoles, profileLabel } from '../lib/auth';
+import { getIdentity, hasRestaurantPlan, hasServiceOrderModule, isAdmin, isTechnician, isWaiter, profileFromRoles, profileLabel } from '../lib/auth';
 import { navPathToMenuKey } from '../lib/menu-access';
 import { useMenuAccess } from '../hooks/useMenuAccess';
 import { APP_VERSION } from '../version';
@@ -31,8 +31,12 @@ type NavItem = {
   adminOnly?: boolean;
   /** Exige plano RESTAURANT no JWT. */
   restaurantPlan?: boolean;
+  /** Exige addon SERVICE_ORDER no JWT + flag da empresa. */
+  serviceOrderModule?: boolean;
   /** Garçom só vê itens marcados (Salão). */
   waiterAllowed?: boolean;
+  /** Técnico (OS) só vê itens marcados (Ordens de Serviço). */
+  technicianAllowed?: boolean;
 };
 
 const GROUP_LABEL: Record<NavGroup, string> = {
@@ -50,6 +54,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/fornecedores', label: 'Fornecedores', icon: 'suppliers', group: 'catalogo', managerOnly: true },
   { to: '/estoque', label: 'Estoque', icon: 'stock', group: 'catalogo', managerOnly: true },
   { to: '/requisicoes', label: 'Requisições', icon: 'requisitions', group: 'gestao', managerOnly: true },
+  { to: '/ordens-servico', label: 'Ordens de Serviço', icon: 'serviceOrders', group: 'gestao', managerOnly: true, serviceOrderModule: true, technicianAllowed: true },
   { to: '/caixa', label: 'Caixa', icon: 'cash', group: 'gestao' },
   { to: '/cartoes', label: 'Cartões', icon: 'cards', group: 'gestao' },
   { to: '/notas-fiscais', label: 'Notas Fiscais', icon: 'fiscal', group: 'gestao' },
@@ -65,7 +70,7 @@ const NAV_ITEMS: NavItem[] = [
 /** Preferência de abas inferiores no mobile (completar com próximas permitidas). */
 const MOBILE_TAB_PREF = ['/', '/estoque', '/caixa', '/financeiro'];
 
-type Me = { name: string; email: string; profile: 'manager' | 'cashier' | 'waiter' };
+type Me = { name: string; email: string; profile: 'manager' | 'cashier' | 'waiter' | 'technician' };
 
 function readCollapsedPref(): boolean {
   try {
@@ -87,9 +92,11 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
   const localProfile = identity ? profileFromRoles(identity.roles) : 'cashier';
   const isManager = localProfile === 'manager';
   const waiterOnly = localProfile === 'waiter' || isWaiter();
+  const technicianOnly = localProfile === 'technician' || isTechnician();
   const hasFinance = identity?.roles.includes('finance') ?? false;
   const userIsAdmin = isAdmin();
   const restaurantOk = hasRestaurantPlan();
+  const serviceOrderOk = hasServiceOrderModule();
   const location = useLocation();
 
   const [collapsed, setCollapsed] = useState(readCollapsedPref);
@@ -111,6 +118,7 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
         legalName: string;
         logoUrl?: string | null;
         restaurantModuleEnabled?: boolean;
+        serviceOrderModuleEnabled?: boolean;
       }>('/company'),
     staleTime: 10 * 60_000,
   });
@@ -121,10 +129,17 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
     if (waiterOnly) {
       return Boolean(it.waiterAllowed);
     }
+    if (technicianOnly) {
+      return Boolean(it.technicianAllowed);
+    }
     if (it.adminOnly && !userIsAdmin) return false;
     if (it.restaurantPlan) {
       if (!restaurantOk) return false;
       if (company.isSuccess && company.data.restaurantModuleEnabled !== true) return false;
+    }
+    if (it.serviceOrderModule) {
+      if (!serviceOrderOk) return false;
+      if (company.isSuccess && company.data.serviceOrderModuleEnabled !== true) return false;
     }
     // Caixa: visibilidade controlada pela matriz de menus (padrão oculta Balanço/Empresa/Impressão/Usuários).
     if (!isManager) {
@@ -158,6 +173,9 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
     if (waiterOnly) {
       return items.filter((i) => i.to === '/salao').slice(0, 4);
     }
+    if (technicianOnly) {
+      return items.filter((i) => i.to.startsWith('/ordens-servico')).slice(0, 4);
+    }
     const byTo = new Map(items.map((i) => [i.to, i]));
     const preferred: NavItem[] = [];
     for (const to of MOBILE_TAB_PREF) {
@@ -171,7 +189,7 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
       }
     }
     return preferred.slice(0, 4);
-  }, [items, waiterOnly]);
+  }, [items, waiterOnly, technicianOnly]);
 
   const profile = me.data?.profile ?? localProfile;
 
@@ -214,6 +232,10 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
     return <Navigate to="/salao" replace />;
   }
 
+  if (technicianOnly && !location.pathname.startsWith('/ordens-servico')) {
+    return <Navigate to="/ordens-servico" replace />;
+  }
+
   function toggleCollapsed() {
     setCollapsed((v) => !v);
   }
@@ -232,7 +254,7 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
     (collapsed ? ' sidebar--collapsed' : '') +
     (mobileNavOpen ? ' sidebar--mobile-open' : '');
 
-  const showNovaVenda = !waiterOnly;
+  const showNovaVenda = !waiterOnly && !technicianOnly;
 
   const profileMenu = (
     <div className="topbar-profile" ref={profileRef}>

@@ -11,6 +11,8 @@ export type JwtPayload = {
   roles: string[];
   /** Plano contratado no banco central (STANDARD | WHATSAPP | RESTAURANT). */
   planCode?: string;
+  /** Módulos adicionais contratados no portal (ex.: SERVICE_ORDER). */
+  enabledModules?: string[];
 };
 
 @Injectable()

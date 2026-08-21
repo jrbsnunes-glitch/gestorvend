@@ -14,6 +14,7 @@ export type ProductSearchRow = {
   costAverage: string;
   stockTotal: string;
   taxUnit?: string | null;
+  isService?: boolean;
 };
 
 type Props = {

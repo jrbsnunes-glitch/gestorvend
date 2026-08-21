@@ -4,7 +4,7 @@ import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination } from '../components/ListPagination';
 import { api } from '../lib/api';
 import { useListPagination } from '../hooks/useListPagination';
-import { getIdentity, isManager, profileLabel, type UserProfile } from '../lib/auth';
+import { getIdentity, hasRestaurantPlan, hasServiceOrderModule, isManager, profileLabel, type UserProfile } from '../lib/auth';
 import {
   type UserPermissionRow,
   type UserPermissionsResponse,
@@ -80,6 +80,25 @@ export function UsersPage() {
     queryFn: () => api<SystemUser[]>('/users'),
     enabled: canManage,
   });
+
+  const companyQ = useQuery({
+    queryKey: ['company'],
+    queryFn: () =>
+      api<{
+        restaurantModuleEnabled?: boolean;
+        serviceOrderModuleEnabled?: boolean;
+      }>('/company'),
+    staleTime: 60_000,
+  });
+
+  const showWaiterProfile =
+    (hasRestaurantPlan() && companyQ.data?.restaurantModuleEnabled === true) ||
+    form.profile === 'waiter' ||
+    editing?.profile === 'waiter';
+  const showTechnicianProfile =
+    (hasServiceOrderModule() && companyQ.data?.serviceOrderModuleEnabled === true) ||
+    form.profile === 'technician' ||
+    editing?.profile === 'technician';
 
   const filtered = useMemo(() => {
     const data = list.data ?? [];
@@ -425,13 +444,17 @@ export function UsersPage() {
                               ? 'rgba(22,163,74,0.12)'
                               : u.profile === 'waiter'
                                 ? 'rgba(180,83,9,0.12)'
-                                : 'rgba(37,99,235,0.12)',
+                                : u.profile === 'technician'
+                                  ? 'rgba(124,58,237,0.12)'
+                                  : 'rgba(37,99,235,0.12)',
                           color:
                             u.profile === 'manager'
                               ? '#15803d'
                               : u.profile === 'waiter'
                                 ? '#b45309'
-                                : '#1d4ed8',
+                                : u.profile === 'technician'
+                                  ? '#6d28d9'
+                                  : '#1d4ed8',
                           fontSize: '0.78rem',
                           fontWeight: 700,
                         }}
@@ -543,7 +566,7 @@ export function UsersPage() {
           >
             <h2>{editing ? `Editar “${editing.name}”` : 'Novo usuário'}</h2>
 
-            {editing && isMgr && (
+            {editing && isMgr && editing.profile !== 'waiter' && editing.profile !== 'technician' && (
               <div className="user-modal-tabs" role="tablist" aria-label="Seções do cadastro">
                 <button
                   type="button"
@@ -631,12 +654,22 @@ export function UsersPage() {
                   subtitle="Opera o PDV e o caixa. Ações sensíveis exigem permissão e senha do administrador."
                   onClick={() => setForm((f) => ({ ...f, profile: 'cashier' }))}
                 />
-                <ProfileChoice
-                  active={form.profile === 'waiter'}
-                  title="Garçom"
-                  subtitle="Acesso apenas ao Salão / Comandas (lançar itens e imprimir cozinha). Não opera PDV nem caixa."
-                  onClick={() => setForm((f) => ({ ...f, profile: 'waiter' }))}
-                />
+                {showWaiterProfile && (
+                  <ProfileChoice
+                    active={form.profile === 'waiter'}
+                    title="Garçom"
+                    subtitle="Acesso apenas ao Salão / Comandas (lançar itens e imprimir cozinha). Não opera PDV nem caixa."
+                    onClick={() => setForm((f) => ({ ...f, profile: 'waiter' }))}
+                  />
+                )}
+                {showTechnicianProfile && (
+                  <ProfileChoice
+                    active={form.profile === 'technician'}
+                    title="Técnico"
+                    subtitle="Acesso às Ordens de Serviço (atendimento e execução). Não opera PDV nem caixa."
+                    onClick={() => setForm((f) => ({ ...f, profile: 'technician' }))}
+                  />
+                )}
               </div>
             </div>
 

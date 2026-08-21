@@ -25,6 +25,7 @@ const PATH_TO_MENU: Array<{ prefix: string; key: string }> = [
   { prefix: '/fornecedores', key: 'suppliers' },
   { prefix: '/estoque', key: 'stock' },
   { prefix: '/requisicoes', key: 'requisitions' },
+  { prefix: '/ordens-servico', key: 'serviceOrders' },
   { prefix: '/caixa', key: 'cash' },
   { prefix: '/cartoes', key: 'cards' },
   { prefix: '/notas-fiscais', key: 'fiscal' },

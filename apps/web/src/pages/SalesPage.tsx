@@ -108,8 +108,10 @@ type ProductSearchRow = {
   productName: string;
   description: string | null;
   productControlNumber?: number;
-  /** Unidade tributável (UN, KG, G, L…). */
+  /** Unidade tributável (UN, KG, G, L, SERV…). */
   taxUnit?: string | null;
+  /** Serviço (unidade SERV): não exige estoque. */
+  isService?: boolean;
   variantId: string;
   sku: string;
   barcode: string | null;
@@ -182,6 +184,8 @@ type CartLine = {
   minStock: number;
   /** Unidade tributável — controla qty fracionada no PDV. */
   taxUnit: string;
+  /** Serviço: sem alerta/baixa de estoque. */
+  isService?: boolean;
   /** Item veio da comanda: estoque já baixado no salão — não alertar no PDV. */
   fromComanda?: boolean;
 };
@@ -1013,6 +1017,14 @@ function PosScreen({
   } | null>(null);
   const serviceTabRef = useRef(serviceTab);
   serviceTabRef.current = serviceTab;
+  const [serviceOrder, setServiceOrder] = useState<{
+    id: string;
+    number: number;
+    balanceDue: number;
+  } | null>(null);
+  const serviceOrderRef = useRef(serviceOrder);
+  serviceOrderRef.current = serviceOrder;
+  const [osLookup, setOsLookup] = useState('');
   const serviceTabLoadedRef = useRef<string | null>(null);
   const [tabLookup, setTabLookup] = useState('');
   const [tabLookupBusy, setTabLookupBusy] = useState(false);
@@ -1604,12 +1616,22 @@ function PosScreen({
           waiterTipAmount: restaurantFees?.waiterTip ?? 0,
           guestCount: serviceTabRef.current?.guestCount,
           permissionPassword: permissionPassword || undefined,
-          source: serviceTabRef.current ? 'RESTAURANT' : undefined,
+          source: serviceTabRef.current
+            ? 'RESTAURANT'
+            : serviceOrderRef.current
+              ? 'SERVICE_ORDER'
+              : undefined,
           deductStock: serviceTabRef.current ? false : undefined,
-          externalRef: serviceTabRef.current ? `tab:${serviceTabRef.current.number}` : undefined,
+          externalRef: serviceTabRef.current
+            ? `tab:${serviceTabRef.current.number}`
+            : serviceOrderRef.current
+              ? `OS:${serviceOrderRef.current.number}`
+              : undefined,
           notes: serviceTabRef.current
             ? `Comanda ${serviceTabRef.current.displayName}`
-            : undefined,
+            : serviceOrderRef.current
+              ? `OS #${serviceOrderRef.current.number}`
+              : undefined,
           items: lines.map((l) => ({
             variantId: l.variantId,
             quantity: l.quantity,
@@ -1634,6 +1656,7 @@ function PosScreen({
       setPermModal(null);
       setPermModalError(null);
       const tabClosing = serviceTabRef.current;
+      const osClosing = serviceOrderRef.current;
       if (tabClosing) {
         try {
           await api(`/restaurant/tabs/${encodeURIComponent(tabClosing.id)}/close`, {
@@ -1651,6 +1674,22 @@ function PosScreen({
             kind: 'err',
             text:
               `Venda #${sale.number} ok, mas a comanda ${tabClosing.displayName} não fechou: ` +
+              (e instanceof Error ? e.message : 'erro'),
+          });
+        }
+      }
+      if (osClosing) {
+        try {
+          await api(`/service-orders/${encodeURIComponent(osClosing.id)}/link-sale`, {
+            method: 'POST',
+            json: { saleId: sale.id },
+          });
+          void qc.invalidateQueries({ queryKey: ['service-orders'] });
+        } catch (e) {
+          setToast({
+            kind: 'err',
+            text:
+              `Venda #${sale.number} ok, mas a OS #${osClosing.number} não foi vinculada: ` +
               (e instanceof Error ? e.message : 'erro'),
           });
         }
@@ -1866,6 +1905,7 @@ function PosScreen({
           stockTotal: parseDecimal(p.stockTotal),
           minStock: parseDecimal(p.minStock),
           taxUnit,
+          isService: Boolean(p.isService) || normalizeTaxUnit(taxUnit) === 'SERV',
         },
       ];
     });
@@ -1942,6 +1982,8 @@ function PosScreen({
     setScannerValue('');
     setSuggestOpen(false);
     setServiceTab(null);
+    setServiceOrder(null);
+    setOsLookup('');
     setTabCandidates([]);
     setTabLookup('');
     serviceTabLoadedRef.current = null;
@@ -1955,7 +1997,109 @@ function PosScreen({
       next.delete('comanda');
       setSearchParams(next, { replace: true });
     }
+    if (searchParams.get('os')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('os');
+      setSearchParams(next, { replace: true });
+    }
   }
+
+  async function loadServiceOrderByNumber(num: string) {
+    const q = String(num ?? '').trim();
+    if (!q) return;
+    try {
+      const rows = await api<
+        Array<{
+          id: string;
+          number: number;
+          status: string;
+          balanceDue: number;
+          customer: { id: string; name: string };
+          items: Array<{
+            variantId: string | null;
+            quantity: string;
+            unitPrice: string;
+            discount: string;
+            variant?: {
+              id: string;
+              sku: string;
+              barcode: string | null;
+              product: { name: string; isService?: boolean };
+            } | null;
+          }>;
+        }>
+      >(`/service-orders/search?q=${encodeURIComponent(q)}`);
+      const order = rows.find((r) => String(r.number) === q) ?? rows[0];
+      if (!order) {
+        setToast({ kind: 'err', text: `OS #${q} não encontrada.` });
+        return;
+      }
+      if (order.status !== 'READY' && order.status !== 'DELIVERED') {
+        setToast({ kind: 'err', text: `OS #${order.number} não está pronta para faturar.` });
+        return;
+      }
+      const preview = await api<{
+        canBill: boolean;
+        balanceDue: number;
+        order: typeof order;
+      }>(`/service-orders/${order.id}/billing-preview`);
+      if (!preview.canBill) {
+        setToast({
+          kind: 'err',
+          text: 'OS com itens sem produto do catálogo — ajuste na tela de Ordens de Serviço.',
+        });
+        return;
+      }
+      const cart: typeof lines = [];
+      for (const it of order.items) {
+        if (!it.variantId || !it.variant) continue;
+        cart.push({
+          variantId: it.variant.id,
+          productName: it.variant.product.name,
+          sku: it.variant.sku,
+          barcode: it.variant.barcode,
+          unitPrice: Number(it.unitPrice),
+          quantity: Number(it.quantity),
+          discount: Number(it.discount ?? 0),
+          stockTotal: 0,
+          minStock: 0,
+          taxUnit: 'UN',
+        });
+      }
+      if (!cart.length) {
+        setToast({ kind: 'err', text: 'OS sem itens faturáveis.' });
+        return;
+      }
+      setLines(cart);
+      setQtyDraft({});
+      setDiscount(0);
+      setSurcharge(0);
+      setPayments([]);
+      setServiceTab(null);
+      setCustomer({ id: order.customer.id, name: order.customer.name });
+      setServiceOrder({
+        id: order.id,
+        number: order.number,
+        balanceDue: preview.balanceDue,
+      });
+      setToast({
+        kind: 'ok',
+        text: `OS #${order.number} carregada — saldo ${formatBRL(preview.balanceDue)}. Use F2 para pagar.`,
+      });
+    } catch (e) {
+      setToast({
+        kind: 'err',
+        text: e instanceof Error ? e.message : 'Falha ao carregar OS',
+      });
+    }
+  }
+
+  useEffect(() => {
+    const osNum = searchParams.get('os')?.trim();
+    if (!osNum) return;
+    void loadServiceOrderByNumber(osNum);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   function closeCustomerDialog() {
     setCustomerOpen(false);
@@ -2273,9 +2417,17 @@ function PosScreen({
                     <div className="pos-suggest-empty">Nenhum produto para “{scannerValue}”.</div>
                   )}
                   {search.data?.slice(0, 30).map((p, i) => {
+                    const isService =
+                      Boolean(p.isService) || normalizeTaxUnit(p.taxUnit) === 'SERV';
                     const stock = parseDecimal(p.stockTotal);
                     const min = parseDecimal(p.minStock);
-                    const pillClass = stock <= 0 ? 'out' : stock < min ? 'low' : 'ok';
+                    const pillClass = isService
+                      ? 'ok'
+                      : stock <= 0
+                        ? 'out'
+                        : stock < min
+                          ? 'low'
+                          : 'ok';
                     return (
                       <div
                         key={p.variantId}
@@ -2296,6 +2448,7 @@ function PosScreen({
                             {isFractionalTaxUnit(p.taxUnit)
                               ? ` · ${qtyUnitLabel(p.taxUnit)}`
                               : ''}
+                            {isService ? ' · Serviço' : ''}
                           </div>
                         </div>
                         <div>
@@ -2306,9 +2459,11 @@ function PosScreen({
                               : ''}
                           </div>
                           <div className={`pos-suggest-stock pos-stock-pill ${pillClass}`}>
-                            {stock <= 0
-                              ? 'Sem estoque'
-                              : `Em estoque: ${formatCartQty(stock, p.taxUnit)}`}
+                            {isService
+                              ? 'Serviço'
+                              : stock <= 0
+                                ? 'Sem estoque'
+                                : `Em estoque: ${formatCartQty(stock, p.taxUnit)}`}
                           </div>
                         </div>
                       </div>
@@ -2316,6 +2471,55 @@ function PosScreen({
                   })}
                 </div>
               )}
+            </div>
+
+            {serviceOrder && (
+              <div className="pos-card" style={{ marginBottom: '0.65rem', borderColor: 'var(--color-primary)' }}>
+                <div className="pos-card-body" style={{ padding: '0.55rem 0.75rem' }}>
+                  <strong>OS #{serviceOrder.number}</strong>
+                  <span className="muted"> · saldo {formatBRL(serviceOrder.balanceDue)}</span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ marginLeft: '0.5rem' }}
+                    onClick={() => {
+                      setServiceOrder(null);
+                      setLines([]);
+                    }}
+                  >
+                    Limpar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="pos-card" style={{ marginBottom: '0.65rem' }}>
+              <div className="pos-card-header">
+                <h3 className="pos-card-title">Ordem de Serviço</h3>
+              </div>
+              <div className="pos-card-body" style={{ paddingTop: '0.55rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <input
+                    value={osLookup}
+                    onChange={(e) => setOsLookup(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void loadServiceOrderByNumber(osLookup);
+                      }
+                    }}
+                    placeholder="Nº da OS"
+                    style={{ width: '8rem' }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => void loadServiceOrderByNumber(osLookup)}
+                  >
+                    Carregar OS
+                  </button>
+                </div>
+              </div>
             </div>
 
             {restaurantPdv && (
@@ -2424,9 +2628,10 @@ function PosScreen({
                       </thead>
                       <tbody>
                         {lines.map((l) => {
-                          const status = l.fromComanda
-                            ? 'ok'
-                            : classifyStock(l.stockTotal, l.quantity, l.minStock);
+                          const status =
+                            l.fromComanda || l.isService
+                              ? 'ok'
+                              : classifyStock(l.stockTotal, l.quantity, l.minStock);
                           const rowClass =
                             status === 'out' ? 'is-out' : status === 'low' ? 'is-low' : '';
                           const step = qtyStepForUnit(l.taxUnit);
@@ -2527,11 +2732,13 @@ function PosScreen({
                                 <span className={`pos-stock-pill ${status}`}>
                                   {l.fromComanda
                                     ? 'Comanda'
-                                    : status === 'out'
-                                      ? 'Sem estoque'
-                                      : status === 'low'
-                                        ? `Baixo (${formatCartQty(l.stockTotal, l.taxUnit)} ${unitLbl})`
-                                        : `OK (${formatCartQty(l.stockTotal, l.taxUnit)} ${unitLbl})`}
+                                    : l.isService
+                                      ? 'Serviço'
+                                      : status === 'out'
+                                        ? 'Sem estoque'
+                                        : status === 'low'
+                                          ? `Baixo (${formatCartQty(l.stockTotal, l.taxUnit)} ${unitLbl})`
+                                          : `OK (${formatCartQty(l.stockTotal, l.taxUnit)} ${unitLbl})`}
                                 </span>
                               </td>
                               <td>

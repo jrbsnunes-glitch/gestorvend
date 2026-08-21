@@ -1723,6 +1723,267 @@
   }
 }
 
+/** Nova OS: cabe na viewport com scroll interno */
+.modal.modal--wide.service-order-form-modal {
+  max-width: min(640px, calc(100vw - 1rem));
+  max-height: min(90vh, 820px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding: 1rem 1.2rem 1.1rem;
+  box-sizing: border-box;
+}
+
+.modal.modal--wide.service-order-form-modal > h2 {
+  margin-top: 0;
+  margin-bottom: 0.55rem;
+  font-size: 1.15rem;
+}
+
+.modal.modal--wide.service-order-form-modal .field {
+  margin-bottom: 0.5rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.modal.modal--wide.service-order-form-modal .form-row {
+  gap: 0.65rem;
+  margin-bottom: 0;
+}
+
+.modal.modal--wide.service-order-form-modal textarea {
+  min-height: 52px;
+  max-height: 88px;
+  resize: vertical;
+}
+
+.modal.modal--wide.service-order-form-modal .modal-actions {
+  margin-top: 0.65rem;
+  position: sticky;
+  bottom: 0;
+  background: var(--color-surface);
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--color-border);
+  z-index: 1;
+}
+
+.service-order-equip-list {
+  margin-top: 0.45rem;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.service-order-equip-search {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 0.35rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.service-order-equip-hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.service-order-equip-panel {
+  margin-top: 0.45rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted, #f8fafc);
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.service-order-equip-panel .form-row {
+  margin-bottom: 0.35rem;
+}
+
+.service-order-equip-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.service-order-equip-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.os-kanban {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.65rem;
+  align-items: stretch;
+}
+
+.os-kanban__col {
+  margin-top: 0;
+  padding: 0.55rem;
+  min-height: 12rem;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.os-kanban > .card + .card {
+  margin-top: 0;
+}
+
+.os-kanban__col.is-drop-target {
+  border-color: var(--color-primary, #2563eb);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary, #2563eb) 35%, transparent);
+}
+
+.os-kanban__col-title {
+  font-size: 0.78rem;
+  display: block;
+}
+
+.os-kanban__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+  min-height: 4rem;
+}
+
+.os-kanban__card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  cursor: grab;
+}
+
+.os-kanban__card.is-dragging {
+  opacity: 0.55;
+}
+
+.os-kanban__card-open {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 0.45rem;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.os-kanban__card-num {
+  font-weight: 700;
+}
+
+.os-kanban__card-name {
+  font-size: 0.78rem;
+}
+
+.os-kanban__card-meta {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.suggest-list {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  position: absolute;
+  z-index: 30;
+  left: 0;
+  right: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  max-height: 12rem;
+  overflow: auto;
+  box-shadow: var(--shadow-md);
+}
+
+.suggest-list li {
+  margin: 0;
+  padding: 0;
+}
+
+.suggest-list button {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 0.55rem 0.75rem;
+  cursor: pointer;
+  font: inherit;
+  color: var(--color-text);
+}
+
+.suggest-list button:hover,
+.suggest-list button:focus {
+  background: var(--color-surface-muted, #f1f5f9);
+  outline: none;
+}
+
+.suggest-list__meta {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+
+/** Lista de equipamentos na OS: fica dentro do modal (não herda absolute do suggest-list). */
+.suggest-list.service-order-equip-suggest {
+  position: relative;
+  left: auto;
+  right: auto;
+  z-index: 1;
+  width: 100%;
+  max-width: 100%;
+  max-height: 9rem;
+  margin: 0;
+  box-sizing: border-box;
+  box-shadow: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.suggest-list.service-order-equip-suggest li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.suggest-list.service-order-equip-suggest li:last-child {
+  border-bottom: 0;
+}
+
+.suggest-list.service-order-equip-suggest li > button[role='option'] {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggest-list.service-order-equip-suggest li > button[role='option'].is-selected {
+  background: var(--color-surface-muted, #eef2ff);
+  font-weight: 600;
+}
+
+.suggest-list.service-order-equip-suggest li > .btn {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0 0.35rem 0 0;
+}
+
 .modal.modal--wide.customer-form-modal .modal-actions {
   margin-top: 0.75rem;
   position: sticky;
