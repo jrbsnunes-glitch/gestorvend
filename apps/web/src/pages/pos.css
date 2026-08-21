@@ -512,8 +512,30 @@
   transition: background 0.12s;
 }
 
-.pos-gateway-manager-action:hover {
+.pos-gateway-manager-action.is-primary {
+  background: rgba(37, 99, 235, 0.9);
+  border-color: rgba(147, 197, 253, 0.55);
+  color: #fff;
+}
+
+.pos-gateway-manager-action.is-primary:hover:not(:disabled) {
+  background: rgba(29, 78, 216, 1);
+}
+
+.pos-gateway-manager-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pos-gateway-manager-action:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.2);
+}
+
+.pos-gateway-manager-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: stretch;
 }
 
 .pos-gateway-manager-notice {
@@ -548,6 +570,10 @@
     width: 100%;
     padding: 0.6rem;
     font-size: 0.85rem;
+  }
+
+  .pos-gateway-manager-actions {
+    grid-column: 1 / -1;
   }
 }
 

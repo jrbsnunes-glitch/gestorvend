@@ -1,9 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   BillStatus,
   CardBrand,
   CardOperation,
   CardSettlementStatus,
+  CashSessionStatus,
   CreditKind,
   PaymentMethod,
   Prisma,
@@ -115,8 +116,9 @@ export type CreateSaleInput = {
   /** Origem da venda (PDV físico, WhatsApp via GestorVendChat, etc.). */
   source?: SaleSource;
   /**
-   * Caixa alvo do lançamento — usado pela tela Requisições, que exige caixa aberto.
-   * No PDV fica nulo: lá o vínculo com o caixa é por operador + janela de tempo.
+   * Caixa alvo do lançamento. No PDV o front envia a sessão ativa (própria ou,
+   * para gerente/admin, o caixa OPEN de outro operador). Se omitido, usa o
+   * caixa aberto do próprio usuário quando existir.
    */
   cashSessionId?: string | null;
   /**
@@ -292,6 +294,12 @@ export class SalesService {
 
   async create(input: CreateSaleInput) {
     const db = await this.tenantPrisma.getClient(input.tenantSlug);
+    const cashSessionId = await this.resolveCashSessionIdForSale(
+      db,
+      input.userId,
+      input.userRoles,
+      input.cashSessionId,
+    );
 
     const discount = Number(input.discount ?? 0);
     if (discount < 0 || !Number.isFinite(discount)) {
@@ -529,7 +537,7 @@ export class SalesService {
           externalRef: input.externalRef ?? null,
           customerId: input.customerId ?? null,
           userId: input.userId,
-          cashSessionId: input.cashSessionId ?? null,
+          cashSessionId,
           subtotal: String(subtotal.toFixed(2)),
           discount: String(discount.toFixed(2)),
           surcharge: String(surcharge.toFixed(2)),
@@ -922,6 +930,43 @@ export class SalesService {
 
       return updated;
     });
+  }
+
+  /**
+   * Resolve o caixa da venda: sessão explícita (gerente pode usar caixa de
+   * outro operador) ou, se omitida, o caixa OPEN do próprio usuário.
+   */
+  private async resolveCashSessionIdForSale(
+    db: Awaited<ReturnType<TenantPrismaService['getClient']>>,
+    userId: string,
+    userRoles: string[],
+    cashSessionId?: string | null,
+  ): Promise<string | null> {
+    const isManager = userRoles.includes('admin') || userRoles.includes('manager');
+    const requested =
+      typeof cashSessionId === 'string' && cashSessionId.trim() !== ''
+        ? cashSessionId.trim()
+        : null;
+
+    if (requested) {
+      const session = await db.cashRegisterSession.findUnique({ where: { id: requested } });
+      if (!session) throw new NotFoundException('Caixa não encontrado.');
+      if (session.status !== CashSessionStatus.OPEN) {
+        throw new BadRequestException('Caixa já fechado — não é possível lançar venda nele.');
+      }
+      if (session.userId !== userId && !isManager) {
+        throw new ForbiddenException(
+          'Somente gerente pode operar o caixa aberto de outro operador.',
+        );
+      }
+      return session.id;
+    }
+
+    const own = await db.cashRegisterSession.findFirst({
+      where: { userId, status: CashSessionStatus.OPEN },
+      select: { id: true },
+    });
+    return own?.id ?? null;
   }
 
   async findById(tenantSlug: string, saleId: string) {

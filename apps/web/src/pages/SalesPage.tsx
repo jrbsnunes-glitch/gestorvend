@@ -148,6 +148,9 @@ type CashSession = {
   openingBalance: string;
   status: 'OPEN' | 'CLOSED';
   openedAt: string;
+  userId?: string;
+  user?: { id: string; name: string; email?: string } | null;
+  controlNumber?: number;
 };
 
 /** Identidade do operador logado — usada no header do PDV/gateway. */
@@ -336,17 +339,30 @@ export function SalesPage() {
   const [localFailBump, setLocalFailBump] = useState(0);
 
   /**
-   * Sessão de caixa atual do usuário. O backend só retorna sessões
-   * `OPEN` (filtro em `cash.controller.ts`), portanto `data` será o caixa
-   * aberto ou `null`. Defensivamente, o front também valida `status === 'OPEN'`
-   * para nunca tratar uma sessão fechada como ativa.
+   * Gerente/admin: ID do caixa OPEN de outro operador (ou o próprio) escolhido
+   * no gateway. Quando null, usa GET /cash/session (caixa do JWT).
+   */
+  const [operatingSessionId, setOperatingSessionId] = useState<string | null>(null);
+
+  /**
+   * Sessão de caixa atual. Com `operatingSessionId`, carrega o detalhe da
+   * sessão escolhida (gerente no caixa do Caixa); senão, o caixa do operador.
    *
    * `refetchOnMount: 'always'` garante que ao voltar ao gateway (após fechar
    * caixa, por exemplo) os dados sejam sempre buscados frescos do servidor.
    */
   const sessionQ = useQuery({
-    queryKey: ['cash', 'session'],
-    queryFn: () => api<CashSession | null>('/cash/session'),
+    queryKey: ['cash', 'session', operatingSessionId ?? 'own'],
+    queryFn: async () => {
+      if (operatingSessionId) {
+        const detail = await api<CashSession & { status: string }>(
+          `/cash/sessions/${operatingSessionId}`,
+        );
+        if (!detail || detail.status !== 'OPEN') return null;
+        return detail;
+      }
+      return api<CashSession | null>('/cash/session');
+    },
     refetchOnMount: 'always',
   });
 
@@ -418,6 +434,14 @@ export function SalesPage() {
 
   function enterPdv() {
     if (gatewayBlocked) return;
+    setOperatingSessionId(null);
+    setEntered(true);
+    setGatewayNotice(null);
+  }
+
+  function enterPdvOnSession(sessionId: string) {
+    if (gatewayBlocked) return;
+    setOperatingSessionId(sessionId);
     setEntered(true);
     setGatewayNotice(null);
   }
@@ -472,6 +496,7 @@ export function SalesPage() {
         onDismissNotice={() => setGatewayNotice(null)}
         onExit={exitToDashboard}
         onEnter={enterPdv}
+        onEnterSession={enterPdvOnSession}
         onSelectOtherSession={() => navigate('/caixa')}
         onAfterOpen={(newSession) => {
           /*
@@ -481,8 +506,9 @@ export function SalesPage() {
            * recém-aberta — sem o flicker do "Verificando caixa…" que ocorria
            * enquanto o refetch da query terminava.
            */
-          qc.setQueryData(['cash', 'session'], newSession);
-          qc.invalidateQueries({ queryKey: ['cash', 'session', newSession?.id ? newSession.id : ''] });
+          setOperatingSessionId(null);
+          qc.setQueryData(['cash', 'session', 'own'], newSession);
+          qc.invalidateQueries({ queryKey: ['cash', 'session'] });
           setGatewayNotice(null);
           setEntered(true);
         }}
@@ -494,7 +520,11 @@ export function SalesPage() {
     <PosScreen
       session={activeSession}
       operator={operator}
-      onExit={exitToDashboard}
+      onExit={() => {
+        setOperatingSessionId(null);
+        setEntered(false);
+        exitToDashboard();
+      }}
       onCashClosed={() => {
         /*
          * Importante: usamos `setQueryData` para zerar o cache *imediatamente*
@@ -504,7 +534,8 @@ export function SalesPage() {
          * desabilitado e permitindo que o usuário "reentrasse" num caixa
          * que já foi fechado.
          */
-        qc.setQueryData(['cash', 'session'], null);
+        setOperatingSessionId(null);
+        qc.setQueryData(['cash', 'session', 'own'], null);
         qc.invalidateQueries({ queryKey: ['cash', 'session'] });
         setEntered(false);
         setGatewayNotice('Caixa fechado com sucesso. Você pode abrir um novo agora.');
@@ -600,6 +631,7 @@ function PosGateway({
   onDismissNotice,
   onExit,
   onEnter,
+  onEnterSession,
   onSelectOtherSession,
   onAfterOpen,
 }: {
@@ -617,6 +649,7 @@ function PosGateway({
   onDismissNotice: () => void;
   onExit: () => void;
   onEnter: () => void;
+  onEnterSession: (sessionId: string) => void;
   onSelectOtherSession: () => void;
   onAfterOpen: (session: CashSession) => void;
 }) {
@@ -854,8 +887,10 @@ function PosGateway({
               sessions={openSessions}
               currentUserId={currentUserId}
               notice={movementNotice}
+              gatewayBlocked={gatewayBlocked}
               onDismissNotice={() => setMovementNotice(null)}
               onSelect={onSelectOtherSession}
+              onEnterSession={onEnterSession}
               onLaunchMovement={(target) => {
                 setMovementNotice(null);
                 setMovementTarget(target);
@@ -887,23 +922,26 @@ function openSessionLabel(session: OpenSessionSummary): string {
 
 /**
  * Lista compacta dos caixas abertos (inclusive de outros operadores) — apenas
- * visível para perfis gerentes. Além de acompanhar quem está com caixa aberto,
- * o gerente lança sangria/despesa/suprimento direto em qualquer um deles ou
- * navega para o menu Caixa para detalhar / fechar / ver vendas.
+ * visível para perfis gerentes. O gerente entra no PDV em qualquer caixa OPEN
+ * (com todas as opções liberadas), lança movimentos ou navega ao menu Caixa.
  */
 function ManagerOpenSessions({
   sessions,
   currentUserId,
   notice,
+  gatewayBlocked,
   onDismissNotice,
   onSelect,
+  onEnterSession,
   onLaunchMovement,
 }: {
   sessions: OpenSessionSummary[];
   currentUserId: string | null;
   notice: string | null;
+  gatewayBlocked: boolean;
   onDismissNotice: () => void;
   onSelect: () => void;
+  onEnterSession: (sessionId: string) => void;
   onLaunchMovement: (session: OpenSessionSummary) => void;
 }) {
   const others = sessions.filter((s) => s.userId !== currentUserId);
@@ -954,14 +992,31 @@ function ManagerOpenSessions({
                 <span className="pos-gateway-manager-balance">
                   +{formatBRL(s.movementsIn)} / −{formatBRL(s.movementsOut)}
                 </span>
-                <button
-                  type="button"
-                  className="pos-gateway-manager-action"
-                  onClick={() => onLaunchMovement(s)}
-                  title="Sangria, despesa ou suprimento neste caixa"
-                >
-                  Lançar movimento
-                </button>
+                <div className="pos-gateway-manager-actions">
+                  <button
+                    type="button"
+                    className="pos-gateway-manager-action is-primary"
+                    disabled={gatewayBlocked}
+                    onClick={() => onEnterSession(s.id)}
+                    title={
+                      gatewayBlocked
+                        ? 'Regularize pendências antes de operar.'
+                        : mine
+                          ? 'Entrar no seu PDV'
+                          : 'Entrar no PDV neste caixa (gerente — opções liberadas)'
+                    }
+                  >
+                    Entrar no PDV
+                  </button>
+                  <button
+                    type="button"
+                    className="pos-gateway-manager-action"
+                    onClick={() => onLaunchMovement(s)}
+                    title="Sangria, despesa ou suprimento neste caixa"
+                  >
+                    Lançar movimento
+                  </button>
+                </div>
               </li>
             );
           })}
@@ -1616,6 +1671,7 @@ function PosScreen({
           waiterTipAmount: restaurantFees?.waiterTip ?? 0,
           guestCount: serviceTabRef.current?.guestCount,
           permissionPassword: permissionPassword || undefined,
+          cashSessionId: session.id,
           source: serviceTabRef.current
             ? 'RESTAURANT'
             : serviceOrderRef.current
@@ -1846,6 +1902,7 @@ function PosScreen({
           closingBalance: closingTotal,
           closingByMethod: payload,
           closingNotes: closingNotes.trim() || null,
+          sessionId: session.id,
         },
       });
     },
@@ -3598,6 +3655,12 @@ function PosScreen({
 
       <PdvProceduresOverlay
         open={proceduresOpen}
+        sessionId={session.id}
+        sessionLabel={
+          session.user?.name
+            ? `${session.controlNumber ? `#${session.controlNumber} · ` : ''}${session.user.name}`
+            : null
+        }
         onClose={() => setProceduresOpen(false)}
         onSuccess={(msg) => setToast({ kind: 'ok', text: msg })}
       />
@@ -3939,7 +4002,16 @@ function PosTopbar({
           </span>
         )}
         <span className="pos-topbar-cash">
-          ● Caixa aberto · fundo {formatBRL(session.openingBalance)}
+          ● Caixa
+          {session.controlNumber != null ? ` #${session.controlNumber}` : ''}
+          {session.user?.name && operator && session.userId && session.userId !== operator.id
+            ? ` de ${session.user.name}`
+            : ''}
+          {' '}
+          aberto · fundo {formatBRL(session.openingBalance)}
+          {session.user?.name && operator && session.userId && session.userId !== operator.id
+            ? ' · gerente (opções liberadas)'
+            : ''}
         </span>
         <span>
           {now.toLocaleDateString('pt-BR')}{' '}

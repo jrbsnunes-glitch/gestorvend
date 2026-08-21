@@ -407,16 +407,19 @@ export class CashController {
 
     const now = new Date();
     const saleWindowUserIds = [...new Set(sessions.map((s) => s.userId))];
+    const sessionIds = sessions.map((s) => s.id);
 
     /** Uma única consulta para vendas de todos os caixas listados (janelas filtradas em memória). */
     let batchSales: Array<{
+      id: string;
       userId: string | null;
+      cashSessionId: string | null;
       createdAt: Date;
       status: SaleStatus;
       total: unknown;
       payments: Array<{ method: string; amount: unknown }>;
     }> = [];
-    if (sessions.length && saleWindowUserIds.length > 0) {
+    if (sessions.length && (saleWindowUserIds.length > 0 || sessionIds.length > 0)) {
       let minOpened = sessions[0].openedAt;
       let maxEnd = now;
       for (const s of sessions) {
@@ -426,11 +429,19 @@ export class CashController {
       }
       batchSales = await db.sale.findMany({
         where: {
-          userId: { in: saleWindowUserIds },
-          createdAt: { gte: minOpened, lte: maxEnd },
+          OR: [
+            { cashSessionId: { in: sessionIds } },
+            {
+              cashSessionId: null,
+              userId: { in: saleWindowUserIds },
+              createdAt: { gte: minOpened, lte: maxEnd },
+            },
+          ],
         },
         select: {
+          id: true,
           userId: true,
+          cashSessionId: true,
           createdAt: true,
           status: true,
           total: true,
@@ -439,8 +450,15 @@ export class CashController {
       });
     }
 
+    const salesBySessionId = new Map<string, typeof batchSales>();
     const salesByUserId = new Map<string, typeof batchSales>();
     for (const sale of batchSales) {
+      if (sale.cashSessionId) {
+        const bucket = salesBySessionId.get(sale.cashSessionId);
+        if (bucket) bucket.push(sale);
+        else salesBySessionId.set(sale.cashSessionId, [sale]);
+        continue;
+      }
       const uid = sale.userId;
       if (!uid) continue;
       const bucket = salesByUserId.get(uid);
@@ -458,11 +476,11 @@ export class CashController {
         else movOut += v;
       }
       const upper = s.closedAt ?? now;
-      const forUser = salesByUserId.get(s.userId) ?? [];
-      const sessionSales = forUser.filter(
-        (sale) =>
-          sale.createdAt >= s.openedAt && sale.createdAt <= upper,
+      const linked = salesBySessionId.get(s.id) ?? [];
+      const legacy = (salesByUserId.get(s.userId) ?? []).filter(
+        (sale) => sale.createdAt >= s.openedAt && sale.createdAt <= upper,
       );
+      const sessionSales = [...linked, ...legacy];
       const { totalCompletedSales, reconciliationDifference } =
         computeSessionListAggregates({
           sales: sessionSales,
@@ -585,8 +603,17 @@ export class CashController {
 
         const sales = await db.sale.findMany({
           where: {
-            userId: s.userId,
-            createdAt: { gte: winStart, lte: winEnd },
+            OR: [
+              {
+                cashSessionId: s.id,
+                createdAt: { gte: winStart, lte: winEnd },
+              },
+              {
+                cashSessionId: null,
+                userId: s.userId,
+                createdAt: { gte: winStart, lte: winEnd },
+              },
+            ],
           },
           include: {
             payments: true,
@@ -936,16 +963,23 @@ export class CashController {
           byUser: [],
         };
       }
-      saleWhere.OR = sessions.map((s) => {
+      saleWhere.OR = sessions.flatMap((s) => {
         const upper = s.closedAt ?? new Date();
         const winStart =
           fromRaw && toRaw ? (s.openedAt > from ? s.openedAt : from) : s.openedAt;
         const winEnd =
           fromRaw && toRaw ? (upper < to ? upper : to) : upper;
-        return {
-          userId: s.userId,
-          createdAt: { gte: winStart, lte: winEnd },
-        };
+        return [
+          {
+            cashSessionId: s.id,
+            createdAt: { gte: winStart, lte: winEnd },
+          },
+          {
+            cashSessionId: null,
+            userId: s.userId,
+            createdAt: { gte: winStart, lte: winEnd },
+          },
+        ];
       });
     } else {
       saleWhere.createdAt = { gte: from, lte: to };
@@ -1113,10 +1147,9 @@ export class CashController {
    * Detalhe de uma sessão específica — incluindo vendas feitas durante a sua
    * janela de tempo (do mesmo operador) e os itens vendidos.
    *
-   * Como o modelo Sale não tem uma FK direta para CashRegisterSession, a janela
-   * é deduzida por `userId` e `createdAt ∈ [openedAt, closedAt ?? now]`.
-   * Para garantir consistência futura recomenda-se uma migração adicionando
-   * sessionId em Sale — fora do escopo desta tarefa.
+   * Preferência: vendas com `cashSessionId` apontando para esta sessão.
+   * Compatibilidade: vendas legadas sem FK, pelo `userId` do operador e
+   * `createdAt ∈ [openedAt, closedAt ?? now]`.
    */
   @Get('sessions/:id')
   @Roles('admin', 'manager', 'seller')
@@ -1148,8 +1181,14 @@ export class CashController {
     const upper = session.closedAt ?? new Date();
     const sales = await db.sale.findMany({
       where: {
-        userId: session.userId,
-        createdAt: { gte: session.openedAt, lte: upper },
+        OR: [
+          { cashSessionId: session.id },
+          {
+            cashSessionId: null,
+            userId: session.userId,
+            createdAt: { gte: session.openedAt, lte: upper },
+          },
+        ],
       },
       include: {
         customer: { select: { id: true, name: true } },
@@ -1485,12 +1524,22 @@ export class CashController {
        */
       closingByMethod?: Record<string, number | string>;
       closingNotes?: string | null;
+      /** Gerente/admin: fecha o caixa OPEN de outro operador. */
+      sessionId?: string | null;
     },
   ) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
-    const open = await db.cashRegisterSession.findFirst({
-      where: { userId: user.sub, status: CashSessionStatus.OPEN },
-    });
+    const isManager = user.roles.includes('admin') || user.roles.includes('manager');
+    const targetSessionId =
+      typeof body.sessionId === 'string' && body.sessionId.trim() !== ''
+        ? body.sessionId.trim()
+        : null;
+
+    const open = targetSessionId
+      ? await this.resolveMovementTargetSession(db, targetSessionId, user.sub, isManager)
+      : await db.cashRegisterSession.findFirst({
+          where: { userId: user.sub, status: CashSessionStatus.OPEN },
+        });
     if (!open) throw new BadRequestException('Nenhum caixa aberto');
 
     const closingOptions = await loadCashReconClosingOptions(db);
@@ -1518,11 +1567,19 @@ export class CashController {
     const presentedLine =
       describePaymentMethodAmounts(normalized as Record<string, unknown> | null) ??
       `total R$ ${closingBalance.toFixed(2)}`;
+    const ownCash = open.userId === user.sub;
+    const operatorName =
+      'user' in open && open.user && typeof open.user === 'object' && 'name' in open.user
+        ? String((open.user as { name?: string }).name ?? 'operador')
+        : 'operador';
     this.activityLog.record({
       tenantSlug: user.tenantSlug,
       userId: user.sub,
       action: ActivityLogAction.CASH_CLOSE,
-      summary: `Fechou caixa controle ${control} — apresentados: ${presentedLine}`,
+      summary:
+        `Fechou caixa controle ${control}` +
+        (ownCash ? '' : ` do operador ${operatorName}`) +
+        ` — apresentados: ${presentedLine}`,
       entityType: 'cash_session',
       entityRef: `controle ${control}`,
     });

@@ -47,6 +47,8 @@ export class SalesController {
       /** PDV | WHATSAPP | NFE_FORM | RESTAURANT */
       source?: 'PDV' | 'WHATSAPP' | 'NFE_FORM' | 'RESTAURANT';
       externalRef?: string | null;
+      /** Sessão de caixa alvo (gerente pode usar caixa OPEN de outro operador). */
+      cashSessionId?: string | null;
       items: Array<{
         variantId: string;
         quantity: number;
@@ -82,6 +84,7 @@ export class SalesController {
       deliveryDriverName: body.deliveryDriverName,
       deductStock: body.deductStock,
       externalRef: body.externalRef ?? null,
+      cashSessionId: body.cashSessionId ?? null,
       source:
         body.source === 'NFE_FORM' ||
         body.source === 'WHATSAPP' ||
