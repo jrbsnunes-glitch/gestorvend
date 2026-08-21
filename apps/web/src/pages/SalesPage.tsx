@@ -355,11 +355,14 @@ export function SalesPage() {
     queryKey: ['cash', 'session', operatingSessionId ?? 'own'],
     queryFn: async () => {
       if (operatingSessionId) {
-        const detail = await api<CashSession & { status: string }>(
-          `/cash/sessions/${operatingSessionId}`,
-        );
-        if (!detail || detail.status !== 'OPEN') return null;
-        return detail;
+        // Detalhe da sessão vem envelopado: { session, sales, summary }.
+        const raw = await api<{
+          session?: CashSession & { status?: string };
+          status?: string;
+        } & Partial<CashSession>>(`/cash/sessions/${operatingSessionId}`);
+        const session = (raw?.session ?? raw) as (CashSession & { status?: string }) | null;
+        if (!session?.id || session.status !== 'OPEN') return null;
+        return session;
       }
       return api<CashSession | null>('/cash/session');
     },
@@ -439,8 +442,10 @@ export function SalesPage() {
     setGatewayNotice(null);
   }
 
+  /** Gerente: entra no PDV de um caixa OPEN (próprio ou de outro operador). */
   function enterPdvOnSession(sessionId: string) {
-    if (gatewayBlocked) return;
+    // Bloqueio fiscal do próprio operador não impede o gerente de operar
+    // o caixa aberto de outro (ex.: Caixa/LOJA).
     setOperatingSessionId(sessionId);
     setEntered(true);
     setGatewayNotice(null);
@@ -451,6 +456,27 @@ export function SalesPage() {
     sessionQ.data && sessionQ.data.status === 'OPEN' ? sessionQ.data : null;
 
   const operator = operatorQ.data ?? null;
+
+  // Se o gerente pediu entrar num caixa e a carga falhou, volta ao gateway com aviso.
+  useEffect(() => {
+    if (!entered || !operatingSessionId) return;
+    if (sessionQ.isLoading || sessionQ.isFetching) return;
+    if (activeSession) return;
+    const msg =
+      sessionQ.error instanceof Error
+        ? sessionQ.error.message
+        : 'Não foi possível abrir este caixa no PDV. Tente novamente.';
+    setGatewayNotice(msg);
+    setEntered(false);
+    setOperatingSessionId(null);
+  }, [
+    entered,
+    operatingSessionId,
+    sessionQ.isLoading,
+    sessionQ.isFetching,
+    sessionQ.error,
+    activeSession,
+  ]);
 
   const pendingComandaId =
     searchParams.get('comanda')?.trim() || peekPendingPdvComandaId();
@@ -1005,14 +1031,13 @@ function ManagerOpenSessions({
                     type="button"
                     className={
                       'pos-gateway-manager-action' +
-                      (mine ? '' : ' is-enter') +
-                      (mine ? '' : ' is-primary')
+                      (mine ? '' : ' is-enter is-primary')
                     }
-                    disabled={gatewayBlocked}
+                    disabled={mine && gatewayBlocked}
                     onClick={() => onEnterSession(s.id)}
                     title={
-                      gatewayBlocked
-                        ? 'Regularize pendências antes de operar.'
+                      mine && gatewayBlocked
+                        ? 'Regularize pendências antes de operar o seu caixa.'
                         : mine
                           ? 'Entrar no seu PDV'
                           : `Entrar no PDV no caixa de ${s.user?.name ?? 'operador'} (gerente)`
