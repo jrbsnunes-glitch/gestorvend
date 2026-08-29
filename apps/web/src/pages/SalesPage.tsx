@@ -1117,8 +1117,6 @@ function PosScreen({
   const [lines, setLines] = useState<CartLine[]>([]);
   const linesRef = useRef(lines);
   linesRef.current = lines;
-  const customerRef = useRef(customer);
-  customerRef.current = customer;
   /** Rascunho de qty enquanto digita (permite "0," / "1,25"). */
   const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
   const [focusQtyVariantId, setFocusQtyVariantId] = useState<string | null>(null);
@@ -1126,6 +1124,8 @@ function PosScreen({
   const [discount, setDiscount] = useState(0);
   const [surcharge, setSurcharge] = useState(0);
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const customerRef = useRef(customer);
+  customerRef.current = customer;
   const [payments, setPayments] = useState<CartPayment[]>([]);
   /** Comanda do salão sendo cobrada neste PDV (fecha após a venda). */
   const [serviceTab, setServiceTab] = useState<{
@@ -1426,11 +1426,12 @@ function PosScreen({
     if (customerRef.current?.id) {
       try {
         const summary = await fetchCustomerCreditSummary(customerRef.current.id);
-        setCustomer((prev) =>
-          prev?.id === customerRef.current?.id
-            ? mergeCreditIntoCustomer(prev, summary)
-            : prev,
-        );
+        setCustomer((prev) => {
+          if (prev && prev.id === customerRef.current?.id) {
+            return mergeCreditIntoCustomer(prev, summary);
+          }
+          return prev;
+        });
       } catch {
         /* segue com saldo em cache; validação na finalização reconsulta */
       }

@@ -86,7 +86,7 @@ function ProductImageTabPanel({
   onRemove,
 }: {
   createMode: boolean;
-  product: { id: string; hasImage: boolean; imageVersion: number | null } | null;
+  product: { id: string; hasImage?: boolean; imageVersion?: number | null } | null;
   tenantSlug: string;
   imagePreviewKey: number;
   imageFileRef: RefObject<HTMLInputElement | null>;
@@ -106,7 +106,7 @@ function ProductImageTabPanel({
           </p>
         ) : product ? (
           <div className="company-form__logo-row" style={{ alignItems: 'center', gap: '1rem' }}>
-            {product.hasImage && product.imageVersion != null ? (
+            {(product.hasImage ?? false) && product.imageVersion != null ? (
               <img
                 key={`${product.id}-${product.imageVersion}-${imagePreviewKey}`}
                 src={`/api/catalog/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(product.id)}/image?size=thumb&v=${product.imageVersion}`}
@@ -150,7 +150,7 @@ function ProductImageTabPanel({
                   if (file) onUpload(file);
                 }}
               />
-              {product.hasImage ? (
+              {(product.hasImage ?? false) ? (
                 <button
                   type="button"
                   className="btn btn-secondary"
