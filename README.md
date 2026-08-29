@@ -2,6 +2,12 @@
 
 ERP para varejo (Etapa 1: operacional; Etapa 2: fiscal). Multi-tenant com **um banco PostgreSQL por cliente**, catálogo de licenças por **CNPJ** no banco central.
 
+## Repositório Git
+
+- **GitHub:** https://github.com/jrbsnunes-glitch/gestorvend
+- **Branch de produção:** `main` (servidor de atualização faz pull desta branch)
+- **Versão do app:** `apps/web/src/version.ts` (`APP_VERSION`, exibida na sidebar)
+
 ## Pré-requisitos
 
 - Node.js 20+
