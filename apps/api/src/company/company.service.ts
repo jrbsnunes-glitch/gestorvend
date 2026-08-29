@@ -13,6 +13,8 @@ type CompanyInput = {
   email?: string | null;
   phone?: string | null;
   address?: string | null;
+  addressNumber?: string | null;
+  district?: string | null;
   city?: string | null;
   state?: string | null;
   zip?: string | null;
@@ -20,6 +22,7 @@ type CompanyInput = {
   saleReceiptAutoPrint?: boolean;
   saleReceiptPrinterHint?: string | null;
   pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED' | string;
+  autoQueueNfceOnSale?: boolean;
   restaurantModuleEnabled?: boolean;
   comandaNumberingMode?: 'DYNAMIC' | 'FIXED' | string;
   scaleMode?: 'MANUAL' | 'SERIAL_DIRECT' | 'AGENT' | 'BARCODE_LABEL' | string;
@@ -114,6 +117,8 @@ export class CompanyService {
       'email',
       'phone',
       'address',
+      'addressNumber',
+      'district',
       'city',
       'state',
       'zip',
@@ -197,6 +202,10 @@ export class CompanyService {
         );
       }
       data.pdvDocumentMode = m;
+    }
+
+    if (body.autoQueueNfceOnSale !== undefined) {
+      data.autoQueueNfceOnSale = Boolean(body.autoQueueNfceOnSale);
     }
 
     const parseFeeMode = (raw: unknown, label: string): 'PERCENT' | 'FIXED' | undefined => {

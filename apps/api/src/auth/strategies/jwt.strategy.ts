@@ -13,6 +13,10 @@ export type JwtPayload = {
   planCode?: string;
   /** Módulos adicionais contratados no portal (ex.: SERVICE_ORDER). */
   enabledModules?: string[];
+  /** Autenticação de terminal PDV (autoatendimento). */
+  authKind?: 'user' | 'terminal';
+  pdvTerminalId?: string;
+  pdvTerminalNumber?: number;
 };
 
 @Injectable()

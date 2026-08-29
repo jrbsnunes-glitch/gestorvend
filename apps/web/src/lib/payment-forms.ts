@@ -76,7 +76,7 @@ export function kindIcon(kind: PaymentFormKind): string {
   return '➕';
 }
 
-/** Crediário e requisição usam limite do cliente e geram contas a receber. */
+/** Crediário (saldo pré-pago) e requisição (limite − títulos abertos). */
 export function isCustomerCreditKind(kind: string | null | undefined): boolean {
   return kind === 'CREDIT' || kind === 'REQUISITION';
 }

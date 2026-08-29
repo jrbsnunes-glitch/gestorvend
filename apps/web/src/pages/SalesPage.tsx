@@ -53,6 +53,9 @@ import {
   kindIcon,
   type PaymentForm,
 } from '../lib/payment-forms';
+import { PixQrPaymentModal } from '../components/payments/PixQrPaymentModal';
+import { MercadoPagoCardModal } from '../components/payments/MercadoPagoCardModal';
+import type { PaymentIntent, PaymentPspProvider } from '../lib/payments';
 import './pos.css';
 
 const GV_POS_CHECKOUT_FAILURE_KEY = 'gv_pos_checkout_failure_v1';
@@ -141,6 +144,27 @@ type CustomerSearchRow = {
   requisitionAvailable?: string;
 };
 
+type CustomerCreditSummary = {
+  creditLimit: string;
+  requisitionLimit: string;
+  creditAvailable: string;
+  requisitionAvailable: string;
+};
+
+async function fetchCustomerCreditSummary(customerId: string): Promise<CustomerCreditSummary> {
+  return api<CustomerCreditSummary>(`/customers/${customerId}/credit-summary`);
+}
+
+function mergeCreditIntoCustomer(c: Customer, summary: CustomerCreditSummary): Customer {
+  return {
+    ...c,
+    creditLimit: summary.creditLimit,
+    requisitionLimit: summary.requisitionLimit,
+    creditAvailable: summary.creditAvailable,
+    requisitionAvailable: summary.requisitionAvailable,
+  };
+}
+
 type PaymentKind = 'CASH' | 'CARD' | 'PIX' | 'CREDIT' | 'REQUISITION' | 'OTHER';
 
 type CashSession = {
@@ -200,6 +224,8 @@ type CartPayment = {
   installments: number;
   paymentFormId?: string | null;
   paymentFormName?: string | null;
+  paymentIntentId?: string | null;
+  authCode?: string | null;
 };
 
 /* ----------------------------------------------------------------------------
@@ -1091,6 +1117,8 @@ function PosScreen({
   const [lines, setLines] = useState<CartLine[]>([]);
   const linesRef = useRef(lines);
   linesRef.current = lines;
+  const customerRef = useRef(customer);
+  customerRef.current = customer;
   /** Rascunho de qty enquanto digita (permite "0," / "1,25"). */
   const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
   const [focusQtyVariantId, setFocusQtyVariantId] = useState<string | null>(null);
@@ -1151,6 +1179,8 @@ function PosScreen({
    * 4=Crediário, 5=Outro, Enter=Confirmar, Esc=Voltar.
    */
   const [paymentMenuOpen, setPaymentMenuOpen] = useState(false);
+  /** Pagamento crediário/requisição aguardando seleção de cliente. */
+  const [pendingCreditPayment, setPendingCreditPayment] = useState<CartPayment | null>(null);
   /** Overlay F3: sangria / despesa / suprimento no caixa aberto. */
   const [proceduresOpen, setProceduresOpen] = useState(false);
   /** Modal de desconto por item (R$ ou %). */
@@ -1225,34 +1255,16 @@ function PosScreen({
         return;
       }
       let cust = customer;
-      if (
-        cust.creditAvailable == null ||
-        cust.requisitionAvailable == null ||
-        cust.creditLimit == null ||
-        cust.requisitionLimit == null
-      ) {
-        try {
-          const summary = await api<{
-            creditLimit: string;
-            requisitionLimit: string;
-            creditAvailable: string;
-            requisitionAvailable: string;
-          }>(`/customers/${cust.id}/credit-summary`);
-          cust = {
-            ...cust,
-            creditLimit: summary.creditLimit,
-            requisitionLimit: summary.requisitionLimit,
-            creditAvailable: summary.creditAvailable,
-            requisitionAvailable: summary.requisitionAvailable,
-          };
-          setCustomer(cust);
-        } catch (e) {
-          setToast({
-            kind: 'err',
-            text: e instanceof Error ? e.message : 'Não foi possível consultar o limite do cliente.',
-          });
-          return;
-        }
+      try {
+        const summary = await fetchCustomerCreditSummary(cust.id);
+        cust = mergeCreditIntoCustomer(cust, summary);
+        setCustomer(cust);
+      } catch (e) {
+        setToast({
+          kind: 'err',
+          text: e instanceof Error ? e.message : 'Não foi possível consultar o limite do cliente.',
+        });
+        return;
       }
       const byKind = new Map<string, number>();
       for (const p of creditPays) {
@@ -1261,13 +1273,20 @@ function PosScreen({
       for (const [method, amount] of byKind) {
         const available =
           method === 'REQUISITION'
-            ? Number(cust.requisitionAvailable ?? cust.requisitionLimit ?? NaN)
-            : Number(cust.creditAvailable ?? cust.creditLimit ?? NaN);
+            ? Number(cust.requisitionAvailable ?? NaN)
+            : Number(cust.creditAvailable ?? NaN);
         const limit =
           method === 'REQUISITION'
             ? Number(cust.requisitionLimit ?? 0)
             : Number(cust.creditLimit ?? 0);
-        if (Number.isFinite(available) && amount > available + 0.005) {
+        if (!Number.isFinite(available)) {
+          setToast({
+            kind: 'err',
+            text: 'Não foi possível validar o saldo do cliente. Tente selecionar o cliente novamente (F4).',
+          });
+          return;
+        }
+        if (amount > available + 0.005) {
           const label = method === 'REQUISITION' ? 'requisição' : 'crédito';
           setToast({
             kind: 'err',
@@ -1342,7 +1361,7 @@ function PosScreen({
         `/customers/search?q=${encodeURIComponent(customerSearch.trim())}`,
       ),
     enabled: customerOpen && customerSearch.trim().length >= 1,
-    staleTime: 2_000,
+    staleTime: 0,
   });
 
   const search = useQuery({
@@ -1403,6 +1422,19 @@ function PosScreen({
     if (linesRef.current.length === 0) return;
     await refreshCartStock();
     setPayments([]);
+    setPendingCreditPayment(null);
+    if (customerRef.current?.id) {
+      try {
+        const summary = await fetchCustomerCreditSummary(customerRef.current.id);
+        setCustomer((prev) =>
+          prev?.id === customerRef.current?.id
+            ? mergeCreditIntoCustomer(prev, summary)
+            : prev,
+        );
+      } catch {
+        /* segue com saldo em cache; validação na finalização reconsulta */
+      }
+    }
     setPaymentMenuOpen(true);
   }, [refreshCartStock]);
 
@@ -1741,6 +1773,8 @@ function PosScreen({
                   ? p.installments
                   : 1,
             paymentFormId: p.paymentFormId ?? null,
+            paymentIntentId: p.paymentIntentId ?? null,
+            authCode: p.authCode ?? null,
           })),
         },
       }),
@@ -2209,18 +2243,46 @@ function PosScreen({
 
   function selectCustomer(c: Customer | null) {
     setCustomer(c);
+    if (!c) setPendingCreditPayment(null);
     closeCustomerDialog();
   }
 
-  function selectCustomerFromSearch(c: CustomerSearchRow) {
-    selectCustomer({
+  async function selectCustomerFromSearch(c: CustomerSearchRow) {
+    let merged: Customer = {
       id: c.id,
       name: c.name,
       creditLimit: c.creditLimit,
       requisitionLimit: c.requisitionLimit,
       creditAvailable: c.creditAvailable,
       requisitionAvailable: c.requisitionAvailable,
-    });
+    };
+    try {
+      const summary = await fetchCustomerCreditSummary(c.id);
+      merged = mergeCreditIntoCustomer(merged, summary);
+    } catch {
+      /* usa dados da busca se a consulta falhar */
+    }
+    selectCustomer(merged);
+    if (pendingCreditPayment) {
+      setPayments((prev) => [...prev, pendingCreditPayment]);
+      setPendingCreditPayment(null);
+      if (!paymentMenuOpen) setPaymentMenuOpen(true);
+    }
+  }
+
+  function handleAddPayment(p: CartPayment) {
+    if (isCustomerCreditKind(p.method)) {
+      if (!customer?.id) {
+        setPendingCreditPayment(p);
+        setCustomerOpen(true);
+        setToast({
+          kind: 'err',
+          text: 'Selecione o cliente para usar crediário ou requisição.',
+        });
+        return;
+      }
+    }
+    setPayments((prev) => [...prev, p]);
   }
 
   function handleCustomerSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
@@ -2228,7 +2290,7 @@ function PosScreen({
     if (e.key === 'Enter') {
       e.preventDefault();
       const picked = results[customerSearchIdx];
-      if (picked) selectCustomerFromSearch(picked);
+      if (picked) void selectCustomerFromSearch(picked);
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       setCustomerSearchIdx((i) => Math.min(Math.max(results.length - 1, 0), i + 1));
@@ -3023,6 +3085,13 @@ function PosScreen({
                 <span style={{ flex: 1 }}>
                   {customer ? customer.name : 'Balcão (sem cliente)'}
                   <span className="pos-customer-meta" style={{ display: 'block' }}>
+                    {customer?.creditAvailable != null || customer?.requisitionAvailable != null ? (
+                      <>
+                        Crédito {formatBRL(customer?.creditAvailable ?? '0')} · Req.{' '}
+                        {formatBRL(customer?.requisitionAvailable ?? '0')}
+                        <br />
+                      </>
+                    ) : null}
                     Clique para alterar <span className="pos-shortcut-key">F4</span>
                   </span>
                 </span>
@@ -3099,10 +3168,9 @@ function PosScreen({
           >
             <h2>Cliente da venda</h2>
             <p className="pos-customer-modal-hint">
-              Pesquise por nome, CPF/CNPJ ou telefone. Use{' '}
-              <span className="pos-shortcut-key">↑</span>{' '}
-              <span className="pos-shortcut-key">↓</span> e{' '}
-              <span className="pos-shortcut-key">Enter</span>.
+              Pesquise por nome, CPF/CNPJ ou telefone. Crediário e requisição exigem cliente
+              identificado (F4 no início ou ao escolher a forma de pagamento). Saldos exibidos são
+              consultados na hora.
             </p>
 
             <button
@@ -3159,6 +3227,12 @@ function PosScreen({
                       {(c.document || c.phone) && (
                         <span className="pos-customer-item-meta">
                           {[c.document, c.phone].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
+                      {(c.creditAvailable != null || c.requisitionAvailable != null) && (
+                        <span className="pos-customer-item-meta" style={{ display: 'block' }}>
+                          Crédito {formatBRL(c.creditAvailable ?? '0')} · Req.{' '}
+                          {formatBRL(c.requisitionAvailable ?? '0')}
                         </span>
                       )}
                     </div>
@@ -3678,13 +3752,24 @@ function PosScreen({
           feeBreakdown={restaurantFees}
           guestCount={serviceTab?.guestCount}
           itemsCount={lines.length}
+          customerId={customer?.id ?? null}
           customerName={customer?.name ?? null}
+          customerEmail={null}
+          creditAvailable={customer?.creditAvailable ?? null}
+          requisitionAvailable={customer?.requisitionAvailable ?? null}
           payments={payments}
           remaining={remaining}
           change={change}
           isFinishing={createSale.isPending}
-          onAddPayment={(p) => setPayments((prev) => [...prev, p])}
+          onAddPayment={handleAddPayment}
           onRemovePayment={(id) => setPayments((prev) => prev.filter((x) => x.id !== id))}
+          onRequireCustomer={() => {
+            setCustomerOpen(true);
+            setToast({
+              kind: 'err',
+              text: 'Selecione o cliente para crediário ou requisição.',
+            });
+          }}
           onCancel={() => setPaymentMenuOpen(false)}
           onConfirm={() => requestFinalizeSale()}
         />
@@ -4119,13 +4204,18 @@ function PaymentOverlay({
   feeBreakdown,
   guestCount,
   itemsCount,
+  customerId,
   customerName,
+  customerEmail,
+  creditAvailable,
+  requisitionAvailable,
   payments,
   remaining,
   change,
   isFinishing,
   onAddPayment,
   onRemovePayment,
+  onRequireCustomer,
   onCancel,
   onConfirm,
 }: {
@@ -4138,13 +4228,18 @@ function PaymentOverlay({
   feeBreakdown?: { serviceFee: number; couvert: number; waiterTip: number; feesTotal: number } | null;
   guestCount?: number;
   itemsCount: number;
+  customerId: string | null;
   customerName: string | null;
+  customerEmail?: string | null;
+  creditAvailable: string | null;
+  requisitionAvailable: string | null;
   payments: CartPayment[];
   remaining: number;
   change: number;
   isFinishing: boolean;
   onAddPayment: (p: CartPayment) => void;
   onRemovePayment: (id: string) => void;
+  onRequireCustomer: () => void;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -4152,6 +4247,28 @@ function PaymentOverlay({
     queryKey: ['payment-forms', 'active'],
     queryFn: () => api<PaymentForm[]>('/payment-forms?active=1'),
   });
+  const pdvPayQ = useQuery({
+    queryKey: ['payments', 'settings', 'pdv'],
+    queryFn: () =>
+      api<{
+        hasOnlinePix: boolean;
+        hasOnlineCard: boolean;
+        getnetEnabled: boolean;
+        mercadoPagoEnabled: boolean;
+        mercadoPagoPublicKey: string | null;
+        activeProvider: string | null;
+        visibleProviders: string[];
+      }>('/payments/settings/pdv'),
+  });
+
+  const showGetnet = pdvPayQ.data?.visibleProviders?.includes('GETNET') ?? pdvPayQ.data?.getnetEnabled;
+  const showMercadoPago =
+    pdvPayQ.data?.visibleProviders?.includes('MERCADO_PAGO') ?? pdvPayQ.data?.mercadoPagoEnabled;
+
+  const [pixModal, setPixModal] = useState<{ amount: number; provider?: PaymentPspProvider } | null>(
+    null,
+  );
+  const [mpCardModal, setMpCardModal] = useState<{ amount: number } | null>(null);
 
   const tiles = useMemo(() => {
     const forms = formsQ.data ?? [];
@@ -4199,6 +4316,10 @@ function PaymentOverlay({
       (selected.form.maxInstallments ?? 1) > 1);
 
   function addPayment(opts?: { fullAmount?: boolean }) {
+    if (isCustomerCreditKind(method) && !customerId) {
+      onRequireCustomer();
+      return;
+    }
     const parsed = parseDecimal(amountStr);
     const value = opts?.fullAmount || parsed <= 0 ? remaining : parsed;
     if (value <= 0 || !selected) return;
@@ -4253,7 +4374,23 @@ function PaymentOverlay({
         )
       : 0;
 
+  function applyOnlinePayment(intent: PaymentIntent, payMethod: PaymentKind) {
+    onAddPayment({
+      id: uid(),
+      method: payMethod,
+      amount: Math.round(Number(intent.amount) * 100) / 100,
+      installments: 1,
+      paymentFormId: selected?.form?.id ?? null,
+      paymentFormName: selected?.form?.name ?? selected?.label ?? payMethod,
+      paymentIntentId: intent.id,
+      authCode: intent.authCode ?? intent.externalId ?? null,
+    });
+    setPixModal(null);
+    setMpCardModal(null);
+  }
+
   return (
+    <>
     <div className="pos-payment-overlay" role="dialog" aria-modal="true">
       <div className="pos-payment-shell">
         <div className="pos-payment-header">
@@ -4263,6 +4400,17 @@ function PaymentOverlay({
               {itemsCount} {itemsCount === 1 ? 'item' : 'itens'}
               {customerName ? ` · ${customerName}` : ''}
             </h2>
+            {customerId && (creditAvailable != null || requisitionAvailable != null) ? (
+              <p className="pos-payment-total-detail" style={{ margin: '0.25rem 0 0' }}>
+                Saldo crédito {formatBRL(creditAvailable ?? '0')} · Requisição disponível{' '}
+                {formatBRL(requisitionAvailable ?? '0')}
+              </p>
+            ) : null}
+            {isCustomerCreditKind(method) && !customerId ? (
+              <p className="pos-payment-total-detail" style={{ margin: '0.35rem 0 0', color: '#b45309' }}>
+                Crediário e requisição exigem cliente — use F4 ou volte e selecione no topo.
+              </p>
+            ) : null}
           </div>
           <button type="button" className="pos-btn pos-btn-ghost" onClick={onCancel}>
             ✕ Voltar <span className="pos-shortcut-key">Esc</span>
@@ -4390,6 +4538,54 @@ function PaymentOverlay({
             </button>
           </div>
 
+          {method === 'PIX' && pdvPayQ.data?.hasOnlinePix && remaining > 0 ? (
+            <div className="pos-payment-online-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+              {showGetnet ? (
+                <button
+                  type="button"
+                  className="pos-btn pos-btn-primary"
+                  onClick={() => setPixModal({ amount: remaining, provider: 'GETNET' })}
+                >
+                  QR PIX Getnet
+                </button>
+              ) : null}
+              {showMercadoPago ? (
+                <button
+                  type="button"
+                  className="pos-btn pos-btn-primary"
+                  onClick={() => setPixModal({ amount: remaining, provider: 'MERCADO_PAGO' })}
+                >
+                  QR PIX Mercado Pago
+                </button>
+              ) : null}
+              {!showGetnet && !showMercadoPago ? (
+                <button
+                  type="button"
+                  className="pos-btn pos-btn-primary"
+                  onClick={() => setPixModal({ amount: remaining })}
+                >
+                  Gerar QR PIX
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {method === 'CARD' &&
+          pdvPayQ.data?.hasOnlineCard &&
+          showMercadoPago &&
+          pdvPayQ.data.mercadoPagoPublicKey &&
+          remaining > 0 ? (
+            <div style={{ marginBottom: '0.75rem' }}>
+              <button
+                type="button"
+                className="pos-btn pos-btn-primary"
+                onClick={() => setMpCardModal({ amount: remaining })}
+              >
+                Cartão online (Mercado Pago)
+              </button>
+            </div>
+          ) : null}
+
           {payments.length > 0 && (
             <div className="pos-payment-list">
               {payments.map((p) => {
@@ -4447,5 +4643,28 @@ function PaymentOverlay({
         </div>
       </div>
     </div>
+
+    {pixModal ? (
+      <PixQrPaymentModal
+        open
+        amount={pixModal.amount}
+        provider={pixModal.provider}
+        payerEmail={customerEmail ?? undefined}
+        onClose={() => setPixModal(null)}
+        onConfirmed={(intent) => applyOnlinePayment(intent, 'PIX')}
+      />
+    ) : null}
+
+    {mpCardModal && pdvPayQ.data?.mercadoPagoPublicKey ? (
+      <MercadoPagoCardModal
+        open
+        amount={mpCardModal.amount}
+        publicKey={pdvPayQ.data.mercadoPagoPublicKey}
+        payerEmail={customerEmail ?? undefined}
+        onClose={() => setMpCardModal(null)}
+        onConfirmed={(intent) => applyOnlinePayment(intent, 'CARD')}
+      />
+    ) : null}
+    </>
   );
 }

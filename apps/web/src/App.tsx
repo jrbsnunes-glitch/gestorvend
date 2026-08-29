@@ -48,6 +48,9 @@ const CashPrintItemsPage = lazy(() =>
 const CompanyPage = lazy(() =>
   import('./pages/CompanyPage').then((m) => ({ default: m.CompanyPage })),
 );
+const PaymentSettingsPage = lazy(() =>
+  import('./pages/PaymentSettingsPage').then((m) => ({ default: m.PaymentSettingsPage })),
+);
 const PrintStationsPage = lazy(() =>
   import('./pages/PrintStationsPage').then((m) => ({ default: m.PrintStationsPage })),
 );
@@ -107,6 +110,11 @@ const CardsPage = lazy(() => import('./pages/CardsPage').then((m) => ({ default:
 const CardsPrintPage = lazy(() =>
   import('./pages/CardsPrintPage').then((m) => ({ default: m.CardsPrintPage })),
 );
+const CustomerReportsPrintPage = lazy(() =>
+  import('./pages/CustomerReportsPrintPage').then((m) => ({
+    default: m.CustomerReportsPrintPage,
+  })),
+);
 const PaymentFormsPage = lazy(() =>
   import('./pages/PaymentFormsPage').then((m) => ({ default: m.PaymentFormsPage })),
 );
@@ -144,6 +152,12 @@ const SaleReceiptPrintPage = lazy(() =>
   import('./pages/SaleReceiptPrintPage').then((m) => ({ default: m.SaleReceiptPrintPage })),
 );
 const SalesPage = lazy(() => import('./pages/SalesPage').then((m) => ({ default: m.SalesPage })));
+const KioskSalesPage = lazy(() =>
+  import('./pages/KioskSalesPage').then((m) => ({ default: m.KioskSalesPage })),
+);
+const PdvTerminalsPage = lazy(() =>
+  import('./pages/PdvTerminalsPage').then((m) => ({ default: m.PdvTerminalsPage })),
+);
 const StockEntradaPage = lazy(() =>
   import('./pages/stock/StockEntradaPage').then((m) => ({ default: m.StockEntradaPage })),
 );
@@ -283,12 +297,28 @@ function AppInner() {
   const isPortalPath =
     typeof window !== 'undefined' && window.location.pathname.startsWith('/portal-admin');
 
+  const isKioskPath =
+    typeof window !== 'undefined' && window.location.pathname.startsWith('/auto-atendimento');
+
   if (isPortalPath) {
     return (
       <BrowserRouter>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/portal-admin/*" element={<PortalAdminApp />} />
+          </Routes>
+        </Suspense>
+      </BrowserRouter>
+    );
+  }
+
+  if (isKioskPath) {
+    return (
+      <BrowserRouter>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/auto-atendimento" element={<KioskSalesPage />} />
+            <Route path="*" element={<Navigate to="/auto-atendimento" replace />} />
           </Routes>
         </Suspense>
       </BrowserRouter>
@@ -318,6 +348,7 @@ function AppInner() {
             }
           />
           <Route path="vendas/impressao" element={<SaleReceiptPrintPage />} />
+          <Route path="auto-atendimento" element={<KioskSalesPage />} />
           <Route
             path="salao/comanda/:tabId/cozinha"
             element={
@@ -349,6 +380,7 @@ function AppInner() {
           <Route path="notas-fiscais/impressao" element={<FiscalNotesPrintPage />} />
           <Route path="notas-fiscais/danfe/:id" element={<DanfePrintPage />} />
           <Route path="cartoes/impressao" element={<CardsPrintPage />} />
+          <Route path="clientes/relatorio/impressao" element={<CustomerReportsPrintPage />} />
 
           <Route
             element={
@@ -435,6 +467,8 @@ function AppInner() {
             <Route path="balanco/relatorios" element={<FinancialOverviewReportsPage />} />
             <Route path="balanco/plano-contas" element={<ReferentialChartPage />} />
             <Route path="empresa" element={<CompanyPage />} />
+            <Route path="pagamentos" element={<PaymentSettingsPage />} />
+            <Route path="terminais-pdv" element={<PdvTerminalsPage />} />
             <Route path="configuracoes/impressao" element={<PrintStationsPage />} />
             <Route path="usuarios" element={<UsersPage />} />
             <Route

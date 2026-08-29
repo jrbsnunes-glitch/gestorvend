@@ -44,6 +44,17 @@ function strOrNull(v: unknown): string | null {
   return String(v).trim() || null;
 }
 
+function normalizeCityIbge(raw: unknown): string | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw == null || raw === '') return null;
+  const digits = String(raw).replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.length !== 7) {
+    throw new BadRequestException('Código IBGE do município deve ter 7 dígitos.');
+  }
+  return digits;
+}
+
 @Controller('customers')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class CustomersController {
@@ -64,7 +75,25 @@ export class CustomersController {
       'view',
     );
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
-    return db.customer.findMany({ orderBy: { name: 'asc' } });
+    const rows = await db.customer.findMany({ orderBy: { name: 'asc' } });
+    const enriched = await this.customerCredit.enrichSearchRows(
+      user.tenantSlug,
+      rows.map((c) => ({
+        id: c.id,
+        name: c.name,
+        document: c.document,
+        phone: c.phone,
+      })),
+    );
+    const byId = new Map(enriched.map((e) => [e.id, e]));
+    return rows.map((c) => {
+      const extra = byId.get(c.id);
+      return {
+        ...c,
+        creditAvailable: extra?.creditAvailable,
+        requisitionAvailable: extra?.requisitionAvailable,
+      };
+    });
   }
 
   /** Busca por nome, documento, telefone ou e-mail (PDV e cadastros). */
@@ -172,6 +201,7 @@ export class CustomersController {
         city: strOrNull(body.city),
         state: strOrNull(body.state)?.toUpperCase().slice(0, 2) ?? null,
         zip: body.zip ? String(body.zip).replace(/\D/g, '').slice(0, 8) || null : null,
+        cityIbge: normalizeCityIbge(body.cityIbge) ?? null,
         segment: strOrNull(body.segment),
         notes: strOrNull(body.notes),
         ...(birthDate !== undefined ? { birthDate } : {}),
@@ -216,6 +246,7 @@ export class CustomersController {
         ...(body.zip !== undefined && {
           zip: body.zip ? String(body.zip).replace(/\D/g, '').slice(0, 8) || null : null,
         }),
+        ...(body.cityIbge !== undefined && { cityIbge: normalizeCityIbge(body.cityIbge) ?? null }),
         ...(body.segment !== undefined && { segment: strOrNull(body.segment) }),
         ...(body.notes !== undefined && { notes: strOrNull(body.notes) }),
         ...(birthDate !== undefined && { birthDate }),

@@ -24,12 +24,16 @@ model Company {
   email       String?
   phone       String?
   address     String?
+  addressNumber String? @db.VarChar(16)
+  district    String? @db.VarChar(80)
   city        String?
   state       String?
   zip         String?
   logoUrl     String?
   /// Comprovante térmico interno (não transmite SEFAZ) x planejamento para documento fiscal eletrônico.
   pdvDocumentMode PdvDocumentMode @default(NON_FISCAL_RECEIPT)
+  /// Enfileira NFC-e automaticamente ao concluir venda (modo fiscal planejado).
+  autoQueueNfceOnSale Boolean @default(false)
   /// Após finalizar venda no PDV, dispara impressão (janela de impressão do navegador na estação do operador).
   saleReceiptAutoPrint Boolean @default(false)
   /// Texto livre (ex.: modelo da impressora, porta USB) — lembrete para TI; não vincula tecnicamente o driver.
@@ -77,6 +81,7 @@ model Company {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   fiscalIssuerSettings FiscalIssuerSettings?
+  paymentProviderSettings PaymentProviderSettings?
 }
 
 /// Modo padrão de cobrança das Ordens de Serviço.
@@ -189,6 +194,22 @@ model FiscalSituation {
   csosn           String?   @db.VarChar(4)
   cstPis          String?   @db.VarChar(4)
   cstCofins       String?   @db.VarChar(4)
+  /// CST IPI (00–99) — tag CST em IPI.
+  cstIpi          String?   @db.VarChar(2)
+  /// Código enquadramento IPI (cEnq).
+  ipiEnquadramento String?  @db.VarChar(3)
+  /// CST IBS/CBS (NT 2025.002) — par com cClassTrib.
+  cstIbsCbs       String?   @db.VarChar(3)
+  /// Classificação tributária IBS/CBS (6 dígitos, NT 2025.002).
+  cClassTrib      String?   @db.VarChar(6)
+  /// Modalidade BC ICMS (0=margem, 1=pauta, 2=preço tabelado, 3=valor operação).
+  modBcIcms       String?   @db.VarChar(1)
+  /// Percentual redução BC ICMS.
+  redBcIcms       Decimal   @default(0) @db.Decimal(8, 4)
+  /// Código benefício fiscal (cBenef) quando aplicável.
+  codBeneficio    String?   @db.VarChar(10)
+  /// Alíquota FCP % (Fundo de Combate à Pobreza).
+  aliqFcp         Decimal   @default(0) @db.Decimal(8, 4)
   cfopInternal    String?   @db.VarChar(5)
   cfopInterstate  String?   @db.VarChar(5)
   /// Alíquotas % para DANFE / info complementar (cadastro SEFAZ).
@@ -256,6 +277,7 @@ model User {
   serviceTabsOpened ServiceTab[] @relation("ServiceTabOpenedBy")
   serviceOrdersOpened ServiceOrder[] @relation("ServiceOrderOpenedBy")
   serviceOrdersAssigned ServiceOrder[] @relation("ServiceOrderAssignedTo")
+  pdvTerminalsOperated PdvTerminal[] @relation("PdvTerminalOperator")
 }
 
 /// Permissões operacionais concedidas pelo administrador (com senha de autorização).
@@ -350,6 +372,7 @@ model Customer {
   city         String?
   state        String?
   zip          String?
+  cityIbge     String?  @db.VarChar(7)
   /// Nome do grupo (espelha CustomerGroup.name quando escolhido no cadastro).
   segment      String?
   notes        String?
@@ -484,6 +507,9 @@ model Product {
   inventoryControlMin Decimal @default(1) @db.Decimal(18, 4)
   /// Tara padrão do recipiente/prato (kg) — self-service; descontada do peso bruto da balança.
   tareKg      Decimal?         @db.Decimal(18, 4)
+  /// Versão da imagem (cache bust em URLs públicas).
+  imageVersion Int             @default(0)
+  hasImage     Boolean         @default(false)
   variants    ProductVariant[]
   recipe      ProductRecipe?
   createdAt   DateTime         @default(now())
@@ -857,8 +883,34 @@ model StockInventoryItem {
 
 enum SaleStatus {
   DRAFT
+  /// Aguardando confirmação de pagamento externo (PIX/cartão online).
+  PENDING_PAYMENT
   COMPLETED
   CANCELLED
+}
+
+enum PaymentPspProvider {
+  GETNET
+  MERCADO_PAGO
+}
+
+enum PaymentPspEnvironment {
+  SANDBOX
+  PRODUCTION
+}
+
+enum PaymentIntentMethod {
+  PIX
+  CARD
+}
+
+enum PaymentIntentStatus {
+  PENDING
+  PROCESSING
+  CONFIRMED
+  EXPIRED
+  CANCELLED
+  FAILED
 }
 
 enum PaymentMethod {
@@ -908,6 +960,9 @@ model Sale {
   /// No PDV o vínculo continua implícito: operador + janela de abertura/fechamento.
   cashSessionId String?
   cashSession   CashRegisterSession? @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
+  /// Terminal PDV (autoatendimento ou operador numerado).
+  terminalId    String?
+  terminal      PdvTerminal?   @relation(fields: [terminalId], references: [id], onDelete: SetNull)
   subtotal      Decimal        @db.Decimal(14, 2)
   discount      Decimal        @default(0) @db.Decimal(14, 2)
   /// Acréscimo comercial no total da venda (NFC-e/NF-e: vOutro — outras despesas acessórias).
@@ -939,15 +994,19 @@ model Sale {
   fiscalIntegrationError String? @db.VarChar(1024)
   /// Registro de emissão (fila/status) quando o tenant usa documento fiscal — 1 venda ⇄ no máximo 1 fila.
   fiscalDocument         FiscalDocument?
+  paymentIntents         PaymentIntent[]
   items                  SaleItem[]
   payments               SalePayment[]
   receivables            AccountReceivable[]
   serviceTab             ServiceTab?
   serviceOrder           ServiceOrder?
   serviceOrderDeposit    ServiceOrder? @relation("ServiceOrderDepositSale")
+  activeDraftForTerminal PdvTerminal?  @relation("PdvTerminalActiveDraft")
 
   @@index([operationNatureId])
   @@index([cashSessionId])
+  @@index([terminalId])
+  @@index([terminalId, status])
 }
 
 /// Metadados da fila de emissão DFe por venda (próximo passo: XML, assinatura, SEFAZ).
@@ -1047,6 +1106,62 @@ model PaymentForm {
   @@index([sortOrder, name])
 }
 
+/// Credenciais e flags de integração PSP por empresa (singleton).
+model PaymentProviderSettings {
+  id                    String                @id @default(uuid())
+  companyId             String                @unique
+  company               Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  activeProvider        PaymentPspProvider?
+  getnetEnabled         Boolean               @default(false)
+  mercadoPagoEnabled    Boolean               @default(false)
+  environment           PaymentPspEnvironment @default(SANDBOX)
+  pixEnabled            Boolean               @default(true)
+  cardEnabled           Boolean               @default(true)
+  pixTimeoutSeconds     Int                   @default(900)
+  /// Referência da chave PIX cadastrada no PSP.
+  pixKeyType            String?               @db.VarChar(16)
+  pixKey                String?               @db.VarChar(120)
+  getnetClientIdEnc     String?               @db.VarChar(512)
+  getnetClientSecretEnc String?               @db.VarChar(512)
+  getnetChannel         String?               @db.VarChar(64)
+  getnetScope           String?               @db.VarChar(32)
+  getnetWebhookUser     String?               @db.VarChar(64)
+  getnetWebhookPasswordEnc String?            @db.VarChar(512)
+  mercadoPagoAccessTokenEnc String?           @db.VarChar(1024)
+  /// Public Key pode ir ao frontend (Card Brick).
+  mercadoPagoPublicKey  String?               @db.VarChar(128)
+  mercadoPagoWebhookSecretEnc String?         @db.VarChar(512)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+}
+
+/// Cobrança assíncrona (PIX QR ou cartão online) antes/durante a venda.
+model PaymentIntent {
+  id              String               @id @default(uuid())
+  method          PaymentIntentMethod
+  status          PaymentIntentStatus  @default(PENDING)
+  provider        PaymentPspProvider
+  amount          Decimal              @db.Decimal(14, 2)
+  currency        String               @default("BRL") @db.VarChar(3)
+  externalId      String?              @db.VarChar(128)
+  orderReference  String               @db.VarChar(64)
+  qrCode          String?              @db.Text
+  expiresAt       DateTime?
+  confirmedAt     DateTime?
+  saleId          String?
+  sale            Sale?                @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  metadata        Json?
+  webhookPayload  Json?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  salePayments    SalePayment[]
+
+  @@index([status, expiresAt])
+  @@index([externalId, provider])
+  @@index([orderReference])
+  @@index([saleId])
+}
+
 model SalePayment {
   id               String                @id @default(uuid())
   saleId           String
@@ -1065,10 +1180,16 @@ model SalePayment {
   settledAt        DateTime?
   expectedSettleAt DateTime?
   authCode         String?               @db.VarChar(40)
+  /// ID da transação no PSP (Getnet payment_id, MP order/payment id).
+  externalTxnId    String?               @db.VarChar(128)
+  paymentIntentId  String?
+  paymentIntent    PaymentIntent?        @relation(fields: [paymentIntentId], references: [id], onDelete: SetNull)
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
   @@index([method, createdAt])
+  @@index([paymentIntentId])
+  @@index([externalTxnId])
   @@index([settlementStatus, expectedSettleAt])
   @@index([cardBrand])
   @@index([paymentFormId])
@@ -1454,6 +1575,41 @@ enum PrintJobStatus {
   DONE
   ERROR
   CANCELLED
+}
+
+enum PdvTerminalMode {
+  SELF_SERVICE
+  OPERATOR
+}
+
+/// Terminal PDV numerado (autoatendimento ou operador).
+model PdvTerminal {
+  id               String          @id @default(uuid())
+  /// Número humano único: 1, 2, 3…
+  number           Int             @unique
+  name             String          @db.VarChar(120)
+  mode             PdvTerminalMode @default(SELF_SERVICE)
+  isActive         Boolean         @default(true)
+  /// Hash bcrypt do token de pareamento (token = id.secret).
+  secretHash       String          @db.VarChar(120)
+  /// Métodos permitidos: PIX, CARD_CREDIT, CARD_DEBIT, CASH, etc.
+  allowedMethods   Json            @default("[\"PIX\",\"CARD_CREDIT\",\"CARD_DEBIT\"]")
+  /// Usuário dono do caixa (opcional; autoatendimento pode usar usuário técnico).
+  operatorUserId   String?
+  operatorUser     User?           @relation("PdvTerminalOperator", fields: [operatorUserId], references: [id], onDelete: SetNull)
+  /// Rascunho de venda ativo neste terminal (evita conflito entre dispositivos).
+  activeDraftSaleId String?        @unique
+  activeDraftSale   Sale?           @relation("PdvTerminalActiveDraft", fields: [activeDraftSaleId], references: [id], onDelete: SetNull)
+  lastSeenAt       DateTime?
+  /// Device id do Mercado Pago Point (ex.: PAX_A910__SMARTPOS…). Modo PDV integrado.
+  mpPointTerminalId String?        @db.VarChar(128)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  sales            Sale[]
+
+  @@index([isActive])
+  @@index([operatorUserId])
+  @@index([mpPointTerminalId])
 }
 
 /// Estação de impressão (PC com app desktop na cozinha/caixa).

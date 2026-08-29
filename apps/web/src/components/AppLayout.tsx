@@ -62,6 +62,8 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/balanco', label: 'Balanço', icon: 'balance', group: 'gestao', managerOnly: true, allowFinanceRole: true },
   { to: '/cadastros', label: 'Cadastros Gerais', icon: 'registers', group: 'sistema', managerOnly: true },
   { to: '/empresa', label: 'Empresa', icon: 'company', group: 'sistema', managerOnly: true },
+  { to: '/pagamentos', label: 'Pagamentos', icon: 'settings', group: 'sistema', managerOnly: true },
+  { to: '/terminais-pdv', label: 'Terminais PDV', icon: 'settings', group: 'sistema', managerOnly: true },
   { to: '/configuracoes/impressao', label: 'Impressão', icon: 'settings', group: 'sistema', managerOnly: true },
   { to: '/usuarios', label: 'Usuários', icon: 'users', group: 'sistema', managerOnly: true },
   { to: '/logs', label: 'Logs', icon: 'logs', group: 'sistema', adminOnly: true },

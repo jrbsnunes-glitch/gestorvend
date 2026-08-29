@@ -1,5 +1,5 @@
 {
-  "version": "1.0.41",
+  "version": "1.0.42",
   "downloadUrl": "",
-  "notes": "Cupom PDV: largura fixa da bobina — corrige valores e cabeçalho cortados."
+  "notes": "Shell kiosk/MP Point: modo autoatendimento e integração maquininha."
 }

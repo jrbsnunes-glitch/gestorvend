@@ -21,6 +21,14 @@ type FiscalSituation = {
   csosn: string | null;
   cstPis: string | null;
   cstCofins: string | null;
+  cstIpi: string | null;
+  ipiEnquadramento: string | null;
+  cstIbsCbs: string | null;
+  cClassTrib: string | null;
+  modBcIcms: string | null;
+  redBcIcms: string;
+  codBeneficio: string | null;
+  aliqFcp: string;
   cfopInternal: string | null;
   cfopInterstate: string | null;
   aliqIcms: string;
@@ -43,6 +51,14 @@ const emptyDraft = (): Record<string, string> => ({
   csosn: '',
   cstPis: '',
   cstCofins: '',
+  cstIpi: '',
+  ipiEnquadramento: '',
+  cstIbsCbs: '',
+  cClassTrib: '',
+  modBcIcms: '3',
+  redBcIcms: '0',
+  codBeneficio: '',
+  aliqFcp: '0',
   cfopInternal: '',
   cfopInterstate: '',
   aliqIcms: '0',
@@ -65,6 +81,14 @@ function rowToDraft(row: FiscalSituation): Record<string, string> {
     csosn: row.csosn ?? '',
     cstPis: row.cstPis ?? '',
     cstCofins: row.cstCofins ?? '',
+    cstIpi: row.cstIpi ?? '',
+    ipiEnquadramento: row.ipiEnquadramento ?? '',
+    cstIbsCbs: row.cstIbsCbs ?? '',
+    cClassTrib: row.cClassTrib ?? '',
+    modBcIcms: row.modBcIcms ?? '3',
+    redBcIcms: String(row.redBcIcms ?? '0'),
+    codBeneficio: row.codBeneficio ?? '',
+    aliqFcp: String(row.aliqFcp ?? '0'),
     cfopInternal: row.cfopInternal ?? '',
     cfopInterstate: row.cfopInterstate ?? '',
     aliqIcms: String(row.aliqIcms ?? '0'),
@@ -170,6 +194,73 @@ function FiscalSituationFormFields({
           />
         </div>
       </div>
+      <p className="product-form__section-title" style={{ marginTop: '0.5rem' }}>
+        IPI
+      </p>
+      <div className="form-row">
+        <div className="field">
+          <label htmlFor={`${idPrefix}-cstipi`}>CST IPI</label>
+          <input
+            id={`${idPrefix}-cstipi`}
+            value={draft.cstIpi}
+            onChange={(e) => setDraft((d) => ({ ...d, cstIpi: e.target.value.slice(0, 2) }))}
+            placeholder="Ex.: 53"
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={`${idPrefix}-cEnq`}>Enquadramento IPI (cEnq)</label>
+          <input
+            id={`${idPrefix}-cEnq`}
+            value={draft.ipiEnquadramento}
+            onChange={(e) =>
+              setDraft((d) => ({ ...d, ipiEnquadramento: e.target.value.replace(/\D/g, '').slice(0, 3) }))
+            }
+            placeholder="999"
+          />
+        </div>
+      </div>
+      <p className="product-form__section-title" style={{ marginTop: '0.5rem' }}>
+        ICMS — regime normal (CRT 3)
+      </p>
+      <div className="form-row form-row--4">
+        <div className="field">
+          <label htmlFor={`${idPrefix}-modbc`}>Mod. BC ICMS</label>
+          <select
+            id={`${idPrefix}-modbc`}
+            value={draft.modBcIcms}
+            onChange={(e) => setDraft((d) => ({ ...d, modBcIcms: e.target.value }))}
+          >
+            <option value="0">0 — Margem</option>
+            <option value="1">1 — Pauta</option>
+            <option value="2">2 — Preço tabelado</option>
+            <option value="3">3 — Valor operação</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor={`${idPrefix}-redbc`}>Redução BC ICMS %</label>
+          <input
+            id={`${idPrefix}-redbc`}
+            value={draft.redBcIcms}
+            onChange={(e) => setDraft((d) => ({ ...d, redBcIcms: e.target.value }))}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={`${idPrefix}-cbenef`}>cBenef</label>
+          <input
+            id={`${idPrefix}-cbenef`}
+            value={draft.codBeneficio}
+            onChange={(e) => setDraft((d) => ({ ...d, codBeneficio: e.target.value.slice(0, 10) }))}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={`${idPrefix}-fcp`}>Alíq. FCP %</label>
+          <input
+            id={`${idPrefix}-fcp`}
+            value={draft.aliqFcp}
+            onChange={(e) => setDraft((d) => ({ ...d, aliqFcp: e.target.value }))}
+          />
+        </div>
+      </div>
       <div className="form-row form-row--4">
         <div className="field">
           <label htmlFor={`${idPrefix}-alicms`}>Alíq. ICMS %</label>
@@ -226,12 +317,37 @@ function FiscalSituationFormFields({
           />
         </div>
         <div className="field">
-          <label htmlFor={`${idPrefix}-ibs`}>IBS % teste</label>
+          <label htmlFor={`${idPrefix}-ibs`}>IBS % (transição)</label>
           <input id={`${idPrefix}-ibs`} value={draft.ibsTestRate} onChange={(e) => setDraft((d) => ({ ...d, ibsTestRate: e.target.value }))} />
         </div>
         <div className="field">
-          <label htmlFor={`${idPrefix}-cbs`}>CBS % teste</label>
+          <label htmlFor={`${idPrefix}-cbs`}>CBS % (transição)</label>
           <input id={`${idPrefix}-cbs`} value={draft.cbsTestRate} onChange={(e) => setDraft((d) => ({ ...d, cbsTestRate: e.target.value }))} />
+        </div>
+      </div>
+      <p className="product-form__section-title" style={{ marginTop: '0.5rem' }}>
+        Reforma tributária — IBS/CBS (NT 2025.002)
+      </p>
+      <div className="form-row">
+        <div className="field">
+          <label htmlFor={`${idPrefix}-cst-ibs`}>CST IBS/CBS</label>
+          <input
+            id={`${idPrefix}-cst-ibs`}
+            value={draft.cstIbsCbs}
+            onChange={(e) => setDraft((d) => ({ ...d, cstIbsCbs: e.target.value.replace(/\D/g, '').slice(0, 3) }))}
+            placeholder="000"
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={`${idPrefix}-classtrib`}>cClassTrib (6 dígitos)</label>
+          <input
+            id={`${idPrefix}-classtrib`}
+            value={draft.cClassTrib}
+            onChange={(e) =>
+              setDraft((d) => ({ ...d, cClassTrib: e.target.value.replace(/\D/g, '').slice(0, 6) }))
+            }
+            placeholder="000001"
+          />
         </div>
       </div>
       <div className="field">
@@ -282,6 +398,14 @@ export function FiscalSituationsPage() {
           csosn: draft.csosn.trim() || null,
           cstPis: draft.cstPis.trim() || null,
           cstCofins: draft.cstCofins.trim() || null,
+          cstIpi: draft.cstIpi.trim() || null,
+          ipiEnquadramento: draft.ipiEnquadramento.trim() || null,
+          cstIbsCbs: draft.cstIbsCbs.trim() || null,
+          cClassTrib: draft.cClassTrib.trim() || null,
+          modBcIcms: draft.modBcIcms.trim() || null,
+          redBcIcms: parseFloat(draft.redBcIcms.replace(',', '.')) || 0,
+          codBeneficio: draft.codBeneficio.trim() || null,
+          aliqFcp: parseFloat(draft.aliqFcp.replace(',', '.')) || 0,
           cfopInternal: draft.cfopInternal.trim() || null,
           cfopInterstate: draft.cfopInterstate.trim() || null,
           aliqIcms: parseFloat(draft.aliqIcms.replace(',', '.')) || 0,
@@ -316,6 +440,14 @@ export function FiscalSituationsPage() {
           csosn: editDraft.csosn.trim() || null,
           cstPis: editDraft.cstPis.trim() || null,
           cstCofins: editDraft.cstCofins.trim() || null,
+          cstIpi: editDraft.cstIpi.trim() || null,
+          ipiEnquadramento: editDraft.ipiEnquadramento.trim() || null,
+          cstIbsCbs: editDraft.cstIbsCbs.trim() || null,
+          cClassTrib: editDraft.cClassTrib.trim() || null,
+          modBcIcms: editDraft.modBcIcms.trim() || null,
+          redBcIcms: parseFloat(editDraft.redBcIcms.replace(',', '.')) || 0,
+          codBeneficio: editDraft.codBeneficio.trim() || null,
+          aliqFcp: parseFloat(editDraft.aliqFcp.replace(',', '.')) || 0,
           cfopInternal: editDraft.cfopInternal.trim() || null,
           cfopInterstate: editDraft.cfopInterstate.trim() || null,
           aliqIcms: parseFloat(editDraft.aliqIcms.replace(',', '.')) || 0,
@@ -533,8 +665,12 @@ export function FiscalSituationsPage() {
                       value: `${viewRow.aliqIcms ?? 0}% / ${viewRow.aliqIpi ?? 0}% / ${viewRow.aliqPis ?? 0}% / ${viewRow.aliqCofins ?? 0}%`,
                     },
                     {
-                      label: 'IBS / CBS % teste',
-                      value: `${viewRow.ibsTestRate}% / ${viewRow.cbsTestRate}%`,
+                      label: 'IBS/CBS',
+                      value: `${viewRow.cstIbsCbs ?? '—'} / ${viewRow.cClassTrib ?? '—'} (${viewRow.ibsTestRate}% / ${viewRow.cbsTestRate}%)`,
+                    },
+                    {
+                      label: 'IPI',
+                      value: `${viewRow.cstIpi ?? '—'} · cEnq ${viewRow.ipiEnquadramento ?? '—'}`,
                     },
                     { label: 'Status', value: viewRow.isActive ? 'Ativa' : 'Inativa' },
                     {

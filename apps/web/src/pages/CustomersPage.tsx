@@ -5,6 +5,7 @@ import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination } from '../components/ListPagination';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
+import { CustomerReportsLauncher } from '../components/CustomerReportsLauncher';
 import { CustomerGroupSearchCombo } from '../components/ProductCatalogCombos';
 import { RecordSelectionFooter } from '../components/RecordSelectionFooter';
 import { RecordViewModal } from '../components/RecordViewModal';
@@ -22,6 +23,8 @@ type Customer = {
   phone: string | null;
   creditLimit: string;
   requisitionLimit?: string;
+  creditAvailable?: string;
+  requisitionAvailable?: string;
   street?: string | null;
   number?: string | null;
   complement?: string | null;
@@ -29,6 +32,7 @@ type Customer = {
   city: string | null;
   state: string | null;
   zip?: string | null;
+  cityIbge?: string | null;
   segment?: string | null;
   birthDate?: string | null;
 };
@@ -262,6 +266,7 @@ export function CustomersPage() {
       district: c.district ?? '',
       city: c.city ?? '',
       state: c.state ?? '',
+      cityIbge: c.cityIbge ?? '',
     });
     setCreditLimit(c.creditLimit ?? '0');
     setRequisitionLimit(c.requisitionLimit ?? '0');
@@ -285,6 +290,7 @@ export function CustomersPage() {
       city: addr.city || null,
       state: addr.state || null,
       zip: addr.zip.replace(/\D/g, '') || null,
+      cityIbge: addr.cityIbge.replace(/\D/g, '').slice(0, 7) || null,
       creditLimit: creditLimit.replace(',', '.'),
       requisitionLimit: requisitionLimit.replace(',', '.'),
       segment: segment || null,
@@ -393,6 +399,7 @@ export function CustomersPage() {
       <AddressFormBlock
         idPrefix="c"
         value={addr}
+        showCityIbge
         onChange={(patch) => setAddr((a) => ({ ...a, ...patch }))}
         extra={
           <>
@@ -504,15 +511,14 @@ export function CustomersPage() {
         onReports={() => setReportsOpen(true)}
       />
 
-      <ModuleReportsModal open={reportsOpen} title="Clientes" onClose={() => setReportsOpen(false)}>
-        <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
-          <li>
-            Extrato de limite de crédito / requisição — abra Alterar no cliente; o saldo restante
-            aparece no cadastro e as consultas ficam ao lado dos limites.
-          </li>
-          <li>Lista de clientes com inadimplência (a implementar)</li>
-          <li>Histórico de vendas por cliente</li>
-        </ul>
+      <ModuleReportsModal
+        open={reportsOpen}
+        title="Clientes"
+        wide
+        compactLauncher
+        onClose={() => setReportsOpen(false)}
+      >
+        <CustomerReportsLauncher onClose={() => setReportsOpen(false)} />
       </ModuleReportsModal>
 
       <div className="toolbar no-print">
@@ -536,7 +542,7 @@ export function CustomersPage() {
               <th>Contato</th>
               <th>Local</th>
               <th>Lim. crédito</th>
-              <th>Lim. requisição</th>
+              <th>Req. disponível</th>
               <th className="col-actions">Ações</th>
             </tr>
           </thead>
@@ -582,7 +588,7 @@ export function CustomersPage() {
                 </td>
                 <td>{c.city || c.state ? `${c.city ?? ''} ${c.state ?? ''}`.trim() : '—'}</td>
                 <td>{formatBRL(c.creditLimit)}</td>
-                <td>{formatBRL(c.requisitionLimit ?? '0')}</td>
+                <td>{formatBRL(c.requisitionAvailable ?? c.requisitionLimit ?? '0')}</td>
                 <td className="col-actions">
                   <RowRecordActions
                     onEdit={() => openEdit(c)}
@@ -721,6 +727,7 @@ export function CustomersPage() {
                           viewData.district,
                           [viewData.city, viewData.state].filter(Boolean).join('/'),
                           viewData.zip ? `CEP ${formatCep(viewData.zip)}` : null,
+                          viewData.cityIbge ? `IBGE ${viewData.cityIbge}` : null,
                         ]
                           .filter(Boolean)
                           .join(', ') || null,

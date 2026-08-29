@@ -115,7 +115,61 @@ async function openApp(win: BrowserWindow, cfg: DesktopConfig) {
     showBlocked(win, result.message);
     return;
   }
-  const target = cfg.serverUrl.replace(/\/$/, '') + '/';
+
+  const isKiosk = cfg.pdvTerminal?.mode === 'self_service';
+  if (isKiosk) {
+    Menu.setApplicationMenu(null);
+    win.setMenuBarVisibility(false);
+    win.setKiosk(true);
+    win.setFullScreen(true);
+  } else {
+    buildMenu();
+  }
+
+  const base = cfg.serverUrl.replace(/\/$/, '');
+  const target = isKiosk
+    ? `${base}/auto-atendimento?terminal=${cfg.pdvTerminal!.number}`
+    : `${base}/`;
+
+  if (isKiosk) {
+    const allowPath = (pathname: string) =>
+      pathname.startsWith('/auto-atendimento') || pathname.startsWith('/vendas/impressao');
+
+    win.webContents.on('will-navigate', (ev, url) => {
+      try {
+        const u = new URL(url);
+        if (!allowPath(u.pathname)) ev.preventDefault();
+      } catch {
+        ev.preventDefault();
+      }
+    });
+
+    win.webContents.setWindowOpenHandler(({ url }) => {
+      try {
+        const u = new URL(url, target);
+        if (allowPath(u.pathname)) {
+          return {
+            action: 'allow',
+            overrideBrowserWindowOptions: {
+              kiosk: true,
+              fullscreen: true,
+              autoHideMenuBar: true,
+              webPreferences: {
+                preload: path.join(__dirname, 'preload.js'),
+                contextIsolation: true,
+                nodeIntegration: false,
+                sandbox: false,
+              },
+            },
+          };
+        }
+      } catch {
+        /* deny */
+      }
+      return { action: 'deny' };
+    });
+  }
+
   void win.loadURL(target);
 
   if (revalidateTimer) clearInterval(revalidateTimer);
@@ -295,6 +349,11 @@ function registerIpc() {
 
   ipcMain.handle('shell:getVersion', () => ({ version: app.getVersion() }));
 
+  ipcMain.on('shell:isKiosk', (ev) => {
+    const cfg = readConfig();
+    ev.returnValue = cfg?.pdvTerminal?.mode === 'self_service';
+  });
+
   ipcMain.handle('desktop:checkUpdates', async () => checkForDesktopUpdates());
 
   ipcMain.handle('config:save', async (_e, body: DesktopConfig) => {
@@ -312,6 +371,7 @@ function registerIpc() {
         tenantSlug: body.tenantSlug.trim().toLowerCase(),
         station: body.station ?? prev?.station,
         pdv: body.pdv ?? prev?.pdv,
+        pdvTerminal: body.pdvTerminal ?? prev?.pdvTerminal,
       };
       writeConfig(cfg);
       if (mainWindow && !mainWindow.isDestroyed()) {

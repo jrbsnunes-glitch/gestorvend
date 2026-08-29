@@ -12,6 +12,8 @@ import { ProductsController } from './products.controller';
 import { SuppliersController } from './suppliers.controller';
 import { LookupsController } from './lookups.controller';
 import { OperationNaturesController } from './operation-natures.controller';
+import { CatalogProductImagesController } from './catalog-product-images.controller';
+import { ProductImageStorage } from './product-image.storage';
 
 @Module({
   imports: [UsersModule],
@@ -27,8 +29,9 @@ import { OperationNaturesController } from './operation-natures.controller';
     CardTransactionsController,
     ProductsController,
     LookupsController,
+    CatalogProductImagesController,
   ],
-  providers: [CustomerCreditService],
-  exports: [CustomerCreditService],
+  providers: [CustomerCreditService, ProductImageStorage],
+  exports: [CustomerCreditService, ProductImageStorage],
 })
 export class CatalogModule {}

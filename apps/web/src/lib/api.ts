@@ -1,5 +1,19 @@
+import { getKioskToken } from './kiosk-auth';
+
 const TOKEN_KEY = 'gv_access_token';
 const REFRESH_KEY = 'gv_refresh_token';
+
+/** Token Bearer ativo: no kiosk usa JWT do terminal; senão sessão do usuário. */
+function resolveAuthToken(): string | null {
+  if (typeof window !== 'undefined') {
+    const kioskFromQuery = new URLSearchParams(window.location.search).get('kioskToken');
+    if (kioskFromQuery?.trim()) return kioskFromQuery.trim();
+    if (window.location.pathname.startsWith('/auto-atendimento')) {
+      return getKioskToken() ?? getToken();
+    }
+  }
+  return getToken();
+}
 
 /** Dispara quando access/refresh são limpos ou alterados (mesma aba). */
 export const GV_AUTH_CHANGED_EVENT = 'gv:auth-changed';
@@ -393,7 +407,7 @@ async function sendApiRequest(
       ...(options.json !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...(options.headers ?? {}),
     };
-    const token = getToken();
+    const token = resolveAuthToken();
     if (token) {
       (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
     }
@@ -452,7 +466,13 @@ export async function api<T>(
 
     const text = await res.text();
     if (res.status === 401 || (res.status === 403 && isLicenseDenied(res.status, text))) {
-      handleAuthFailure(res.status, res.statusText, text);
+      const onKiosk =
+        typeof window !== 'undefined' &&
+        window.location.pathname.startsWith('/auto-atendimento') &&
+        Boolean(getKioskToken());
+      if (!onKiosk) {
+        handleAuthFailure(res.status, res.statusText, text);
+      }
     }
     const message = formatApiErrorBody(res.status, res.statusText, text);
 
@@ -491,7 +511,7 @@ export async function api<T>(
 export async function apiDownload(path: string, fallbackFilename: string): Promise<void> {
   const buildHeaders = (): HeadersInit => {
     const headers: HeadersInit = {};
-    const token = getToken();
+    const token = resolveAuthToken();
     if (token) {
       (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
     }
@@ -525,7 +545,13 @@ export async function apiDownload(path: string, fallbackFilename: string): Promi
   if (!res.ok) {
     const text = await res.text();
     if (res.status === 401 || (res.status === 403 && isLicenseDenied(res.status, text))) {
-      handleAuthFailure(res.status, res.statusText, text);
+      const onKiosk =
+        typeof window !== 'undefined' &&
+        window.location.pathname.startsWith('/auto-atendimento') &&
+        Boolean(getKioskToken());
+      if (!onKiosk) {
+        handleAuthFailure(res.status, res.statusText, text);
+      }
     }
     throw new Error(formatApiErrorBody(res.status, res.statusText, text));
   }
@@ -559,7 +585,7 @@ export async function apiUpload<T>(
 
   const buildHeaders = (): HeadersInit => {
     const headers: HeadersInit = {};
-    const token = getToken();
+    const token = resolveAuthToken();
     if (token) {
       (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
     }
@@ -594,7 +620,13 @@ export async function apiUpload<T>(
   if (!res.ok) {
     const text = await res.text();
     if (res.status === 401 || (res.status === 403 && isLicenseDenied(res.status, text))) {
-      handleAuthFailure(res.status, res.statusText, text);
+      const onKiosk =
+        typeof window !== 'undefined' &&
+        window.location.pathname.startsWith('/auto-atendimento') &&
+        Boolean(getKioskToken());
+      if (!onKiosk) {
+        handleAuthFailure(res.status, res.statusText, text);
+      }
     }
     throw new Error(formatApiErrorBody(res.status, res.statusText, text));
   }

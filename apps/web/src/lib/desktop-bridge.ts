@@ -44,6 +44,12 @@ export type DesktopUpdateCheckResult = {
 
 export type GestorVendDesktopApi = {
   isDesktop?: boolean;
+  isKiosk?: boolean;
+  getConfig?: () => Promise<{
+    serverUrl: string;
+    tenantSlug: string;
+    pdvTerminal?: { number: number; token: string; mode: 'self_service' | 'operator' };
+  } | null>;
   openStationUi?: () => Promise<{ ok: boolean; error?: string }>;
   listPrinters?: () => Promise<{
     ok: boolean;

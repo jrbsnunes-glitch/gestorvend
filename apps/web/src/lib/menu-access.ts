@@ -33,6 +33,7 @@ const PATH_TO_MENU: Array<{ prefix: string; key: string }> = [
   { prefix: '/balanco', key: 'balance' },
   { prefix: '/cadastros', key: 'registers' },
   { prefix: '/empresa', key: 'company' },
+  { prefix: '/pagamentos', key: 'payments' },
   { prefix: '/configuracoes/impressao', key: 'print' },
   { prefix: '/usuarios', key: 'users' },
 ];

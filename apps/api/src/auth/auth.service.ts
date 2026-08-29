@@ -82,7 +82,6 @@ export class AuthService {
     };
   }
 
-  /** Emite novo access token a partir do refresh JWT (sessão longa, sem relogar). */
   async refreshAccess(refreshToken: string) {
     const secret = this.config.get<string>('JWT_REFRESH_SECRET');
     if (!secret) {

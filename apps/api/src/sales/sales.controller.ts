@@ -61,6 +61,7 @@ export class SalesController {
         installments?: number;
         paymentFormId?: string | null;
         authCode?: string | null;
+        paymentIntentId?: string | null;
       }>;
     },
   ) {

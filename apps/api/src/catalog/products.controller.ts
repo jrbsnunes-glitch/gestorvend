@@ -9,8 +9,12 @@ import {
   Post,
   Put,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { Prisma } from '../generated/tenant-client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -26,6 +30,7 @@ import {
   validatePackItemQty,
   resolveConversionFactor,
 } from '../common/product-conversion.util';
+import { ProductImageStorage } from './product-image.storage';
 
 const productDetailInclude = {
   variants: { orderBy: { sku: 'asc' as const } },
@@ -44,7 +49,10 @@ const productDetailInclude = {
 @Controller('products')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ProductsController {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    private readonly productImages: ProductImageStorage,
+  ) {}
 
   /**
    * Valida vínculo caixa → SKU unitário. Exige conversão (como na NF),
@@ -225,6 +233,7 @@ export class ProductsController {
    * - preferência pelo local de estoque padrão (mesmo critério de `sales.service`)
    */
   private async mapProductSearchRows(
+    tenantSlug: string,
     db: Awaited<ReturnType<TenantPrismaService['getClient']>>,
     variants: Array<{
       id: string;
@@ -245,6 +254,8 @@ export class ProductsController {
         defaultBarcode?: string | null;
         stockComponentVariantId: string | null;
         isService?: boolean;
+        hasImage?: boolean;
+        imageVersion?: number;
       };
     }>,
   ) {
@@ -297,6 +308,15 @@ export class ProductsController {
         stockTotal: stockTotal.toString(),
         minStock: String(v.minStock),
         stockVariantId,
+        imageThumbUrl:
+          v.product.hasImage && v.product.imageVersion != null
+            ? this.productImages.publicUrl(
+                tenantSlug,
+                v.product.id,
+                'thumb',
+                v.product.imageVersion,
+              )
+            : null,
       };
     });
   }
@@ -340,6 +360,8 @@ export class ProductsController {
           defaultBarcode: true,
           stockComponentVariantId: true,
           isService: true,
+          hasImage: true,
+          imageVersion: true,
         },
       },
     } as const;
@@ -364,7 +386,7 @@ export class ProductsController {
       include,
     });
     if (exactBarcode.length) {
-      return this.mapProductSearchRows(db, exactBarcode);
+      return this.mapProductSearchRows(user.tenantSlug, db, exactBarcode);
     }
 
     // 2) Código sequencial do produto (somente se for número “curto” de controle).
@@ -377,7 +399,7 @@ export class ProductsController {
         include,
       });
       if (exactByCode.length) {
-        return this.mapProductSearchRows(db, exactByCode);
+        return this.mapProductSearchRows(user.tenantSlug, db, exactByCode);
       }
     }
 
@@ -402,7 +424,67 @@ export class ProductsController {
       include,
     });
 
-    return this.mapProductSearchRows(db, variants);
+    return this.mapProductSearchRows(user.tenantSlug, db, variants);
+  }
+
+  @Post(':id/image')
+  @Roles('admin', 'manager', 'seller')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 2 * 1024 * 1024 },
+    }),
+  )
+  async uploadImage(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @UploadedFile()
+    file: { buffer: Buffer; mimetype?: string; size?: number } | undefined,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Envie um arquivo de imagem.');
+    }
+    this.productImages.assertMaxSize(file.size ?? file.buffer.length);
+    this.productImages.assertAllowedMime(file.mimetype);
+
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const product = await db.product.findUnique({ where: { id }, select: { id: true } });
+    if (!product) throw new BadRequestException('Produto não encontrado.');
+
+    await this.productImages.saveFromBuffer(user.tenantSlug, id, file.buffer);
+    const updated = await db.product.update({
+      where: { id },
+      data: {
+        hasImage: true,
+        imageVersion: { increment: 1 },
+      },
+      select: { id: true, hasImage: true, imageVersion: true },
+    });
+
+    return {
+      ...updated,
+      imageThumbUrl: this.productImages.publicUrl(
+        user.tenantSlug,
+        id,
+        'thumb',
+        updated.imageVersion,
+      ),
+    };
+  }
+
+  @Delete(':id/image')
+  @Roles('admin', 'manager', 'seller')
+  async removeImage(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const product = await db.product.findUnique({ where: { id }, select: { id: true } });
+    if (!product) throw new BadRequestException('Produto não encontrado.');
+
+    await this.productImages.remove(user.tenantSlug, id);
+    await db.product.update({
+      where: { id },
+      data: { hasImage: false, imageVersion: { increment: 1 } },
+    });
+    return { ok: true };
   }
 
   /**

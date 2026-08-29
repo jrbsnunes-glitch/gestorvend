@@ -124,6 +124,15 @@
         <div class="hint">Mesmo endereço do sistema (onde você faz login). Não use o site institucional gestorvend.com. Em desenvolvimento local: http://127.0.0.1:5173</div>
         <label for="tenantSlug">Abreviatura da empresa</label>
         <input id="tenantSlug" type="text" required minlength="2" maxlength="64" placeholder="ex.: demo" autocomplete="organization" />
+        <div class="hint" style="margin-top: -0.5rem">Opcional — modo kiosk (autoatendimento):</div>
+        <label for="pdvNumber">Número do PDV</label>
+        <input id="pdvNumber" type="number" min="1" placeholder="Ex.: 1" />
+        <label for="pdvToken">Token do terminal</label>
+        <textarea id="pdvToken" rows="2" placeholder="uuid.segredo (de Terminais PDV no admin)"></textarea>
+        <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;font-size:0.88rem;">
+          <input id="pdvKiosk" type="checkbox" />
+          Abrir em modo kiosk (tela cheia, autoatendimento)
+        </label>
         <button type="submit" id="submit">Salvar e entrar</button>
       </form>
     </div>
@@ -136,6 +145,11 @@
         if (!cfg) return;
         document.getElementById('serverUrl').value = cfg.serverUrl || '';
         document.getElementById('tenantSlug').value = cfg.tenantSlug || '';
+        if (cfg.pdvTerminal) {
+          document.getElementById('pdvNumber').value = String(cfg.pdvTerminal.number || '');
+          document.getElementById('pdvToken').value = cfg.pdvTerminal.token || '';
+          document.getElementById('pdvKiosk').checked = cfg.pdvTerminal.mode === 'self_service';
+        }
       });
 
       form.addEventListener('submit', async (e) => {
@@ -143,10 +157,21 @@
         err.classList.remove('show');
         btn.disabled = true;
         btn.textContent = 'Validando…';
-        const result = await window.gestorvend.saveConfig({
+        const pdvNumber = document.getElementById('pdvNumber').value.trim();
+        const pdvToken = document.getElementById('pdvToken').value.trim();
+        const kiosk = document.getElementById('pdvKiosk').checked;
+        const payload = {
           serverUrl: document.getElementById('serverUrl').value.trim(),
           tenantSlug: document.getElementById('tenantSlug').value.trim(),
-        });
+        };
+        if (pdvNumber && pdvToken) {
+          payload.pdvTerminal = {
+            number: Math.floor(Number(pdvNumber)),
+            token: pdvToken,
+            mode: kiosk ? 'self_service' : 'operator',
+          };
+        }
+        const result = await window.gestorvend.saveConfig(payload);
         if (!result.ok) {
           err.textContent = result.error || 'Não foi possível salvar.';
           err.classList.add('show');

@@ -12,7 +12,9 @@ import {
 import { CentralPrismaService } from '../prisma/central-prisma.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
+import { validateSaleItemsForFiscalEmission } from './fiscal-emission-validation';
 import { buildNfceAccessKey } from './utils/nfe-access-key';
+import { lookupIbgeByCep } from './utils/via-cep';
 import { ufToCodIbge } from './utils/uf-ibge';
 import { createMutualTlsAgentFromPfx, loadPfxMaterial } from './issuer/load-pfx';
 import { OutboundNfeStorage } from './issuer/outbound-nfe.storage';
@@ -205,11 +207,6 @@ export class FiscalEmissionProcessorService {
       throw new Error('Cadastre a empresa e o emissor fiscal antes da transmissão.');
     }
     const { company, settings } = ensured;
-    if (settings.crt !== 1) {
-      throw new Error(
-        'Emissão suporta CRT=1 (Simples Nacional) nesta versão. Ajuste o cadastro do emissor.',
-      );
-    }
 
     const cnpj = company.cnpj.replace(/\D/g, '');
     if (cnpj.length !== 14 || cnpj === '00000000000000') {
@@ -249,6 +246,19 @@ export class FiscalEmissionProcessorService {
         },
       },
     });
+
+    validateSaleItemsForFiscalEmission(sale);
+
+    if (settings.crt === 3) {
+      for (const it of sale.items) {
+        const fs = it.variant.product.fiscalSituation;
+        if (!fs?.cstIcms?.trim()) {
+          throw new Error(
+            `Produto "${it.variant.product.name}" sem CST ICMS — obrigatório para CRT=3 (regime normal).`,
+          );
+        }
+      }
+    }
 
     if (isNfe) {
       const custDoc = (sale.customer?.document ?? '').replace(/\D/g, '');
@@ -397,6 +407,14 @@ export class FiscalEmissionProcessorService {
       Math.max(0, Number(sale.surcharge ?? 0)) + Math.max(0, Number(sale.cardFeeSurcharge ?? 0));
     const vFreteTotal = Math.max(0, Number(sale.freightAmount ?? 0));
     const natureCfop = (sale.operationNature?.cfop ?? '').replace(/\D/g, '').slice(0, 4);
+    const destUf = sale.customer?.state?.trim().toUpperCase().slice(0, 2) ?? '';
+    const emitUf = settings.uf.trim().toUpperCase().slice(0, 2);
+    const isInterstate = Boolean(destUf && destUf.length === 2 && destUf !== emitUf);
+    const idDest = isInterstate ? 2 : 1;
+    const dec = (v: unknown) => {
+      const n = Number(String(v ?? 0));
+      return Number.isFinite(n) ? n : 0;
+    };
     // Pesos pelo valor bruto da linha (qty × unitPrice) — MOC: vProd bruto, vDesc explícito.
     const grossWeights = sale.items.map((it) =>
       Math.max(0, Number(it.quantity) * Number(it.unitPrice)),
@@ -407,17 +425,15 @@ export class FiscalEmissionProcessorService {
     const itemsXml: NfceItemInput[] = sale.items.map((it, idx) => {
       const p = it.variant.product;
       const fs = p.fiscalSituation;
-      const cfop = (
-        natureCfop ||
-        (fs?.cfopInternal ?? '5102')
-      )
-        .replace(/\D/g, '')
-        .padStart(4, '0')
-        .slice(-4);
+      const cfopRaw = isInterstate
+        ? natureCfop || fs?.cfopInterstate || '6102'
+        : natureCfop || fs?.cfopInternal || '5102';
+      const cfop = cfopRaw.replace(/\D/g, '').padStart(4, '0').slice(-4);
       const ncm = (p.ncm ?? '00000000').replace(/\D/g, '').padStart(8, '0').slice(-8);
       const csosnRaw = (fs?.csosn ?? '102').replace(/\D/g, '');
       const csosn = csosnRaw.slice(-3).padStart(3, '0');
-      const orig = (p.fiscalOrigin ?? '0').replace(/\D/g, '').slice(0, 1) || '0';
+      const orig =
+        (p.fiscalOrigin ?? fs?.fiscalOrigin ?? '0').replace(/\D/g, '').slice(0, 1) || '0';
       const qty = Number(it.quantity);
       const unit = Number(it.unitPrice);
       const itemDesc = Math.max(0, Number(it.discount ?? 0));
@@ -437,6 +453,26 @@ export class FiscalEmissionProcessorService {
         vOutro: outroParts[idx] ?? 0,
         orig,
         csosn,
+        cstIcms: fs?.cstIcms ?? null,
+        aliqIcms: dec(fs?.aliqIcms),
+        modBcIcms: fs?.modBcIcms ?? '3',
+        redBcIcms: dec(fs?.redBcIcms),
+        cstPis: fs?.cstPis ?? '49',
+        cstCofins: fs?.cstCofins ?? '49',
+        aliqPis: dec(fs?.aliqPis),
+        aliqCofins: dec(fs?.aliqCofins),
+        cstIpi: fs?.cstIpi ?? null,
+        aliqIpi: dec(fs?.aliqIpi),
+        ipiEnquadramento: fs?.ipiEnquadramento ?? null,
+        cest: p.cest ?? null,
+        exTipi: p.exTipi ?? fs?.exTipi ?? null,
+        codBeneficio: fs?.codBeneficio ?? null,
+        ean: it.variant.barcode ?? p.defaultBarcode ?? null,
+        cstIbsCbs: fs?.cstIbsCbs ?? null,
+        cClassTrib: fs?.cClassTrib ?? null,
+        ibsRate: dec(fs?.ibsTestRate),
+        cbsRate: dec(fs?.cbsTestRate),
+        aliqFcp: dec(fs?.aliqFcp),
       };
     });
 
@@ -458,6 +494,14 @@ export class FiscalEmissionProcessorService {
     let dest: DestInput | undefined;
     if (sale.customer) {
       const custDoc = (sale.customer.document ?? '').replace(/\D/g, '');
+      let destMunIbge =
+        (sale.customer.cityIbge ?? '').replace(/\D/g, '').padStart(7, '0').slice(-7) || '';
+      if (!destMunIbge && sale.customer.zip) {
+        destMunIbge = (await lookupIbgeByCep(sale.customer.zip)) ?? '';
+      }
+      if (!destMunIbge && sale.customer.city && sale.customer.state?.trim().toUpperCase() === ufSig) {
+        destMunIbge = munEmit;
+      }
       dest = {
         document: custDoc || null,
         xNome: sale.customer.name,
@@ -469,7 +513,7 @@ export class FiscalEmissionProcessorService {
                 xLgr: sale.customer.street?.trim() || 'NAO INFORMADO',
                 nro: sale.customer.number?.trim() || 'S/N',
                 xBairro: sale.customer.district?.trim() || 'CENTRO',
-                cMun: munEmit,
+                cMun: destMunIbge || munEmit,
                 xMun: sale.customer.city.trim(),
                 uf: sale.customer.state.trim().toUpperCase().slice(0, 2),
                 cep: (sale.customer.zip ?? zipDigits).replace(/\D/g, '').padStart(8, '0').slice(-8),
@@ -501,8 +545,8 @@ export class FiscalEmissionProcessorService {
         xNome: company.legalName,
         xFant: company.tradeName,
         xLgr: company.address?.trim() || 'NAO INFORMADO',
-        nro: 'S/N',
-        xBairro: 'CENTRO',
+        nro: company.addressNumber?.trim() || 'S/N',
+        xBairro: company.district?.trim() || 'CENTRO',
         cMun: munEmit,
         xMun,
         uf: ufSig,
@@ -522,6 +566,7 @@ export class FiscalEmissionProcessorService {
       deliveryVehiclePlate: sale.deliveryVehiclePlate,
       deliveryDriverName: sale.deliveryDriverName,
       infCplExtra: sale.notes,
+      idDest,
     });
 
     const { privateKeyPem, certificatePem } = loadPfxMaterial(certPath, certPassword);

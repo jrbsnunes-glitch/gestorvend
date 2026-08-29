@@ -10,17 +10,21 @@ export type AddressFormFields = {
   district: string;
   city: string;
   state: string;
+  /** Código IBGE do município (7 dígitos) — usado na NFC-e/NF-e. */
+  cityIbge: string;
 };
 
 type Props = {
   idPrefix: string;
   value: AddressFormFields;
   onChange: (patch: Partial<AddressFormFields>) => void;
+  /** Exibe campo IBGE (cadastro de cliente). */
+  showCityIbge?: boolean;
   /** Campo extra após o endereço (ex.: limite de crédito). */
   extra?: ReactNode;
 };
 
-export function AddressFormBlock({ idPrefix, value, onChange, extra }: Props) {
+export function AddressFormBlock({ idPrefix, value, onChange, showCityIbge, extra }: Props) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -41,6 +45,9 @@ export function AddressFormBlock({ idPrefix, value, onChange, extra }: Props) {
         district: data.district || value.district,
         city: data.city || value.city,
         state: data.state || value.state,
+        ...(showCityIbge && data.ibge
+          ? { cityIbge: String(data.ibge).replace(/\D/g, '').slice(0, 7) }
+          : {}),
       });
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Falha ao consultar CEP.');
@@ -134,6 +141,24 @@ export function AddressFormBlock({ idPrefix, value, onChange, extra }: Props) {
           />
         </div>
       </div>
+      {showCityIbge && (
+        <div className="field">
+          <label htmlFor={`${idPrefix}-ibge`}>Código IBGE do município</label>
+          <input
+            id={`${idPrefix}-ibge`}
+            value={value.cityIbge}
+            onChange={(e) =>
+              onChange({ cityIbge: e.target.value.replace(/\D/g, '').slice(0, 7) })
+            }
+            inputMode="numeric"
+            placeholder="7 dígitos — preenchido ao buscar CEP"
+            maxLength={7}
+          />
+          <span className="sub" style={{ display: 'block', marginTop: '0.25rem' }}>
+            Usado na emissão fiscal (NFC-e/NF-e). Opcional se o CEP estiver correto.
+          </span>
+        </div>
+      )}
       {extra}
     </>
   );
@@ -147,4 +172,5 @@ export const EMPTY_ADDRESS: AddressFormFields = {
   district: '',
   city: '',
   state: '',
+  cityIbge: '',
 };

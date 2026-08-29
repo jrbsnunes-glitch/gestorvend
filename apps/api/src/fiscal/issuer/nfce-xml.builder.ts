@@ -7,6 +7,82 @@ function fmt2(n: number): string {
   return n.toFixed(2);
 }
 
+function fmt4(n: number): string {
+  return n.toFixed(4);
+}
+
+function itemBaseValue(it: NfceItemInput): number {
+  const vDesc = Math.max(0, Number(it.vDesc ?? 0));
+  const vOutro = Math.max(0, Number(it.vOutro ?? 0));
+  return Math.max(0, it.vProd - vDesc + vOutro);
+}
+
+export type ItemTaxBreakdown = {
+  vBC: number;
+  vICMS: number;
+  vPIS: number;
+  vCOFINS: number;
+  vIPI: number;
+  vFCP: number;
+};
+
+function computePisCofinsValue(vBc: number, cst: string | undefined, aliq: number): number {
+  const c = onlyDigits(cst ?? '49', 2).padStart(2, '0') || '49';
+  if (['01', '02'].includes(c) && aliq > 0) {
+    return vBc * (aliq / 100);
+  }
+  return 0;
+}
+
+function computeIpiValue(vBc: number, cst: string | null | undefined, aliq: number): number {
+  if (!cst?.trim()) return 0;
+  const c = onlyDigits(cst, 2).padStart(2, '0');
+  if (['52', '53', '54', '55'].includes(c)) return 0;
+  return vBc * (Math.max(0, aliq) / 100);
+}
+
+function computeIcmsValues(
+  crt: number,
+  cstIcms: string | null | undefined,
+  vBc: number,
+  aliqIcms: number,
+  redBcIcms: number,
+  aliqFcp: number,
+): { vBC: number; vICMS: number; vFCP: number } {
+  if (crt === 1 || crt === 2) {
+    return { vBC: 0, vICMS: 0, vFCP: 0 };
+  }
+  const c = onlyDigits(cstIcms ?? '00', 2).padStart(2, '0');
+  if (['40', '41', '50'].includes(c)) {
+    return { vBC: 0, vICMS: 0, vFCP: 0 };
+  }
+  const pRed = Math.max(0, Math.min(100, redBcIcms));
+  const base = Math.max(0, vBc * (1 - pRed / 100));
+  const vIcms = base * (Math.max(0, aliqIcms) / 100);
+  const vFcp = base * (Math.max(0, aliqFcp) / 100);
+  return { vBC: base, vICMS: vIcms, vFCP: vFcp };
+}
+
+export function computeItemTaxBreakdown(it: NfceItemInput, crt: number): ItemTaxBreakdown {
+  const vBc = itemBaseValue(it);
+  const icms = computeIcmsValues(
+    crt,
+    it.cstIcms,
+    vBc,
+    it.aliqIcms ?? 0,
+    it.redBcIcms ?? 0,
+    it.aliqFcp ?? 0,
+  );
+  return {
+    vBC: icms.vBC,
+    vICMS: icms.vICMS,
+    vPIS: computePisCofinsValue(vBc, it.cstPis, it.aliqPis ?? 0),
+    vCOFINS: computePisCofinsValue(vBc, it.cstCofins, it.aliqCofins ?? 0),
+    vIPI: computeIpiValue(vBc, it.cstIpi, it.aliqIpi ?? 0),
+    vFCP: icms.vFCP,
+  };
+}
+
 function onlyDigits(s: string, max: number): string {
   return s.replace(/\D/g, '').slice(0, max);
 }
@@ -41,7 +117,29 @@ export type NfceItemInput = {
   vDesc?: number;
   vOutro?: number;
   orig: string;
+  /** Simples Nacional — CSOSN (CRT 1). */
   csosn: string;
+  /** Regime normal — CST ICMS (CRT 3). */
+  cstIcms?: string | null;
+  aliqIcms?: number;
+  modBcIcms?: string | null;
+  redBcIcms?: number;
+  cstPis?: string;
+  cstCofins?: string;
+  aliqPis?: number;
+  aliqCofins?: number;
+  cstIpi?: string | null;
+  aliqIpi?: number;
+  ipiEnquadramento?: string | null;
+  cest?: string | null;
+  exTipi?: string | null;
+  codBeneficio?: string | null;
+  ean?: string | null;
+  cstIbsCbs?: string | null;
+  cClassTrib?: string | null;
+  ibsRate?: number;
+  cbsRate?: number;
+  aliqFcp?: number;
 };
 
 export type DestInput = {
@@ -85,6 +183,119 @@ function buildIcmsSnXml(orig: string, csosn: string): string {
     );
   }
   return `<ICMS><ICMSSN102><orig>${o}</orig><CSOSN>${c}</CSOSN></ICMSSN102></ICMS>`;
+}
+
+function buildIcmsNormalXml(
+  orig: string,
+  cst: string,
+  vBc: number,
+  aliq: number,
+  modBc: string,
+  redBc: number,
+): string {
+  const o = onlyDigits(orig, 1) || '0';
+  const c = onlyDigits(cst, 2).padStart(2, '0');
+  const mod = onlyDigits(modBc, 1) || '3';
+  const pRed = Math.max(0, Math.min(100, redBc));
+  const base = Math.max(0, vBc * (1 - pRed / 100));
+  const pIcms = Math.max(0, aliq);
+  const vIcms = base * (pIcms / 100);
+  if (['40', '41', '50'].includes(c)) {
+    return `<ICMS><ICMS${c}><orig>${o}</orig><CST>${c}</CST></ICMS${c}></ICMS>`;
+  }
+  return (
+    `<ICMS><ICMS00><orig>${o}</orig><CST>${c}</CST>` +
+    `<modBC>${mod}</modBC><vBC>${fmt2(base)}</vBC>` +
+    (pRed > 0 ? `<pRedBC>${fmt2(pRed)}</pRedBC>` : '') +
+    `<pICMS>${fmt2(pIcms)}</pICMS><vICMS>${fmt2(vIcms)}</vICMS></ICMS00></ICMS>`
+  );
+}
+
+function buildIcmsXml(
+  crt: number,
+  orig: string,
+  csosn: string,
+  cstIcms: string | null | undefined,
+  vBc: number,
+  aliqIcms: number,
+  modBcIcms: string | null | undefined,
+  redBcIcms: number,
+): string {
+  if (crt === 1 || crt === 2) {
+    return buildIcmsSnXml(orig, csosn);
+  }
+  return buildIcmsNormalXml(orig, cstIcms ?? '00', vBc, aliqIcms, modBcIcms ?? '3', redBcIcms);
+}
+
+function buildPisXml(vBc: number, cst: string, aliq: number): string {
+  const c = onlyDigits(cst, 2).padStart(2, '0') || '49';
+  if (['01', '02'].includes(c) && aliq > 0) {
+    const vPis = vBc * (aliq / 100);
+    return `<PIS><PISAliq><CST>${c}</CST><vBC>${fmt2(vBc)}</vBC><pPIS>${fmt2(aliq)}</pPIS><vPIS>${fmt2(vPis)}</vPIS></PISAliq></PIS>`;
+  }
+  if (['04', '05', '06', '07', '08', '09'].includes(c)) {
+    return `<PIS><PISNT><CST>${c}</CST></PISNT></PIS>`;
+  }
+  return `<PIS><PISOutr><CST>${c}</CST><vBC>0.00</vBC><pPIS>0.00</pPIS><vPIS>0.00</vPIS></PISOutr></PIS>`;
+}
+
+function buildCofinsXml(vBc: number, cst: string, aliq: number): string {
+  const c = onlyDigits(cst, 2).padStart(2, '0') || '49';
+  if (['01', '02'].includes(c) && aliq > 0) {
+    const vCof = vBc * (aliq / 100);
+    return `<COFINS><COFINSAliq><CST>${c}</CST><vBC>${fmt2(vBc)}</vBC><pCOFINS>${fmt2(aliq)}</pCOFINS><vCOFINS>${fmt2(vCof)}</vCOFINS></COFINSAliq></COFINS>`;
+  }
+  if (['04', '05', '06', '07', '08', '09'].includes(c)) {
+    return `<COFINS><COFINSNT><CST>${c}</CST></COFINSNT></COFINS>`;
+  }
+  return `<COFINS><COFINSOutr><CST>${c}</CST><vBC>0.00</vBC><pCOFINS>0.00</pCOFINS><vCOFINS>0.00</vCOFINS></COFINSOutr></COFINS>`;
+}
+
+function buildIpiXml(vBc: number, cst: string | null | undefined, aliq: number, cEnq: string | null | undefined): string {
+  if (!cst?.trim()) return '';
+  const c = onlyDigits(cst, 2).padStart(2, '0');
+  const enq = onlyDigits(cEnq ?? '999', 3).padStart(3, '0');
+  if (['52', '53', '54', '55'].includes(c)) {
+    return `<IPI><cEnq>${enq}</cEnq><IPINT><CST>${c}</CST></IPINT></IPI>`;
+  }
+  const vIpi = vBc * (Math.max(0, aliq) / 100);
+  return `<IPI><cEnq>${enq}</cEnq><IPITrib><CST>${c}</CST><vBC>${fmt2(vBc)}</vBC><pIPI>${fmt2(aliq)}</pIPI><vIPI>${fmt2(vIpi)}</vIPI></IPITrib></IPI>`;
+}
+
+/** Grupo UB (NT 2025.002) — CST, cClassTrib e gIBSCBS com bases/alíquotas de teste. */
+function buildIbsCbsXml(
+  cst: string | null | undefined,
+  cClassTrib: string | null | undefined,
+  vBc: number,
+  ibsRate = 0,
+  cbsRate = 0,
+): string {
+  if (!cst?.trim() || !cClassTrib?.trim()) return '';
+  const c = onlyDigits(cst, 3).padStart(3, '0');
+  const cl = onlyDigits(cClassTrib, 6).padStart(6, '0');
+  const pIbsUf = Math.max(0, ibsRate);
+  const pIbsMun = 0;
+  const pCbs = Math.max(0, cbsRate);
+  const vIbsUf = vBc * (pIbsUf / 100);
+  const vIbsMun = 0;
+  const vIbs = vIbsUf + vIbsMun;
+  const vCbs = vBc * (pCbs / 100);
+  return (
+    `<IBSCBS><CST>${c}</CST><cClassTrib>${cl}</cClassTrib>` +
+    `<gIBSCBS>` +
+    `<vBC>${fmt2(vBc)}</vBC>` +
+    `<gIBSUF><pIBSUF>${fmt4(pIbsUf)}</pIBSUF><vIBSUF>${fmt2(vIbsUf)}</vIBSUF></gIBSUF>` +
+    `<gIBSMun><pIBSMun>${fmt4(pIbsMun)}</pIBSMun><vIBSMun>${fmt2(vIbsMun)}</vIBSMun></gIBSMun>` +
+    `<vIBS>${fmt2(vIbs)}</vIBS>` +
+    `<gCBS><pCBS>${fmt4(pCbs)}</pCBS><vCBS>${fmt2(vCbs)}</vCBS></gCBS>` +
+    `</gIBSCBS></IBSCBS>`
+  );
+}
+
+function formatGtin(ean: string | null | undefined): string {
+  const digits = onlyDigits(ean ?? '', 14);
+  if (digits.length >= 8 && digits.length <= 14) return digits;
+  return 'SEM GTIN';
 }
 
 function buildDestXml(dest: DestInput | undefined, modelo: number): string {
@@ -170,6 +381,8 @@ export function buildNfceInfNFeXml(opts: {
   deliveryVehiclePlate?: string | null;
   deliveryDriverName?: string | null;
   infCplExtra?: string | null;
+  /** 1=operação interna; 2=interestadual; 3=exterior. */
+  idDest?: number;
 }): { xmlNfeEnvelope: string; infNFeId: string } {
   const ch = onlyDigits(opts.chave44, 44);
   if (ch.length !== 44) {
@@ -181,36 +394,71 @@ export function buildNfceInfNFeXml(opts: {
   const modelo = opts.modelo;
   const tpImp = modelo === 65 ? 4 : 1;
 
+  const taxTotals = opts.items.reduce(
+    (acc, it) => {
+      const t = computeItemTaxBreakdown(it, opts.crt);
+      acc.vBC += t.vBC;
+      acc.vICMS += t.vICMS;
+      acc.vPIS += t.vPIS;
+      acc.vCOFINS += t.vCOFINS;
+      acc.vIPI += t.vIPI;
+      acc.vFCP += t.vFCP;
+      return acc;
+    },
+    { vBC: 0, vICMS: 0, vPIS: 0, vCOFINS: 0, vIPI: 0, vFCP: 0 },
+  );
+
   const detXml = opts.items
     .map((it) => {
       const vprod = fmt2(it.vProd);
       const vDesc = Math.max(0, Number(it.vDesc ?? 0));
       const vOutro = Math.max(0, Number(it.vOutro ?? 0));
+      const vBc = itemBaseValue(it);
+      const cest = onlyDigits(it.cest ?? '', 7);
+      const exTipi = (it.exTipi ?? '').trim();
+      const cBenef = (it.codBeneficio ?? '').trim();
+      const ean = formatGtin(it.ean);
+      const ipiXml = buildIpiXml(vBc, it.cstIpi, it.aliqIpi ?? 0, it.ipiEnquadramento);
+      const ibsXml = buildIbsCbsXml(it.cstIbsCbs, it.cClassTrib, vBc, it.ibsRate ?? 0, it.cbsRate ?? 0);
       return (
         `<det nItem="${it.nItem}">` +
         `<prod>` +
         `<cProd>${xmlEscape(onlyDigits(it.sku, 60) || String(it.nItem))}</cProd>` +
-        `<cEAN>SEM GTIN</cEAN>` +
+        `<cEAN>${ean}</cEAN>` +
         `<xProd>${xmlEscape(it.description.slice(0, 120))}</xProd>` +
         `<NCM>${onlyDigits(it.ncm, 8).padStart(8, '0')}</NCM>` +
+        (exTipi ? `<EXTIPI>${xmlEscape(exTipi.slice(0, 3))}</EXTIPI>` : '') +
+        (cest.length === 7 ? `<CEST>${cest}</CEST>` : '') +
         `<CFOP>${onlyDigits(it.cfop, 4).padStart(4, '0')}</CFOP>` +
         `<uCom>${xmlEscape(it.uCom || 'UN')}</uCom>` +
         `<qCom>${it.qCom.toFixed(4)}</qCom>` +
         `<vUnCom>${it.vUnCom.toFixed(4)}</vUnCom>` +
         `<vProd>${vprod}</vProd>` +
-        `<cEANTrib>SEM GTIN</cEANTrib>` +
+        `<cEANTrib>${ean}</cEANTrib>` +
         `<uTrib>${xmlEscape(it.uCom || 'UN')}</uTrib>` +
         `<qTrib>${it.qCom.toFixed(4)}</qTrib>` +
         `<vUnTrib>${it.vUnCom.toFixed(4)}</vUnTrib>` +
         (vDesc > 0 ? `<vDesc>${fmt2(vDesc)}</vDesc>` : '') +
         (vOutro > 0 ? `<vOutro>${fmt2(vOutro)}</vOutro>` : '') +
         `<indTot>1</indTot>` +
+        (cBenef ? `<cBenef>${xmlEscape(cBenef.slice(0, 10))}</cBenef>` : '') +
         `</prod>` +
         `<imposto>` +
         `<vTotTrib>0.00</vTotTrib>` +
-        buildIcmsSnXml(it.orig, it.csosn) +
-        `<PIS><PISOutr><CST>49</CST><vBC>0.00</vBC><pPIS>0.00</pPIS><vPIS>0.00</vPIS></PISOutr></PIS>` +
-        `<COFINS><COFINSOutr><CST>49</CST><vBC>0.00</vBC><pCOFINS>0.00</pCOFINS><vCOFINS>0.00</vCOFINS></COFINSOutr></COFINS>` +
+        buildIcmsXml(
+          opts.crt,
+          it.orig,
+          it.csosn,
+          it.cstIcms,
+          vBc,
+          it.aliqIcms ?? 0,
+          it.modBcIcms,
+          it.redBcIcms ?? 0,
+        ) +
+        ipiXml +
+        buildPisXml(vBc, it.cstPis ?? '49', it.aliqPis ?? 0) +
+        buildCofinsXml(vBc, it.cstCofins ?? '49', it.aliqCofins ?? 0) +
+        ibsXml +
         `</imposto>` +
         `</det>`
       );
@@ -264,7 +512,7 @@ export function buildNfceInfNFeXml(opts: {
     `<nNF>${opts.nNF}</nNF>` +
     `<dhEmi>${opts.dhEmiIso}</dhEmi>` +
     `<tpNF>1</tpNF>` +
-    `<idDest>1</idDest>` +
+    `<idDest>${[1, 2, 3].includes(Number(opts.idDest)) ? Number(opts.idDest) : 1}</idDest>` +
     `<cMunFG>${onlyDigits(opts.codMunIbgeFg, 7).padStart(7, '0')}</cMunFG>` +
     `<tpImp>${tpImp}</tpImp>` +
     `<tpEmis>${tpEmis}</tpEmis>` +
@@ -299,13 +547,13 @@ export function buildNfceInfNFeXml(opts: {
     detXml +
     `<total>` +
     `<ICMSTot>` +
-    `<vBC>0.00</vBC><vICMS>0.00</vICMS><vICMSDeson>0.00</vICMSDeson><vFCP>0.00</vFCP>` +
+    `<vBC>${fmt2(taxTotals.vBC)}</vBC><vICMS>${fmt2(taxTotals.vICMS)}</vICMS><vICMSDeson>0.00</vICMSDeson><vFCP>${fmt2(taxTotals.vFCP)}</vFCP>` +
     `<vBCST>0.00</vBCST><vST>0.00</vST><vFCPST>0.00</vFCPST><vFCPSTRet>0.00</vFCPSTRet>` +
     `<vProd>${fmt2(opts.totals.vProd)}</vProd>` +
     `<vFrete>${fmt2(vFrete)}</vFrete><vSeg>0.00</vSeg>` +
     `<vDesc>${fmt2(opts.totals.vDesc)}</vDesc>` +
-    `<vII>0.00</vII><vIPI>0.00</vIPI><vIPIDevol>0.00</vIPIDevol>` +
-    `<vPIS>0.00</vPIS><vCOFINS>0.00</vCOFINS>` +
+    `<vII>0.00</vII><vIPI>${fmt2(taxTotals.vIPI)}</vIPI><vIPIDevol>0.00</vIPIDevol>` +
+    `<vPIS>${fmt2(taxTotals.vPIS)}</vPIS><vCOFINS>${fmt2(taxTotals.vCOFINS)}</vCOFINS>` +
     `<vOutro>${fmt2(opts.totals.vOutro)}</vOutro>` +
     `<vNF>${fmt2(opts.totals.vNF)}</vNF>` +
     `<vTotTrib>0.00</vTotTrib>` +

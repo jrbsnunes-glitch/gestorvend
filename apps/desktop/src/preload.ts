@@ -11,10 +11,14 @@ contextBridge.exposeInMainWorld('gestorvend', {
         pollMs?: number;
         printers: Record<string, string>;
       };
-      pdv?: { printer?: string };
+      pdv?: { printer?: string; receiptScale?: number };
+      pdvTerminal?: { number: number; token: string; mode: 'self_service' | 'operator' };
     } | null>,
-  saveConfig: (cfg: { serverUrl: string; tenantSlug: string }) =>
-    ipcRenderer.invoke('config:save', cfg) as Promise<{ ok: boolean; error?: string }>,
+  saveConfig: (cfg: {
+    serverUrl: string;
+    tenantSlug: string;
+    pdvTerminal?: { number: number; token: string; mode: 'self_service' | 'operator' };
+  }) => ipcRenderer.invoke('config:save', cfg) as Promise<{ ok: boolean; error?: string }>,
   printSilent: (opts?: {
     deviceName?: string;
     pageSize?: '80mm' | 'A4';
@@ -109,4 +113,5 @@ contextBridge.exposeInMainWorld('gestorvend', {
     }>,
   platform: process.platform,
   isDesktop: true,
+  isKiosk: ipcRenderer.sendSync('shell:isKiosk') as boolean,
 });

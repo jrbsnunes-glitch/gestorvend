@@ -18,12 +18,15 @@ type Company = {
   email: string | null;
   phone: string | null;
   address: string | null;
+  addressNumber?: string | null;
+  district?: string | null;
   city: string | null;
   state: string | null;
   zip: string | null;
   logoUrl: string | null;
   /** Comprovante interno × planejamento documento fiscal (NF-e futura). */
   pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED';
+  autoQueueNfceOnSale?: boolean;
   saleReceiptAutoPrint?: boolean;
   saleReceiptPrinterHint?: string | null;
   restaurantModuleEnabled?: boolean;
@@ -64,11 +67,14 @@ const EMPTY_FORM: FormState = {
   email: '',
   phone: '',
   address: '',
+  addressNumber: '',
+  district: '',
   city: '',
   state: '',
   zip: '',
   logoUrl: '',
   pdvDocumentMode: 'NON_FISCAL_RECEIPT',
+  autoQueueNfceOnSale: false,
   saleReceiptAutoPrint: false,
   saleReceiptPrinterHint: '',
   restaurantModuleEnabled: false,
@@ -106,11 +112,14 @@ function toForm(c: Company): FormState {
     email: c.email ?? '',
     phone: c.phone ?? '',
     address: c.address ?? '',
+    addressNumber: c.addressNumber ?? '',
+    district: c.district ?? '',
     city: c.city ?? '',
     state: c.state ?? '',
     zip: c.zip ? formatCep(c.zip) : '',
     logoUrl: c.logoUrl ?? '',
     pdvDocumentMode: c.pdvDocumentMode ?? 'NON_FISCAL_RECEIPT',
+    autoQueueNfceOnSale: Boolean(c.autoQueueNfceOnSale),
     saleReceiptAutoPrint: Boolean(c.saleReceiptAutoPrint),
     saleReceiptPrinterHint: c.saleReceiptPrinterHint ?? '',
     restaurantModuleEnabled: Boolean(c.restaurantModuleEnabled),
@@ -640,7 +649,8 @@ export function CompanyPage() {
       setForm((f) => ({
         ...f,
         zip: formatCep(data.zip),
-        address: [data.street, data.district].filter(Boolean).join(' — ') || f.address,
+        address: data.street || f.address,
+        district: data.district || f.district,
         city: data.city || f.city,
         state: data.state || f.state,
       }));
@@ -759,7 +769,26 @@ export function CompanyPage() {
                   id="c-addr"
                   value={form.address ?? ''}
                   onChange={(e) => update('address', e.target.value)}
-                  placeholder="Rua, número, bairro"
+                  placeholder="Rua, avenida…"
+                />
+              </div>
+            </div>
+            <div className="form-row form-row--2">
+              <div className="field">
+                <label htmlFor="c-addr-n">Número</label>
+                <input
+                  id="c-addr-n"
+                  value={form.addressNumber ?? ''}
+                  onChange={(e) => update('addressNumber', e.target.value)}
+                  placeholder="S/N"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="c-district">Bairro</label>
+                <input
+                  id="c-district"
+                  value={form.district ?? ''}
+                  onChange={(e) => update('district', e.target.value)}
                 />
               </div>
             </div>
@@ -841,6 +870,26 @@ export function CompanyPage() {
                 </span>
               </label>
             </div>
+            {form.pdvDocumentMode === 'ELECTRONIC_FISCAL_PLANNED' && (
+              <div className="field" style={{ marginTop: '0.5rem' }}>
+                <label htmlFor="c-auto-nfce" style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                  <input
+                    id="c-auto-nfce"
+                    type="checkbox"
+                    checked={Boolean(form.autoQueueNfceOnSale)}
+                    onChange={(e) => update('autoQueueNfceOnSale', e.target.checked)}
+                    style={{ marginTop: '0.15rem' }}
+                  />
+                  <span>
+                    Enfileirar NFC-e automaticamente ao concluir cada venda
+                    <span className="sub" style={{ fontWeight: 400 }}>
+                      Exige cadastro fiscal completo (NCM e situação por produto). Falhas de validação não
+                      bloqueiam a venda — o operador pode enfileirar manualmente depois.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
             <div className="form-row form-row--2" style={{ marginTop: '0.25rem' }}>
               <div className="field">
                 <label htmlFor="c-autoprint" style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>

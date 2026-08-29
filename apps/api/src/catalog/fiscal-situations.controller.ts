@@ -53,6 +53,14 @@ export class FiscalSituationsController {
       csosn?: string | null;
       cstPis?: string | null;
       cstCofins?: string | null;
+      cstIpi?: string | null;
+      ipiEnquadramento?: string | null;
+      cstIbsCbs?: string | null;
+      cClassTrib?: string | null;
+      modBcIcms?: string | null;
+      redBcIcms?: number | string;
+      codBeneficio?: string | null;
+      aliqFcp?: number | string;
       cfopInternal?: string | null;
       cfopInterstate?: string | null;
       ibsTestRate?: number | string;
@@ -85,6 +93,19 @@ export class FiscalSituationsController {
         csosn: body.csosn?.trim() ? String(body.csosn).trim().slice(0, 4) : null,
         cstPis: body.cstPis?.trim() ? String(body.cstPis).trim().slice(0, 4) : null,
         cstCofins: body.cstCofins?.trim() ? String(body.cstCofins).trim().slice(0, 4) : null,
+        cstIpi: body.cstIpi?.trim() ? String(body.cstIpi).trim().slice(0, 2) : null,
+        ipiEnquadramento: body.ipiEnquadramento?.trim()
+          ? String(body.ipiEnquadramento).trim().slice(0, 3)
+          : null,
+        cstIbsCbs: body.cstIbsCbs?.trim() ? String(body.cstIbsCbs).trim().slice(0, 3) : null,
+        cClassTrib: body.cClassTrib?.trim() ? String(body.cClassTrib).trim().slice(0, 6) : null,
+        modBcIcms: body.modBcIcms?.trim() ? String(body.modBcIcms).trim().slice(0, 1) : null,
+        redBcIcms:
+          body.redBcIcms !== undefined ? this.dec(body.redBcIcms, 'Redução BC ICMS') : undefined,
+        codBeneficio: body.codBeneficio?.trim()
+          ? String(body.codBeneficio).trim().slice(0, 10)
+          : null,
+        aliqFcp: body.aliqFcp !== undefined ? this.dec(body.aliqFcp, 'Alíquota FCP') : undefined,
         cfopInternal: body.cfopInternal?.trim()
           ? String(body.cfopInternal).trim().slice(0, 5)
           : null,
@@ -137,6 +158,15 @@ export class FiscalSituationsController {
     s('csosn', 4);
     s('cstPis', 4);
     s('cstCofins', 4);
+    s('cstIpi', 2);
+    s('ipiEnquadramento', 3);
+    s('cstIbsCbs', 3);
+    s('cClassTrib', 6);
+    s('modBcIcms', 1);
+    s('codBeneficio', 10);
+    if (body.redBcIcms !== undefined)
+      data.redBcIcms = this.dec(body.redBcIcms, 'Redução BC ICMS');
+    if (body.aliqFcp !== undefined) data.aliqFcp = this.dec(body.aliqFcp, 'Alíquota FCP');
     s('cfopInternal', 5);
     s('cfopInterstate', 5);
     if (body.ibsTestRate !== undefined)

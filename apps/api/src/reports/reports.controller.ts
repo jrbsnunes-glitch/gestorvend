@@ -14,6 +14,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { CustomerReportsService } from './customer-reports.service';
 
 function startOfDay(d: Date): Date {
   const x = new Date(d);
@@ -93,7 +94,10 @@ function toCsv(rows: Record<string, unknown>[]): string {
 @Controller('reports')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ReportsController {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    private readonly customerReports: CustomerReportsService,
+  ) {}
 
   /** Limite de linhas SKU no relatório por intervalo evita payloads enormes sem aviso prévio (ajuste sob demanda). */
   private readonly productMovementCadRangeMaxVariants = 2000;
@@ -110,6 +114,33 @@ export class ReportsController {
       ) AS v
       WHERE p.id = v."productId"
     `;
+  }
+
+  @Get('customers/credit-limits')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  customerCreditLimits(
+    @CurrentUser() user: JwtPayload,
+    @Query('customerId') customerId?: string,
+    @Query('segment') segment?: string,
+  ) {
+    return this.customerReports.creditLimits(user.tenantSlug, customerId, segment);
+  }
+
+  @Get('customers/delinquency')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  customerDelinquency(@CurrentUser() user: JwtPayload, @Query('segment') segment?: string) {
+    return this.customerReports.delinquency(user.tenantSlug, segment);
+  }
+
+  @Get('customers/sales-history')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  customerSalesHistory(
+    @CurrentUser() user: JwtPayload,
+    @Query('customerId') customerId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+  ) {
+    return this.customerReports.salesHistory(user.tenantSlug, customerId, from, to);
   }
 
   @Get('sales-summary')

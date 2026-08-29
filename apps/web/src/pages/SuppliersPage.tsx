@@ -96,6 +96,7 @@ export function SuppliersPage() {
       district: s.district ?? '',
       city: s.city ?? '',
       state: s.state ?? '',
+      cityIbge: '',
     });
     setSegment(s.segment ?? '');
     setErr(null);
@@ -142,6 +143,7 @@ export function SuppliersPage() {
         district: data.district || addr.district,
         city: data.city || addr.city,
         state: data.state || addr.state,
+        cityIbge: addr.cityIbge,
       });
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Falha ao consultar CNPJ.');

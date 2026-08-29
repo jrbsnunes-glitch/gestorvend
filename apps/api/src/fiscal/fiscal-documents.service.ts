@@ -10,12 +10,12 @@ import {
   FiscalSefazEnvironment,
   PdvDocumentMode,
   Prisma,
-  SaleStatus,
   UserPermissionCode,
 } from '../generated/tenant-client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { UserPermissionsService } from '../users/user-permissions.service';
 import { FiscalIssuerSettingsService } from './fiscal-issuer-settings.service';
+import { upsertFiscalDocumentQueue } from './fiscal-document-queue.helper';
 import { createMutualTlsAgentFromPfx, loadPfxMaterial } from './issuer/load-pfx';
 import { extractCnpjFromPfx } from './issuer/cert-cnpj';
 import { validateCnpj14, digitsCnpj } from '../common/cnpj.util';
@@ -69,36 +69,7 @@ export class FiscalDocumentsService {
         'A empresa está em modo comprovante não fiscal. Em Cadastro da empresa, selecione documento fiscal planejado antes de enfileirar.',
       );
     }
-    const sale = await db.sale.findUnique({ where: { id: saleId } });
-    if (!sale) {
-      throw new NotFoundException('Venda não encontrada');
-    }
-    if (sale.status !== SaleStatus.COMPLETED) {
-      throw new BadRequestException('Só é possível enfileirar documento para venda concluída.');
-    }
-    return db.fiscalDocument.upsert({
-      where: { saleId },
-      create: {
-        saleId,
-        kind,
-        status: FiscalDocumentStatus.QUEUED,
-        lastError: null,
-        nextAttemptAt: new Date(),
-        tpEmis: 1,
-      },
-      update: {
-        kind,
-        status: FiscalDocumentStatus.QUEUED,
-        lastError: null,
-        nextAttemptAt: new Date(),
-        accessKey: null,
-        protocol: null,
-        sefazEnvironment: null,
-        tpEmis: 1,
-        xmlPath: null,
-        xmlSha256: null,
-      },
-    });
+    return upsertFiscalDocumentQueue(db, saleId, kind);
   }
 
   /**

@@ -24,6 +24,8 @@ import { UsersModule } from './users/users.module';
 import { WaChatModule } from './wachat/wachat.module';
 import { ActivityLogsModule } from './activity-logs/activity-logs.module';
 import { RestaurantModule } from './restaurant/restaurant.module';
+import { PaymentsModule } from './payments/payments.module';
+import { PdvTerminalsModule } from './pdv-terminals/pdv-terminals.module';
 import { PrintingModule } from './printing/printing.module';
 
 @Module({
@@ -57,6 +59,8 @@ import { PrintingModule } from './printing/printing.module';
     RestaurantModule,
     PrintingModule,
     ActivityLogsModule,
+    PaymentsModule,
+    PdvTerminalsModule,
   ],
   controllers: [HealthController, PublicReleaseController],
 })

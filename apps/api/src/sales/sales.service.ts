@@ -23,7 +23,9 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { UserPermissionsService } from '../users/user-permissions.service';
 import { parseQueryDate } from '../common/date-range.util';
 import { resolveSaleStockQuantity } from '../common/product-conversion.util';
+import { PaymentsService } from '../payments/payments.service';
 import { calcRestaurantFees } from '../restaurant/restaurant-fees';
+import { maybeAutoQueueNfce } from '../fiscal/fiscal-document-queue.helper';
 
 type TenantTx = Prisma.TransactionClient;
 
@@ -121,6 +123,8 @@ export type CreateSaleInput = {
    * caixa aberto do próprio usuário quando existir.
    */
   cashSessionId?: string | null;
+  /** Terminal PDV numerado (autoatendimento). */
+  terminalId?: string | null;
   /**
    * Primeiro vencimento das parcelas de requisição. Se omitido, usa o dia do lançamento.
    * Parcelas seguintes avançam um mês a partir desta data.
@@ -140,6 +144,7 @@ export type CreateSaleInput = {
     installments?: number;
     paymentFormId?: string | null;
     authCode?: string | null;
+    paymentIntentId?: string | null;
   }>;
 };
 
@@ -200,6 +205,8 @@ type NormalizedSalePayment = {
   installments: number;
   paymentFormId: string | null;
   authCode: string | null;
+  paymentIntentId: string | null;
+  externalTxnId: string | null;
   cardBrand: CardBrand | null;
   cardOperation: CardOperation | null;
   adminFeeAmount: number;
@@ -221,6 +228,7 @@ export function normalizePaymentsToSaleTotal(
   installments: number;
   paymentFormId?: string | null;
   authCode?: string | null;
+  paymentIntentId?: string | null;
 }> {
   for (const p of payments) {
     if (p.method === PaymentMethod.EXPENSE) {
@@ -233,6 +241,7 @@ export function normalizePaymentsToSaleTotal(
     installments: Math.max(1, p.installments ?? 1),
     paymentFormId: p.paymentFormId?.trim() || null,
     authCode: p.authCode?.trim() || null,
+    paymentIntentId: p.paymentIntentId?.trim() || null,
   }));
 
   let paySum = normalized.reduce((s, p) => s + p.amount, 0);
@@ -290,6 +299,7 @@ export class SalesService {
     private readonly permissions: UserPermissionsService,
     private readonly company: CompanyService,
     private readonly customerCredit: CustomerCreditService,
+    private readonly paymentsSvc: PaymentsService,
   ) {}
 
   async create(input: CreateSaleInput) {
@@ -402,6 +412,20 @@ export class SalesService {
     }
     const paymentsNorm = normalizePaymentsToSaleTotal(input.payments, merchandiseTotal);
 
+    const intentRefs = new Map<
+      string,
+      { externalTxnId: string | null; authCode: string | null }
+    >();
+    for (const p of paymentsNorm) {
+      if (!p.paymentIntentId) continue;
+      const ref = await this.paymentsSvc.assertIntentForSale(
+        input.tenantSlug,
+        p.paymentIntentId,
+        p.amount,
+      );
+      intentRefs.set(p.paymentIntentId, ref);
+    }
+
     const formIds = [
       ...new Set(paymentsNorm.map((p) => p.paymentFormId).filter(Boolean) as string[]),
     ];
@@ -447,10 +471,15 @@ export class SalesService {
           adminFeeAmount = fee;
           netAmount = roundMoney2(amount - adminFeeAmount);
         }
-        settlementStatus = CardSettlementStatus.OPEN;
-        const days = form?.settlementDays ?? 1;
-        expectedSettleAt = new Date();
-        expectedSettleAt.setDate(expectedSettleAt.getDate() + Math.max(0, days));
+        if (p.paymentIntentId) {
+          settlementStatus = CardSettlementStatus.SETTLED;
+          expectedSettleAt = new Date();
+        } else {
+          settlementStatus = CardSettlementStatus.OPEN;
+          const days = form?.settlementDays ?? 1;
+          expectedSettleAt = new Date();
+          expectedSettleAt.setDate(expectedSettleAt.getDate() + Math.max(0, days));
+        }
       }
       return {
         method,
@@ -466,7 +495,13 @@ export class SalesService {
                 )
               : p.installments,
         paymentFormId: form?.id ?? null,
-        authCode: p.authCode ?? null,
+        authCode: p.paymentIntentId
+          ? intentRefs.get(p.paymentIntentId)?.authCode ?? p.authCode ?? null
+          : p.authCode ?? null,
+        paymentIntentId: p.paymentIntentId ?? null,
+        externalTxnId: p.paymentIntentId
+          ? intentRefs.get(p.paymentIntentId)?.externalTxnId ?? null
+          : null,
         cardBrand,
         cardOperation,
         adminFeeAmount,
@@ -538,6 +573,7 @@ export class SalesService {
           customerId: input.customerId ?? null,
           userId: input.userId,
           cashSessionId,
+          terminalId: input.terminalId ?? null,
           subtotal: String(subtotal.toFixed(2)),
           discount: String(discount.toFixed(2)),
           surcharge: String(surcharge.toFixed(2)),
@@ -579,6 +615,8 @@ export class SalesService {
               installments: p.installments,
               paymentFormId: p.paymentFormId,
               authCode: p.authCode,
+              paymentIntentId: p.paymentIntentId,
+              externalTxnId: p.externalTxnId,
               cardBrand: p.cardBrand,
               cardOperation: p.cardOperation,
               adminFeeAmount: String(p.adminFeeAmount.toFixed(2)),
@@ -792,7 +830,15 @@ export class SalesService {
       }
 
       return sale;
-    }).then((sale) => {
+    }).then(async (sale) => {
+      const intentIds = [
+        ...new Set(
+          paymentsToCreate.map((p) => p.paymentIntentId).filter(Boolean) as string[],
+        ),
+      ];
+      for (const intentId of intentIds) {
+        await this.paymentsSvc.linkIntentToSale(input.tenantSlug, intentId, sale.id);
+      }
       this.activityLog.record({
         tenantSlug: input.tenantSlug,
         userId: input.userId,
@@ -801,6 +847,9 @@ export class SalesService {
         entityType: 'sale',
         entityRef: `#${sale.number}`,
       });
+      const db = await this.tenantPrisma.getClient(input.tenantSlug);
+      const company = await db.company.findFirst({ orderBy: { createdAt: 'asc' } });
+      await maybeAutoQueueNfce(db, company, sale.id);
       return sale;
     });
   }

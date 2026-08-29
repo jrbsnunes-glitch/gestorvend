@@ -23,11 +23,19 @@ export type PdvPrinterConfig = {
   receiptScale?: number;
 };
 
+/** Terminal PDV numerado (modo kiosk autoatendimento). */
+export type PdvTerminalConfig = {
+  number: number;
+  token: string;
+  mode: 'self_service' | 'operator';
+};
+
 export type DesktopConfig = {
   serverUrl: string;
   tenantSlug: string;
   station?: StationConfig;
   pdv?: PdvPrinterConfig;
+  pdvTerminal?: PdvTerminalConfig;
 };
 
 export type LicenseCache = {
@@ -79,6 +87,17 @@ function clampReceiptScale(n: unknown): number | undefined {
   return Math.max(0.75, Math.min(2, Math.round(n * 100) / 100));
 }
 
+function normalizePdvTerminal(raw: unknown): PdvTerminalConfig | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const t = raw as Record<string, unknown>;
+  const token = typeof t.token === 'string' ? t.token.trim() : '';
+  const number =
+    typeof t.number === 'number' && Number.isFinite(t.number) ? Math.floor(t.number) : null;
+  const mode = t.mode === 'operator' ? 'operator' : t.mode === 'self_service' ? 'self_service' : null;
+  if (!token || number == null || number < 1 || !mode) return undefined;
+  return { token, number, mode };
+}
+
 function normalizePdv(raw: unknown): PdvPrinterConfig | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const p = raw as Record<string, unknown>;
@@ -107,6 +126,7 @@ export function readConfig(): DesktopConfig | null {
         tenantSlug: parsed.tenantSlug.trim().toLowerCase(),
         station: normalizeStation(parsed.station),
         pdv: normalizePdv(parsed.pdv),
+        pdvTerminal: normalizePdvTerminal(parsed.pdvTerminal),
       };
     }
     return null;
@@ -135,7 +155,33 @@ export function writeConfig(cfg: DesktopConfig): void {
     if (cfg.pdv.printer?.trim()) payload.pdv.printer = cfg.pdv.printer.trim();
     if (cfg.pdv.receiptScale != null) payload.pdv.receiptScale = cfg.pdv.receiptScale;
   }
+  if (cfg.pdvTerminal?.token?.trim()) {
+    payload.pdvTerminal = {
+      token: cfg.pdvTerminal.token.trim(),
+      number: cfg.pdvTerminal.number,
+      mode: cfg.pdvTerminal.mode,
+    };
+  }
   fs.writeFileSync(configPath(), JSON.stringify(payload, null, 2), 'utf8');
+}
+
+/** Atualiza terminal PDV kiosk, preservando demais configurações. */
+export function writePdvTerminalConfig(
+  pdvTerminal: PdvTerminalConfig | null,
+): DesktopConfig | null {
+  const cfg = readConfig();
+  if (!cfg) return null;
+  if (pdvTerminal?.token?.trim()) {
+    cfg.pdvTerminal = {
+      token: pdvTerminal.token.trim(),
+      number: pdvTerminal.number,
+      mode: pdvTerminal.mode,
+    };
+  } else {
+    delete cfg.pdvTerminal;
+  }
+  writeConfig(cfg);
+  return cfg;
 }
 
 /** Atualiza só a impressora do PDV, preservando servidor/estação. */

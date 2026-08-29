@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
@@ -21,7 +21,8 @@ import {
 import { ProductReportsPanel } from '../components/ProductReportsPanel';
 import { RecordViewModal, type RecordViewSection } from '../components/RecordViewModal';
 import { ProductSearchModal, type ProductSearchRow as SearchPickRow } from '../components/ProductSearchModal';
-import { api } from '../lib/api';
+import { api, apiUpload } from '../lib/api';
+import { getIdentity } from '../lib/auth';
 import { formatBRL, formatDate } from '../lib/format';
 import { useListPagination } from '../hooks/useListPagination';
 import {
@@ -39,12 +40,13 @@ function isServiceTaxUnit(taxUnit: string | null | undefined): boolean {
   return u === 'SERV' || u === 'SERVICO' || u === 'SERVIÇO';
 }
 
-type ProductFormTab = 'identificacao' | 'fiscal' | 'fornecedores';
+type ProductFormTab = 'identificacao' | 'imagem' | 'fiscal' | 'fornecedores';
 
 const PRODUCT_FORM_TABS: Array<{ id: ProductFormTab; label: string }> = [
   { id: 'identificacao', label: 'Identificação' },
   { id: 'fiscal', label: 'Fiscal e composto' },
   { id: 'fornecedores', label: 'Fornecedores' },
+  { id: 'imagem', label: 'Imagem' },
 ];
 
 function ProductFormTabNav({
@@ -68,6 +70,104 @@ function ProductFormTabNav({
           {t.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+function ProductImageTabPanel({
+  createMode,
+  product,
+  tenantSlug,
+  imagePreviewKey,
+  imageFileRef,
+  uploadPending,
+  removePending,
+  onUpload,
+  onRemove,
+}: {
+  createMode: boolean;
+  product: { id: string; hasImage: boolean; imageVersion: number | null } | null;
+  tenantSlug: string;
+  imagePreviewKey: number;
+  imageFileRef: RefObject<HTMLInputElement | null>;
+  uploadPending: boolean;
+  removePending: boolean;
+  onUpload: (file: File) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="form-modal-tab-panel" role="tabpanel">
+      <section className="product-form__section" aria-label="Imagem do produto">
+        <p className="product-form__section-title">Imagem (catálogo / autoatendimento)</p>
+        {createMode ? (
+          <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+            Salve o produto primeiro. Depois, abra <strong>Alterar produto</strong> nesta aba para enviar a
+            foto exibida no kiosk e no catálogo.
+          </p>
+        ) : product ? (
+          <div className="company-form__logo-row" style={{ alignItems: 'center', gap: '1rem' }}>
+            {product.hasImage && product.imageVersion != null ? (
+              <img
+                key={`${product.id}-${product.imageVersion}-${imagePreviewKey}`}
+                src={`/api/catalog/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(product.id)}/image?size=thumb&v=${product.imageVersion}`}
+                alt="Miniatura do produto"
+                width={120}
+                height={120}
+                style={{ objectFit: 'cover', borderRadius: 8 }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: 120,
+                  height: 120,
+                  borderRadius: 8,
+                  border: '1px dashed var(--color-border)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  fontSize: '0.75rem',
+                  color: 'var(--color-text-muted)',
+                }}
+              >
+                Sem foto
+              </div>
+            )}
+            <div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={uploadPending}
+                onClick={() => imageFileRef.current?.click()}
+              >
+                {uploadPending ? 'Enviando…' : 'Enviar imagem'}
+              </button>
+              <input
+                ref={imageFileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onUpload(file);
+                }}
+              />
+              {product.hasImage ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ marginLeft: '0.5rem' }}
+                  disabled={removePending}
+                  onClick={onRemove}
+                >
+                  Remover
+                </button>
+              ) : null}
+              <p style={{ margin: '0.5rem 0 0', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                PNG/JPEG/WebP até 2 MB. Gera miniatura WebP para o kiosk.
+              </p>
+            </div>
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }
@@ -127,6 +227,8 @@ type Product = {
     product: { id: string; name: string; controlNumber: number };
   } | null;
   isActive: boolean;
+  hasImage?: boolean;
+  imageVersion?: number;
   category?: { id: string; name: string } | null;
   fiscalSituationId?: string | null;
   fiscalSituation?: { id: string; code: string; name: string } | null;
@@ -211,6 +313,9 @@ export function ProductsPage() {
   const [appliedFilterCodeMin, setAppliedFilterCodeMin] = useState<number | null>(null);
   const [appliedFilterCodeMax, setAppliedFilterCodeMax] = useState<number | null>(null);
   const [appliedFilterStatus, setAppliedFilterStatus] = useState<'active' | 'inactive' | 'all'>('active');
+  const [imagePreviewKey, setImagePreviewKey] = useState(0);
+  const imageFileRef = useRef<HTMLInputElement>(null);
+  const tenantSlug = getIdentity()?.tenantSlug ?? '';
 
   useEffect(() => {
     const q = searchParams.get('q')?.trim();
@@ -609,6 +714,37 @@ export function ProductsPage() {
       if (res.deactivated && res.message) {
         alert(res.message);
       }
+    },
+    onError: (e: Error) => setErr(e.message),
+  });
+
+  const uploadProductImage = useMutation({
+    mutationFn: ({ id, file }: { id: string; file: File }) =>
+      apiUpload<{ hasImage: boolean; imageVersion: number; imageThumbUrl: string }>(
+        `/products/${id}/image`,
+        file,
+      ),
+    onSuccess: (data, vars) => {
+      setImagePreviewKey((k) => k + 1);
+      setEditProduct((p) =>
+        p && p.id === vars.id
+          ? { ...p, hasImage: data.hasImage, imageVersion: data.imageVersion }
+          : p,
+      );
+      void qc.invalidateQueries({ queryKey: ['products'] });
+      if (imageFileRef.current) imageFileRef.current.value = '';
+    },
+    onError: (e: Error) => setErr(e.message),
+  });
+
+  const removeProductImage = useMutation({
+    mutationFn: (id: string) => api(`/products/${id}/image`, { method: 'DELETE' }),
+    onSuccess: (_, id) => {
+      setImagePreviewKey((k) => k + 1);
+      setEditProduct((p) =>
+        p && p.id === id ? { ...p, hasImage: false, imageVersion: (p.imageVersion ?? 0) + 1 } : p,
+      );
+      void qc.invalidateQueries({ queryKey: ['products'] });
     },
     onError: (e: Error) => setErr(e.message),
   });
@@ -1219,6 +1355,20 @@ export function ProductsPage() {
                 </div>
               )}
 
+              {productFormTab === 'imagem' && (
+                <ProductImageTabPanel
+                  createMode
+                  product={null}
+                  tenantSlug={tenantSlug}
+                  imagePreviewKey={imagePreviewKey}
+                  imageFileRef={imageFileRef}
+                  uploadPending={uploadProductImage.isPending}
+                  removePending={removeProductImage.isPending}
+                  onUpload={() => undefined}
+                  onRemove={() => undefined}
+                />
+              )}
+
               {productFormTab === 'fiscal' && (
                 <div className="form-modal-tab-panel" role="tabpanel">
                   <section className="product-form__section" aria-label="Fiscal">
@@ -1686,6 +1836,20 @@ export function ProductsPage() {
                     </div>
                   </section>
                 </div>
+              )}
+
+              {productFormTab === 'imagem' && editProduct && (
+                <ProductImageTabPanel
+                  createMode={false}
+                  product={editProduct}
+                  tenantSlug={tenantSlug}
+                  imagePreviewKey={imagePreviewKey}
+                  imageFileRef={imageFileRef}
+                  uploadPending={uploadProductImage.isPending}
+                  removePending={removeProductImage.isPending}
+                  onUpload={(file) => uploadProductImage.mutate({ id: editProduct.id, file })}
+                  onRemove={() => removeProductImage.mutate(editProduct.id)}
+                />
               )}
 
               {productFormTab === 'fiscal' && (
