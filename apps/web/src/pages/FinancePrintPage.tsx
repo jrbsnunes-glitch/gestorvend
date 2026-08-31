@@ -224,6 +224,44 @@ function groupPayablesByReceipt(rows: Payable[]) {
   return { groups: [...groups.values()], standalone };
 }
 
+function groupBillSummary(rows: Array<Payable | Receivable>) {
+  let totalOpen = 0;
+  let totalFace = 0;
+  const dueDates = rows.map((r) => r.dueDate).sort();
+  for (const row of rows) {
+    totalOpen += Number(saldoAberto(row)) || 0;
+    totalFace += Number(row.amount) || 0;
+  }
+  return {
+    count: rows.length,
+    totalOpen: Math.round(totalOpen * 100) / 100,
+    totalFace: Math.round(totalFace * 100) / 100,
+    firstDue: dueDates[0] ?? null,
+    lastDue: dueDates[dueDates.length - 1] ?? null,
+  };
+}
+
+type ReceiptLine = {
+  key: string;
+  description: string;
+  quantity: string;
+  totalLine: string;
+};
+
+function receiptItemsToLines(items: GoodsReceiptLineItem[] | null | undefined): ReceiptLine[] {
+  return (items ?? []).map((it) => {
+    const qty = Number(it.quantity);
+    const unit = Number(it.unitCost);
+    const total = Number.isFinite(qty * unit) ? qty * unit : 0;
+    return {
+      key: it.id,
+      description:
+        it.description?.trim() || lineLabel(it.variant?.product?.name, it.variant?.sku),
+      quantity: it.quantity,
+      totalLine: total.toFixed(2),
+    };
+  });
+}
 function sumPeriodTotals(rows: Array<Payable | Receivable>, modo: 'abertas' | 'pagas') {
   let totalFace = 0;
   let totalOpen = 0;
@@ -420,211 +458,47 @@ export function FinancePrintPage() {
     return <span>—</span>;
   }
 
-  function renderReceivableBillRow(r: Receivable, idx: number, compact = false) {
-    const vp = valorPagoAcumulado(r);
+  function renderSimpleItemsList(lines: SoldLine[] | ReceiptLine[]) {
+    if (!lines.length) {
+      return <p className="gv-finance-simple-items__empty">Sem itens cadastrados.</p>;
+    }
     return (
-      <tr key={r.id} className={compact ? 'gv-finance-bill-row gv-finance-bill-row--nested' : undefined}>
-        <td className="num">{idx + 1}</td>
-        <td>{formatDate(r.dueDate)}</td>
-        <td>{r.description}</td>
-        <td>
-          <PartyCell row={r} />
-        </td>
-        <td>{formatBRL(r.amount)}</td>
-        <td>{vp != null ? formatBRL(vp) : '—'}</td>
-        <td>{formatBRL(saldoAberto(r))}</td>
-        <td>
-          {statusPt(r.status)}
-          {tituloEmAbertoComParcial(r) ? ' · parcial' : ''}
-        </td>
-        {modo === 'pagas' && (
-          <>
-            <td>{r.receivedAt ? formatDate(r.receivedAt) : '—'}</td>
-            <td>{r.paymentMethod ? PAYMENT_LABELS[r.paymentMethod] ?? r.paymentMethod : '—'}</td>
-          </>
-        )}
-        <td className="no-print" style={{ textAlign: 'right' }}>
-          {hasInformedPayment(r) ? (
-            <BillPaymentsButton kind="receber" billId={r.id} description={r.description} />
-          ) : (
-            '—'
-          )}
-        </td>
-      </tr>
+      <ul className="gv-finance-simple-items">
+        {lines.map((it) => (
+          <li key={it.key} className="gv-finance-simple-items__row">
+            <span className="gv-finance-simple-items__name">{it.description}</span>
+            <span className="gv-finance-simple-items__meta">
+              {Number(it.quantity)} un · {formatBRL(it.totalLine)}
+            </span>
+          </li>
+        ))}
+      </ul>
     );
   }
 
-  function renderPayableBillRow(p: Payable, idx: number, compact = false) {
-    const vp = valorPagoAcumulado(p);
+  function renderDueSummary(summary: ReturnType<typeof groupBillSummary>) {
+    if (!summary.firstDue) return null;
+    const dueLabel =
+      summary.count > 1 && summary.lastDue && summary.lastDue !== summary.firstDue
+        ? `${formatDate(summary.firstDue)} — ${formatDate(summary.lastDue)}`
+        : formatDate(summary.firstDue);
     return (
-      <tr key={p.id} className={compact ? 'gv-finance-bill-row gv-finance-bill-row--nested' : undefined}>
-        <td className="num">{idx + 1}</td>
-        <td>{formatDate(p.dueDate)}</td>
-        <td>{p.description}</td>
-        <td>
-          <PartyCell row={p} />
-        </td>
-        <td>{formatBRL(p.amount)}</td>
-        <td>{vp != null ? formatBRL(vp) : '—'}</td>
-        <td>{formatBRL(saldoAberto(p))}</td>
-        <td>
-          {statusPt(p.status)}
-          {tituloEmAbertoComParcial(p) ? ' · parcial' : ''}
-        </td>
-        {modo === 'pagas' && (
-          <>
-            <td>{p.paidAt ? formatDate(p.paidAt) : '—'}</td>
-            <td>{p.paymentMethod ? PAYMENT_LABELS[p.paymentMethod] ?? p.paymentMethod : '—'}</td>
-          </>
-        )}
-        <td className="no-print" style={{ textAlign: 'right' }}>
-          {hasInformedPayment(p) ? (
-            <BillPaymentsButton kind="pagar" billId={p.id} description={p.description} />
-          ) : (
-            '—'
-          )}
-        </td>
-      </tr>
-    );
-  }
-
-  function receivableListHead() {
-    return (
-      <thead>
-        <tr>
-          <th className="num">Cont.</th>
-          <th>Vencimento</th>
-          <th>Descrição</th>
-          <th>Cliente</th>
-          <th>Valor (face)</th>
-          <th>Pago / recebido</th>
-          <th>Saldo em aberto</th>
-          <th>Status</th>
-          {modo === 'pagas' && (
-            <>
-              <th>Recebido em</th>
-              <th>Forma</th>
-            </>
-          )}
-          <th className="no-print">Ações</th>
-        </tr>
-      </thead>
-    );
-  }
-
-  function payableListHead() {
-    return (
-      <thead>
-        <tr>
-          <th className="num">Cont.</th>
-          <th>Vencimento</th>
-          <th>Descrição</th>
-          <th>Fornecedor</th>
-          <th>Valor (face)</th>
-          <th>Pago / recebido</th>
-          <th>Saldo em aberto</th>
-          <th>Status</th>
-          {modo === 'pagas' && (
-            <>
-              <th>Pago em</th>
-              <th>Forma</th>
-            </>
-          )}
-          <th className="no-print">Ações</th>
-        </tr>
-      </thead>
-    );
-  }
-
-  function renderSoldItemsSection(lines: SoldLine[]) {
-    return (
-      <div className="gv-finance-sold-items">
-        <p className="gv-finance-origin-group__items-title">Itens vendidos</p>
-        {lines.length ? (
-          <table className="data-table gv-finance-print-table gv-finance-origin-items">
-            <thead>
-              <tr>
-                <th>Produto</th>
-                <th className="num">Qtd</th>
-                <th className="num">Unit.</th>
-                <th className="num">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((it) => (
-                <tr key={it.key}>
-                  <td>{it.description}</td>
-                  <td className="num">{Number(it.quantity)}</td>
-                  <td className="num">{formatBRL(it.unitPrice)}</td>
-                  <td className="num">{formatBRL(it.totalLine)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="gv-finance-origin-group__items-empty">Itens da venda não disponíveis.</p>
-        )}
-      </div>
-    );
-  }
-
-  function renderReceiptItemsBlock(items: GoodsReceiptLineItem[] | null | undefined) {
-    const rows = items ?? [];
-    if (!rows.length) return null;
-    return (
-      <table className="data-table gv-finance-print-table gv-finance-origin-items">
-        <thead>
-          <tr>
-            <th>Produto</th>
-            <th className="num">Qtd</th>
-            <th className="num">Custo unit.</th>
-            <th className="num">Total est.</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((it) => {
-            const qty = Number(it.quantity);
-            const unit = Number(it.unitCost);
-            const total = Number.isFinite(qty * unit) ? qty * unit : 0;
-            return (
-              <tr key={it.id}>
-                <td>
-                  {it.description?.trim() ||
-                    lineLabel(it.variant?.product?.name, it.variant?.sku)}
-                </td>
-                <td className="num">{qty}</td>
-                <td className="num">{formatBRL(it.unitCost)}</td>
-                <td className="num">{formatBRL(total)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <span>
+        Venc.: {dueLabel}
+        {summary.count > 1 ? ` · ${summary.count} parcelas` : null}
+      </span>
     );
   }
 
   function renderReceivablesDetailed(rows: Receivable[]) {
     const { groups, standalone } = groupReceivablesBySale(rows);
-    let cont = 0;
-    const emptyColSpan = modo === 'pagas' ? 11 : 9;
 
     if (!rows.length) {
-      return (
-        <table className="data-table" style={{ width: '100%' }}>
-          {receivableListHead()}
-          <tbody>
-            <tr>
-              <td colSpan={emptyColSpan} className="empty">
-                Nenhum registro.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      );
+      return <p className="gv-finance-simple-items__empty">Nenhum registro.</p>;
     }
 
     return (
-      <div className="gv-finance-grouped-list">
+      <div className="gv-finance-grouped-list gv-finance-grouped-list--simple">
         {groups.map((group) => {
           const customer = group.rows[0]?.customer;
           const sale = group.sale;
@@ -632,60 +506,45 @@ export function FinancePrintPage() {
             sale?.number ??
             Number(group.rows[0]?.description.match(/venda #(\d+)/i)?.[1] ?? NaN);
           const soldLines = resolveSoldLines(group, saleItemsById);
+          const summary = groupBillSummary(group.rows);
           return (
             <section key={group.saleId} className="gv-finance-origin-group">
-              <header className="gv-finance-origin-group__head">
-                <strong>
-                  Venda #{Number.isFinite(saleNumber) ? saleNumber : sale?.number ?? '—'}
-                </strong>
-                <span>Cliente: {customer?.name ?? '—'}</span>
-                {sale?.createdAt ? <span>Data: {formatDate(sale.createdAt)}</span> : null}
-                {sale?.total ? <span>Total da venda: {formatBRL(sale.total)}</span> : null}
+              <header className="gv-finance-origin-group__head gv-finance-origin-group__head--compact">
+                <div className="gv-finance-origin-group__lead">
+                  <strong>
+                    Venda #{Number.isFinite(saleNumber) ? saleNumber : sale?.number ?? '—'}
+                  </strong>
+                  <span>{customer?.name ?? '—'}</span>
+                  {sale?.createdAt ? <span>{formatDate(sale.createdAt)}</span> : null}
+                </div>
+                <div className="gv-finance-origin-group__totals">
+                  <strong>{formatBRL(summary.totalOpen)}</strong>
+                  <span>saldo em aberto</span>
+                  {renderDueSummary(summary)}
+                  {sale?.total ? <span>Total venda: {formatBRL(sale.total)}</span> : null}
+                </div>
               </header>
-              {renderSoldItemsSection(soldLines)}
-              <table className="data-table gv-finance-print-table" style={{ width: '100%' }}>
-                <thead>
-                  <tr>
-                    <th colSpan={emptyColSpan} className="gv-finance-origin-group__subhead">
-                      Títulos desta venda
-                    </th>
-                  </tr>
-                </thead>
-                {receivableListHead()}
-                <tbody>
-                  {group.rows.map((r) => {
-                    const row = renderReceivableBillRow(r, cont, true);
-                    cont += 1;
-                    return row;
-                  })}
-                </tbody>
-              </table>
+              {renderSimpleItemsList(soldLines)}
             </section>
           );
         })}
         {standalone.map((r) => {
-          const idx = cont;
-          cont += 1;
           const soldLines = mergeReceivableItemsToSoldLines([r]);
+          const summary = groupBillSummary([r]);
           return (
             <section key={r.id} className="gv-finance-origin-group">
-              <header className="gv-finance-origin-group__head">
-                <strong>{r.description}</strong>
-                <span>Cliente: {r.customer?.name ?? '—'}</span>
-                <span>Vencimento: {formatDate(r.dueDate)}</span>
+              <header className="gv-finance-origin-group__head gv-finance-origin-group__head--compact">
+                <div className="gv-finance-origin-group__lead">
+                  <strong>{r.description}</strong>
+                  <span>{r.customer?.name ?? '—'}</span>
+                </div>
+                <div className="gv-finance-origin-group__totals">
+                  <strong>{formatBRL(summary.totalOpen)}</strong>
+                  <span>saldo em aberto</span>
+                  {renderDueSummary(summary)}
+                </div>
               </header>
-              {soldLines.length ? renderSoldItemsSection(soldLines) : null}
-              <table className="data-table gv-finance-print-table" style={{ width: '100%' }}>
-                <thead>
-                  <tr>
-                    <th colSpan={emptyColSpan} className="gv-finance-origin-group__subhead">
-                      Título
-                    </th>
-                  </tr>
-                </thead>
-                {receivableListHead()}
-                <tbody>{renderReceivableBillRow(r, idx)}</tbody>
-              </table>
+              {soldLines.length ? renderSimpleItemsList(soldLines) : null}
             </section>
           );
         })}
@@ -695,69 +554,54 @@ export function FinancePrintPage() {
 
   function renderPayablesDetailed(rows: Payable[]) {
     const { groups, standalone } = groupPayablesByReceipt(rows);
-    let cont = 0;
-    const emptyColSpan = modo === 'pagas' ? 11 : 9;
 
     if (!rows.length) {
-      return (
-        <table className="data-table" style={{ width: '100%' }}>
-          {payableListHead()}
-          <tbody>
-            <tr>
-              <td colSpan={emptyColSpan} className="empty">
-                Nenhum registro.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      );
+      return <p className="gv-finance-simple-items__empty">Nenhum registro.</p>;
     }
 
     return (
-      <div className="gv-finance-grouped-list">
+      <div className="gv-finance-grouped-list gv-finance-grouped-list--simple">
         {groups.map(({ receipt, rows: billRows }) => {
           const supplier = billRows[0]?.supplier;
+          const summary = groupBillSummary(billRows);
+          const itemLines = receiptItemsToLines(receipt.items);
           return (
             <section key={receipt.id} className="gv-finance-origin-group">
-              <header className="gv-finance-origin-group__head">
-                <strong>Entrada #{receipt.controlNumber}</strong>
-                <span>Fornecedor: {supplier?.legalName ?? '—'}</span>
-                {receipt.documentNumber ? <span>NF: {receipt.documentNumber}</span> : null}
-                {receipt.issueDate ? <span>Emissão: {formatDate(receipt.issueDate)}</span> : null}
-                {receipt.totalValue ? (
-                  <span>Total entrada: {formatBRL(receipt.totalValue)}</span>
-                ) : null}
+              <header className="gv-finance-origin-group__head gv-finance-origin-group__head--compact">
+                <div className="gv-finance-origin-group__lead">
+                  <strong>Entrada #{receipt.controlNumber}</strong>
+                  <span>{supplier?.legalName ?? '—'}</span>
+                  {receipt.documentNumber ? <span>NF {receipt.documentNumber}</span> : null}
+                  {receipt.issueDate ? <span>{formatDate(receipt.issueDate)}</span> : null}
+                </div>
+                <div className="gv-finance-origin-group__totals">
+                  <strong>{formatBRL(summary.totalOpen)}</strong>
+                  <span>saldo em aberto</span>
+                  {renderDueSummary(summary)}
+                  {receipt.totalValue ? (
+                    <span>Total entrada: {formatBRL(receipt.totalValue)}</span>
+                  ) : null}
+                </div>
               </header>
-              {renderReceiptItemsBlock(receipt.items)}
-              <table className="data-table gv-finance-print-table" style={{ width: '100%' }}>
-                <thead>
-                  <tr>
-                    <th colSpan={emptyColSpan} className="gv-finance-origin-group__subhead">
-                      Títulos desta entrada
-                    </th>
-                  </tr>
-                </thead>
-                {payableListHead()}
-                <tbody>
-                  {billRows.map((p) => {
-                    const row = renderPayableBillRow(p, cont, true);
-                    cont += 1;
-                    return row;
-                  })}
-                </tbody>
-              </table>
+              {renderSimpleItemsList(itemLines)}
             </section>
           );
         })}
         {standalone.map((p) => {
-          const idx = cont;
-          cont += 1;
+          const summary = groupBillSummary([p]);
           return (
             <section key={p.id} className="gv-finance-origin-group">
-              <table className="data-table gv-finance-print-table" style={{ width: '100%' }}>
-                {payableListHead()}
-                <tbody>{renderPayableBillRow(p, idx)}</tbody>
-              </table>
+              <header className="gv-finance-origin-group__head gv-finance-origin-group__head--compact">
+                <div className="gv-finance-origin-group__lead">
+                  <strong>{p.description}</strong>
+                  <span>{p.supplier?.legalName ?? '—'}</span>
+                </div>
+                <div className="gv-finance-origin-group__totals">
+                  <strong>{formatBRL(summary.totalOpen)}</strong>
+                  <span>saldo em aberto</span>
+                  {renderDueSummary(summary)}
+                </div>
+              </header>
             </section>
           );
         })}
@@ -906,28 +750,31 @@ export function FinancePrintPage() {
 
       {!loading && !errMessage && periodSummary ? (
         <div className="gv-finance-period-total" aria-label="Total geral do período">
-          <div className="gv-finance-period-total__headline">{periodSummary.headline}</div>
-          <div className="gv-finance-period-total__value">{formatBRL(periodSummary.amount)}</div>
-          <div className="gv-finance-period-total__meta">
-            {periodSummary.count} título{periodSummary.count === 1 ? '' : 's'}
-            {modo === 'abertas' ? (
-              <>
-                {' · '}
-                Valor de face: {formatBRL(periodSummary.totalFace)}
-                {periodSummary.totalSettled > 0 ? (
-                  <>
-                    {' · '}
-                    {tipo === 'receber' ? 'Recebido parcial' : 'Pago parcial'}:{' '}
-                    {formatBRL(periodSummary.totalSettled)}
-                  </>
-                ) : null}
-              </>
-            ) : (
-              <>
-                {' · '}
-                Valor de face: {formatBRL(periodSummary.totalFace)}
-              </>
-            )}
+          <div className="gv-finance-period-total__grid">
+            <div className="gv-finance-period-total__cell gv-finance-period-total__cell--main">
+              <span className="gv-finance-period-total__headline">{periodSummary.headline}</span>
+              <strong className="gv-finance-period-total__value">{formatBRL(periodSummary.amount)}</strong>
+            </div>
+            <div className="gv-finance-period-total__cell">
+              <span className="gv-finance-period-total__headline">Títulos</span>
+              <strong className="gv-finance-period-total__subvalue">{periodSummary.count}</strong>
+            </div>
+            <div className="gv-finance-period-total__cell">
+              <span className="gv-finance-period-total__headline">Valor de face</span>
+              <strong className="gv-finance-period-total__subvalue">
+                {formatBRL(periodSummary.totalFace)}
+              </strong>
+            </div>
+            {modo === 'abertas' && periodSummary.totalSettled > 0 ? (
+              <div className="gv-finance-period-total__cell">
+                <span className="gv-finance-period-total__headline">
+                  {tipo === 'receber' ? 'Recebido parcial' : 'Pago parcial'}
+                </span>
+                <strong className="gv-finance-period-total__subvalue">
+                  {formatBRL(periodSummary.totalSettled)}
+                </strong>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
