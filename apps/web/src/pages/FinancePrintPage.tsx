@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
@@ -129,12 +129,77 @@ function lineLabel(name: string | undefined | null, sku?: string | null): string
   return s ? `${label} (${s})` : label;
 }
 
+type SoldLine = {
+  key: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  totalLine: string;
+};
+
+type ReceivableSaleGroup = {
+  saleId: string;
+  sale: SaleBrief | null;
+  rows: Receivable[];
+};
+
+function saleItemsToSoldLines(items: SaleLineItem[]): SoldLine[] {
+  return items.map((it) => ({
+    key: it.id,
+    description: lineLabel(it.variant?.product?.name, it.variant?.sku),
+    quantity: it.quantity,
+    unitPrice: it.unitPrice,
+    totalLine: it.totalLine,
+  }));
+}
+
+function mergeReceivableItemsToSoldLines(rows: Receivable[]): SoldLine[] {
+  const acc = new Map<string, { description: string; quantity: number; totalLine: number }>();
+  for (const row of rows) {
+    for (const it of row.items ?? []) {
+      const desc = it.description.trim() || 'Item';
+      const prev = acc.get(desc);
+      const qty = Number(it.quantity);
+      const total = Number(it.totalLine);
+      if (!Number.isFinite(qty) || !Number.isFinite(total)) continue;
+      if (prev) {
+        prev.quantity += qty;
+        prev.totalLine += total;
+      } else {
+        acc.set(desc, { description: desc, quantity: qty, totalLine: total });
+      }
+    }
+  }
+  return [...acc.entries()].map(([key, v]) => ({
+    key,
+    description: v.description,
+    quantity: String(v.quantity),
+    unitPrice: String(v.quantity > 0 ? (v.totalLine / v.quantity).toFixed(2) : v.totalLine.toFixed(2)),
+    totalLine: v.totalLine.toFixed(2),
+  }));
+}
+
+function resolveSoldLines(
+  group: ReceivableSaleGroup,
+  saleItemsById: Map<string, SaleLineItem[]>,
+): SoldLine[] {
+  const fromMap = saleItemsById.get(group.saleId);
+  if (fromMap?.length) return saleItemsToSoldLines(fromMap);
+  if (group.sale?.items?.length) return saleItemsToSoldLines(group.sale.items);
+  return mergeReceivableItemsToSoldLines(group.rows);
+}
+
 function groupReceivablesBySale(rows: Receivable[]) {
-  const groups = new Map<string, { sale: SaleBrief; rows: Receivable[] }>();
+  const groups = new Map<string, ReceivableSaleGroup>();
   const standalone: Receivable[] = [];
   for (const row of rows) {
-    if (row.saleId && row.sale) {
-      const g = groups.get(row.saleId) ?? { sale: row.sale, rows: [] };
+    if (row.saleId) {
+      const g = groups.get(row.saleId) ?? {
+        saleId: row.saleId,
+        sale: row.sale ?? null,
+        rows: [],
+      };
+      if (row.sale && !g.sale) g.sale = row.sale;
       g.rows.push(row);
       groups.set(row.saleId, g);
     } else {
@@ -212,7 +277,44 @@ export function FinancePrintPage() {
     queryKey: ['finance', 'receivables', listQs],
     queryFn: () => api<Receivable[]>(`/finance/receivables?${listQs}`),
     enabled: tipo === 'receber' && modo !== 'conta',
+    staleTime: 0,
   });
+
+  const saleIdsNeedingItems = useMemo(() => {
+    if (!detalhar || tipo !== 'receber' || !listReceivables.data?.length) return [];
+    const ids = new Set<string>();
+    for (const r of listReceivables.data) {
+      if (!r.saleId) continue;
+      if ((r.sale?.items?.length ?? 0) > 0) continue;
+      ids.add(r.saleId);
+    }
+    return [...ids];
+  }, [detalhar, tipo, listReceivables.data]);
+
+  const saleDetailQueries = useQueries({
+    queries: saleIdsNeedingItems.map((saleId) => ({
+      queryKey: ['finance', 'print', 'sale', saleId],
+      queryFn: () => api<SaleBrief>(`/sales/${saleId}`),
+      staleTime: 0,
+    })),
+  });
+
+  const saleItemsById = useMemo(() => {
+    const map = new Map<string, SaleLineItem[]>();
+    for (const r of listReceivables.data ?? []) {
+      if (r.saleId && r.sale?.items?.length) {
+        map.set(r.saleId, r.sale.items);
+      }
+    }
+    saleIdsNeedingItems.forEach((saleId, idx) => {
+      const items = saleDetailQueries[idx]?.data?.items;
+      if (items?.length) map.set(saleId, items);
+    });
+    return map;
+  }, [listReceivables.data, saleIdsNeedingItems, saleDetailQueries]);
+
+  const salesItemsLoading =
+    detalhar && saleDetailQueries.some((q) => q.isLoading || q.isFetching);
 
   const kindLabel = tipo === 'pagar' ? 'Contas a pagar' : 'Contas a receber';
   const modeLabel =
@@ -237,7 +339,7 @@ export function FinancePrintPage() {
     (tipo === 'pagar' && modo === 'conta' && singlePayable.isLoading) ||
     (tipo === 'receber' && modo === 'conta' && singleReceivable.isLoading) ||
     (tipo === 'pagar' && modo !== 'conta' && listPayables.isLoading) ||
-    (tipo === 'receber' && modo !== 'conta' && listReceivables.isLoading);
+    (tipo === 'receber' && modo !== 'conta' && (listReceivables.isLoading || salesItemsLoading));
 
   const err =
     (tipo === 'pagar' && modo === 'conta' && singlePayable.error) ||
@@ -391,30 +493,35 @@ export function FinancePrintPage() {
     );
   }
 
-  function renderSaleItemsBlock(items: SaleLineItem[] | null | undefined) {
-    const rows = items ?? [];
-    if (!rows.length) return null;
+  function renderSoldItemsSection(lines: SoldLine[]) {
     return (
-      <table className="data-table gv-finance-print-table gv-finance-origin-items">
-        <thead>
-          <tr>
-            <th>Produto</th>
-            <th className="num">Qtd</th>
-            <th className="num">Unit.</th>
-            <th className="num">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((it) => (
-            <tr key={it.id}>
-              <td>{lineLabel(it.variant?.product?.name, it.variant?.sku)}</td>
-              <td className="num">{Number(it.quantity)}</td>
-              <td className="num">{formatBRL(it.unitPrice)}</td>
-              <td className="num">{formatBRL(it.totalLine)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="gv-finance-sold-items">
+        <p className="gv-finance-origin-group__items-title">Itens vendidos</p>
+        {lines.length ? (
+          <table className="data-table gv-finance-print-table gv-finance-origin-items">
+            <thead>
+              <tr>
+                <th>Produto</th>
+                <th className="num">Qtd</th>
+                <th className="num">Unit.</th>
+                <th className="num">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((it) => (
+                <tr key={it.key}>
+                  <td>{it.description}</td>
+                  <td className="num">{Number(it.quantity)}</td>
+                  <td className="num">{formatBRL(it.unitPrice)}</td>
+                  <td className="num">{formatBRL(it.totalLine)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="gv-finance-origin-group__items-empty">Itens da venda não disponíveis.</p>
+        )}
+      </div>
     );
   }
 
@@ -453,32 +560,6 @@ export function FinancePrintPage() {
     );
   }
 
-  function renderReceivableManualItems(items: ReceivableItem[]) {
-    if (!items.length) return null;
-    return (
-      <table className="data-table gv-finance-print-table gv-finance-origin-items">
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th className="num">Qtd</th>
-            <th className="num">Unit.</th>
-            <th className="num">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((it) => (
-            <tr key={it.id}>
-              <td>{it.description}</td>
-              <td className="num">{Number(it.quantity)}</td>
-              <td className="num">{formatBRL(it.unitPrice)}</td>
-              <td className="num">{formatBRL(it.totalLine)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    );
-  }
-
   function renderReceivablesDetailed(rows: Receivable[]) {
     const { groups, standalone } = groupReceivablesBySale(rows);
     let cont = 0;
@@ -501,17 +582,24 @@ export function FinancePrintPage() {
 
     return (
       <div className="gv-finance-grouped-list">
-        {groups.map(({ sale, rows: billRows }) => {
-          const customer = billRows[0]?.customer;
+        {groups.map((group) => {
+          const customer = group.rows[0]?.customer;
+          const sale = group.sale;
+          const saleNumber =
+            sale?.number ??
+            Number(group.rows[0]?.description.match(/venda #(\d+)/i)?.[1] ?? NaN);
+          const soldLines = resolveSoldLines(group, saleItemsById);
           return (
-            <section key={sale.id} className="gv-finance-origin-group">
+            <section key={group.saleId} className="gv-finance-origin-group">
               <header className="gv-finance-origin-group__head">
-                <strong>Venda #{sale.number}</strong>
+                <strong>
+                  Venda #{Number.isFinite(saleNumber) ? saleNumber : sale?.number ?? '—'}
+                </strong>
                 <span>Cliente: {customer?.name ?? '—'}</span>
-                <span>Data: {formatDate(sale.createdAt)}</span>
-                <span>Total da venda: {formatBRL(sale.total)}</span>
+                {sale?.createdAt ? <span>Data: {formatDate(sale.createdAt)}</span> : null}
+                {sale?.total ? <span>Total da venda: {formatBRL(sale.total)}</span> : null}
               </header>
-              {renderSaleItemsBlock(sale.items)}
+              {renderSoldItemsSection(soldLines)}
               <table className="data-table gv-finance-print-table" style={{ width: '100%' }}>
                 <thead>
                   <tr>
@@ -522,7 +610,7 @@ export function FinancePrintPage() {
                 </thead>
                 {receivableListHead()}
                 <tbody>
-                  {billRows.map((r) => {
+                  {group.rows.map((r) => {
                     const row = renderReceivableBillRow(r, cont, true);
                     cont += 1;
                     return row;
@@ -535,32 +623,24 @@ export function FinancePrintPage() {
         {standalone.map((r) => {
           const idx = cont;
           cont += 1;
-          const hasManualItems = (r.items?.length ?? 0) > 0;
+          const soldLines = mergeReceivableItemsToSoldLines([r]);
           return (
             <section key={r.id} className="gv-finance-origin-group">
-              {!hasManualItems ? null : (
-                <>
-                  <header className="gv-finance-origin-group__head">
-                    <strong>{r.description}</strong>
-                    <span>Cliente: {r.customer?.name ?? '—'}</span>
-                    <span>Vencimento: {formatDate(r.dueDate)}</span>
-                  </header>
-                  {renderReceivableManualItems(r.items ?? [])}
-                </>
-              )}
+              <header className="gv-finance-origin-group__head">
+                <strong>{r.description}</strong>
+                <span>Cliente: {r.customer?.name ?? '—'}</span>
+                <span>Vencimento: {formatDate(r.dueDate)}</span>
+              </header>
+              {soldLines.length ? renderSoldItemsSection(soldLines) : null}
               <table className="data-table gv-finance-print-table" style={{ width: '100%' }}>
-                {!hasManualItems ? receivableListHead() : (
-                  <>
-                    <thead>
-                      <tr>
-                        <th colSpan={emptyColSpan} className="gv-finance-origin-group__subhead">
-                          Título
-                        </th>
-                      </tr>
-                    </thead>
-                    {receivableListHead()}
-                  </>
-                )}
+                <thead>
+                  <tr>
+                    <th colSpan={emptyColSpan} className="gv-finance-origin-group__subhead">
+                      Título
+                    </th>
+                  </tr>
+                </thead>
+                {receivableListHead()}
                 <tbody>{renderReceivableBillRow(r, idx)}</tbody>
               </table>
             </section>

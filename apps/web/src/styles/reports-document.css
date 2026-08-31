@@ -495,9 +495,28 @@
   color: #475569 !important;
 }
 
+.gv-finance-origin-group__items-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #475569;
+}
+
+.gv-finance-origin-group__items-empty {
+  margin: 0 0 0.55rem;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.gv-finance-sold-items {
+  margin-bottom: 0.55rem;
+}
+
 .gv-finance-origin-items {
   width: 100%;
-  margin: 0 0 0.55rem;
+  margin: 0;
 }
 
 .gv-finance-bill-row--nested td:first-child {
