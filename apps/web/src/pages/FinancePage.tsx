@@ -208,6 +208,7 @@ export function FinancePage() {
   const [printTo, setPrintTo] = useState(printToDef);
   const [printSegment, setPrintSegment] = useState('');
   const [printPartyId, setPrintPartyId] = useState('');
+  const [printDetalharOrigem, setPrintDetalharOrigem] = useState(false);
 
   const payables = useQuery({
     queryKey: ['payables', filterSupplierId],
@@ -492,6 +493,7 @@ export function FinancePage() {
     setPrintTo(to);
     setPrintSegment('');
     setPrintPartyId('');
+    setPrintDetalharOrigem(false);
     setPrintModo('abertas');
     setPrintId('');
     setPrintOpen(true);
@@ -512,6 +514,7 @@ export function FinancePage() {
       if (printTo) p.set('to', printTo);
       if (printSegment.trim()) p.set('segment', printSegment.trim());
       if (printPartyId) p.set('partyId', printPartyId);
+      if (printDetalharOrigem) p.set('detalhar', '1');
     }
     navigate(`/financeiro/impressao?${p.toString()}`);
     setPrintOpen(false);
@@ -1440,6 +1443,21 @@ export function FinancePage() {
                           </option>
                         ))}
                   </select>
+                </div>
+                <div className="field">
+                  <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={printDetalharOrigem}
+                      onChange={(e) => setPrintDetalharOrigem(e.target.checked)}
+                    />
+                    {tab === 'pagar'
+                      ? 'Detalhar entradas de mercadoria (cabeçalho + itens)'
+                      : 'Detalhar vendas (cabeçalho + itens)'}
+                  </label>
+                  <p style={{ margin: '0.35rem 0 0', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                    Agrupa títulos pela venda ou entrada e lista os produtos abaixo de cada cabeçalho.
+                  </p>
                 </div>
               </>
             )}

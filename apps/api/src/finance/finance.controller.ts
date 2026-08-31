@@ -248,12 +248,31 @@ function receivableDateFilterField(statuses: BillStatus[] | null): 'receivedAt' 
 
 const payableInclude = {
   supplier: true,
+  goodsReceipt: {
+    include: {
+      items: {
+        orderBy: { id: 'asc' as const },
+        include: {
+          variant: { include: { product: { select: { name: true } } } },
+        },
+      },
+    },
+  },
   cashSession: { include: { user: { select: { id: true, name: true, email: true } } } },
+} as const;
+
+const saleLineInclude = {
+  items: {
+    orderBy: { id: 'asc' as const },
+    include: {
+      variant: { include: { product: { select: { name: true } } } },
+    },
+  },
 } as const;
 
 const receivableInclude = {
   customer: true,
-  sale: true,
+  sale: { include: saleLineInclude },
   cashSession: { include: { user: { select: { id: true, name: true, email: true } } } },
   items: { orderBy: { createdAt: 'asc' as const } },
 } as const;

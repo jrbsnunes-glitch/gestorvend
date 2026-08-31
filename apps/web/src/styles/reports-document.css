@@ -456,3 +456,50 @@
   margin: 0;
   font-size: 0.92rem;
 }
+
+.gv-finance-grouped-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.gv-finance-origin-group {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.gv-finance-origin-group__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  align-items: baseline;
+  padding: 0.55rem 0.65rem;
+  margin-bottom: 0.45rem;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.88rem;
+}
+
+.gv-finance-origin-group__head strong {
+  color: #0f172a;
+  font-size: 0.95rem;
+}
+
+.gv-finance-origin-group__subhead {
+  background: #e2e8f0 !important;
+  font-size: 0.78rem !important;
+  font-weight: 700 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #475569 !important;
+}
+
+.gv-finance-origin-items {
+  width: 100%;
+  margin: 0 0 0.55rem;
+}
+
+.gv-finance-bill-row--nested td:first-child {
+  padding-left: 0.85rem;
+}
