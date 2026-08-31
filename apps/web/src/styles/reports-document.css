@@ -517,6 +517,29 @@
   gap: 0.85rem;
 }
 
+.gv-finance-grouped-list--simple .gv-finance-origin-group {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.gv-finance-grouped-list--simple .gv-finance-origin-group__head {
+  margin-bottom: 0;
+  border: none;
+  border-radius: 0;
+}
+
+.gv-finance-grouped-list--simple .gv-finance-simple-items {
+  padding: 0 0.65rem 0.45rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.gv-finance-grouped-list--simple .gv-finance-simple-items__empty {
+  padding: 0.35rem 0.65rem 0.55rem;
+  border-top: 1px solid #e2e8f0;
+}
+
 .gv-finance-origin-group__head--compact {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
