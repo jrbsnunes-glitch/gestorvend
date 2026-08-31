@@ -123,10 +123,13 @@ function statusPt(s: string): string {
   }
 }
 
-function lineLabel(name: string | undefined | null, sku?: string | null): string {
+function stripSkuSuffix(text: string): string {
+  return text.replace(/\s*\(SKU-[^)]+\)\s*$/i, '').trim();
+}
+
+function lineLabel(name: string | undefined | null): string {
   const label = name?.trim() || '—';
-  const s = sku?.trim();
-  return s ? `${label} (${s})` : label;
+  return stripSkuSuffix(label) || '—';
 }
 
 type SoldLine = {
@@ -146,7 +149,7 @@ type ReceivableSaleGroup = {
 function saleItemsToSoldLines(items: SaleLineItem[]): SoldLine[] {
   return items.map((it) => ({
     key: it.id,
-    description: lineLabel(it.variant?.product?.name, it.variant?.sku),
+    description: lineLabel(it.variant?.product?.name),
     quantity: it.quantity,
     unitPrice: it.unitPrice,
     totalLine: it.totalLine,
@@ -157,7 +160,7 @@ function mergeReceivableItemsToSoldLines(rows: Receivable[]): SoldLine[] {
   const acc = new Map<string, { description: string; quantity: number; totalLine: number }>();
   for (const row of rows) {
     for (const it of row.items ?? []) {
-      const desc = it.description.trim() || 'Item';
+      const desc = stripSkuSuffix(it.description.trim()) || 'Item';
       const prev = acc.get(desc);
       const qty = Number(it.quantity);
       const total = Number(it.totalLine);
@@ -256,7 +259,8 @@ function receiptItemsToLines(items: GoodsReceiptLineItem[] | null | undefined): 
     return {
       key: it.id,
       description:
-        it.description?.trim() || lineLabel(it.variant?.product?.name, it.variant?.sku),
+        stripSkuSuffix(it.description?.trim() || '') ||
+        lineLabel(it.variant?.product?.name),
       quantity: it.quantity,
       totalLine: total.toFixed(2),
     };
