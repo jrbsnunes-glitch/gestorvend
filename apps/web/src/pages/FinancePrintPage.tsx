@@ -123,9 +123,10 @@ function statusPt(s: string): string {
   }
 }
 
-function lineLabel(name: string, sku?: string): string {
+function lineLabel(name: string | undefined | null, sku?: string | null): string {
+  const label = name?.trim() || '—';
   const s = sku?.trim();
-  return s ? `${name} (${s})` : name;
+  return s ? `${label} (${s})` : label;
 }
 
 function groupReceivablesBySale(rows: Receivable[]) {
@@ -185,8 +186,9 @@ export function FinancePrintPage() {
       if (tipo === 'pagar') p.set('supplierId', partyId);
       else p.set('customerId', partyId);
     }
+    if (detalhar) p.set('detalhar', '1');
     return p.toString();
-  }, [modo, from, to, segment, partyId, tipo]);
+  }, [modo, from, to, segment, partyId, tipo, detalhar]);
 
   const singlePayable = useQuery({
     queryKey: ['finance', 'payable', id],
@@ -242,6 +244,16 @@ export function FinancePrintPage() {
     (tipo === 'receber' && modo === 'conta' && singleReceivable.error) ||
     (tipo === 'pagar' && modo !== 'conta' && listPayables.error) ||
     (tipo === 'receber' && modo !== 'conta' && listReceivables.error);
+
+  const errMessage = err
+    ? err instanceof Error
+      ? err.message
+      : String(err)
+    : null;
+
+  const listReady =
+    (tipo === 'pagar' && modo !== 'conta' && listPayables.isFetched) ||
+    (tipo === 'receber' && modo !== 'conta' && listReceivables.isFetched);
 
   function PartyCell({ row }: { row: Payable | Receivable }) {
     if ('supplier' in row && row.supplier) {
@@ -379,8 +391,9 @@ export function FinancePrintPage() {
     );
   }
 
-  function renderSaleItemsBlock(items: SaleLineItem[]) {
-    if (!items.length) return null;
+  function renderSaleItemsBlock(items: SaleLineItem[] | null | undefined) {
+    const rows = items ?? [];
+    if (!rows.length) return null;
     return (
       <table className="data-table gv-finance-print-table gv-finance-origin-items">
         <thead>
@@ -392,9 +405,9 @@ export function FinancePrintPage() {
           </tr>
         </thead>
         <tbody>
-          {items.map((it) => (
+          {rows.map((it) => (
             <tr key={it.id}>
-              <td>{lineLabel(it.variant.product.name, it.variant.sku)}</td>
+              <td>{lineLabel(it.variant?.product?.name, it.variant?.sku)}</td>
               <td className="num">{Number(it.quantity)}</td>
               <td className="num">{formatBRL(it.unitPrice)}</td>
               <td className="num">{formatBRL(it.totalLine)}</td>
@@ -405,8 +418,9 @@ export function FinancePrintPage() {
     );
   }
 
-  function renderReceiptItemsBlock(items: GoodsReceiptLineItem[]) {
-    if (!items.length) return null;
+  function renderReceiptItemsBlock(items: GoodsReceiptLineItem[] | null | undefined) {
+    const rows = items ?? [];
+    if (!rows.length) return null;
     return (
       <table className="data-table gv-finance-print-table gv-finance-origin-items">
         <thead>
@@ -418,7 +432,7 @@ export function FinancePrintPage() {
           </tr>
         </thead>
         <tbody>
-          {items.map((it) => {
+          {rows.map((it) => {
             const qty = Number(it.quantity);
             const unit = Number(it.unitCost);
             const total = Number.isFinite(qty * unit) ? qty * unit : 0;
@@ -426,7 +440,7 @@ export function FinancePrintPage() {
               <tr key={it.id}>
                 <td>
                   {it.description?.trim() ||
-                    lineLabel(it.variant.product.name, it.variant.sku)}
+                    lineLabel(it.variant?.product?.name, it.variant?.sku)}
                 </td>
                 <td className="num">{qty}</td>
                 <td className="num">{formatBRL(it.unitCost)}</td>
@@ -768,7 +782,7 @@ export function FinancePrintPage() {
         <StandardReportHeader documentTitle={documentTitle} documentExtras={subtitle} />
 
       {loading && <p>Carregando…</p>}
-      {err && <div className="alert alert-error">{(err as Error).message}</div>}
+      {errMessage && <div className="alert alert-error">{errMessage}</div>}
 
       {!loading && !err && modo === 'conta' && tipo === 'pagar' && singlePayable.data && (
         renderPayableDetail(singlePayable.data)
@@ -918,6 +932,13 @@ export function FinancePrintPage() {
           ))}
 
       {modo === 'conta' && !id && <p className="alert alert-error">Informe o id do título.</p>}
+
+      {listReady && !errMessage && tipo === 'receber' && listReceivables.data == null && (
+        <p className="alert alert-error">Não foi possível carregar os títulos a receber.</p>
+      )}
+      {listReady && !errMessage && tipo === 'pagar' && listPayables.data == null && (
+        <p className="alert alert-error">Não foi possível carregar os títulos a pagar.</p>
+      )}
       </div>
     </div>
   );

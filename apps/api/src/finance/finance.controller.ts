@@ -246,19 +246,24 @@ function receivableDateFilterField(statuses: BillStatus[] | null): 'receivedAt' 
   return 'dueDate';
 }
 
+const cashSessionUserInclude = {
+  include: { user: { select: { id: true, name: true, email: true } } },
+} as const;
+
 const payableInclude = {
   supplier: true,
-  goodsReceipt: {
-    include: {
-      items: {
-        orderBy: { id: 'asc' as const },
-        include: {
-          variant: { include: { product: { select: { name: true } } } },
-        },
+  cashSession: cashSessionUserInclude,
+} as const;
+
+const goodsReceiptDetalheInclude = {
+  include: {
+    items: {
+      orderBy: { id: 'asc' as const },
+      include: {
+        variant: { include: { product: { select: { name: true } } } },
       },
     },
   },
-  cashSession: { include: { user: { select: { id: true, name: true, email: true } } } },
 } as const;
 
 const saleLineInclude = {
@@ -272,10 +277,29 @@ const saleLineInclude = {
 
 const receivableInclude = {
   customer: true,
-  sale: { include: saleLineInclude },
-  cashSession: { include: { user: { select: { id: true, name: true, email: true } } } },
+  sale: true,
+  cashSession: cashSessionUserInclude,
   items: { orderBy: { createdAt: 'asc' as const } },
 } as const;
+
+function parseDetalharQuery(raw?: string): boolean {
+  return raw === '1' || raw === 'true';
+}
+
+function payableListInclude(detalhar: boolean) {
+  return detalhar
+    ? { ...payableInclude, goodsReceipt: goodsReceiptDetalheInclude }
+    : payableInclude;
+}
+
+function receivableListInclude(detalhar: boolean) {
+  return {
+    customer: true,
+    sale: detalhar ? { include: saleLineInclude } : true,
+    cashSession: cashSessionUserInclude,
+    items: { orderBy: { createdAt: 'asc' as const } },
+  };
+}
 
 const settlementDetailInclude = {
   cashSession: { include: { user: { select: { id: true, name: true, email: true } } } },
@@ -389,7 +413,9 @@ export class FinanceController {
     @Query('to') toRaw?: string,
     @Query('supplierId') supplierId?: string,
     @Query('segment') segment?: string,
+    @Query('detalhar') detalharRaw?: string,
   ) {
+    const detalhar = parseDetalharQuery(detalharRaw);
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const where: Prisma.AccountPayableWhereInput = {};
 
@@ -423,7 +449,7 @@ export class FinanceController {
     return db.accountPayable.findMany({
       where,
       orderBy: { dueDate: 'asc' },
-      include: payableInclude,
+      include: payableListInclude(detalhar),
     });
   }
 
@@ -720,7 +746,9 @@ export class FinanceController {
     @Query('to') toRaw?: string,
     @Query('customerId') customerId?: string,
     @Query('segment') segment?: string,
+    @Query('detalhar') detalharRaw?: string,
   ) {
+    const detalhar = parseDetalharQuery(detalharRaw);
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const where: Prisma.AccountReceivableWhereInput = {};
 
@@ -762,7 +790,7 @@ export class FinanceController {
     return db.accountReceivable.findMany({
       where,
       orderBy: { dueDate: 'asc' },
-      include: receivableInclude,
+      include: receivableListInclude(detalhar),
     });
   }
 

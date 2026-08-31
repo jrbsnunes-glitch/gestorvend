@@ -516,7 +516,11 @@ export function FinancePage() {
       if (printPartyId) p.set('partyId', printPartyId);
       if (printDetalharOrigem) p.set('detalhar', '1');
     }
-    navigate(`/financeiro/impressao?${p.toString()}`);
+    const path = `/financeiro/impressao?${p.toString()}`;
+    const opened = window.open(path, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      navigate(path);
+    }
     setPrintOpen(false);
   }
 
@@ -1346,7 +1350,7 @@ export function FinancePage() {
           >
             <h2 style={{ fontSize: '1.15rem' }}>Impressões — {tab === 'pagar' ? 'a pagar' : 'a receber'}</h2>
             <p style={{ color: 'var(--color-text-muted)', fontSize: '0.88rem' }}>
-              Abre uma nova aba pronta para imprimir (Ctrl+P).
+              Abre uma nova aba pronta para imprimir (Ctrl+P). Se o navegador bloquear pop-ups, abre nesta aba.
             </p>
             <div className="field">
               <label htmlFor="pr-modo">Tipo de documento</label>
