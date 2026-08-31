@@ -517,10 +517,7 @@ export function FinancePage() {
       if (printDetalharOrigem) p.set('detalhar', '1');
     }
     const path = `/financeiro/impressao?${p.toString()}`;
-    const opened = window.open(path, '_blank', 'noopener,noreferrer');
-    if (!opened) {
-      navigate(path);
-    }
+    navigate(path);
     setPrintOpen(false);
   }
 
