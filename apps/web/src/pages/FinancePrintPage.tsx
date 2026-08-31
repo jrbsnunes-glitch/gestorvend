@@ -224,6 +224,28 @@ function groupPayablesByReceipt(rows: Payable[]) {
   return { groups: [...groups.values()], standalone };
 }
 
+function sumPeriodTotals(rows: Array<Payable | Receivable>, modo: 'abertas' | 'pagas') {
+  let totalFace = 0;
+  let totalOpen = 0;
+  let totalSettled = 0;
+  for (const row of rows) {
+    totalFace += Number(row.amount) || 0;
+    totalOpen += Number(saldoAberto(row)) || 0;
+    const partial = valorPagoAcumulado(row);
+    if (modo === 'pagas') {
+      totalSettled += Number(row.settledAmount ?? row.amount) || 0;
+    } else if (partial != null) {
+      totalSettled += partial;
+    }
+  }
+  return {
+    count: rows.length,
+    totalFace: Math.round(totalFace * 100) / 100,
+    totalOpen: Math.round(totalOpen * 100) / 100,
+    totalSettled: Math.round(totalSettled * 100) / 100,
+  };
+}
+
 export function FinancePrintPage() {
   const [sp] = useSearchParams();
   const tipo = sp.get('tipo') === 'receber' ? 'receber' : 'pagar';
@@ -356,6 +378,27 @@ export function FinancePrintPage() {
   const listReady =
     (tipo === 'pagar' && modo !== 'conta' && listPayables.isFetched) ||
     (tipo === 'receber' && modo !== 'conta' && listReceivables.isFetched);
+
+  const periodSummary = useMemo(() => {
+    if (modo === 'conta') return null;
+    const rows =
+      tipo === 'pagar' ? listPayables.data : tipo === 'receber' ? listReceivables.data : null;
+    if (!rows) return null;
+    const totals = sumPeriodTotals(rows, modo);
+    const isReceber = tipo === 'receber';
+    if (modo === 'abertas') {
+      return {
+        ...totals,
+        headline: isReceber ? 'Total a receber (saldo em aberto)' : 'Total a pagar (saldo em aberto)',
+        amount: totals.totalOpen,
+      };
+    }
+    return {
+      ...totals,
+      headline: isReceber ? 'Total recebido no período' : 'Total pago no período',
+      amount: totals.totalSettled,
+    };
+  }, [modo, tipo, listPayables.data, listReceivables.data]);
 
   function PartyCell({ row }: { row: Payable | Receivable }) {
     if ('supplier' in row && row.supplier) {
@@ -860,6 +903,34 @@ export function FinancePrintPage() {
 
       <div className="print-doc gv-finance-print-root">
         <StandardReportHeader documentTitle={documentTitle} documentExtras={subtitle} />
+
+      {!loading && !errMessage && periodSummary ? (
+        <div className="gv-finance-period-total" aria-label="Total geral do período">
+          <div className="gv-finance-period-total__headline">{periodSummary.headline}</div>
+          <div className="gv-finance-period-total__value">{formatBRL(periodSummary.amount)}</div>
+          <div className="gv-finance-period-total__meta">
+            {periodSummary.count} título{periodSummary.count === 1 ? '' : 's'}
+            {modo === 'abertas' ? (
+              <>
+                {' · '}
+                Valor de face: {formatBRL(periodSummary.totalFace)}
+                {periodSummary.totalSettled > 0 ? (
+                  <>
+                    {' · '}
+                    {tipo === 'receber' ? 'Recebido parcial' : 'Pago parcial'}:{' '}
+                    {formatBRL(periodSummary.totalSettled)}
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <>
+                {' · '}
+                Valor de face: {formatBRL(periodSummary.totalFace)}
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {loading && <p>Carregando…</p>}
       {errMessage && <div className="alert alert-error">{errMessage}</div>}

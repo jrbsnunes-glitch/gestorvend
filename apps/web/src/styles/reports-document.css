@@ -463,6 +463,38 @@
   gap: 1.15rem;
 }
 
+.gv-finance-period-total {
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.9rem;
+  border: 2px solid #0f172a;
+  border-radius: 8px;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.gv-finance-period-total__headline {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #475569;
+}
+
+.gv-finance-period-total__value {
+  margin-top: 0.25rem;
+  font-size: 1.65rem;
+  font-weight: 800;
+  line-height: 1.15;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+
+.gv-finance-period-total__meta {
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
 .gv-finance-origin-group {
   break-inside: avoid;
   page-break-inside: avoid;
