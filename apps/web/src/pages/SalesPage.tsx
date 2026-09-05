@@ -28,6 +28,8 @@ import {
 import { formatBRL, formatDate } from '../lib/format';
 import {
   expectedFinalForReconKey,
+  buildCashClosingPresentGuide,
+  computeClosingReconTotals,
   expensePresentedTotalHint,
   formatCashExpectedHint,
   reconciliationTotalLabel,
@@ -1959,6 +1961,22 @@ function PosScreen({
     [closingByMethod, includeExpenseInPresentedTotal],
   );
 
+  const closeReconSummary = useMemo(() => {
+    if (!closeDetailQ.data?.summary.byMethod) return null;
+    const openingNum = parseDecimal(session.openingBalance);
+    return computeClosingReconTotals(
+      closeDetailQ.data.summary.byMethod,
+      closingByMethod,
+      openingNum,
+      { includeExpenseInPresentedTotal },
+    );
+  }, [
+    closeDetailQ.data?.summary.byMethod,
+    closingByMethod,
+    session.openingBalance,
+    includeExpenseInPresentedTotal,
+  ]);
+
   const closeCash = useMutation({
     mutationFn: () => {
       // Mantém o JSON enviado limpo: ignora chaves com valor zero/vazio para
@@ -3267,116 +3285,183 @@ function PosScreen({
       {closeOpen && (
         <FormModalBackdrop onClose={() => setCloseOpen(false)}>
           <div
-            className="modal"
+            className="modal pos-close-modal"
             role="dialog"
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 640 }}
           >
             <h2>Fechar caixa</h2>
-            <p style={{ margin: '0 0 1rem', fontSize: '0.88rem', color: 'var(--pos-text-sub)' }}>
-              Informe os valores apresentados pelo operador em cada forma de pagamento.
-              Caixa aberto em <strong>{formatDate(session.openedAt)}</strong> com saldo
-              inicial de <strong>{formatBRL(session.openingBalance)}</strong>.
-            </p>
-            {closeErr && <div className="alert alert-error">{closeErr}</div>}
+            <div className="pos-close-modal-body">
+              <p className="pos-close-modal-intro">
+                Informe os valores apresentados pelo operador em cada forma de pagamento.
+                Caixa aberto em <strong>{formatDate(session.openedAt)}</strong> com saldo
+                inicial de <strong>{formatBRL(session.openingBalance)}</strong>.
+              </p>
+              {closeErr && <div className="alert alert-error">{closeErr}</div>}
 
-            <div className="pos-close-grid">
-              {CLOSE_ROWS.map((m) => {
-                const openingNum = parseDecimal(session.openingBalance);
-                const expectedBase = closeDetailQ.data?.summary.byMethod[m.key] ?? 0;
-                const breakdown = closeDetailQ.data?.summary.movementBreakdown;
-                const expectedDisplay =
-                  m.key === 'CASH'
-                    ? expectedFinalForReconKey('CASH', closeDetailQ.data?.summary.byMethod ?? {}, openingNum)
-                    : expectedBase;
-                const counted = parseDecimal(closingByMethod[m.key]);
-                const diff = counted - expectedDisplay;
-                const inputId = `close-${m.key.toLowerCase()}`;
-                return (
-                  <div key={m.key} className="pos-close-row">
-                    <label htmlFor={inputId} className="pos-close-row-method">
-                      <span className="pos-close-row-icon" aria-hidden>
-                        {m.icon}
-                      </span>
-                      <span>
-                        <strong>{m.label}</strong>
-                        <em>
-                          Esperado
-                          {m.key === 'CASH' ? (
-                            <>
-                              {' '}
-                              ({formatCashExpectedHint(openingNum, breakdown)})
-                            </>
-                          ) : m.key === 'EXPENSE' ? (
-                            ` (despesas · ${expensePresentedTotalHint(includeExpenseInPresentedTotal)})`
-                          ) : (
-                            ''
-                          )}
-                          :{' '}
-                          {closeDetailQ.isLoading ? '…' : formatBRL(expectedDisplay)}
-                        </em>
-                      </span>
-                    </label>
-                    <input
-                      id={inputId}
-                      inputMode="decimal"
-                      placeholder="0,00"
-                      value={closingByMethod[m.key]}
-                      onChange={(e) =>
-                        setClosingByMethod((prev) => ({ ...prev, [m.key]: e.target.value }))
-                      }
-                      onFocus={(e) => e.currentTarget.select()}
-                    />
-                    <div
-                      className={
-                        'pos-close-row-diff ' +
-                        (counted === 0
-                          ? 'is-neutral'
-                          : Math.abs(diff) < 0.005
-                            ? 'is-ok'
-                            : diff > 0
-                              ? 'is-over'
-                              : 'is-short')
-                      }
-                    >
-                      {counted === 0 ? (
-                        <span>—</span>
-                      ) : Math.abs(diff) < 0.005 ? (
-                        <span>OK</span>
-                      ) : (
-                        <span>
-                          {diff > 0 ? '+' : ''}
-                          {formatBRL(diff)}
+              <div className="pos-close-grid">
+                {CLOSE_ROWS.map((m) => {
+                  const openingNum = parseDecimal(session.openingBalance);
+                  const expectedBase = closeDetailQ.data?.summary.byMethod[m.key] ?? 0;
+                  const breakdown = closeDetailQ.data?.summary.movementBreakdown;
+                  const expectedDisplay =
+                    m.key === 'CASH'
+                      ? expectedFinalForReconKey(
+                          'CASH',
+                          closeDetailQ.data?.summary.byMethod ?? {},
+                          openingNum,
+                        )
+                      : expectedBase;
+                  const cashGuide =
+                    m.key === 'CASH' && includeExpenseInPresentedTotal
+                      ? buildCashClosingPresentGuide(expectedDisplay, openingNum, breakdown)
+                      : null;
+                  const counted = parseDecimal(closingByMethod[m.key]);
+                  const diff = counted - expectedDisplay;
+                  const inputId = `close-${m.key.toLowerCase()}`;
+                  return (
+                    <div key={m.key} className="pos-close-row">
+                      <label htmlFor={inputId} className="pos-close-row-method">
+                        <span className="pos-close-row-icon" aria-hidden>
+                          {m.icon}
                         </span>
-                      )}
+                        <span>
+                          <strong>{m.label}</strong>
+                          <em className="pos-close-row-hint">
+                            {m.key === 'CASH' && cashGuide ? (
+                              <>
+                                <span className="pos-close-hint-line">
+                                  Vendas em dinheiro:{' '}
+                                  {closeDetailQ.isLoading ? '…' : formatBRL(cashGuide.grossCashSales)}
+                                </span>
+                                <span className="pos-close-hint-line">
+                                  Fundo {formatBRL(cashGuide.opening)}
+                                  {cashGuide.expenses > 0
+                                    ? ` · Despesa ${formatBRL(cashGuide.expenses)}`
+                                    : ''}
+                                  {cashGuide.suprimentos > 0
+                                    ? ` · Supr. ${formatBRL(cashGuide.suprimentos)}`
+                                    : ''}
+                                  {cashGuide.sangrias > 0
+                                    ? ` · Sangria ${formatBRL(cashGuide.sangrias)}`
+                                    : ''}
+                                </span>
+                                <span className="pos-close-hint-line pos-close-hint-emphasis">
+                                  Apresentar em dinheiro:{' '}
+                                  {closeDetailQ.isLoading ? '…' : formatBRL(cashGuide.cashToPresent)}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                Esperado
+                                {m.key === 'CASH' ? (
+                                  <> ({formatCashExpectedHint(openingNum, breakdown)})</>
+                                ) : m.key === 'EXPENSE' ? (
+                                  includeExpenseInPresentedTotal
+                                    ? ' (valor retirado do caixa)'
+                                    : ` (despesas · ${expensePresentedTotalHint(includeExpenseInPresentedTotal)})`
+                                ) : (
+                                  ''
+                                )}
+                                :{' '}
+                                {closeDetailQ.isLoading ? '…' : formatBRL(expectedDisplay)}
+                              </>
+                            )}
+                          </em>
+                        </span>
+                      </label>
+                      <input
+                        id={inputId}
+                        inputMode="decimal"
+                        placeholder="0,00"
+                        value={closingByMethod[m.key]}
+                        onChange={(e) =>
+                          setClosingByMethod((prev) => ({ ...prev, [m.key]: e.target.value }))
+                        }
+                        onFocus={(e) => e.currentTarget.select()}
+                      />
+                      <div
+                        className={
+                          'pos-close-row-diff ' +
+                          (counted === 0
+                            ? 'is-neutral'
+                            : Math.abs(diff) < 0.005
+                              ? 'is-ok'
+                              : diff > 0
+                                ? 'is-over'
+                                : 'is-short')
+                        }
+                      >
+                        {counted === 0 ? (
+                          <span>—</span>
+                        ) : Math.abs(diff) < 0.005 ? (
+                          <span>OK</span>
+                        ) : (
+                          <span>
+                            {diff > 0 ? '+' : ''}
+                            {formatBRL(diff)}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
+
+              <div className="pos-close-totals">
+                <span>{closeReconTotalLabels.title}</span>
+                <strong>{formatBRL(closingTotal)}</strong>
+              </div>
+
+              {closeReconSummary && !closeDetailQ.isLoading ? (
+                <div className="pos-close-recon-summary" aria-live="polite">
+                  <div className="pos-close-recon-summary__row">
+                    <span>Total vendas (esperado)</span>
+                    <strong>{formatBRL(closeReconSummary.totalExpected)}</strong>
                   </div>
-                );
-              })}
+                  <div className="pos-close-recon-summary__row">
+                    <span>Total apresentado</span>
+                    <strong>{formatBRL(closeReconSummary.totalPresented)}</strong>
+                  </div>
+                  <div
+                    className={
+                      'pos-close-recon-summary__row pos-close-recon-summary__row--diff ' +
+                      (Math.abs(closeReconSummary.diff) < 0.005
+                        ? 'is-ok'
+                        : closeReconSummary.diff > 0
+                          ? 'is-over'
+                          : 'is-short')
+                    }
+                  >
+                    <span>Diferença geral</span>
+                    <strong>
+                      {Math.abs(closeReconSummary.diff) < 0.005
+                        ? 'Conferido'
+                        : (closeReconSummary.diff > 0 ? '+' : '') +
+                          formatBRL(closeReconSummary.diff)}
+                    </strong>
+                  </div>
+                </div>
+              ) : null}
+
+              <p className="pos-close-modal-footnote">
+                {includeExpenseInPresentedTotal
+                  ? 'Neste modo, dinheiro apresentado + despesas informadas devem bater com o total vendido em dinheiro.'
+                  : 'Despesas informadas acima são conferência analítica e não entram neste total.'}
+              </p>
+
+              <div className="field pos-close-notes">
+                <label htmlFor="closing-notes">Observações (opcional)</label>
+                <textarea
+                  id="closing-notes"
+                  value={closingNotes}
+                  onChange={(e) => setClosingNotes(e.target.value)}
+                  rows={2}
+                  placeholder="Ex.: faltou troco às 15h, diferença de R$ 5 em cartão por estorno…"
+                />
+              </div>
             </div>
 
-            <div className="pos-close-totals">
-              <span>{closeReconTotalLabels.title}</span>
-              <strong>{formatBRL(closingTotal)}</strong>
-            </div>
-            <p style={{ margin: '0.35rem 0 0', fontSize: '0.78rem', color: 'var(--pos-text-sub)' }}>
-              {includeExpenseInPresentedTotal
-                ? 'Neste modo, dinheiro apresentado + despesas informadas devem bater com o total vendido em dinheiro.'
-                : 'Despesas informadas acima são conferência analítica e não entram neste total.'}
-            </p>
-
-            <div className="field" style={{ marginTop: '0.5rem' }}>
-              <label htmlFor="closing-notes">Observações (opcional)</label>
-              <textarea
-                id="closing-notes"
-                value={closingNotes}
-                onChange={(e) => setClosingNotes(e.target.value)}
-                rows={2}
-                placeholder="Ex.: faltou troco às 15h, diferença de R$ 5 em cartão por estorno…"
-              />
-            </div>
-
-            <div className="modal-actions">
+            <div className="modal-actions pos-close-modal-actions">
               <button
                 type="button"
                 className="pos-btn pos-btn-ghost"

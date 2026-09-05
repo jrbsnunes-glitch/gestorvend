@@ -781,19 +781,66 @@
 }
 
 /* === Fechamento de caixa por forma de pagamento ====================== */
+.pos-close-modal {
+  max-width: 640px;
+  width: min(640px, calc(100vw - 1.5rem));
+  max-height: min(92vh, 780px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0.65rem;
+}
+
+.pos-close-modal h2 {
+  margin-bottom: 0.35rem;
+  flex-shrink: 0;
+}
+
+.pos-close-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.pos-close-modal-intro {
+  margin: 0 0 0.65rem;
+  font-size: 0.84rem;
+  color: var(--pos-text-sub);
+  line-height: 1.35;
+}
+
+.pos-close-modal-footnote {
+  margin: 0.35rem 0 0;
+  font-size: 0.74rem;
+  color: var(--pos-text-sub);
+  line-height: 1.35;
+}
+
+.pos-close-notes {
+  margin-top: 0.45rem;
+}
+
+.pos-close-modal-actions {
+  flex-shrink: 0;
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--pos-border);
+}
+
 .pos-close-grid {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  margin: 0.5rem 0 1rem;
+  gap: 0.35rem;
+  margin: 0.35rem 0 0.65rem;
 }
 
 .pos-close-row {
   display: grid;
-  grid-template-columns: 1fr 130px 92px;
+  grid-template-columns: 1fr 118px 80px;
   align-items: center;
-  gap: 0.7rem;
-  padding: 0.55rem 0.75rem;
+  gap: 0.55rem;
+  padding: 0.45rem 0.6rem;
   background: var(--pos-surface-sub);
   border: 1px solid var(--pos-border);
   border-radius: 10px;
@@ -807,36 +854,55 @@
 }
 
 .pos-close-row-icon {
-  font-size: 1.4rem;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  font-size: 1.2rem;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   background: var(--pos-surface);
   display: grid;
   place-items: center;
+  flex-shrink: 0;
 }
 
 .pos-close-row-method strong {
   display: block;
-  font-size: 0.92rem;
+  font-size: 0.88rem;
   font-weight: 700;
   color: var(--pos-text);
   line-height: 1.2;
 }
 
+.pos-close-row-hint {
+  font-style: normal;
+  font-size: 0.72rem;
+  color: var(--pos-text-muted);
+  display: block;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+
+.pos-close-hint-line {
+  display: block;
+}
+
+.pos-close-hint-emphasis {
+  color: var(--pos-text);
+  font-weight: 600;
+}
+
 .pos-close-row-method em {
   font-style: normal;
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   color: var(--pos-text-muted);
   display: block;
   font-variant-numeric: tabular-nums;
 }
 
 .pos-close-row input {
-  padding: 0.55rem 0.7rem;
+  padding: 0.45rem 0.55rem;
   border: 1px solid var(--pos-border-strong);
   border-radius: 8px;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -881,14 +947,14 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  padding: 0.55rem 0.85rem;
+  padding: 0.45rem 0.75rem;
   background: var(--pos-accent-soft);
   border-radius: 10px;
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.45rem;
 }
 
 .pos-close-totals span {
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 700;
   color: var(--pos-accent-strong);
   text-transform: uppercase;
@@ -896,13 +962,60 @@
 }
 
 .pos-close-totals strong {
-  font-size: 1.4rem;
+  font-size: 1.2rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: var(--pos-accent-strong);
 }
 
+.pos-close-recon-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.45rem 0.75rem;
+  margin-bottom: 0.35rem;
+  background: var(--pos-surface-sub);
+  border: 1px solid var(--pos-border);
+  border-radius: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pos-close-recon-summary__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--pos-text-sub);
+}
+
+.pos-close-recon-summary__row strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--pos-text);
+}
+
+.pos-close-recon-summary__row--diff strong {
+  font-size: 0.95rem;
+}
+
+.pos-close-recon-summary__row--diff.is-ok strong {
+  color: var(--pos-accent-strong);
+}
+
+.pos-close-recon-summary__row--diff.is-over strong {
+  color: var(--pos-info);
+}
+
+.pos-close-recon-summary__row--diff.is-short strong {
+  color: var(--pos-danger);
+}
+
 @media (max-width: 640px) {
+  .pos-close-modal {
+    max-height: 94vh;
+  }
+
   .pos-close-row {
     grid-template-columns: 1fr 100px;
   }

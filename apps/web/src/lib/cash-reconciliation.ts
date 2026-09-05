@@ -92,6 +92,74 @@ export function formatCashExpectedHint(
   return parts.join(' · ');
 }
 
+export type CashClosingPresentGuide = {
+  /** Vendas brutas em dinheiro (antes de retirar despesas/sangrias). */
+  grossCashSales: number;
+  opening: number;
+  expenses: number;
+  suprimentos: number;
+  sangrias: number;
+  /** Valor líquido que deve estar em gaveta (fundo + movimentos). */
+  cashToPresent: number;
+};
+
+/** Guia para o operador quando despesas entram no total apresentado. */
+export function buildCashClosingPresentGuide(
+  expectedCashNet: number,
+  opening: number,
+  breakdown?: CashMovementBreakdown | null,
+): CashClosingPresentGuide {
+  const expenses = breakdown?.despesas ?? 0;
+  const suprimentos = breakdown?.suprimentos ?? 0;
+  const sangrias = breakdown?.sangrias ?? 0;
+  const grossCashSales = roundMoney2(
+    expectedCashNet - opening + expenses + sangrias - suprimentos,
+  );
+  return {
+    grossCashSales,
+    opening: roundMoney2(opening),
+    expenses,
+    suprimentos,
+    sangrias,
+    cashToPresent: roundMoney2(expectedCashNet),
+  };
+}
+
+const CLOSING_RECON_METHOD_KEYS = [
+  'CASH',
+  'CARD',
+  'PIX',
+  'CREDIT',
+  'REQUISITION',
+  'OTHER',
+  'EXPENSE',
+] as const;
+
+/** Totais esperado × apresentado para o fechamento (todas as rubricas visíveis). */
+export function computeClosingReconTotals(
+  expectedByMethod: Record<string, number>,
+  declaredByMethod: Record<string, number | string>,
+  opening: number,
+  options?: CashReconClosingOptions,
+): { totalExpected: number; totalPresented: number; diff: number } {
+  let totalExpected = 0;
+  for (const key of CLOSING_RECON_METHOD_KEYS) {
+    if (isExcludedFromClosingTotal(key, options)) continue;
+    const expected =
+      key === 'CASH'
+        ? expectedFinalForReconKey('CASH', expectedByMethod, opening)
+        : roundMoney2(expectedByMethod[key] ?? 0);
+    totalExpected += expected;
+  }
+  totalExpected = roundMoney2(totalExpected);
+  const totalPresented = sumDeclaredForClosingBalance(declaredByMethod, options);
+  return {
+    totalExpected,
+    totalPresented,
+    diff: roundMoney2(totalPresented - totalExpected),
+  };
+}
+
 function formatHintMoney(n: number): string {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
