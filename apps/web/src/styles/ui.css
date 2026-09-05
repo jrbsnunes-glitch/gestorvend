@@ -2389,6 +2389,14 @@
   color: rgba(255, 255, 255, 0.8);
 }
 
+.dash-hero-today .dash-hero-split {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.dash-hero-today .dash-hero-split strong {
+  color: #fff;
+}
+
 .dash-hero-month {
   background: linear-gradient(135deg, #047857, #059669);
   color: #f8fafc;
@@ -2397,6 +2405,14 @@
 .dash-hero-month .dash-hero-label,
 .dash-hero-month .dash-hero-foot {
   color: rgba(255, 255, 255, 0.85);
+}
+
+.dash-hero-month .dash-hero-split {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.dash-hero-month .dash-hero-split strong {
+  color: #fff;
 }
 
 /* Estoque — painel (dashboard de movimentações) */
