@@ -968,6 +968,17 @@
   color: var(--pos-accent-strong);
 }
 
+.pos-close-total-sub {
+  margin: -0.25rem 0 0.45rem;
+  padding: 0 0.75rem;
+  font-size: 0.72rem;
+  color: var(--pos-text-sub);
+}
+
+.pos-close-recon-summary__row--info strong {
+  color: #1d4ed8;
+}
+
 .pos-close-recon-summary {
   display: flex;
   flex-direction: column;

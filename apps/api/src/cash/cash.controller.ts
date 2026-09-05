@@ -31,6 +31,7 @@ import { describeMapChanges, describePaymentMethodAmounts } from '../activity-lo
 import { referentialCodeMatchesFlow } from '../common/referential-account-flow';
 import { assertLastSaleAllowsPdvEntry } from './pdv-entry.guard';
 import {
+  aggregateCompletedSalesTotals,
   buildSalesByMethod,
   buildSessionExpectedByMethod,
   computeClosingBalanceFromDeclared,
@@ -108,12 +109,13 @@ function computeSessionListAggregates(params: {
   openingBalance: unknown;
   closingByMethod: unknown;
   closingOptions?: CashReconClosingOptions;
-}): { totalCompletedSales: number; reconciliationDifference: number | null } {
-  let totalCompleted = 0;
-  for (const sale of params.sales) {
-    if (sale.status !== SaleStatus.COMPLETED) continue;
-    totalCompleted += Number(sale.total);
-  }
+}): {
+  totalCompletedSales: number;
+  totalReceivedAtSale: number;
+  totalDeferredSales: number;
+  reconciliationDifference: number | null;
+} {
+  const salesTotals = aggregateCompletedSalesTotals(params.sales);
 
   const { byMethod } = buildSessionExpectedByMethod(params.sales, params.movements);
   const opening =
@@ -142,7 +144,9 @@ function computeSessionListAggregates(params: {
   );
 
   return {
-    totalCompletedSales: roundMoney(totalCompleted),
+    totalCompletedSales: salesTotals.totalInvoiced,
+    totalReceivedAtSale: salesTotals.totalReceivedAtSale,
+    totalDeferredSales: salesTotals.totalDeferred,
     reconciliationDifference,
   };
 }
@@ -481,8 +485,12 @@ export class CashController {
         (sale) => sale.createdAt >= s.openedAt && sale.createdAt <= upper,
       );
       const sessionSales = [...linked, ...legacy];
-      const { totalCompletedSales, reconciliationDifference } =
-        computeSessionListAggregates({
+      const {
+        totalCompletedSales,
+        totalReceivedAtSale,
+        totalDeferredSales,
+        reconciliationDifference,
+      } = computeSessionListAggregates({
           sales: sessionSales,
           movements: s.movements,
           openingBalance: s.openingBalance,
@@ -496,6 +504,8 @@ export class CashController {
         movementsIn: movIn,
         movementsOut: movOut,
         totalCompletedSales,
+        totalReceivedAtSale,
+        totalDeferredSales,
         reconciliationDifference,
       };
     });
@@ -622,6 +632,8 @@ export class CashController {
         });
 
         let totalCompleted = 0;
+        let totalReceivedAtSale = 0;
+        let totalDeferredSales = 0;
         let totalCancelled = 0;
         let completedCount = 0;
         let cancelledCount = 0;
@@ -645,6 +657,10 @@ export class CashController {
             cancelledCount += 1;
           }
         }
+
+        const salesPaymentTotals = aggregateCompletedSalesTotals(sales);
+        totalReceivedAtSale = salesPaymentTotals.totalReceivedAtSale;
+        totalDeferredSales = salesPaymentTotals.totalDeferred;
 
         const salesByMethod = buildSalesByMethod(sales);
 
@@ -717,6 +733,8 @@ export class CashController {
           cancelledCount,
           itemsCount,
           totalCompleted,
+          totalReceivedAtSale,
+          totalDeferredSales,
           totalCancelled,
           totalDiscounts,
           totalSurcharges,
@@ -775,6 +793,8 @@ export class CashController {
         acc.cancelledCount += s.cancelledCount;
         acc.itemsCount += s.itemsCount;
         acc.totalCompleted += s.totalCompleted;
+        acc.totalReceivedAtSale += s.totalReceivedAtSale;
+        acc.totalDeferredSales += s.totalDeferredSales;
         acc.totalCancelled += s.totalCancelled;
         acc.totalDiscounts += s.totalDiscounts;
         acc.totalSurcharges += s.totalSurcharges;
@@ -803,6 +823,8 @@ export class CashController {
         cancelledCount: 0,
         itemsCount: 0,
         totalCompleted: 0,
+        totalReceivedAtSale: 0,
+        totalDeferredSales: 0,
         totalCancelled: 0,
         totalDiscounts: 0,
         totalSurcharges: 0,
@@ -821,6 +843,9 @@ export class CashController {
     totals.movementBreakdown.sangrias = roundMoney(totals.movementBreakdown.sangrias);
     totals.movementBreakdown.despesas = roundMoney(totals.movementBreakdown.despesas);
     totals.presentedTotal = roundMoney(totals.presentedTotal);
+    totals.totalReceivedAtSale = roundMoney(totals.totalReceivedAtSale);
+    totals.totalDeferredSales = roundMoney(totals.totalDeferredSales);
+    totals.totalCompleted = roundMoney(totals.totalCompleted);
 
     let reportFrom = from;
     let reportTo = to;
@@ -1291,6 +1316,8 @@ export class CashController {
       reconciliationExpenseDetails: reconciliationExpenseDetailsOut,
     };
 
+    const sessionPaymentTotals = aggregateCompletedSalesTotals(sales);
+
     return {
       session: sessionResponse,
       sales,
@@ -1298,6 +1325,8 @@ export class CashController {
         completedCount: sales.filter((s) => s.status === SaleStatus.COMPLETED).length,
         cancelledCount: sales.filter((s) => s.status === SaleStatus.CANCELLED).length,
         totalCompleted,
+        totalReceivedAtSale: sessionPaymentTotals.totalReceivedAtSale,
+        totalDeferredSales: sessionPaymentTotals.totalDeferred,
         totalCancelled,
         itemsCount,
         totalDiscounts,

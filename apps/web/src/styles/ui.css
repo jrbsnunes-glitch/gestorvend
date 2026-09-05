@@ -476,6 +476,22 @@
   font-variant-numeric: tabular-nums;
 }
 
+.data-table.cash-sessions-table .cash-ss-th-sub {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.data-table.cash-sessions-table .cash-ss-cell-sub {
+  display: block;
+  margin-top: 0.12rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #15803d;
+}
+
 .data-table.cash-sessions-table .cash-ss-col-operator {
   min-width: 0;
 }
@@ -2413,6 +2429,19 @@
 .dash-hero-foot {
   font-size: 0.8rem;
   color: var(--color-text-muted);
+}
+
+.dash-hero-split {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+}
+
+.dash-hero-split strong {
+  color: var(--color-text);
+  font-weight: 700;
 }
 
 .dash-grid {

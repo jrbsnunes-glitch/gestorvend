@@ -1,6 +1,13 @@
 /** Chaves analíticas — não entram no saldo apresentado (soma dos meios de recebimento). */
 export const CASH_RECON_EXCLUDE_FROM_CLOSING_TOTAL = ['EXPENSE'] as const;
 
+/** Crediário e requisição — faturamento a prazo; não entram no caixa na venda. */
+export const DEFERRED_CLOSING_METHODS = ['CREDIT', 'REQUISITION'] as const;
+
+export function isDeferredClosingMethod(methodKey: string): boolean {
+  return (DEFERRED_CLOSING_METHODS as readonly string[]).includes(methodKey);
+}
+
 export type CashMovementBreakdown = {
   suprimentos: number;
   sangrias: number;
@@ -16,6 +23,7 @@ export function isExcludedFromClosingTotal(
   methodKey: string,
   options?: CashReconClosingOptions,
 ): boolean {
+  if (isDeferredClosingMethod(methodKey)) return true;
   if (methodKey === 'EXPENSE' && options?.includeExpenseInPresentedTotal) return false;
   return (CASH_RECON_EXCLUDE_FROM_CLOSING_TOTAL as readonly string[]).includes(methodKey);
 }
@@ -141,22 +149,40 @@ export function computeClosingReconTotals(
   declaredByMethod: Record<string, number | string>,
   opening: number,
   options?: CashReconClosingOptions,
-): { totalExpected: number; totalPresented: number; diff: number } {
+): {
+  totalExpected: number;
+  totalPresented: number;
+  diff: number;
+  totalInvoicedExpected: number;
+  totalDeferredExpected: number;
+} {
   let totalExpected = 0;
+  let totalInvoicedExpected = 0;
+  let totalDeferredExpected = 0;
   for (const key of CLOSING_RECON_METHOD_KEYS) {
-    if (isExcludedFromClosingTotal(key, options)) continue;
     const expected =
       key === 'CASH'
         ? expectedFinalForReconKey('CASH', expectedByMethod, opening)
         : roundMoney2(expectedByMethod[key] ?? 0);
+    if (isDeferredClosingMethod(key)) {
+      totalInvoicedExpected += expected;
+      totalDeferredExpected += expected;
+      continue;
+    }
+    totalInvoicedExpected += expected;
+    if (isExcludedFromClosingTotal(key, options)) continue;
     totalExpected += expected;
   }
   totalExpected = roundMoney2(totalExpected);
+  totalInvoicedExpected = roundMoney2(totalInvoicedExpected);
+  totalDeferredExpected = roundMoney2(totalDeferredExpected);
   const totalPresented = sumDeclaredForClosingBalance(declaredByMethod, options);
   return {
     totalExpected,
     totalPresented,
     diff: roundMoney2(totalPresented - totalExpected),
+    totalInvoicedExpected,
+    totalDeferredExpected,
   };
 }
 
@@ -176,12 +202,12 @@ export function reconciliationTotalLabel(includeExpenseInPresentedTotal: boolean
 } {
   return includeExpenseInPresentedTotal
     ? {
-        title: 'Total apresentado',
-        subtitle: 'inclui despesas do caixa',
+        title: 'Total apresentado (caixa)',
+        subtitle: 'inclui despesas · sem crediário/requisição',
       }
     : {
-        title: 'Total (meios)',
-        subtitle: 'sem linha de despesas',
+        title: 'Total apresentado (caixa)',
+        subtitle: 'sem despesas analíticas · sem crediário/requisição',
       };
 }
 

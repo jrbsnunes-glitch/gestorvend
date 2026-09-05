@@ -63,6 +63,8 @@ type CashSessionRow = {
   movementsOut: number;
   /** Total de vendas COMPLETED na janela do caixa (mesmo critério do detalhe). */
   totalCompletedSales: number;
+  totalReceivedAtSale?: number;
+  totalDeferredSales?: number;
   /** Declarado total − esperado total (Conciliação); null se não há fechamento/rubrica declarada. */
   reconciliationDifference: number | null;
 };
@@ -133,6 +135,8 @@ type SessionDetail = {
     completedCount: number;
     cancelledCount: number;
     totalCompleted: number;
+    totalReceivedAtSale?: number;
+    totalDeferredSales?: number;
     totalCancelled: number;
     itemsCount: number;
     /** Somatório de descontos em vendas concluídas (linhas + desconto no cupom). */
@@ -644,9 +648,9 @@ export function CashPage() {
                   <th>Estado</th>
                   <th title="Conferência pelo gerente">Conf.</th>
                   <th className="cash-ss-num">
-                    Tot.
+                    Faturado
                     <br />
-                    vendas
+                    <span className="cash-ss-th-sub">Rec. caixa</span>
                   </th>
                   <th
                     className="cash-ss-num"
@@ -808,8 +812,11 @@ export function CashPage() {
                         </span>
                       )}
                     </td>
-                    <td className="cash-ss-num" style={{ fontWeight: 600 }} data-label="Tot. vendas">
+                    <td className="cash-ss-num" style={{ fontWeight: 600 }} data-label="Faturado">
                       {formatBRL(s.totalCompletedSales)}
+                      <span className="cash-ss-cell-sub">
+                        {formatBRL(s.totalReceivedAtSale ?? s.totalCompletedSales)}
+                      </span>
                     </td>
                     <td className="cash-ss-num" data-label="Dif. conf.">
                       {listReconciliationDiffCell(s.reconciliationDifference)}
@@ -2085,7 +2092,19 @@ function SessionDetailDrawer({
                 <KpiCard label="Aberto em" value={fmtDateTime(s.openedAt)} small />
                 <KpiCard label="Fechado em" value={fmtDateTime(s.closedAt)} small />
                 <KpiCard label="Vendas concluídas" value={String(sum.completedCount)} />
-                <KpiCard label="Total vendido" value={formatBRL(sum.totalCompleted)} highlight />
+                <KpiCard label="Total faturado" value={formatBRL(sum.totalCompleted)} />
+                <KpiCard
+                  label="Recebido no caixa"
+                  value={formatBRL(sum.totalReceivedAtSale ?? sum.totalCompleted)}
+                  highlight
+                />
+                {(sum.totalDeferredSales ?? 0) > 0 ? (
+                  <KpiCard
+                    label="A prazo (crediário/requisição)"
+                    value={formatBRL(sum.totalDeferredSales ?? 0)}
+                    small
+                  />
+                ) : null}
                 {sum.totalDiscounts > 0 ? (
                   <KpiCard label="Descontos totais" value={formatBRL(sum.totalDiscounts)} />
                 ) : null}

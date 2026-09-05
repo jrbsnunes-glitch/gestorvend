@@ -20,8 +20,53 @@ export type CashMovementForExpected = {
 
 export type CashSaleForExpected = {
   status: SaleStatus;
+  total?: unknown;
   payments: Array<{ method: string; amount: unknown }>;
 };
+
+/** Pagamentos que não entram no caixa na hora da venda (título a receber). */
+export const DEFERRED_SALE_PAYMENT_METHODS = [
+  PaymentMethod.CREDIT,
+  PaymentMethod.REQUISITION,
+] as const;
+
+export function isDeferredSalePaymentMethod(method: string): boolean {
+  return (
+    method === PaymentMethod.CREDIT || method === PaymentMethod.REQUISITION
+  );
+}
+
+export type CompletedSalesTotals = {
+  /** Soma dos totais das vendas concluídas (faturamento). */
+  totalInvoiced: number;
+  /** Pagamentos recebidos na hora (dinheiro, cartão, pix…). */
+  totalReceivedAtSale: number;
+  /** Crediário + requisição (contas a receber). */
+  totalDeferred: number;
+};
+
+export function aggregateCompletedSalesTotals(
+  sales: CashSaleForExpected[],
+): CompletedSalesTotals {
+  let totalInvoiced = 0;
+  let totalReceivedAtSale = 0;
+  let totalDeferred = 0;
+  for (const sale of sales) {
+    if (sale.status !== SaleStatus.COMPLETED) continue;
+    totalInvoiced += Number(sale.total ?? 0);
+    for (const p of sale.payments) {
+      const amt = Number(p.amount);
+      if (!Number.isFinite(amt) || amt <= 0) continue;
+      if (isDeferredSalePaymentMethod(p.method)) totalDeferred += amt;
+      else totalReceivedAtSale += amt;
+    }
+  }
+  return {
+    totalInvoiced: roundMoney(totalInvoiced),
+    totalReceivedAtSale: roundMoney(totalReceivedAtSale),
+    totalDeferred: roundMoney(totalDeferred),
+  };
+}
 
 export type CashMovementBreakdown = {
   suprimentos: number;
@@ -124,8 +169,13 @@ export function isExcludedFromClosingTotal(
   methodKey: string,
   options?: CashReconClosingOptions,
 ): boolean {
-  if (methodKey === 'EXPENSE' && options?.includeExpenseInPresentedTotal) return false;
-  return (CASH_RECON_EXCLUDE_FROM_CLOSING_TOTAL as readonly string[]).includes(methodKey);
+  if (isDeferredSalePaymentMethod(methodKey)) return true;
+  if (methodKey === PaymentMethod.EXPENSE && options?.includeExpenseInPresentedTotal) {
+    return false;
+  }
+  return (CASH_RECON_EXCLUDE_FROM_CLOSING_TOTAL as readonly string[]).includes(
+    methodKey,
+  );
 }
 
 /** Total apresentado operacional (meios de recebimento; despesas opcionais). */

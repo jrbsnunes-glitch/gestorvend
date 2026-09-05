@@ -7,6 +7,7 @@ import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import {
   BillStatus,
   CashSessionStatus,
+  PaymentMethod,
   SaleStatus,
 } from '../generated/tenant-client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
@@ -54,6 +55,10 @@ export class DashboardController {
     const [
       salesTodayAgg,
       salesMonthAgg,
+      receivedTodayAgg,
+      deferredTodayAgg,
+      receivedMonthAgg,
+      deferredMonthAgg,
       topItems,
       openSessions,
       payablesSoon,
@@ -74,6 +79,46 @@ export class DashboardController {
         },
         _sum: { total: true },
         _count: { _all: true },
+      }),
+      db.salePayment.aggregate({
+        where: {
+          method: { notIn: [PaymentMethod.CREDIT, PaymentMethod.REQUISITION] },
+          sale: {
+            status: SaleStatus.COMPLETED,
+            createdAt: { gte: todayStart, lte: todayEnd },
+          },
+        },
+        _sum: { amount: true },
+      }),
+      db.salePayment.aggregate({
+        where: {
+          method: { in: [PaymentMethod.CREDIT, PaymentMethod.REQUISITION] },
+          sale: {
+            status: SaleStatus.COMPLETED,
+            createdAt: { gte: todayStart, lte: todayEnd },
+          },
+        },
+        _sum: { amount: true },
+      }),
+      db.salePayment.aggregate({
+        where: {
+          method: { notIn: [PaymentMethod.CREDIT, PaymentMethod.REQUISITION] },
+          sale: {
+            status: SaleStatus.COMPLETED,
+            createdAt: { gte: monthStart, lte: todayEnd },
+          },
+        },
+        _sum: { amount: true },
+      }),
+      db.salePayment.aggregate({
+        where: {
+          method: { in: [PaymentMethod.CREDIT, PaymentMethod.REQUISITION] },
+          sale: {
+            status: SaleStatus.COMPLETED,
+            createdAt: { gte: monthStart, lte: todayEnd },
+          },
+        },
+        _sum: { amount: true },
       }),
       db.saleItem.groupBy({
         by: ['variantId'],
@@ -115,6 +160,10 @@ export class DashboardController {
 
     const revenueToday = Number(salesTodayAgg._sum.total ?? 0);
     const revenueMonth = Number(salesMonthAgg._sum.total ?? 0);
+    const receivedToday = Number(receivedTodayAgg._sum.amount ?? 0);
+    const deferredToday = Number(deferredTodayAgg._sum.amount ?? 0);
+    const receivedMonth = Number(receivedMonthAgg._sum.amount ?? 0);
+    const deferredMonth = Number(deferredMonthAgg._sum.amount ?? 0);
     const countToday = salesTodayAgg._count._all;
     const countMonth = salesMonthAgg._count._all;
     const avgTicketMonth = countMonth > 0 ? revenueMonth / countMonth : 0;
@@ -182,6 +231,10 @@ export class DashboardController {
       revenue: {
         today: revenueToday,
         month: revenueMonth,
+        receivedToday,
+        deferredToday,
+        receivedMonth,
+        deferredMonth,
       },
       sales: {
         today: countToday,

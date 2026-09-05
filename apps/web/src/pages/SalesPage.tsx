@@ -1453,6 +1453,8 @@ function PosScreen({
         summary: {
           byMethod: Record<string, number>;
           totalCompleted: number;
+          totalReceivedAtSale?: number;
+          totalDeferredSales?: number;
           movementBreakdown?: CashMovementBreakdown;
         };
       }>(`/cash/sessions/${session.id}`),
@@ -3359,6 +3361,8 @@ function PosScreen({
                                   includeExpenseInPresentedTotal
                                     ? ' (valor retirado do caixa)'
                                     : ` (despesas · ${expensePresentedTotalHint(includeExpenseInPresentedTotal)})`
+                                ) : m.key === 'CREDIT' || m.key === 'REQUISITION' ? (
+                                  ' (a prazo · conferência · recebimento no financeiro)'
                                 ) : (
                                   ''
                                 )}
@@ -3411,15 +3415,31 @@ function PosScreen({
                 <span>{closeReconTotalLabels.title}</span>
                 <strong>{formatBRL(closingTotal)}</strong>
               </div>
+              <p className="pos-close-total-sub">{closeReconTotalLabels.subtitle}</p>
 
               {closeReconSummary && !closeDetailQ.isLoading ? (
                 <div className="pos-close-recon-summary" aria-live="polite">
                   <div className="pos-close-recon-summary__row">
-                    <span>Total vendas (esperado)</span>
-                    <strong>{formatBRL(closeReconSummary.totalExpected)}</strong>
+                    <span>Total faturado</span>
+                    <strong>{formatBRL(closeDetailQ.data?.summary.totalCompleted ?? 0)}</strong>
+                  </div>
+                  {(closeDetailQ.data?.summary.totalDeferredSales ?? 0) > 0 ? (
+                    <div className="pos-close-recon-summary__row pos-close-recon-summary__row--info">
+                      <span>A prazo (crediário/requisição)</span>
+                      <strong>{formatBRL(closeDetailQ.data?.summary.totalDeferredSales ?? 0)}</strong>
+                    </div>
+                  ) : null}
+                  <div className="pos-close-recon-summary__row">
+                    <span>Recebido no caixa (esperado)</span>
+                    <strong>
+                      {formatBRL(
+                        closeDetailQ.data?.summary.totalReceivedAtSale ??
+                          closeReconSummary.totalExpected,
+                      )}
+                    </strong>
                   </div>
                   <div className="pos-close-recon-summary__row">
-                    <span>Total apresentado</span>
+                    <span>Apresentado (caixa)</span>
                     <strong>{formatBRL(closeReconSummary.totalPresented)}</strong>
                   </div>
                   <div
@@ -3432,7 +3452,7 @@ function PosScreen({
                           : 'is-short')
                     }
                   >
-                    <span>Diferença geral</span>
+                    <span>Diferença caixa</span>
                     <strong>
                       {Math.abs(closeReconSummary.diff) < 0.005
                         ? 'Conferido'
@@ -3445,8 +3465,8 @@ function PosScreen({
 
               <p className="pos-close-modal-footnote">
                 {includeExpenseInPresentedTotal
-                  ? 'Neste modo, dinheiro apresentado + despesas informadas devem bater com o total vendido em dinheiro.'
-                  : 'Despesas informadas acima são conferência analítica e não entram neste total.'}
+                  ? 'Dinheiro apresentado + despesas devem bater com vendas em dinheiro. Crediário e requisição não entram no total do caixa — o recebimento ocorre na baixa do contas a receber.'
+                  : 'Despesas analíticas não entram no total apresentado. Crediário e requisição são informativos; o dinheiro entra na baixa do financeiro.'}
               </p>
 
               <div className="field pos-close-notes">

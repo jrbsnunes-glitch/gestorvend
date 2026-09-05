@@ -14,7 +14,14 @@ const DASH_PREVIEW_LIMIT = 5;
 type DashPanelKey = 'topProducts' | 'lowStock' | 'payables' | 'receivables';
 
 type Overview = {
-  revenue: { today: number; month: number };
+  revenue: {
+    today: number;
+    month: number;
+    receivedToday: number;
+    deferredToday: number;
+    receivedMonth: number;
+    deferredMonth: number;
+  };
   sales: { today: number; month: number; avgTicketMonth: number };
   topProducts: Array<{
     variantId: string;
@@ -330,6 +337,18 @@ export function DashboardPage() {
           <span className="dash-hero-foot">
             {data?.sales.today ?? 0} venda(s) concluída(s)
           </span>
+          {!overview.isLoading ? (
+            <span className="dash-hero-split">
+              Recebido no caixa: <strong>{formatBRL(data?.revenue.receivedToday ?? 0)}</strong>
+              {(data?.revenue.deferredToday ?? 0) > 0 ? (
+                <>
+                  {' '}
+                  · A prazo (crediário/requisição):{' '}
+                  <strong>{formatBRL(data?.revenue.deferredToday ?? 0)}</strong>
+                </>
+              ) : null}
+            </span>
+          ) : null}
         </article>
         {showMonthRevenue && (
           <article className="dash-hero-card dash-hero-month">
@@ -341,6 +360,17 @@ export function DashboardPage() {
               {data?.sales.month ?? 0} venda(s) · ticket médio{' '}
               <strong>{formatBRL(data?.sales.avgTicketMonth ?? 0)}</strong>
             </span>
+            {!overview.isLoading ? (
+              <span className="dash-hero-split">
+                Recebido no caixa: <strong>{formatBRL(data?.revenue.receivedMonth ?? 0)}</strong>
+                {(data?.revenue.deferredMonth ?? 0) > 0 ? (
+                  <>
+                    {' '}
+                    · A prazo: <strong>{formatBRL(data?.revenue.deferredMonth ?? 0)}</strong>
+                  </>
+                ) : null}
+              </span>
+            ) : null}
           </article>
         )}
         <article className="dash-hero-card dash-hero-sessions">
