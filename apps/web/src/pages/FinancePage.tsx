@@ -194,6 +194,15 @@ function defaultFinanceListFilter(partyId = ''): FinanceListFilter {
   return { from, to, partyId, showOpen: true, showClosed: false };
 }
 
+/** Sem restrição de período ou situação — lista completa. */
+function allAccountsListFilter(partyId = ''): FinanceListFilter {
+  return { from: '', to: '', partyId, showOpen: true, showClosed: true };
+}
+
+function isFilterActive(f: FinanceListFilter): boolean {
+  return !!(f.from || f.to || f.partyId || !(f.showOpen && f.showClosed));
+}
+
 function buildFinanceListQuery(f: FinanceListFilter, tab: Tab): string {
   const p = new URLSearchParams();
   if (f.from) p.set('from', f.from);
@@ -278,12 +287,11 @@ export function FinancePage() {
     financeFilterFromSearchParams(searchParams) ??
     (filterCustomerId || filterSupplierId
       ? defaultFinanceListFilter(filterCustomerId || filterSupplierId)
-      : null);
-  const [filterDraft, setFilterDraft] = useState<FinanceListFilter>(() =>
-    initialListFilter ?? defaultFinanceListFilter(filterCustomerId || filterSupplierId),
-  );
-  const [appliedFilter, setAppliedFilter] = useState<FinanceListFilter | null>(initialListFilter);
+      : allAccountsListFilter());
+  const [filterDraft, setFilterDraft] = useState<FinanceListFilter>(() => initialListFilter);
+  const [appliedFilter, setAppliedFilter] = useState<FinanceListFilter>(initialListFilter);
   const [filterErr, setFilterErr] = useState<string | null>(null);
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
   const [openTab, setOpenTab] = useState<Tab | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRequisitionTitle, setEditRequisitionTitle] = useState(false);
@@ -318,7 +326,7 @@ export function FinancePage() {
           : '';
       return api<Payable[]>(`/finance/payables${base}`);
     },
-    enabled: tab === 'pagar' && appliedFilter != null,
+    enabled: tab === 'pagar',
   });
 
   const receivables = useQuery({
@@ -337,7 +345,7 @@ export function FinancePage() {
           : '';
       return api<Receivable[]>(`/finance/receivables${base}`);
     },
-    enabled: tab === 'receber' && appliedFilter != null,
+    enabled: tab === 'receber',
   });
 
   useEffect(() => {
@@ -373,6 +381,12 @@ export function FinancePage() {
     setSearchParams(p, { replace: true });
   }
 
+  function openFilterModal() {
+    setFilterDraft({ ...appliedFilter });
+    setFilterErr(null);
+    setFilterModalOpen(true);
+  }
+
   function applyListFilter() {
     if (!filterDraft.showOpen && !filterDraft.showClosed) {
       setFilterErr('Marque Abertos e/ou Fechados para filtrar.');
@@ -383,26 +397,59 @@ export function FinancePage() {
     setAppliedFilter(next);
     const p = new URLSearchParams(searchParams);
     p.set('tab', tab);
-    appendFinanceFilterToParams(p, next, tab);
-    if (filterPartyName && next.partyId) p.set('partyName', filterPartyName);
+    if (isFilterActive(next)) {
+      appendFinanceFilterToParams(p, next, tab);
+      if (filterPartyName && next.partyId) p.set('partyName', filterPartyName);
+    } else {
+      p.delete('filtered');
+      p.delete('from');
+      p.delete('to');
+      p.delete('open');
+      p.delete('closed');
+      if (!filterCustomerId && !filterSupplierId) {
+        p.delete('customerId');
+        p.delete('supplierId');
+        p.delete('partyName');
+      }
+    }
     setSearchParams(p, { replace: true });
+    setFilterModalOpen(false);
+  }
+
+  function clearListFilter() {
+    const partyId = filterCustomerId || filterSupplierId || '';
+    const next = allAccountsListFilter(partyId);
+    setFilterDraft(next);
+    setAppliedFilter(next);
+    setFilterErr(null);
+    const p = new URLSearchParams(searchParams);
+    p.set('tab', tab);
+    p.delete('filtered');
+    p.delete('from');
+    p.delete('to');
+    p.delete('open');
+    p.delete('closed');
+    if (!partyId) {
+      p.delete('customerId');
+      p.delete('supplierId');
+      p.delete('partyName');
+    }
+    setSearchParams(p, { replace: true });
+    setFilterModalOpen(false);
   }
 
   function financeReturnPath(): string {
     const p = new URLSearchParams();
     p.set('tab', tab);
-    if (appliedFilter) {
+    if (isFilterActive(appliedFilter)) {
       appendFinanceFilterToParams(p, appliedFilter, tab);
       if (filterPartyName && appliedFilter.partyId) p.set('partyName', filterPartyName);
-    } else {
-      if (filterCustomerId) {
-        p.set('customerId', filterCustomerId);
-        if (filterPartyName) p.set('partyName', filterPartyName);
-      }
-      if (filterSupplierId) {
-        p.set('supplierId', filterSupplierId);
-        if (filterPartyName) p.set('partyName', filterPartyName);
-      }
+    } else if (filterCustomerId) {
+      p.set('customerId', filterCustomerId);
+      if (filterPartyName) p.set('partyName', filterPartyName);
+    } else if (filterSupplierId) {
+      p.set('supplierId', filterSupplierId);
+      if (filterPartyName) p.set('partyName', filterPartyName);
     }
     const qs = p.toString();
     return qs ? `/financeiro?${qs}` : '/financeiro';
@@ -726,95 +773,8 @@ export function FinancePage() {
 
   const printTitle = tab === 'pagar' ? 'Financeiro — contas a pagar' : 'Financeiro — contas a receber';
 
-  function renderFilterPanel(kind: Tab) {
-    const partyLabel = kind === 'pagar' ? 'Fornecedor' : 'Cliente';
-    return (
-      <div className="card finance-filter-panel no-print">
-        <div className="finance-filter-panel__head">
-          <strong>Filtrar</strong>
-          {appliedFilter ? (
-            <span className="finance-filter-panel__hint">
-              {kind === 'pagar' ? payables.data?.length ?? 0 : receivables.data?.length ?? 0}{' '}
-              título(s) no resultado
-            </span>
-          ) : null}
-        </div>
-        {filterErr ? <div className="alert alert-error">{filterErr}</div> : null}
-        <div className="finance-filter-panel__grid">
-          <div className="field">
-            <label htmlFor={`fin-from-${kind}`}>Período — de</label>
-            <input
-              id={`fin-from-${kind}`}
-              type="date"
-              value={filterDraft.from}
-              onChange={(e) => setFilterDraft((prev) => ({ ...prev, from: e.target.value }))}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor={`fin-to-${kind}`}>Período — até</label>
-            <input
-              id={`fin-to-${kind}`}
-              type="date"
-              value={filterDraft.to}
-              onChange={(e) => setFilterDraft((prev) => ({ ...prev, to: e.target.value }))}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor={`fin-party-${kind}`}>{partyLabel}</label>
-            <select
-              id={`fin-party-${kind}`}
-              value={filterDraft.partyId}
-              onChange={(e) => setFilterDraft((prev) => ({ ...prev, partyId: e.target.value }))}
-            >
-              <option value="">Todos</option>
-              {kind === 'pagar'
-                ? (suppliers.data ?? []).map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.legalName}
-                    </option>
-                  ))
-                : (customers.data ?? []).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-            </select>
-          </div>
-          <div className="field finance-filter-panel__checks">
-            <span className="finance-filter-panel__checks-label">Situação</span>
-            <label className="finance-filter-check">
-              <input
-                type="checkbox"
-                checked={filterDraft.showOpen}
-                onChange={(e) =>
-                  setFilterDraft((prev) => ({ ...prev, showOpen: e.target.checked }))
-                }
-              />
-              Abertos
-            </label>
-            <label className="finance-filter-check">
-              <input
-                type="checkbox"
-                checked={filterDraft.showClosed}
-                onChange={(e) =>
-                  setFilterDraft((prev) => ({ ...prev, showClosed: e.target.checked }))
-                }
-              />
-              Fechados
-            </label>
-          </div>
-        </div>
-        <div className="finance-filter-panel__actions">
-          <button type="button" className="btn btn-primary" onClick={applyListFilter}>
-            Filtrar
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   function renderListTotalFooter(totals: ReturnType<typeof sumFinanceListTotals>) {
-    if (!appliedFilter || totals.count === 0) return null;
+    if (totals.count === 0) return null;
     return (
       <tfoot>
         <tr className="finance-list-total-row">
@@ -917,18 +877,27 @@ export function FinancePage() {
 
       {tab === 'pagar' && (
         <>
-          {renderFilterPanel('pagar')}
           <div className="toolbar">
+            <button
+              type="button"
+              className={
+                'btn btn-secondary' + (isFilterActive(appliedFilter) ? ' finance-filter-btn--active' : '')
+              }
+              onClick={openFilterModal}
+            >
+              Filtrar
+              {isFilterActive(appliedFilter) ? ' •' : ''}
+            </button>
             <button type="button" className="btn btn-primary" onClick={() => openModal('pagar')}>
               + Incluir
             </button>
+            <span className="finance-list-hint">
+              {payables.isLoading ? 'Carregando…' : `${payables.data?.length ?? 0} título(s)`}
+            </span>
           </div>
           {payables.isError && (
             <div className="alert alert-error">{(payables.error as Error).message}</div>
           )}
-          {!appliedFilter ? (
-            <p className="finance-filter-empty">Configure os filtros acima e clique em Filtrar.</p>
-          ) : (
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -1051,24 +1020,32 @@ export function FinancePage() {
               {renderListTotalFooter(payablesTotals)}
             </table>
           </div>
-          )}
         </>
       )}
 
       {tab === 'receber' && (
         <>
-          {renderFilterPanel('receber')}
           <div className="toolbar">
+            <button
+              type="button"
+              className={
+                'btn btn-secondary' + (isFilterActive(appliedFilter) ? ' finance-filter-btn--active' : '')
+              }
+              onClick={openFilterModal}
+            >
+              Filtrar
+              {isFilterActive(appliedFilter) ? ' •' : ''}
+            </button>
             <button type="button" className="btn btn-primary" onClick={() => openModal('receber')}>
               + Incluir
             </button>
+            <span className="finance-list-hint">
+              {receivables.isLoading ? 'Carregando…' : `${receivables.data?.length ?? 0} título(s)`}
+            </span>
           </div>
           {receivables.isError && (
             <div className="alert alert-error">{(receivables.error as Error).message}</div>
           )}
-          {!appliedFilter ? (
-            <p className="finance-filter-empty">Configure os filtros acima e clique em Filtrar.</p>
-          ) : (
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -1206,8 +1183,97 @@ export function FinancePage() {
               {renderListTotalFooter(receivablesTotals)}
             </table>
           </div>
-          )}
         </>
+      )}
+
+      {filterModalOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setFilterModalOpen(false)}>
+          <div
+            className="modal finance-filter-modal"
+            role="dialog"
+            aria-labelledby="finance-filter-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="finance-filter-title">Filtrar</h2>
+            {filterErr ? <div className="alert alert-error">{filterErr}</div> : null}
+            <div className="finance-filter-panel__grid">
+              <div className="field">
+                <label htmlFor="fin-from">Período — de</label>
+                <input
+                  id="fin-from"
+                  type="date"
+                  value={filterDraft.from}
+                  onChange={(e) => setFilterDraft((prev) => ({ ...prev, from: e.target.value }))}
+                  autoFocus
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="fin-to">Período — até</label>
+                <input
+                  id="fin-to"
+                  type="date"
+                  value={filterDraft.to}
+                  onChange={(e) => setFilterDraft((prev) => ({ ...prev, to: e.target.value }))}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="fin-party">{tab === 'pagar' ? 'Fornecedor' : 'Cliente'}</label>
+                <select
+                  id="fin-party"
+                  value={filterDraft.partyId}
+                  onChange={(e) => setFilterDraft((prev) => ({ ...prev, partyId: e.target.value }))}
+                >
+                  <option value="">Todos</option>
+                  {tab === 'pagar'
+                    ? (suppliers.data ?? []).map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.legalName}
+                        </option>
+                      ))
+                    : (customers.data ?? []).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                </select>
+              </div>
+              <div className="field finance-filter-panel__checks">
+                <span className="finance-filter-panel__checks-label">Situação</span>
+                <label className="finance-filter-check">
+                  <input
+                    type="checkbox"
+                    checked={filterDraft.showOpen}
+                    onChange={(e) =>
+                      setFilterDraft((prev) => ({ ...prev, showOpen: e.target.checked }))
+                    }
+                  />
+                  Abertos
+                </label>
+                <label className="finance-filter-check">
+                  <input
+                    type="checkbox"
+                    checked={filterDraft.showClosed}
+                    onChange={(e) =>
+                      setFilterDraft((prev) => ({ ...prev, showClosed: e.target.checked }))
+                    }
+                  />
+                  Fechados
+                </label>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={clearListFilter}>
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setFilterModalOpen(false)}>
+                Cancelar
+              </button>
+              <button type="button" className="btn btn-primary" onClick={applyListFilter}>
+                Filtrar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
       )}
 
       {openTab && (
