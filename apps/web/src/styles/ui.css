@@ -2980,3 +2980,85 @@
 .catalog-combo-nested {
   margin-top: 0.5rem;
 }
+
+/* Financeiro — filtros e total da listagem */
+.finance-filter-panel {
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+}
+
+.finance-filter-panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.65rem;
+}
+
+.finance-filter-panel__hint {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.finance-filter-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.65rem 1rem;
+  align-items: end;
+}
+
+.finance-filter-panel__checks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+}
+
+.finance-filter-panel__checks-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.finance-filter-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.finance-filter-panel__actions {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.finance-filter-empty {
+  margin: 0.5rem 0 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  background: var(--color-surface-elevated);
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.finance-desc-meta {
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  line-height: 1.35;
+}
+
+.finance-list-total-row td {
+  border-top: 2px solid var(--color-border-strong);
+  background: var(--color-surface-elevated);
+  padding-top: 0.65rem;
+  padding-bottom: 0.65rem;
+}
+
+.finance-list-total-row .num {
+  text-align: right;
+}

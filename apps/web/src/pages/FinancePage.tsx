@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
@@ -181,17 +181,109 @@ function monthRangeDefaults(): { from: string; to: string } {
   };
 }
 
+type FinanceListFilter = {
+  from: string;
+  to: string;
+  partyId: string;
+  showOpen: boolean;
+  showClosed: boolean;
+};
+
+function defaultFinanceListFilter(partyId = ''): FinanceListFilter {
+  const { from, to } = monthRangeDefaults();
+  return { from, to, partyId, showOpen: true, showClosed: false };
+}
+
+function buildFinanceListQuery(f: FinanceListFilter, tab: Tab): string {
+  const p = new URLSearchParams();
+  if (f.from) p.set('from', f.from);
+  if (f.to) p.set('to', f.to);
+  if (f.partyId) {
+    if (tab === 'pagar') p.set('supplierId', f.partyId);
+    else p.set('customerId', f.partyId);
+  }
+  if (f.showOpen && !f.showClosed) p.set('statusIn', 'OPEN,OVERDUE');
+  else if (f.showClosed && !f.showOpen) p.set('status', 'PAID');
+  const qs = p.toString();
+  return qs ? `?${qs}` : '';
+}
+
+function financeFilterFromSearchParams(sp: URLSearchParams): FinanceListFilter | null {
+  if (sp.get('filtered') !== '1') return null;
+  const { from: defFrom, to: defTo } = monthRangeDefaults();
+  const partyId = sp.get('customerId')?.trim() || sp.get('supplierId')?.trim() || '';
+  return {
+    from: sp.get('from')?.trim() || defFrom,
+    to: sp.get('to')?.trim() || defTo,
+    partyId,
+    showOpen: sp.get('open') !== '0',
+    showClosed: sp.get('closed') === '1',
+  };
+}
+
+function appendFinanceFilterToParams(p: URLSearchParams, f: FinanceListFilter, tab: Tab) {
+  p.set('filtered', '1');
+  if (f.from) p.set('from', f.from);
+  else p.delete('from');
+  if (f.to) p.set('to', f.to);
+  else p.delete('to');
+  p.set('open', f.showOpen ? '1' : '0');
+  if (f.showClosed) p.set('closed', '1');
+  else p.delete('closed');
+  if (f.partyId) {
+    if (tab === 'pagar') {
+      p.set('supplierId', f.partyId);
+      p.delete('customerId');
+    } else {
+      p.set('customerId', f.partyId);
+      p.delete('supplierId');
+    }
+  } else {
+    p.delete('customerId');
+    p.delete('supplierId');
+    p.delete('partyName');
+  }
+}
+
+function sumFinanceListTotals(rows: Array<Payable | Receivable>) {
+  let totalFace = 0;
+  let totalOpen = 0;
+  for (const row of rows) {
+    totalFace += Number(row.amount) || 0;
+    totalOpen += Number(saldoAbertoBill(row)) || 0;
+  }
+  return {
+    count: rows.length,
+    totalFace: Math.round(totalFace * 100) / 100,
+    totalOpen: Math.round(totalOpen * 100) / 100,
+  };
+}
+
 export function FinancePage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
   const filterCustomerId = searchParams.get('customerId')?.trim() ?? '';
   const filterSupplierId = searchParams.get('supplierId')?.trim() ?? '';
   const filterPartyName = searchParams.get('partyName')?.trim() ?? '';
   const urlTab = searchParams.get('tab');
   const initialTab: Tab =
-    urlTab === 'receber' || filterCustomerId ? 'receber' : urlTab === 'pagar' || filterSupplierId ? 'pagar' : 'pagar';
+    urlTab === 'receber' || filterCustomerId
+      ? 'receber'
+      : urlTab === 'pagar' || filterSupplierId
+        ? 'pagar'
+        : 'pagar';
   const [tab, setTab] = useState<Tab>(initialTab);
+  const initialListFilter =
+    financeFilterFromSearchParams(searchParams) ??
+    (filterCustomerId || filterSupplierId
+      ? defaultFinanceListFilter(filterCustomerId || filterSupplierId)
+      : null);
+  const [filterDraft, setFilterDraft] = useState<FinanceListFilter>(() =>
+    initialListFilter ?? defaultFinanceListFilter(filterCustomerId || filterSupplierId),
+  );
+  const [appliedFilter, setAppliedFilter] = useState<FinanceListFilter | null>(initialListFilter);
+  const [filterErr, setFilterErr] = useState<string | null>(null);
   const [openTab, setOpenTab] = useState<Tab | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRequisitionTitle, setEditRequisitionTitle] = useState(false);
@@ -211,22 +303,119 @@ export function FinancePage() {
   const [printDetalharOrigem, setPrintDetalharOrigem] = useState(false);
 
   const payables = useQuery({
-    queryKey: ['payables', filterSupplierId],
+    queryKey: ['payables', appliedFilter, filterSupplierId],
     queryFn: () => {
-      const q = filterSupplierId ? `?supplierId=${encodeURIComponent(filterSupplierId)}` : '';
-      return api<Payable[]>(`/finance/payables${q}`);
+      const base = appliedFilter
+        ? buildFinanceListQuery(
+            {
+              ...appliedFilter,
+              partyId: appliedFilter.partyId || filterSupplierId,
+            },
+            'pagar',
+          )
+        : filterSupplierId
+          ? `?supplierId=${encodeURIComponent(filterSupplierId)}`
+          : '';
+      return api<Payable[]>(`/finance/payables${base}`);
     },
-    enabled: tab === 'pagar',
+    enabled: tab === 'pagar' && appliedFilter != null,
   });
 
   const receivables = useQuery({
-    queryKey: ['receivables', filterCustomerId],
+    queryKey: ['receivables', appliedFilter, filterCustomerId],
     queryFn: () => {
-      const q = filterCustomerId ? `?customerId=${encodeURIComponent(filterCustomerId)}` : '';
-      return api<Receivable[]>(`/finance/receivables${q}`);
+      const base = appliedFilter
+        ? buildFinanceListQuery(
+            {
+              ...appliedFilter,
+              partyId: appliedFilter.partyId || filterCustomerId,
+            },
+            'receber',
+          )
+        : filterCustomerId
+          ? `?customerId=${encodeURIComponent(filterCustomerId)}`
+          : '';
+      return api<Receivable[]>(`/finance/receivables${base}`);
     },
-    enabled: tab === 'receber',
+    enabled: tab === 'receber' && appliedFilter != null,
   });
+
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (t === 'receber' || t === 'pagar') setTab(t);
+    const fromUrl = financeFilterFromSearchParams(searchParams);
+    if (fromUrl) {
+      setFilterDraft(fromUrl);
+      setAppliedFilter(fromUrl);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (searchParams.get('filtered') === '1') return;
+    if (filterCustomerId || filterSupplierId) {
+      const partyId = filterCustomerId || filterSupplierId;
+      const next = defaultFinanceListFilter(partyId);
+      setFilterDraft(next);
+      setAppliedFilter(next);
+      const t: Tab = filterCustomerId ? 'receber' : 'pagar';
+      setTab(t);
+      const p = new URLSearchParams(searchParams);
+      p.set('tab', t);
+      setSearchParams(p, { replace: true });
+    }
+  }, [filterCustomerId, filterSupplierId, searchParams, setSearchParams]);
+
+  function changeTab(next: Tab, syncUrl = true) {
+    setTab(next);
+    if (!syncUrl) return;
+    const p = new URLSearchParams(searchParams);
+    p.set('tab', next);
+    setSearchParams(p, { replace: true });
+  }
+
+  function applyListFilter() {
+    if (!filterDraft.showOpen && !filterDraft.showClosed) {
+      setFilterErr('Marque Abertos e/ou Fechados para filtrar.');
+      return;
+    }
+    setFilterErr(null);
+    const next = { ...filterDraft };
+    setAppliedFilter(next);
+    const p = new URLSearchParams(searchParams);
+    p.set('tab', tab);
+    appendFinanceFilterToParams(p, next, tab);
+    if (filterPartyName && next.partyId) p.set('partyName', filterPartyName);
+    setSearchParams(p, { replace: true });
+  }
+
+  function financeReturnPath(): string {
+    const p = new URLSearchParams();
+    p.set('tab', tab);
+    if (appliedFilter) {
+      appendFinanceFilterToParams(p, appliedFilter, tab);
+      if (filterPartyName && appliedFilter.partyId) p.set('partyName', filterPartyName);
+    } else {
+      if (filterCustomerId) {
+        p.set('customerId', filterCustomerId);
+        if (filterPartyName) p.set('partyName', filterPartyName);
+      }
+      if (filterSupplierId) {
+        p.set('supplierId', filterSupplierId);
+        if (filterPartyName) p.set('partyName', filterPartyName);
+      }
+    }
+    const qs = p.toString();
+    return qs ? `/financeiro?${qs}` : '/financeiro';
+  }
+
+  const payablesTotals = useMemo(
+    () => sumFinanceListTotals(payables.data ?? []),
+    [payables.data],
+  );
+  const receivablesTotals = useMemo(
+    () => sumFinanceListTotals(receivables.data ?? []),
+    [receivables.data],
+  );
 
   const suppliers = useQuery({
     queryKey: ['suppliers'],
@@ -516,7 +705,7 @@ export function FinancePage() {
       if (printPartyId) p.set('partyId', printPartyId);
       if (printDetalharOrigem) p.set('detalhar', '1');
     }
-    const path = `/financeiro/impressao?${p.toString()}`;
+    const path = `/financeiro/impressao?${p.toString()}&return=${encodeURIComponent(financeReturnPath())}`;
     navigate(path);
     setPrintOpen(false);
   }
@@ -536,6 +725,113 @@ export function FinancePage() {
   }
 
   const printTitle = tab === 'pagar' ? 'Financeiro — contas a pagar' : 'Financeiro — contas a receber';
+
+  function renderFilterPanel(kind: Tab) {
+    const partyLabel = kind === 'pagar' ? 'Fornecedor' : 'Cliente';
+    return (
+      <div className="card finance-filter-panel no-print">
+        <div className="finance-filter-panel__head">
+          <strong>Filtrar</strong>
+          {appliedFilter ? (
+            <span className="finance-filter-panel__hint">
+              {kind === 'pagar' ? payables.data?.length ?? 0 : receivables.data?.length ?? 0}{' '}
+              título(s) no resultado
+            </span>
+          ) : null}
+        </div>
+        {filterErr ? <div className="alert alert-error">{filterErr}</div> : null}
+        <div className="finance-filter-panel__grid">
+          <div className="field">
+            <label htmlFor={`fin-from-${kind}`}>Período — de</label>
+            <input
+              id={`fin-from-${kind}`}
+              type="date"
+              value={filterDraft.from}
+              onChange={(e) => setFilterDraft((prev) => ({ ...prev, from: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`fin-to-${kind}`}>Período — até</label>
+            <input
+              id={`fin-to-${kind}`}
+              type="date"
+              value={filterDraft.to}
+              onChange={(e) => setFilterDraft((prev) => ({ ...prev, to: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`fin-party-${kind}`}>{partyLabel}</label>
+            <select
+              id={`fin-party-${kind}`}
+              value={filterDraft.partyId}
+              onChange={(e) => setFilterDraft((prev) => ({ ...prev, partyId: e.target.value }))}
+            >
+              <option value="">Todos</option>
+              {kind === 'pagar'
+                ? (suppliers.data ?? []).map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.legalName}
+                    </option>
+                  ))
+                : (customers.data ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+            </select>
+          </div>
+          <div className="field finance-filter-panel__checks">
+            <span className="finance-filter-panel__checks-label">Situação</span>
+            <label className="finance-filter-check">
+              <input
+                type="checkbox"
+                checked={filterDraft.showOpen}
+                onChange={(e) =>
+                  setFilterDraft((prev) => ({ ...prev, showOpen: e.target.checked }))
+                }
+              />
+              Abertos
+            </label>
+            <label className="finance-filter-check">
+              <input
+                type="checkbox"
+                checked={filterDraft.showClosed}
+                onChange={(e) =>
+                  setFilterDraft((prev) => ({ ...prev, showClosed: e.target.checked }))
+                }
+              />
+              Fechados
+            </label>
+          </div>
+        </div>
+        <div className="finance-filter-panel__actions">
+          <button type="button" className="btn btn-primary" onClick={applyListFilter}>
+            Filtrar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function renderListTotalFooter(totals: ReturnType<typeof sumFinanceListTotals>) {
+    if (!appliedFilter || totals.count === 0) return null;
+    return (
+      <tfoot>
+        <tr className="finance-list-total-row">
+          <td colSpan={4}>
+            <strong>Total ({totals.count} título{totals.count === 1 ? '' : 's'})</strong>
+          </td>
+          <td className="num">
+            <strong>{formatBRL(totals.totalFace)}</strong>
+          </td>
+          <td className="num">
+            <strong>{formatBRL(totals.totalOpen)}</strong>
+          </td>
+          <td colSpan={3} />
+        </tr>
+      </tfoot>
+    );
+  }
 
   return (
     <div className="page print-area">
@@ -583,7 +879,7 @@ export function FinancePage() {
               Notas Fiscais
             </button>
             <Link
-              to="/financeiro"
+              to={`/financeiro?tab=${filterCustomerId ? 'receber' : 'pagar'}`}
               className="btn btn-ghost"
               style={{ fontSize: '0.82rem', padding: '0.35rem 0.65rem', marginLeft: 'auto' }}
             >
@@ -597,7 +893,7 @@ export function FinancePage() {
         <button
           type="button"
           className={'btn ' + (tab === 'pagar' ? 'btn-primary' : 'btn-secondary')}
-          onClick={() => setTab('pagar')}
+          onClick={() => changeTab('pagar')}
           style={{ marginRight: '0.5rem' }}
         >
           A pagar
@@ -605,7 +901,7 @@ export function FinancePage() {
         <button
           type="button"
           className={'btn ' + (tab === 'receber' ? 'btn-primary' : 'btn-secondary')}
-          onClick={() => setTab('receber')}
+          onClick={() => changeTab('receber')}
         >
           A receber
         </button>
@@ -621,10 +917,8 @@ export function FinancePage() {
 
       {tab === 'pagar' && (
         <>
+          {renderFilterPanel('pagar')}
           <div className="toolbar">
-            <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-              {payables.data?.length ?? 0} título(s)
-            </span>
             <button type="button" className="btn btn-primary" onClick={() => openModal('pagar')}>
               + Incluir
             </button>
@@ -632,6 +926,9 @@ export function FinancePage() {
           {payables.isError && (
             <div className="alert alert-error">{(payables.error as Error).message}</div>
           )}
+          {!appliedFilter ? (
+            <p className="finance-filter-empty">Configure os filtros acima e clique em Filtrar.</p>
+          ) : (
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -751,17 +1048,17 @@ export function FinancePage() {
                   </tr>
                 ))}
               </tbody>
+              {renderListTotalFooter(payablesTotals)}
             </table>
           </div>
+          )}
         </>
       )}
 
       {tab === 'receber' && (
         <>
+          {renderFilterPanel('receber')}
           <div className="toolbar">
-            <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-              {receivables.data?.length ?? 0} título(s)
-            </span>
             <button type="button" className="btn btn-primary" onClick={() => openModal('receber')}>
               + Incluir
             </button>
@@ -769,6 +1066,9 @@ export function FinancePage() {
           {receivables.isError && (
             <div className="alert alert-error">{(receivables.error as Error).message}</div>
           )}
+          {!appliedFilter ? (
+            <p className="finance-filter-empty">Configure os filtros acima e clique em Filtrar.</p>
+          ) : (
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -817,7 +1117,7 @@ export function FinancePage() {
                         )}
                       </div>
                       {(r.items?.length || r.cashControlNote || r.cashSession) && (
-                        <div className="muted" style={{ fontSize: '0.78rem', marginTop: 2 }}>
+                        <div className="finance-desc-meta">
                           {r.items?.length ? `${r.items.length} item(ns)` : null}
                           {r.items?.length && (r.cashControlNote || r.cashSession) ? ' · ' : null}
                           {r.cashSession
@@ -903,8 +1203,10 @@ export function FinancePage() {
                   </tr>
                 ))}
               </tbody>
+              {renderListTotalFooter(receivablesTotals)}
             </table>
           </div>
+          )}
         </>
       )}
 

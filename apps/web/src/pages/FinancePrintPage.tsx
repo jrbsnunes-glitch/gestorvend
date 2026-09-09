@@ -421,6 +421,17 @@ export function FinancePrintPage() {
     (tipo === 'pagar' && modo !== 'conta' && listPayables.isFetched) ||
     (tipo === 'receber' && modo !== 'conta' && listReceivables.isFetched);
 
+  const financeBackTo = useMemo(() => {
+    const raw = sp.get('return');
+    if (!raw) return `/financeiro?tab=${tipo}`;
+    try {
+      const path = decodeURIComponent(raw);
+      return path.startsWith('/') ? path : `/financeiro?tab=${tipo}`;
+    } catch {
+      return `/financeiro?tab=${tipo}`;
+    }
+  }, [sp, tipo]);
+
   const periodSummary = useMemo(() => {
     if (modo === 'conta') return null;
     const rows =
@@ -740,7 +751,7 @@ export function FinancePrintPage() {
   return (
     <div className="print-page">
       <div className="print-toolbar no-print">
-        <Link to="/financeiro" className="btn btn-secondary">
+        <Link to={financeBackTo} className="btn btn-secondary">
           ← Voltar ao financeiro
         </Link>
         <div style={{ flex: 1 }} />
