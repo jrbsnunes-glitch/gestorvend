@@ -3,11 +3,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
+import '../components/crud-toolbar.css';
 import { CostCenterSelect } from '../components/CostCenterSelect';
 import { BillPaymentsButton } from '../components/BillSettlementsModal';
 import { api } from '../lib/api';
 import { hasInformedPayment, PAYMENT_LABELS, saldoAbertoBill } from '../lib/finance-bills';
-import { formatBRL, formatDate } from '../lib/format';
+import { formatBRL, formatCpfCnpj, formatDate } from '../lib/format';
+
+type CustomerSearchRow = {
+  id: string;
+  name: string;
+  document: string | null;
+};
 
 type CashSessionRow = {
   id: string;
@@ -292,6 +299,9 @@ export function FinancePage() {
   const [appliedFilter, setAppliedFilter] = useState<FinanceListFilter>(initialListFilter);
   const [filterErr, setFilterErr] = useState<string | null>(null);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [filterPartySearch, setFilterPartySearch] = useState('');
+  const [filterPartyOpen, setFilterPartyOpen] = useState(false);
+  const [filterPartyLabel, setFilterPartyLabel] = useState('');
   const [openTab, setOpenTab] = useState<Tab | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRequisitionTitle, setEditRequisitionTitle] = useState(false);
@@ -381,8 +391,34 @@ export function FinancePage() {
     setSearchParams(p, { replace: true });
   }
 
+  function resolveFilterPartyLabel(partyId: string, kind: Tab = tab): string {
+    if (!partyId) return '';
+    if (kind === 'pagar') {
+      return suppliers.data?.find((s) => s.id === partyId)?.legalName ?? '';
+    }
+    const c = customers.data?.find((c) => c.id === partyId);
+    return c?.name ?? '';
+  }
+
+  function selectFilterParty(id: string, label: string) {
+    setFilterDraft((prev) => ({ ...prev, partyId: id }));
+    setFilterPartyLabel(label);
+    setFilterPartySearch('');
+    setFilterPartyOpen(false);
+  }
+
+  function clearFilterPartySelection() {
+    setFilterDraft((prev) => ({ ...prev, partyId: '' }));
+    setFilterPartyLabel('');
+    setFilterPartySearch('');
+    setFilterPartyOpen(false);
+  }
+
   function openFilterModal() {
     setFilterDraft({ ...appliedFilter });
+    setFilterPartyLabel(resolveFilterPartyLabel(appliedFilter.partyId));
+    setFilterPartySearch('');
+    setFilterPartyOpen(false);
     setFilterErr(null);
     setFilterModalOpen(true);
   }
@@ -421,6 +457,9 @@ export function FinancePage() {
     const next = allAccountsListFilter(partyId);
     setFilterDraft(next);
     setAppliedFilter(next);
+    setFilterPartyLabel(resolveFilterPartyLabel(partyId));
+    setFilterPartySearch('');
+    setFilterPartyOpen(false);
     setFilterErr(null);
     const p = new URLSearchParams(searchParams);
     p.set('tab', tab);
@@ -474,6 +513,27 @@ export function FinancePage() {
     queryFn: () =>
       api<Array<{ id: string; name: string; segment?: string | null }>>('/customers'),
   });
+
+  const filterCustomerSearchQ = useQuery({
+    queryKey: ['customers', 'search', 'finance-filter', filterPartySearch],
+    queryFn: () =>
+      api<CustomerSearchRow[]>(
+        `/customers/search?q=${encodeURIComponent(filterPartySearch.trim())}`,
+      ),
+    enabled:
+      filterModalOpen &&
+      tab === 'receber' &&
+      filterPartyOpen &&
+      filterPartySearch.trim().length >= 1,
+  });
+
+  const filterSupplierMatches = useMemo(() => {
+    const q = filterPartySearch.trim().toLowerCase();
+    if (!q) return [];
+    return (suppliers.data ?? [])
+      .filter((s) => s.legalName.toLowerCase().includes(q))
+      .slice(0, 15);
+  }, [filterPartySearch, suppliers.data]);
 
   const openCashSessions = useQuery({
     queryKey: ['cash', 'sessions', 'OPEN', 'finance'],
@@ -849,28 +909,24 @@ export function FinancePage() {
         </div>
       )}
 
-      <div className="toolbar" style={{ justifyContent: 'flex-start' }}>
-        <button
-          type="button"
-          className={'btn ' + (tab === 'pagar' ? 'btn-primary' : 'btn-secondary')}
-          onClick={() => changeTab('pagar')}
-          style={{ marginRight: '0.5rem' }}
-        >
-          A pagar
-        </button>
-        <button
-          type="button"
-          className={'btn ' + (tab === 'receber' ? 'btn-primary' : 'btn-secondary')}
-          onClick={() => changeTab('receber')}
-        >
-          A receber
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          style={{ marginLeft: 'auto' }}
-          onClick={openPrintModal}
-        >
+      <div className="finance-page-head no-print">
+        <nav className="stock-subnav" aria-label="Submenu financeiro">
+          <button
+            type="button"
+            className={tab === 'pagar' ? 'active' : ''}
+            onClick={() => changeTab('pagar')}
+          >
+            A pagar
+          </button>
+          <button
+            type="button"
+            className={tab === 'receber' ? 'active' : ''}
+            onClick={() => changeTab('receber')}
+          >
+            A receber
+          </button>
+        </nav>
+        <button type="button" className="btn btn-secondary finance-print-btn" onClick={openPrintModal}>
           Impressões…
         </button>
       </div>
@@ -1196,69 +1252,133 @@ export function FinancePage() {
           >
             <h2 id="finance-filter-title">Filtrar</h2>
             {filterErr ? <div className="alert alert-error">{filterErr}</div> : null}
-            <div className="finance-filter-panel__grid">
-              <div className="field">
-                <label htmlFor="fin-from">Período — de</label>
-                <input
-                  id="fin-from"
-                  type="date"
-                  value={filterDraft.from}
-                  onChange={(e) => setFilterDraft((prev) => ({ ...prev, from: e.target.value }))}
-                  autoFocus
-                />
+            <div className="finance-filter-form">
+              <div className="finance-filter-form__dates">
+                <div className="field">
+                  <label htmlFor="fin-from">Período — de</label>
+                  <input
+                    id="fin-from"
+                    type="date"
+                    value={filterDraft.from}
+                    onChange={(e) => setFilterDraft((prev) => ({ ...prev, from: e.target.value }))}
+                    autoFocus
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="fin-to">Período — até</label>
+                  <input
+                    id="fin-to"
+                    type="date"
+                    value={filterDraft.to}
+                    onChange={(e) => setFilterDraft((prev) => ({ ...prev, to: e.target.value }))}
+                  />
+                </div>
               </div>
-              <div className="field">
-                <label htmlFor="fin-to">Período — até</label>
+              <div className="field finance-party-search">
+                <label htmlFor="fin-party">
+                  {tab === 'pagar' ? 'Fornecedor' : 'Cliente'}{' '}
+                  <span className="finance-party-search__optional">(opcional)</span>
+                </label>
                 <input
-                  id="fin-to"
-                  type="date"
-                  value={filterDraft.to}
-                  onChange={(e) => setFilterDraft((prev) => ({ ...prev, to: e.target.value }))}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="fin-party">{tab === 'pagar' ? 'Fornecedor' : 'Cliente'}</label>
-                <select
                   id="fin-party"
-                  value={filterDraft.partyId}
-                  onChange={(e) => setFilterDraft((prev) => ({ ...prev, partyId: e.target.value }))}
-                >
-                  <option value="">Todos</option>
-                  {tab === 'pagar'
-                    ? (suppliers.data ?? []).map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.legalName}
-                        </option>
+                  type="search"
+                  autoComplete="off"
+                  placeholder={
+                    tab === 'pagar' ? 'Pesquisar fornecedor…' : 'Pesquisar nome ou documento…'
+                  }
+                  value={filterPartyOpen ? filterPartySearch : filterPartyLabel}
+                  onChange={(e) => {
+                    setFilterPartyOpen(true);
+                    setFilterPartySearch(e.target.value);
+                    if (!e.target.value.trim()) {
+                      setFilterDraft((prev) => ({ ...prev, partyId: '' }));
+                      setFilterPartyLabel('');
+                    }
+                  }}
+                  onFocus={() => setFilterPartyOpen(true)}
+                  onBlur={() => window.setTimeout(() => setFilterPartyOpen(false), 150)}
+                />
+                {filterDraft.partyId && !filterPartyOpen ? (
+                  <button
+                    type="button"
+                    className="finance-party-search__clear"
+                    onClick={clearFilterPartySelection}
+                  >
+                    Limpar seleção
+                  </button>
+                ) : null}
+                {filterPartyOpen && filterPartySearch.trim().length >= 1 ? (
+                  <div className="finance-party-search__panel" role="listbox">
+                    {tab === 'receber' ? (
+                      filterCustomerSearchQ.isLoading ? (
+                        <p className="finance-party-search__empty">Buscando…</p>
+                      ) : (filterCustomerSearchQ.data ?? []).length ? (
+                        (filterCustomerSearchQ.data ?? []).map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            role="option"
+                            className="finance-party-search__option"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() =>
+                              selectFilterParty(
+                                c.id,
+                                `${c.name}${c.document ? ` · ${formatCpfCnpj(c.document)}` : ''}`,
+                              )
+                            }
+                          >
+                            <strong>{c.name}</strong>
+                            {c.document ? (
+                              <span>{formatCpfCnpj(c.document)}</span>
+                            ) : null}
+                          </button>
+                        ))
+                      ) : (
+                        <p className="finance-party-search__empty">Nenhum cliente encontrado.</p>
+                      )
+                    ) : filterSupplierMatches.length ? (
+                      filterSupplierMatches.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          role="option"
+                          className="finance-party-search__option"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => selectFilterParty(s.id, s.legalName)}
+                        >
+                          <strong>{s.legalName}</strong>
+                        </button>
                       ))
-                    : (customers.data ?? []).map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                </select>
+                    ) : (
+                      <p className="finance-party-search__empty">Nenhum fornecedor encontrado.</p>
+                    )}
+                  </div>
+                ) : null}
               </div>
-              <div className="field finance-filter-panel__checks">
+              <div className="field finance-filter-situacao">
                 <span className="finance-filter-panel__checks-label">Situação</span>
-                <label className="finance-filter-check">
-                  <input
-                    type="checkbox"
-                    checked={filterDraft.showOpen}
-                    onChange={(e) =>
-                      setFilterDraft((prev) => ({ ...prev, showOpen: e.target.checked }))
-                    }
-                  />
-                  Abertos
-                </label>
-                <label className="finance-filter-check">
-                  <input
-                    type="checkbox"
-                    checked={filterDraft.showClosed}
-                    onChange={(e) =>
-                      setFilterDraft((prev) => ({ ...prev, showClosed: e.target.checked }))
-                    }
-                  />
-                  Fechados
-                </label>
+                <div className="finance-filter-panel__checks">
+                  <label className="finance-filter-check">
+                    <input
+                      type="checkbox"
+                      checked={filterDraft.showOpen}
+                      onChange={(e) =>
+                        setFilterDraft((prev) => ({ ...prev, showOpen: e.target.checked }))
+                      }
+                    />
+                    Abertos
+                  </label>
+                  <label className="finance-filter-check">
+                    <input
+                      type="checkbox"
+                      checked={filterDraft.showClosed}
+                      onChange={(e) =>
+                        setFilterDraft((prev) => ({ ...prev, showClosed: e.target.checked }))
+                      }
+                    />
+                    Fechados
+                  </label>
+                </div>
               </div>
             </div>
             <div className="modal-actions">
