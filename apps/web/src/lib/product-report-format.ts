@@ -155,3 +155,45 @@ export function productStockReportRoute(kind: ProductStockReportKind): string {
       return '/produtos/relatorio/estoque-minimo';
   }
 }
+
+/** Acrescenta `return` para o link Voltar na página de impressão. */
+export function appendProductReportReturn(qs: string, returnPath = '/produtos'): string {
+  const p = new URLSearchParams(qs);
+  p.set('return', returnPath);
+  return p.toString();
+}
+
+function isoDateLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = `${d.getMonth() + 1}`.padStart(2, '0');
+  const day = `${d.getDate()}`.padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Relatório de giro dos últimos N dias (ex.: painel Início → card Top produtos). */
+export function buildProductTurnoverLastDaysPath(days: number, returnPath = '/'): string {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate() - days);
+  const qs = buildProductTurnoverReportQuery({
+    from: isoDateLocal(from),
+    to: isoDateLocal(to),
+    take: '80',
+    useMinControl: true,
+    useMaxControl: false,
+    alertsOnly: false,
+    maxStockCeiling: '',
+  });
+  return `/produtos/relatorio/giro?${appendProductReportReturn(qs, returnPath)}`;
+}
+
+export function productReportBackTo(sp: URLSearchParams, fallback = '/produtos'): string {
+  const raw = sp.get('return');
+  if (!raw) return fallback;
+  try {
+    const path = decodeURIComponent(raw);
+    return path.startsWith('/') ? path : fallback;
+  } catch {
+    return fallback;
+  }
+}

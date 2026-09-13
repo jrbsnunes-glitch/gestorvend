@@ -4,7 +4,6 @@ import { useSearchParams } from 'react-router-dom';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination } from '../components/ListPagination';
-import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import {
   CategorySearchCombo,
@@ -309,10 +308,14 @@ export function ProductsPage() {
   const [filterCodeMinDraft, setFilterCodeMinDraft] = useState('');
   const [filterCodeMaxDraft, setFilterCodeMaxDraft] = useState('');
   const [filterStatusDraft, setFilterStatusDraft] = useState<'active' | 'inactive' | 'all'>('active');
+  const [filterCategoryIdDraft, setFilterCategoryIdDraft] = useState('');
+  const [filterCategoryNameDraft, setFilterCategoryNameDraft] = useState('');
   const [appliedFilterDesc, setAppliedFilterDesc] = useState('');
   const [appliedFilterCodeMin, setAppliedFilterCodeMin] = useState<number | null>(null);
   const [appliedFilterCodeMax, setAppliedFilterCodeMax] = useState<number | null>(null);
   const [appliedFilterStatus, setAppliedFilterStatus] = useState<'active' | 'inactive' | 'all'>('active');
+  const [appliedFilterCategoryId, setAppliedFilterCategoryId] = useState('');
+  const [appliedFilterCategoryName, setAppliedFilterCategoryName] = useState('');
   const [imagePreviewKey, setImagePreviewKey] = useState(0);
   const imageFileRef = useRef<HTMLInputElement>(null);
   const tenantSlug = getIdentity()?.tenantSlug ?? '';
@@ -425,6 +428,7 @@ export function ProductsPage() {
       const code = p.controlNumber ?? 0;
       if (appliedFilterCodeMin != null && code < appliedFilterCodeMin) return false;
       if (appliedFilterCodeMax != null && code > appliedFilterCodeMax) return false;
+      if (appliedFilterCategoryId && p.category?.id !== appliedFilterCategoryId) return false;
       return true;
     });
 
@@ -442,19 +446,23 @@ export function ProductsPage() {
     appliedFilterCodeMin,
     appliedFilterCodeMax,
     appliedFilterStatus,
+    appliedFilterCategoryId,
   ]);
 
   const filtersActive =
     appliedFilterDesc.trim() !== '' ||
     appliedFilterCodeMin != null ||
     appliedFilterCodeMax != null ||
-    appliedFilterStatus !== 'active';
+    appliedFilterStatus !== 'active' ||
+    appliedFilterCategoryId !== '';
 
   function openFiltersModal() {
     setFilterDescDraft(appliedFilterDesc);
     setFilterCodeMinDraft(appliedFilterCodeMin != null ? String(appliedFilterCodeMin) : '');
     setFilterCodeMaxDraft(appliedFilterCodeMax != null ? String(appliedFilterCodeMax) : '');
     setFilterStatusDraft(appliedFilterStatus);
+    setFilterCategoryIdDraft(appliedFilterCategoryId);
+    setFilterCategoryNameDraft(appliedFilterCategoryName);
     setFiltersOpen(true);
   }
 
@@ -467,6 +475,8 @@ export function ProductsPage() {
     setAppliedFilterCodeMin(Number.isFinite(minN) ? minN : null);
     setAppliedFilterCodeMax(Number.isFinite(maxN) ? maxN : null);
     setAppliedFilterStatus(filterStatusDraft);
+    setAppliedFilterCategoryId(filterCategoryIdDraft);
+    setAppliedFilterCategoryName(filterCategoryNameDraft);
     setFiltersOpen(false);
   }
 
@@ -475,10 +485,14 @@ export function ProductsPage() {
     setFilterCodeMinDraft('');
     setFilterCodeMaxDraft('');
     setFilterStatusDraft('active');
+    setFilterCategoryIdDraft('');
+    setFilterCategoryNameDraft('');
     setAppliedFilterDesc('');
     setAppliedFilterCodeMin(null);
     setAppliedFilterCodeMax(null);
     setAppliedFilterStatus('active');
+    setAppliedFilterCategoryId('');
+    setAppliedFilterCategoryName('');
     setFiltersOpen(false);
   }
 
@@ -945,9 +959,33 @@ export function ProductsPage() {
         onReports={() => setReportsOpen(true)}
       />
 
-      <ModuleReportsModal open={reportsOpen} title="Produtos" compactLauncher onClose={() => setReportsOpen(false)}>
-        <ProductReportsPanel />
-      </ModuleReportsModal>
+      {reportsOpen && (
+        <div
+          className="modal-backdrop no-print"
+          role="presentation"
+          onClick={() => setReportsOpen(false)}
+        >
+          <div
+            className="modal product-reports-modal"
+            role="dialog"
+            aria-labelledby="product-reports-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 640 }}
+          >
+            <h2 id="product-reports-title">Relatórios de produtos</h2>
+            <p style={{ marginTop: 0, fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
+              Preencha os filtros abaixo e clique em <strong>Gerar relatório</strong>. O resultado abre
+              numa página limpa, pronta para impressão ou PDF.
+            </p>
+            <ProductReportsPanel onClose={() => setReportsOpen(false)} />
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setReportsOpen(false)}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {filtersOpen && (
         <FormModalBackdrop className="no-print" onClose={() => setFiltersOpen(false)}>
@@ -984,6 +1022,19 @@ export function ProductsPage() {
                 onChange={(e) => setFilterDescDraft(e.target.value)}
                 placeholder="Nome ou descrição parcial…"
                 autoFocus
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="pf-group">Grupo</label>
+              <CategorySearchCombo
+                id="pf-group"
+                value={filterCategoryIdDraft}
+                onChange={(id, name) => {
+                  setFilterCategoryIdDraft(id);
+                  if (name !== undefined) setFilterCategoryNameDraft(name);
+                  else if (!id) setFilterCategoryNameDraft('');
+                }}
+                hintName={filterCategoryNameDraft}
               />
             </div>
             <div className="form-row">

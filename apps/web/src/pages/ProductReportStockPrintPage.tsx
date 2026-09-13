@@ -1,19 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatBRL, formatDate, formatStockQty } from '../lib/format';
 import {
   buildProductStockReportQuery,
-  parseProductCodeBound,
+  productReportBackTo,
   productStockReportApiPath,
   productStockReportTitle,
   type ProductStockReportKind,
 } from '../lib/product-report-format';
 import './cash-print.css';
 
-type StockFilters = {
+type StockParams = {
   from: string;
   to: string;
   locationId: string;
@@ -70,29 +70,16 @@ type StockReportResponse = {
   totals: Record<string, number>;
 };
 
-function monthStartISO(): string {
-  const d = new Date();
-  const m = `${d.getMonth() + 1}`.padStart(2, '0');
-  return `${d.getFullYear()}-${m}-01`;
-}
-
-function todayISO(): string {
-  const d = new Date();
-  const m = `${d.getMonth() + 1}`.padStart(2, '0');
-  const day = `${d.getDate()}`.padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
-}
-
 function kindFromPath(pathname: string): ProductStockReportKind {
   if (pathname.includes('estoque-fisico')) return 'physical';
   if (pathname.includes('estoque-minimo')) return 'minimum';
   return 'financial';
 }
 
-function draftFromSearchParams(sp: URLSearchParams): StockFilters {
+function stockParamsFromSearchParams(sp: URLSearchParams): StockParams {
   return {
-    from: sp.get('from') ?? monthStartISO(),
-    to: sp.get('to') ?? todayISO(),
+    from: sp.get('from') ?? '',
+    to: sp.get('to') ?? '',
     locationId: sp.get('locationId') ?? '',
     categoryId: sp.get('categoryId') ?? '',
     minStockCadFrom: sp.get('minStockCadFrom') ?? '',
@@ -100,47 +87,29 @@ function draftFromSearchParams(sp: URLSearchParams): StockFilters {
   };
 }
 
-function parseCadMinBound(raw: string): number | null {
-  return parseProductCodeBound(raw);
-}
-
 export function ProductReportStockPrintPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const kind = kindFromPath(location.pathname);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [draft, setDraft] = useState<StockFilters>(() => draftFromSearchParams(searchParams));
-  const [applyErr, setApplyErr] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const backTo = productReportBackTo(searchParams);
 
-  const spKey = searchParams.toString();
-  useEffect(() => {
-    setDraft(draftFromSearchParams(searchParams));
-  }, [spKey]);
+  const params = useMemo(() => stockParamsFromSearchParams(searchParams), [searchParams]);
 
   const qs = useMemo(
     () =>
       buildProductStockReportQuery({
-        from: draft.from,
-        to: draft.to,
-        locationId: draft.locationId || undefined,
-        categoryId: draft.categoryId || undefined,
-        minStockCadFrom: draft.minStockCadFrom || undefined,
-        minStockCadTo: draft.minStockCadTo || undefined,
+        from: params.from,
+        to: params.to,
+        locationId: params.locationId || undefined,
+        categoryId: params.categoryId || undefined,
+        minStockCadFrom: params.minStockCadFrom || undefined,
+        minStockCadTo: params.minStockCadTo || undefined,
       }),
-    [draft],
+    [params],
   );
 
-  const enabled = Boolean(draft.from && draft.to);
-
-  const locations = useQuery({
-    queryKey: ['stock-locations'],
-    queryFn: () => api<Array<{ id: string; code: string; name: string }>>('/stock-locations'),
-  });
-
-  const categories = useQuery({
-    queryKey: ['categories', 'report-stock'],
-    queryFn: () => api<Array<{ id: string; name: string }>>('/categories?q='),
-  });
+  const enabled = Boolean(params.from && params.to);
 
   const report = useQuery({
     queryKey: ['reports', kind, 'stock-print', qs],
@@ -151,44 +120,9 @@ export function ProductReportStockPrintPage() {
   const data = report.data;
   const title = productStockReportTitle(kind);
 
-  function applyFilters() {
-    setApplyErr(null);
-    if (!draft.from.trim() || !draft.to.trim()) {
-      setApplyErr('Informe as datas inicial e final.');
-      return;
-    }
-    const hasFrom = draft.minStockCadFrom.trim() !== '';
-    const hasTo = draft.minStockCadTo.trim() !== '';
-    if (hasFrom !== hasTo) {
-      setApplyErr('Informe ambos os campos de código (de / até) ou deixe os dois em branco.');
-      return;
-    }
-    if (hasFrom && hasTo) {
-      const a = parseCadMinBound(draft.minStockCadFrom);
-      const b = parseCadMinBound(draft.minStockCadTo);
-      if (a === null || b === null) {
-        setApplyErr('Intervalo de código inválido (use inteiros positivos).');
-        return;
-      }
-      if (a > b) {
-        setApplyErr('Código “de” não pode ser maior que “até”.');
-        return;
-      }
-    }
-    setSearchParams(
-      new URLSearchParams(
-        buildProductStockReportQuery({
-          from: draft.from,
-          to: draft.to,
-          locationId: draft.locationId || undefined,
-          categoryId: draft.categoryId || undefined,
-          minStockCadFrom: draft.minStockCadFrom || undefined,
-          minStockCadTo: draft.minStockCadTo || undefined,
-        }),
-      ),
-      { replace: true },
-    );
-  }
+  useEffect(() => {
+    if (enabled && report.data) window.scrollTo({ top: 0 });
+  }, [enabled, report.data]);
 
   const filterSummary = data ? (
     <>
@@ -196,17 +130,7 @@ export function ProductReportStockPrintPage() {
         Período: <strong>{formatDate(data.period.from)}</strong> a <strong>{formatDate(data.period.to)}</strong>
         {' · '}
         Posição na data final ({formatDate(data.asOfDate)}).
-        {data.locationId ? (
-          <>
-            {' · '}
-            Local:{' '}
-            <strong>
-              {locations.data?.find((l) => l.id === data.locationId)?.code ?? data.locationId}
-            </strong>
-          </>
-        ) : (
-          <> · Local: todos</>
-        )}
+        {data.locationId ? <> · Local: filtrado nos parâmetros</> : <> · Local: todos</>}
         {data.categoryName ? (
           <>
             {' · '}
@@ -230,16 +154,25 @@ export function ProductReportStockPrintPage() {
     </>
   ) : enabled ? (
     <p className="print-sub">Carregando…</p>
-  ) : (
-    <p className="print-sub">
-      Ajuste os filtros abaixo e clique em <strong>Atualizar relatório</strong>.
-    </p>
-  );
+  ) : null;
+
+  if (!enabled) {
+    return (
+      <div className="print-page">
+        <p className="print-empty no-print">
+          Parâmetros inválidos. Volte em Produtos, abra Relatórios e informe as datas antes de gerar.
+        </p>
+        <button type="button" className="btn btn-primary no-print" onClick={() => navigate(backTo)}>
+          Voltar
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="print-page">
       <div className="print-toolbar no-print">
-        <button type="button" className="btn btn-secondary" onClick={() => navigate('/produtos')}>
+        <button type="button" className="btn btn-secondary" onClick={() => navigate(backTo)}>
           ← Voltar
         </button>
         <div style={{ flex: 1 }} />
@@ -248,106 +181,15 @@ export function ProductReportStockPrintPage() {
         </button>
       </div>
 
-      <div
-        className="no-print pm-move-filters"
-        style={{
-          marginBottom: '0.65rem',
-          padding: '0.45rem 0.65rem',
-          background: '#f8fafc',
-          border: '1px solid #cbd5e1',
-          borderRadius: 8,
-        }}
-      >
-        <div className="pm-move-filters__title">Filtros — {title}</div>
-        {applyErr && <div className="alert alert-error pm-move-filters__alert">{applyErr}</div>}
-        <div className="pm-move-filters__row">
-          <div className="pm-move-filters__cadgroup" aria-label="Intervalo código produto">
-            <span className="pm-move-filters__muted-label">Código</span>
-            <div className="field pm-move-filters__tinyfield">
-              <label htmlFor="ps-cfrom">De</label>
-              <input
-                id="ps-cfrom"
-                inputMode="numeric"
-                placeholder="opc."
-                value={draft.minStockCadFrom}
-                onChange={(e) => setDraft((d) => ({ ...d, minStockCadFrom: e.target.value }))}
-                style={{ width: '5rem' }}
-              />
-            </div>
-            <div className="field pm-move-filters__tinyfield">
-              <label htmlFor="ps-cto">Até</label>
-              <input
-                id="ps-cto"
-                inputMode="numeric"
-                placeholder="opc."
-                value={draft.minStockCadTo}
-                onChange={(e) => setDraft((d) => ({ ...d, minStockCadTo: e.target.value }))}
-                style={{ width: '5rem' }}
-              />
-            </div>
-          </div>
-          <div className="field pm-move-filters__tinyfield">
-            <label htmlFor="ps-cat">Categoria</label>
-            <select
-              id="ps-cat"
-              value={draft.categoryId}
-              onChange={(e) => setDraft((d) => ({ ...d, categoryId: e.target.value }))}
-            >
-              <option value="">Todos</option>
-              {(categories.data ?? []).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field pm-move-filters__tinyfield">
-            <label htmlFor="ps-loc">Local</label>
-            <select
-              id="ps-loc"
-              value={draft.locationId}
-              onChange={(e) => setDraft((d) => ({ ...d, locationId: e.target.value }))}
-            >
-              <option value="">Todos</option>
-              {(locations.data ?? []).map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.code}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field pm-move-filters__tinyfield">
-            <label htmlFor="ps-from">Data inicial</label>
-            <input
-              id="ps-from"
-              type="date"
-              value={draft.from}
-              onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))}
-            />
-          </div>
-          <div className="field pm-move-filters__tinyfield">
-            <label htmlFor="ps-to">Data final</label>
-            <input
-              id="ps-to"
-              type="date"
-              value={draft.to}
-              onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))}
-            />
-          </div>
-          <button type="button" className="btn btn-primary" onClick={applyFilters}>
-            Atualizar relatório
-          </button>
-        </div>
-      </div>
+      <div className="print-doc">
+        <StandardReportHeader documentTitle={title} documentExtras={filterSummary} />
 
-      <StandardReportHeader documentTitle={title} documentExtras={filterSummary} />
+        {report.isLoading && <p>Carregando…</p>}
+        {report.isError && (
+          <div className="alert alert-error no-print">{(report.error as Error).message}</div>
+        )}
 
-      {report.isError && (
-        <div className="alert alert-error no-print">{(report.error as Error).message}</div>
-      )}
-
-      {kind === 'financial' && data && (
-        <>
+        {kind === 'financial' && data && (
           <div className="table-wrap">
             <table className="data-table print-table-compact">
               <thead>
@@ -399,11 +241,9 @@ export function ProductReportStockPrintPage() {
               )}
             </table>
           </div>
-        </>
-      )}
+        )}
 
-      {kind === 'physical' && data && (
-        <>
+        {kind === 'physical' && data && (
           <div className="table-wrap">
             <table className="data-table print-table-compact">
               <thead>
@@ -449,11 +289,9 @@ export function ProductReportStockPrintPage() {
               )}
             </table>
           </div>
-        </>
-      )}
+        )}
 
-      {kind === 'minimum' && data && (
-        <>
+        {kind === 'minimum' && data && (
           <div className="table-wrap">
             <table className="data-table print-table-compact">
               <thead>
@@ -499,8 +337,8 @@ export function ProductReportStockPrintPage() {
               )}
             </table>
           </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }

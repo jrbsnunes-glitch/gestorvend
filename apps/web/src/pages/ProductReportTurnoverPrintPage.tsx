@@ -1,10 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
-import { buildProductTurnoverReportQuery, parseProductCodeBound } from '../lib/product-report-format';
+import {
+  buildProductTurnoverReportQuery,
+  parseProductCodeBound,
+  productReportBackTo,
+} from '../lib/product-report-format';
 import './cash-print.css';
 
 type TurnoverResponse = {
@@ -37,7 +41,7 @@ type TurnoverResponse = {
   }>;
 };
 
-type TurnDraft = {
+type TurnParams = {
   variantId: string;
   minStockCadFrom: string;
   minStockCadTo: string;
@@ -56,7 +60,7 @@ function parseCadMinBound(raw: string): number | null {
   return parseProductCodeBound(raw);
 }
 
-function turnDraftFromSearchParams(sp: URLSearchParams): TurnDraft {
+function turnParamsFromSearchParams(sp: URLSearchParams): TurnParams {
   return {
     variantId: sp.get('variantId') ?? '',
     minStockCadFrom: sp.get('minStockCadFrom') ?? '',
@@ -75,54 +79,42 @@ function turnDraftFromSearchParams(sp: URLSearchParams): TurnDraft {
 
 export function ProductReportTurnoverPrintPage() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [draft, setDraft] = useState<TurnDraft>(() => turnDraftFromSearchParams(searchParams));
-  const [applyErr, setApplyErr] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const backTo = productReportBackTo(searchParams);
 
-  const spKey = searchParams.toString();
-  useEffect(() => {
-    setDraft(turnDraftFromSearchParams(searchParams));
-  }, [spKey]);
+  const params = useMemo(() => turnParamsFromSearchParams(searchParams), [searchParams]);
 
-  const hasVariant = Boolean(draft.variantId.trim());
-  const cadFromN = parseCadMinBound(draft.minStockCadFrom);
-  const cadToN = parseCadMinBound(draft.minStockCadTo);
+  const hasVariant = Boolean(params.variantId.trim());
+  const cadFromN = parseCadMinBound(params.minStockCadFrom);
+  const cadToN = parseCadMinBound(params.minStockCadTo);
   const cadOk =
     !hasVariant &&
-    draft.minStockCadFrom.trim() !== '' &&
-    draft.minStockCadTo.trim() !== '' &&
+    params.minStockCadFrom.trim() !== '' &&
+    params.minStockCadTo.trim() !== '' &&
     cadFromN !== null &&
     cadToN !== null &&
     cadFromN <= cadToN;
-  const cadPartial =
-    !hasVariant &&
-    (draft.minStockCadFrom.trim() !== '') !== (draft.minStockCadTo.trim() !== '');
 
   const qs = useMemo(
     () =>
       buildProductTurnoverReportQuery({
-        from: draft.from,
-        to: draft.to,
-        take: draft.take,
-        variantId: hasVariant ? draft.variantId : undefined,
-        minStockCadFrom: cadOk ? draft.minStockCadFrom : undefined,
-        minStockCadTo: cadOk ? draft.minStockCadTo : undefined,
-        categoryId: draft.categoryId || undefined,
-        showNoSale: cadOk || hasVariant ? draft.showNoSale : undefined,
-        useMinControl: draft.useMinControl,
-        useMaxControl: draft.useMaxControl,
-        alertsOnly: draft.alertsOnly,
-        maxStockCeiling: draft.maxStockCeiling,
+        from: params.from,
+        to: params.to,
+        take: params.take,
+        variantId: hasVariant ? params.variantId : undefined,
+        minStockCadFrom: cadOk ? params.minStockCadFrom : undefined,
+        minStockCadTo: cadOk ? params.minStockCadTo : undefined,
+        categoryId: params.categoryId || undefined,
+        showNoSale: cadOk || hasVariant ? params.showNoSale : undefined,
+        useMinControl: params.useMinControl,
+        useMaxControl: params.useMaxControl,
+        alertsOnly: params.alertsOnly,
+        maxStockCeiling: params.maxStockCeiling,
       }),
-    [draft, hasVariant, cadOk],
+    [params, hasVariant, cadOk],
   );
 
-  const enabled = Boolean(draft.from.trim() && draft.to.trim());
-
-  const categories = useQuery({
-    queryKey: ['categories', 'product-turnover-print'],
-    queryFn: () => api<Array<{ id: string; name: string }>>('/categories?q='),
-  });
+  const enabled = Boolean(params.from.trim() && params.to.trim());
 
   const report = useQuery({
     queryKey: ['reports', 'product-turnover-print', qs],
@@ -132,64 +124,16 @@ export function ProductReportTurnoverPrintPage() {
 
   const data = report.data;
 
-  function applyFilters() {
-    setApplyErr(null);
-    if (!draft.from.trim() || !draft.to.trim()) {
-      setApplyErr('Informe o período (de / até).');
-      return;
-    }
-    if (draft.variantId.trim()) {
-      if (draft.minStockCadFrom.trim() !== '' || draft.minStockCadTo.trim() !== '') {
-        setApplyErr('Remova o intervalo cadastro ao usar variantId ou deixe variantId em branco.');
-        return;
-      }
-    } else if (cadPartial) {
-      setApplyErr('Informe ambos “de” e “até” no código do produto ou deixe os dois em branco.');
-      return;
-    } else if (draft.minStockCadFrom.trim() !== '' || draft.minStockCadTo.trim() !== '') {
-      if (cadFromN === null || cadToN === null) {
-        setApplyErr('Intervalo de código inválido (use inteiros positivos).');
-        return;
-      }
-      if (cadFromN > cadToN) {
-        setApplyErr('“De” não pode ser maior que “até”.');
-        return;
-      }
-    }
-    if (draft.useMaxControl && !draft.maxStockCeiling.trim()) {
-      setApplyErr('Informe o teto ao usar controle máximo.');
-      return;
-    }
-    if (draft.alertsOnly && !draft.useMinControl && !(draft.useMaxControl && draft.maxStockCeiling.trim())) {
-      setApplyErr('Para “somente alertas”, ative o mínimo e/ou o máximo com teto informado.');
-      return;
-    }
-    setSearchParams(
-      new URLSearchParams(
-        buildProductTurnoverReportQuery({
-          from: draft.from,
-          to: draft.to,
-          take: draft.take,
-          variantId: draft.variantId.trim() || undefined,
-          minStockCadFrom: cadOk ? draft.minStockCadFrom : undefined,
-          minStockCadTo: cadOk ? draft.minStockCadTo : undefined,
-          showNoSale: cadOk || hasVariant ? draft.showNoSale : undefined,
-          useMinControl: draft.useMinControl,
-          useMaxControl: draft.useMaxControl,
-          alertsOnly: draft.alertsOnly,
-          maxStockCeiling: draft.maxStockCeiling,
-        }),
-      ),
-      { replace: true },
-    );
-  }
+  useEffect(() => {
+    if (enabled && report.data) window.scrollTo({ top: 0 });
+  }, [enabled, report.data]);
 
   const headerExtras = data ? (
     <>
       <p className="print-sub">
         Período {data.period.from} a {data.period.to}
         {' · '}
-        Top {draft.take.trim() || '80'} por quantidade vendida (vendas concluídas)
+        Top {params.take.trim() || '80'} por quantidade vendida (vendas concluídas)
         {data.categoryName ? ` · Categoria: ${data.categoryName}` : ''}
         {data.productCodeInterval
           ? ` · Código produto: ${data.productCodeInterval.from} a ${data.productCodeInterval.to}`
@@ -211,21 +155,30 @@ export function ProductReportTurnoverPrintPage() {
     </>
   ) : enabled ? (
     <p className="print-sub">Carregando…</p>
-  ) : (
-    <p className="print-sub">
-      Ajuste o período e os filtros abaixo e clique em <strong>Atualizar relatório</strong>.
-    </p>
-  );
+  ) : null;
 
   const showStock = Boolean(data?.options.useMinControl || data?.options.useMaxControl);
   const showMinCol = Boolean(data?.options.useMinControl);
   const showBelow = Boolean(data?.options.useMinControl);
   const showAbove = Boolean(data?.options.useMaxControl);
 
+  if (!enabled) {
+    return (
+      <div className="print-page">
+        <p className="print-empty no-print">
+          Parâmetros inválidos. Volte em Produtos, abra Relatórios e informe o período antes de gerar.
+        </p>
+        <button type="button" className="btn btn-primary no-print" onClick={() => navigate(backTo)}>
+          Voltar
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="print-page">
       <div className="print-toolbar no-print">
-        <button type="button" className="btn btn-secondary" onClick={() => navigate('/produtos')}>
+        <button type="button" className="btn btn-secondary" onClick={() => navigate(backTo)}>
           ← Voltar
         </button>
         <div style={{ flex: 1 }} />
@@ -234,167 +187,11 @@ export function ProductReportTurnoverPrintPage() {
         </button>
       </div>
 
-      <div
-        className="no-print pm-move-filters"
-        style={{
-          marginBottom: '0.65rem',
-          padding: '0.45rem 0.65rem',
-          background: '#f8fafc',
-          border: '1px solid #cbd5e1',
-          borderRadius: 8,
-          maxWidth: '100%',
-        }}
-      >
-        <div className="pm-move-filters__title">Parâmetros e controles min / máx</div>
-        {applyErr && <div className="alert alert-error pm-move-filters__alert">{applyErr}</div>}
-        {hasVariant ? (
-          <p className="pm-move-filters__legacy">
-            Filtro por <strong style={{ wordBreak: 'break-all' }}>variantId</strong> — intervalo de código fica desativado. Para conjunto por
-            produto, limpe o campo e use o intervalo de código.
-          </p>
-        ) : (
-          <p className="pm-move-filters__hint">
-            <strong>Código</strong> opcional: mesmo critério da movimentação. Em branco: só SKUs com venda no período (respeitando categoria,
-            se informada).
-          </p>
-        )}
-
-        <div className="pm-move-filters__row">
-          <div className="field pm-move-filters__tinyfield" style={{ minWidth: '10rem' }}>
-            <label htmlFor="pt-vid">variantId (opc.)</label>
-            <input
-              id="pt-vid"
-              placeholder="UUID"
-              value={draft.variantId}
-              onChange={(e) => setDraft((d) => ({ ...d, variantId: e.target.value }))}
-            />
-          </div>
-          {!hasVariant && (
-            <div className="pm-move-filters__cadgroup" aria-label="Intervalo código produto">
-              <span className="pm-move-filters__muted-label">Código</span>
-              <div className="field pm-move-filters__tinyfield">
-                <label htmlFor="pt-cfrom">De</label>
-                <input
-                  id="pt-cfrom"
-                  inputMode="numeric"
-                  value={draft.minStockCadFrom}
-                  onChange={(e) => setDraft((d) => ({ ...d, minStockCadFrom: e.target.value }))}
-                  placeholder="1"
-                  style={{ width: '5rem' }}
-                />
-              </div>
-              <div className="field pm-move-filters__tinyfield">
-                <label htmlFor="pt-cto">Até</label>
-                <input
-                  id="pt-cto"
-                  inputMode="numeric"
-                  value={draft.minStockCadTo}
-                  onChange={(e) => setDraft((d) => ({ ...d, minStockCadTo: e.target.value }))}
-                  placeholder="100"
-                  style={{ width: '5rem' }}
-                />
-              </div>
-            </div>
-          )}
-          {!hasVariant && (
-            <div className="field pm-move-filters__tinyfield">
-              <label htmlFor="pt-cat">Categoria</label>
-              <select
-                id="pt-cat"
-                value={draft.categoryId}
-                onChange={(e) => setDraft((d) => ({ ...d, categoryId: e.target.value }))}
-              >
-                <option value="">Todas</option>
-                {(categories.data ?? []).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          <div className="field pm-move-filters__tinyfield">
-            <label htmlFor="pt-from">Período de</label>
-            <input id="pt-from" type="date" value={draft.from} onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))} />
-          </div>
-          <div className="field pm-move-filters__tinyfield">
-            <label htmlFor="pt-to">Período até</label>
-            <input id="pt-to" type="date" value={draft.to} onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))} />
-          </div>
-          <div className="field pm-move-filters__tinyfield">
-            <label htmlFor="pt-take">Top</label>
-            <input
-              id="pt-take"
-              value={draft.take}
-              onChange={(e) => setDraft((d) => ({ ...d, take: e.target.value }))}
-              inputMode="numeric"
-              style={{ width: '4.5rem' }}
-            />
-          </div>
-        </div>
-
-        <div className="pm-move-filters__row pm-move-filters__row--controls">
-          <label className="pm-move-filters__chk">
-            <input
-              type="checkbox"
-              checked={draft.useMaxControl}
-              onChange={(e) => setDraft((d) => ({ ...d, useMaxControl: e.target.checked }))}
-            />
-            Teto máx.
-          </label>
-          <div className="field pm-move-filters__tinyfield pm-move-filters__teto">
-            <label htmlFor="pt-max">Teto</label>
-            <input
-              id="pt-max"
-              inputMode="decimal"
-              placeholder="—"
-              disabled={!draft.useMaxControl}
-              value={draft.maxStockCeiling}
-              onChange={(e) => setDraft((d) => ({ ...d, maxStockCeiling: e.target.value }))}
-            />
-          </div>
-          <label className="pm-move-filters__chk">
-            <input
-              type="checkbox"
-              checked={draft.useMinControl}
-              onChange={(e) => setDraft((d) => ({ ...d, useMinControl: e.target.checked }))}
-            />
-            Usar mín. cadastrado
-          </label>
-          <label className="pm-move-filters__chk">
-            <input
-              type="checkbox"
-              checked={draft.alertsOnly}
-              onChange={(e) => setDraft((d) => ({ ...d, alertsOnly: e.target.checked }))}
-            />
-            Só linhas alerta
-          </label>
-          <label className="pm-move-filters__chk">
-            <input
-              type="checkbox"
-              checked={draft.showNoSale}
-              disabled={!cadOk && !hasVariant}
-              onChange={(e) => setDraft((d) => ({ ...d, showNoSale: e.target.checked }))}
-            />
-            SKUs sem venda
-          </label>
-          <button type="button" className="btn btn-primary pm-move-filters__submit" onClick={() => applyFilters()}>
-            Atualizar
-          </button>
-        </div>
-      </div>
-
       <div className="print-doc">
         <StandardReportHeader documentTitle="Giro de produtos" documentExtras={headerExtras} />
 
-        {!enabled && (
-          <p className="print-empty no-print">
-            Informe o período inicial e final acima e clique em <strong>Atualizar relatório</strong>.
-          </p>
-        )}
-
-        {enabled && report.isLoading && <p>Carregando…</p>}
-        {enabled && report.isError && (
+        {report.isLoading && <p>Carregando…</p>}
+        {report.isError && (
           <div className="alert alert-error no-print">
             {(report.error as Error)?.message ?? 'Erro ao carregar relatório.'}
           </div>

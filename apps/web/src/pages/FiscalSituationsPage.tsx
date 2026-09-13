@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type Dispatch, type SetStateAction } from 'react';
+import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 
+import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { CrudToolbar } from '../components/CrudToolbar';
 import { ListPagination } from '../components/ListPagination';
@@ -9,6 +10,7 @@ import { RecordViewModal } from '../components/RecordViewModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
 import { useListPagination } from '../hooks/useListPagination';
+import { matchesListSearch } from '../lib/list-search';
 
 type FiscalSituation = {
   id: string;
@@ -371,7 +373,29 @@ export function FiscalSituationsPage() {
     queryFn: () => api<FiscalSituation[]>('/fiscal-situations'),
   });
 
-  const pagination = useListPagination(list.data ?? []);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draftSearch, setDraftSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [draftStatusFilter, setDraftStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
+  const [appliedStatusFilter, setAppliedStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
+
+  const filteredList = useMemo(() => {
+    let items = list.data ?? [];
+    const q = appliedSearch.trim();
+    if (q) {
+      items = items.filter((row) =>
+        matchesListSearch([row.code, row.name, row.description], q),
+      );
+    }
+    if (appliedStatusFilter === 'active') items = items.filter((row) => row.isActive);
+    if (appliedStatusFilter === 'inactive') items = items.filter((row) => !row.isActive);
+    return items;
+  }, [list.data, appliedSearch, appliedStatusFilter]);
+
+  const filtersActive = appliedStatusFilter !== 'active';
+
+  const pagination = useListPagination(filteredList);
 
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>(emptyDraft);
@@ -507,6 +531,19 @@ export function FiscalSituationsPage() {
       )}
 
       <CrudToolbar
+        leadingPrimary={
+          <CrudSearchFilterLeading
+            onSearch={() => {
+              setDraftSearch(appliedSearch);
+              setSearchOpen(true);
+            }}
+            onFilters={() => {
+              setDraftStatusFilter(appliedStatusFilter);
+              setFiltersOpen(true);
+            }}
+            filtersActive={filtersActive}
+          />
+        }
         onInclude={() => {
           setErr(null);
           setCreating(true);
@@ -516,6 +553,99 @@ export function FiscalSituationsPage() {
         onReports={() => setReportsOpen(true)}
         includeLabel="Nova situação fiscal"
       />
+
+      {searchOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setSearchOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h2>Pesquisar situações fiscais</h2>
+            <div className="field">
+              <label htmlFor="fs-search-q">Termo</label>
+              <input
+                id="fs-search-q"
+                type="search"
+                autoFocus
+                value={draftSearch}
+                onChange={(e) => setDraftSearch(e.target.value)}
+                placeholder="Código, nome ou descrição…"
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setDraftSearch('');
+                  setAppliedSearch('');
+                  setSearchOpen(false);
+                }}
+              >
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setSearchOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setAppliedSearch(draftSearch.trim());
+                  setSearchOpen(false);
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {filtersOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setFiltersOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h2>Filtros da listagem</h2>
+            <div className="field">
+              <label htmlFor="fs-filter-status">Status</label>
+              <select
+                id="fs-filter-status"
+                value={draftStatusFilter}
+                onChange={(e) =>
+                  setDraftStatusFilter(e.target.value as 'active' | 'inactive' | 'all')
+                }
+              >
+                <option value="active">Somente ativas</option>
+                <option value="inactive">Somente inativas</option>
+                <option value="all">Todas</option>
+              </select>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setDraftStatusFilter('active');
+                  setAppliedStatusFilter('active');
+                  setFiltersOpen(false);
+                }}
+              >
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setFiltersOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setAppliedStatusFilter(draftStatusFilter);
+                  setFiltersOpen(false);
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
 
       <ModuleReportsModal open={reportsOpen} title="Cadastros gerais · Situação fiscal" onClose={() => setReportsOpen(false)}>
         <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
@@ -527,6 +657,7 @@ export function FiscalSituationsPage() {
       <div className="toolbar no-print" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
         <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
           {(list.data ?? []).length} registro(s)
+          {(appliedSearch.trim() || filtersActive) ? ` · filtrado: ${pagination.totalItems}` : ''}
         </span>
         <a
           href="https://www.gov.br/fazenda/pt-br/"
@@ -575,10 +706,12 @@ export function FiscalSituationsPage() {
             </tr>
           </thead>
           <tbody>
-            {(list.data ?? []).length === 0 && !list.isLoading && (
+            {!filteredList.length && !list.isLoading && (
               <tr>
                 <td colSpan={7} style={{ padding: '1.25rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                  Nenhuma situação cadastrada. Use o formulário ou rode o provisionamento inicial do tenant.
+                  {(list.data ?? []).length
+                    ? 'Nenhuma situação com os filtros atuais.'
+                    : 'Nenhuma situação cadastrada. Use o formulário ou rode o provisionamento inicial do tenant.'}
                 </td>
               </tr>
             )}

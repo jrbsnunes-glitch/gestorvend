@@ -176,6 +176,65 @@ type ReconciliationExpenseDetailOut = {
   referentialAccount?: { id: string; code: string; description: string } | null;
 };
 
+type ExpenseLineReportOut = {
+  amount: number;
+  description: string;
+};
+
+function expenseDescriptionFromReconLine(line: ReconciliationExpenseDetailOut): string {
+  const parts: string[] = [];
+  if (line.notes?.trim()) parts.push(line.notes.trim());
+  if (line.referentialAccount) {
+    parts.push(`${line.referentialAccount.code} — ${line.referentialAccount.description}`);
+  }
+  return parts.join(' · ') || 'Despesa';
+}
+
+function expenseDescriptionFromMovement(
+  reason: string | null | undefined,
+  account: { code: string; description: string } | null | undefined,
+): string {
+  const parts: string[] = [];
+  const raw = reason?.trim();
+  if (raw) {
+    const stripped = raw.replace(/^Despesa \(conferência caixa\):?\s*/i, '').trim();
+    parts.push(stripped || raw);
+  }
+  if (account) parts.push(`${account.code} — ${account.description}`);
+  return parts.join(' · ') || 'Despesa';
+}
+
+function buildSessionExpenseLines(
+  reconciliationExpenseDetails: ReconciliationExpenseDetailOut[] | null,
+  movements: Array<{
+    type: CashMovementType;
+    method: PaymentMethod | null;
+    amount: unknown;
+    reason: string | null;
+    referentialAccountId: string | null;
+  }>,
+  expenseAccountMap: Map<string, { id: string; code: string; description: string }>,
+): ExpenseLineReportOut[] {
+  if (reconciliationExpenseDetails?.length) {
+    return reconciliationExpenseDetails.map((line) => ({
+      amount: line.amount,
+      description: expenseDescriptionFromReconLine(line),
+    }));
+  }
+  return movements
+    .filter((m) => m.type === CashMovementType.OUT && m.method === PaymentMethod.EXPENSE)
+    .map((m) => {
+      const acc = m.referentialAccountId
+        ? expenseAccountMap.get(m.referentialAccountId) ?? null
+        : null;
+      return {
+        amount: roundMoney(Number(m.amount)),
+        description: expenseDescriptionFromMovement(m.reason, acc),
+      };
+    })
+    .filter((l) => l.amount > 0);
+}
+
 async function enrichReconciliationExpenseDetails(
   db: PrismaClient,
   raw: unknown,
@@ -744,6 +803,7 @@ export class CashController {
           diffByMethod,
           reconciliationExpenseDetails: null as ReconciliationExpenseDetailOut[] | null,
           _rawReconciliationExpenseDetails: s.reconciliationExpenseDetails,
+          _movements: s.movements,
         };
       }),
     );
@@ -751,13 +811,18 @@ export class CashController {
     const expenseAccountIds = [
       ...new Set(
         detailed.flatMap((row) => {
-          const raw = row._rawReconciliationExpenseDetails;
-          if (!Array.isArray(raw)) return [] as string[];
           const ids: string[] = [];
-          for (const item of raw) {
-            if (!isPlainObjectRecord(item)) continue;
-            const ref = item.referentialAccountId;
-            if (typeof ref === 'string' && ref.trim()) ids.push(ref.trim());
+          const raw = row._rawReconciliationExpenseDetails;
+          if (Array.isArray(raw)) {
+            for (const item of raw) {
+              if (!isPlainObjectRecord(item)) continue;
+              const ref = item.referentialAccountId;
+              if (typeof ref === 'string' && ref.trim()) ids.push(ref.trim());
+            }
+          }
+          for (const m of row._movements) {
+            if (m.type !== CashMovementType.OUT || m.method !== PaymentMethod.EXPENSE) continue;
+            if (m.referentialAccountId?.trim()) ids.push(m.referentialAccountId.trim());
           }
           return ids;
         }),
@@ -773,7 +838,7 @@ export class CashController {
 
     const sessionsOut = await Promise.all(
       detailed.map(async (row) => {
-        const { _rawReconciliationExpenseDetails, ...rest } = row;
+        const { _rawReconciliationExpenseDetails, _movements, ...rest } = row;
         const reconciliationExpenseDetails =
           row.reconciledAt && _rawReconciliationExpenseDetails
             ? await enrichReconciliationExpenseDetails(
@@ -782,7 +847,12 @@ export class CashController {
                 expenseAccountMap,
               )
             : null;
-        return { ...rest, reconciliationExpenseDetails };
+        const expenseLines = buildSessionExpenseLines(
+          reconciliationExpenseDetails,
+          _movements,
+          expenseAccountMap,
+        );
+        return { ...rest, reconciliationExpenseDetails, expenseLines };
       }),
     );
 

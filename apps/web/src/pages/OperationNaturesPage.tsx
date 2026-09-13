@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination } from '../components/ListPagination';
@@ -8,6 +9,7 @@ import { RecordViewModal } from '../components/RecordViewModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
 import { useListPagination } from '../hooks/useListPagination';
+import { matchesListSearch } from '../lib/list-search';
 
 type Nature = {
   id: string;
@@ -29,12 +31,34 @@ export function OperationNaturesPage() {
   const [reportsOpen, setReportsOpen] = useState(false);
   const [draft, setDraft] = useState(empty());
   const [err, setErr] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draftSearch, setDraftSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [draftStatusFilter, setDraftStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
+  const [appliedStatusFilter, setAppliedStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
 
   const list = useQuery({
     queryKey: ['operation-natures'],
     queryFn: () => api<Nature[]>('/operation-natures'),
   });
-  const pagination = useListPagination(list.data ?? []);
+
+  const filteredList = useMemo(() => {
+    let items = list.data ?? [];
+    const q = appliedSearch.trim();
+    if (q) {
+      items = items.filter((n) =>
+        matchesListSearch([n.code, n.description, n.cfop, n.notes], q),
+      );
+    }
+    if (appliedStatusFilter === 'active') items = items.filter((n) => n.isActive);
+    if (appliedStatusFilter === 'inactive') items = items.filter((n) => !n.isActive);
+    return items;
+  }, [list.data, appliedSearch, appliedStatusFilter]);
+
+  const filtersActive = appliedStatusFilter !== 'active';
+
+  const pagination = useListPagination(filteredList);
 
   function load(n: Nature) {
     setDraft({
@@ -163,6 +187,19 @@ export function OperationNaturesPage() {
       <ReportPrintSticker documentTitle="Naturezas da operação" />
 
       <CrudToolbar
+        leadingPrimary={
+          <CrudSearchFilterLeading
+            onSearch={() => {
+              setDraftSearch(appliedSearch);
+              setSearchOpen(true);
+            }}
+            onFilters={() => {
+              setDraftStatusFilter(appliedStatusFilter);
+              setFiltersOpen(true);
+            }}
+            filtersActive={filtersActive}
+          />
+        }
         onInclude={() => {
           setDraft(empty());
           setErr(null);
@@ -171,6 +208,99 @@ export function OperationNaturesPage() {
         onPrint={() => window.print()}
         onReports={() => setReportsOpen(true)}
       />
+
+      {searchOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setSearchOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h2>Pesquisar naturezas</h2>
+            <div className="field">
+              <label htmlFor="nat-search-q">Termo</label>
+              <input
+                id="nat-search-q"
+                type="search"
+                autoFocus
+                value={draftSearch}
+                onChange={(e) => setDraftSearch(e.target.value)}
+                placeholder="Código, CFOP ou descrição…"
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setDraftSearch('');
+                  setAppliedSearch('');
+                  setSearchOpen(false);
+                }}
+              >
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setSearchOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setAppliedSearch(draftSearch.trim());
+                  setSearchOpen(false);
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {filtersOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setFiltersOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h2>Filtros da listagem</h2>
+            <div className="field">
+              <label htmlFor="nat-filter-status">Status</label>
+              <select
+                id="nat-filter-status"
+                value={draftStatusFilter}
+                onChange={(e) =>
+                  setDraftStatusFilter(e.target.value as 'active' | 'inactive' | 'all')
+                }
+              >
+                <option value="active">Somente ativas</option>
+                <option value="inactive">Somente inativas</option>
+                <option value="all">Todas</option>
+              </select>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setDraftStatusFilter('active');
+                  setAppliedStatusFilter('active');
+                  setFiltersOpen(false);
+                }}
+              >
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setFiltersOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setAppliedStatusFilter(draftStatusFilter);
+                  setFiltersOpen(false);
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
 
       <ModuleReportsModal
         open={reportsOpen}
@@ -203,10 +333,12 @@ export function OperationNaturesPage() {
                 </td>
               </tr>
             )}
-            {!list.isLoading && !list.data?.length && (
+            {!list.isLoading && !filteredList.length && (
               <tr>
                 <td colSpan={5} className="empty">
-                  Nenhuma natureza cadastrada.
+                  {list.data?.length
+                    ? 'Nenhuma natureza com os filtros atuais.'
+                    : 'Nenhuma natureza cadastrada.'}
                 </td>
               </tr>
             )}

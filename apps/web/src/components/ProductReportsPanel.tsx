@@ -2,7 +2,17 @@ import { useNavigate } from 'react-router-dom';
 import { useState, type CSSProperties } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { buildProductMovementReportQuery, buildProductTurnoverReportQuery, buildProductStockReportQuery, productStockReportRoute, parseProductCodeBound, type ProductStockReportKind } from '../lib/product-report-format';
+import {
+  appendProductReportReturn,
+  buildProductMovementReportQuery,
+  buildProductTurnoverReportQuery,
+  buildProductStockReportQuery,
+  productStockReportRoute,
+  parseProductCodeBound,
+  type ProductStockReportKind,
+} from '../lib/product-report-format';
+import '../components/crud-toolbar.css';
+import '../pages/cash-print.css';
 
 function monthStartISO(): string {
   const d = new Date();
@@ -22,7 +32,7 @@ function parseCadMinBound(raw: string): number | null {
 }
 
 /** Painel modal: relatórios de movimentação, giro e posição de estoque. */
-export function ProductReportsPanel() {
+export function ProductReportsPanel({ onClose }: { onClose?: () => void }) {
   const navigate = useNavigate();
   const [tab, setTab] = useState<'move' | 'turnover' | 'financial' | 'physical' | 'minimum'>('move');
 
@@ -136,7 +146,8 @@ export function ProductReportsPanel() {
       showNoMovement: movShowNoMovement,
       maxStockCeiling: movMaxCeiling,
     });
-    navigate(`/produtos/relatorio/movimentacao?${qs}`);
+    onClose?.();
+    navigate(`/produtos/relatorio/movimentacao?${appendProductReportReturn(qs)}`);
   }
 
   function openTurnoverReport() {
@@ -180,7 +191,8 @@ export function ProductReportsPanel() {
       alertsOnly: turnAlertsOnly,
       maxStockCeiling: turnMaxCeiling,
     });
-    navigate(`/produtos/relatorio/giro?${qs}`);
+    onClose?.();
+    navigate(`/produtos/relatorio/giro?${appendProductReportReturn(qs)}`);
   }
 
   function openStockReport(kind: ProductStockReportKind) {
@@ -215,50 +227,31 @@ export function ProductReportsPanel() {
       minStockCadFrom: stkCadFrom || undefined,
       minStockCadTo: stkCadTo || undefined,
     });
-    navigate(`${productStockReportRoute(kind)}?${qs}`);
+    onClose?.();
+    navigate(`${productStockReportRoute(kind)}?${appendProductReportReturn(qs)}`);
   }
 
   const narrow: CSSProperties = { maxWidth: '420px', width: '100%' };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-      <div role="tablist" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-        <button
-          type="button"
-          className={tab === 'move' ? 'btn btn-primary' : 'btn btn-secondary'}
-          onClick={() => setTab('move')}
-        >
+      <nav className="stock-subnav" aria-label="Tipo de relatório de produtos">
+        <button type="button" className={tab === 'move' ? 'active' : ''} onClick={() => setTab('move')}>
           Movimentação
         </button>
-        <button
-          type="button"
-          className={tab === 'turnover' ? 'btn btn-primary' : 'btn btn-secondary'}
-          onClick={() => setTab('turnover')}
-        >
+        <button type="button" className={tab === 'turnover' ? 'active' : ''} onClick={() => setTab('turnover')}>
           Giro
         </button>
-        <button
-          type="button"
-          className={tab === 'financial' ? 'btn btn-primary' : 'btn btn-secondary'}
-          onClick={() => setTab('financial')}
-        >
+        <button type="button" className={tab === 'financial' ? 'active' : ''} onClick={() => setTab('financial')}>
           Est. financeiro
         </button>
-        <button
-          type="button"
-          className={tab === 'physical' ? 'btn btn-primary' : 'btn btn-secondary'}
-          onClick={() => setTab('physical')}
-        >
+        <button type="button" className={tab === 'physical' ? 'active' : ''} onClick={() => setTab('physical')}>
           Est. físico
         </button>
-        <button
-          type="button"
-          className={tab === 'minimum' ? 'btn btn-primary' : 'btn btn-secondary'}
-          onClick={() => setTab('minimum')}
-        >
+        <button type="button" className={tab === 'minimum' ? 'active' : ''} onClick={() => setTab('minimum')}>
           Est. mínimo
         </button>
-      </div>
+      </nav>
 
       {tab === 'move' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', alignItems: 'flex-start' }}>
@@ -395,14 +388,15 @@ export function ProductReportsPanel() {
               Incluir sem movimento no período
             </label>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div className="print-mode-actions">
+            <div style={{ flex: 1 }} />
             <button
               type="button"
               className="btn btn-primary"
               disabled={!canRunMovement}
               onClick={() => openMovementReport()}
             >
-              Abrir relatório
+              Gerar relatório
             </button>
           </div>
         </div>
@@ -517,14 +511,15 @@ export function ProductReportsPanel() {
               Incluir sem venda
             </label>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div className="print-mode-actions">
+            <div style={{ flex: 1 }} />
             <button
               type="button"
               className="btn btn-primary"
               disabled={!canRunTurnover}
               onClick={() => openTurnoverReport()}
             >
-              Abrir relatório
+              Gerar relatório
             </button>
           </div>
         </div>
@@ -603,16 +598,19 @@ export function ProductReportsPanel() {
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!stkFrom || !stkTo}
-            onClick={() =>
-              openStockReport(tab === 'financial' ? 'financial' : tab === 'physical' ? 'physical' : 'minimum')
-            }
-          >
-            Abrir relatório
-          </button>
+          <div className="print-mode-actions">
+            <div style={{ flex: 1 }} />
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!stkFrom || !stkTo}
+              onClick={() =>
+                openStockReport(tab === 'financial' ? 'financial' : tab === 'physical' ? 'physical' : 'minimum')
+              }
+            >
+              Gerar relatório
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -623,7 +623,13 @@ export class FinancialOverviewController {
           id: true,
           amount: true,
           method: true,
-          sale: { select: { number: true, createdAt: true } },
+          sale: {
+            select: {
+              number: true,
+              createdAt: true,
+              customer: { select: { name: true } },
+            },
+          },
         },
         take: 4000,
       }),
@@ -765,7 +771,9 @@ export class FinancialOverviewController {
         direction: 'IN',
         amount: v.toFixed(2),
         title: `Venda #${sp.sale.number}`,
-        detail: 'Pagamento na venda (PDV)',
+        detail:
+          [sp.sale.customer?.name, 'Pagamento na venda (PDV)'].filter(Boolean).join(' — ') ||
+          'Pagamento na venda (PDV)',
         methodLabel: paymentMethodLabel(sp.method),
         referentialAccountId: null,
         referentialAccountCode: null,

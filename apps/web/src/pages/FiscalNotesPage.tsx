@@ -4,6 +4,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { CrudToolbar } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination, LIST_PAGE_SIZE } from '../components/ListPagination';
@@ -16,6 +17,7 @@ import {
 } from '../components/RecordViewModal';
 import { api } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
+import { matchesListSearch } from '../lib/list-search';
 
 type TabKind = 'NFC_E' | 'NF_E';
 
@@ -140,7 +142,10 @@ export function FiscalNotesPage() {
   const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
   const [reportsOpen, setReportsOpen] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [draftSearch, setDraftSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [viewId, setViewId] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -261,18 +266,42 @@ export function FiscalNotesPage() {
     setSearchParams(next === 'NF_E' ? { tab: 'NF_E' } : {}, { replace: true });
   }
 
+  function openFiltersModal() {
+    setFilters({ ...applied });
+    setFiltersOpen(true);
+  }
+
   function applyFilters() {
     setApplied({ ...filters });
     setPage(1);
+    setFiltersOpen(false);
   }
 
   function clearFilters() {
     setFilters(EMPTY_FILTERS);
     setApplied(EMPTY_FILTERS);
     setPage(1);
+    setFiltersOpen(false);
   }
 
-  const rows = list.data?.items ?? [];
+  const filtersActive =
+    applied.dateFrom !== '' ||
+    applied.dateTo !== '' ||
+    applied.controlMin.trim() !== '' ||
+    applied.controlMax.trim() !== '' ||
+    applied.customerId !== '' ||
+    applied.customerSegment.trim() !== '' ||
+    applied.authorized ||
+    applied.contingency;
+
+  const apiRows = list.data?.items ?? [];
+  const rows = useMemo(() => {
+    const q = appliedSearch.trim();
+    if (!q) return apiRows;
+    return apiRows.filter((r) =>
+      matchesListSearch([String(r.sale.number), r.sale.customer?.name], q),
+    );
+  }, [apiRows, appliedSearch]);
 
   return (
     <div className="page print-area">
@@ -313,13 +342,14 @@ export function FiscalNotesPage() {
         includeLabel={tab === 'NF_E' ? 'Incluir NF-e' : 'Inutilizar numeração'}
         leadingPrimary={
           <>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => setFiltersOpen((o) => !o)}
-            >
-              {filtersOpen ? 'Ocultar filtro' : 'Filtro'}
-            </button>
+            <CrudSearchFilterLeading
+              onSearch={() => {
+                setDraftSearch(appliedSearch);
+                setSearchOpen(true);
+              }}
+              onFilters={openFiltersModal}
+              filtersActive={filtersActive}
+            />
             {tab === 'NF_E' && (
               <button
                 type="button"
@@ -335,6 +365,54 @@ export function FiscalNotesPage() {
           </>
         }
       />
+
+      {searchOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setSearchOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h2>Pesquisar notas</h2>
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
+              Número de controle (venda) ou nome do cliente na página carregada.
+            </p>
+            <div className="field">
+              <label htmlFor="fn-search-q">Termo</label>
+              <input
+                id="fn-search-q"
+                type="search"
+                autoFocus
+                value={draftSearch}
+                onChange={(e) => setDraftSearch(e.target.value)}
+                placeholder="Ex.: 42, João…"
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setDraftSearch('');
+                  setAppliedSearch('');
+                  setSearchOpen(false);
+                }}
+              >
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setSearchOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setAppliedSearch(draftSearch.trim());
+                  setSearchOpen(false);
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
 
       <ModuleReportsModal
         open={reportsOpen}
@@ -354,9 +432,14 @@ export function FiscalNotesPage() {
       </ModuleReportsModal>
 
       {filtersOpen && (
-        <details className="submenu-details no-print" open>
-          <summary className="submenu-summary">Filtro</summary>
-          <div className="submenu-body">
+        <FormModalBackdrop className="no-print" onClose={() => setFiltersOpen(false)}>
+          <div
+            className="modal"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 560 }}
+          >
+            <h2>Filtros da listagem</h2>
             <div className="form-row form-row--4">
               <div className="field">
                 <label htmlFor="fn-df">Data mín.</label>
@@ -447,19 +530,19 @@ export function FiscalNotesPage() {
                 Contingências
               </label>
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-              <button type="button" className="btn btn-primary" onClick={applyFilters}>
-                Aplicar filtro
-              </button>
-              <button type="button" className="btn btn-secondary" onClick={clearFilters}>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={clearFilters}>
                 Limpar
               </button>
-              <button type="button" className="btn btn-ghost" onClick={() => window.print()}>
-                Imprimir resultado
+              <button type="button" className="btn btn-secondary" onClick={() => setFiltersOpen(false)}>
+                Cancelar
+              </button>
+              <button type="button" className="btn btn-primary" onClick={applyFilters}>
+                Aplicar
               </button>
             </div>
           </div>
-        </details>
+        </FormModalBackdrop>
       )}
 
       <ReportPrintSticker

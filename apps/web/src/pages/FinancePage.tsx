@@ -2,8 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
+import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
+import { CrudToolbar } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import '../components/crud-toolbar.css';
+import { matchesListSearch } from '../lib/list-search';
 import { CostCenterSelect } from '../components/CostCenterSelect';
 import { BillPaymentsButton } from '../components/BillSettlementsModal';
 import { api } from '../lib/api';
@@ -299,6 +302,9 @@ export function FinancePage() {
   const [appliedFilter, setAppliedFilter] = useState<FinanceListFilter>(initialListFilter);
   const [filterErr, setFilterErr] = useState<string | null>(null);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [draftSearch, setDraftSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [filterPartySearch, setFilterPartySearch] = useState('');
   const [filterPartyOpen, setFilterPartyOpen] = useState(false);
   const [filterPartyLabel, setFilterPartyLabel] = useState('');
@@ -494,13 +500,42 @@ export function FinancePage() {
     return qs ? `/financeiro?${qs}` : '/financeiro';
   }
 
+  const filteredPayables = useMemo(() => {
+    const q = appliedSearch.trim();
+    const rows = payables.data ?? [];
+    if (!q) return rows;
+    return rows.filter((p) =>
+      matchesListSearch([p.description, p.supplier?.legalName], q),
+    );
+  }, [payables.data, appliedSearch]);
+
+  const filteredReceivables = useMemo(() => {
+    const q = appliedSearch.trim();
+    const rows = receivables.data ?? [];
+    if (!q) return rows;
+    return rows.filter((r) =>
+      matchesListSearch([r.description, r.customer?.name], q),
+    );
+  }, [receivables.data, appliedSearch]);
+
   const payablesTotals = useMemo(
-    () => sumFinanceListTotals(payables.data ?? []),
-    [payables.data],
+    () => sumFinanceListTotals(filteredPayables),
+    [filteredPayables],
   );
   const receivablesTotals = useMemo(
-    () => sumFinanceListTotals(receivables.data ?? []),
-    [receivables.data],
+    () => sumFinanceListTotals(filteredReceivables),
+    [filteredReceivables],
+  );
+
+  const financeToolbarLeading = (
+    <CrudSearchFilterLeading
+      onSearch={() => {
+        setDraftSearch(appliedSearch);
+        setSearchOpen(true);
+      }}
+      onFilters={openFilterModal}
+      filtersActive={isFilterActive(appliedFilter)}
+    />
   );
 
   const suppliers = useQuery({
@@ -926,29 +961,20 @@ export function FinancePage() {
             A receber
           </button>
         </nav>
-        <button type="button" className="btn btn-secondary finance-print-btn" onClick={openPrintModal}>
-          Impressões…
-        </button>
       </div>
 
       {tab === 'pagar' && (
         <>
-          <div className="toolbar">
-            <button
-              type="button"
-              className={
-                'btn btn-secondary' + (isFilterActive(appliedFilter) ? ' finance-filter-btn--active' : '')
-              }
-              onClick={openFilterModal}
-            >
-              Filtrar
-              {isFilterActive(appliedFilter) ? ' •' : ''}
-            </button>
-            <button type="button" className="btn btn-primary" onClick={() => openModal('pagar')}>
-              + Incluir
-            </button>
+          <CrudToolbar
+            leadingPrimary={financeToolbarLeading}
+            onInclude={() => openModal('pagar')}
+            onReports={openPrintModal}
+          />
+          <div className="toolbar no-print">
             <span className="finance-list-hint">
-              {payables.isLoading ? 'Carregando…' : `${payables.data?.length ?? 0} título(s)`}
+              {payables.isLoading
+                ? 'Carregando…'
+                : `${filteredPayables.length} título(s)${appliedSearch.trim() ? ` · pesquisa ativa` : ''}`}
             </span>
           </div>
           {payables.isError && (
@@ -979,14 +1005,16 @@ export function FinancePage() {
                     </td>
                   </tr>
                 )}
-                {!payables.isLoading && !payables.data?.length && (
+                {!payables.isLoading && !filteredPayables.length && (
                   <tr>
                     <td colSpan={9} className="empty">
-                      Nenhum título.
+                      {payables.data?.length
+                        ? 'Nenhum título com a pesquisa atual.'
+                        : 'Nenhum título.'}
                     </td>
                   </tr>
                 )}
-                {payables.data?.map((p, idx) => (
+                {filteredPayables.map((p, idx) => (
                   <tr key={p.id}>
                     <td className="num">{idx + 1}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{formatDate(p.dueDate)}</td>
@@ -1081,22 +1109,16 @@ export function FinancePage() {
 
       {tab === 'receber' && (
         <>
-          <div className="toolbar">
-            <button
-              type="button"
-              className={
-                'btn btn-secondary' + (isFilterActive(appliedFilter) ? ' finance-filter-btn--active' : '')
-              }
-              onClick={openFilterModal}
-            >
-              Filtrar
-              {isFilterActive(appliedFilter) ? ' •' : ''}
-            </button>
-            <button type="button" className="btn btn-primary" onClick={() => openModal('receber')}>
-              + Incluir
-            </button>
+          <CrudToolbar
+            leadingPrimary={financeToolbarLeading}
+            onInclude={() => openModal('receber')}
+            onReports={openPrintModal}
+          />
+          <div className="toolbar no-print">
             <span className="finance-list-hint">
-              {receivables.isLoading ? 'Carregando…' : `${receivables.data?.length ?? 0} título(s)`}
+              {receivables.isLoading
+                ? 'Carregando…'
+                : `${filteredReceivables.length} título(s)${appliedSearch.trim() ? ` · pesquisa ativa` : ''}`}
             </span>
           </div>
           {receivables.isError && (
@@ -1127,14 +1149,16 @@ export function FinancePage() {
                     </td>
                   </tr>
                 )}
-                {!receivables.isLoading && !receivables.data?.length && (
+                {!receivables.isLoading && !filteredReceivables.length && (
                   <tr>
                     <td colSpan={9} className="empty">
-                      Nenhum título (vendas crediário geram aqui).
+                      {receivables.data?.length
+                        ? 'Nenhum título com a pesquisa atual.'
+                        : 'Nenhum título (vendas crediário geram aqui).'}
                     </td>
                   </tr>
                 )}
-                {receivables.data?.map((r, idx) => (
+                {filteredReceivables.map((r, idx) => (
                   <tr key={r.id}>
                     <td className="num">{idx + 1}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{formatDate(r.dueDate)}</td>
@@ -1242,6 +1266,59 @@ export function FinancePage() {
         </>
       )}
 
+      {searchOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setSearchOpen(false)}>
+          <div
+            className="modal"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 420 }}
+          >
+            <h2>Pesquisar títulos</h2>
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
+              Descrição ou {tab === 'pagar' ? 'fornecedor' : 'cliente'} na aba atual.
+            </p>
+            <div className="field">
+              <label htmlFor="fin-search-q">Termo</label>
+              <input
+                id="fin-search-q"
+                type="search"
+                autoFocus
+                value={draftSearch}
+                onChange={(e) => setDraftSearch(e.target.value)}
+                placeholder="Ex.: aluguel, Fornecedor X…"
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setDraftSearch('');
+                  setAppliedSearch('');
+                  setSearchOpen(false);
+                }}
+              >
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setSearchOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setAppliedSearch(draftSearch.trim());
+                  setSearchOpen(false);
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
       {filterModalOpen && (
         <FormModalBackdrop className="no-print" onClose={() => setFilterModalOpen(false)}>
           <div
@@ -1250,7 +1327,7 @@ export function FinancePage() {
             aria-labelledby="finance-filter-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="finance-filter-title">Filtrar</h2>
+            <h2 id="finance-filter-title">Filtros</h2>
             {filterErr ? <div className="alert alert-error">{filterErr}</div> : null}
             <div className="finance-filter-form">
               <div className="finance-filter-form__dates">
@@ -1389,7 +1466,7 @@ export function FinancePage() {
                 Cancelar
               </button>
               <button type="button" className="btn btn-primary" onClick={applyListFilter}>
-                Filtrar
+                Aplicar
               </button>
             </div>
           </div>

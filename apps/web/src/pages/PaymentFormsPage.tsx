@@ -4,12 +4,14 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { CrudToolbar } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination } from '../components/ListPagination';
 import { RecordViewModal } from '../components/RecordViewModal';
 import { api } from '../lib/api';
 import { useListPagination } from '../hooks/useListPagination';
+import { matchesListSearch } from '../lib/list-search';
 import {
   CARD_BRAND_OPTIONS,
   PAYMENT_FORM_KIND_LABELS,
@@ -99,14 +101,32 @@ export function PaymentFormsPage() {
   const [creating, setCreating] = useState(false);
   const [viewing, setViewing] = useState<PaymentForm | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draftSearch, setDraftSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [draftKindFilter, setDraftKindFilter] = useState<PaymentFormKind | ''>('');
+  const [appliedKindFilter, setAppliedKindFilter] = useState<PaymentFormKind | ''>('');
+  const [draftActiveOnly, setDraftActiveOnly] = useState(true);
+  const [appliedActiveOnly, setAppliedActiveOnly] = useState(true);
 
   const list = useQuery({
     queryKey: ['payment-forms'],
     queryFn: () => api<PaymentForm[]>('/payment-forms'),
   });
 
-  const rows = list.data ?? [];
-  const { page, setPage, pageItems, totalPages } = useListPagination(rows, 20);
+  const filteredRows = useMemo(() => {
+    let items = list.data ?? [];
+    const q = appliedSearch.trim();
+    if (q) items = items.filter((r) => matchesListSearch([r.name], q));
+    if (appliedKindFilter) items = items.filter((r) => r.kind === appliedKindFilter);
+    if (appliedActiveOnly) items = items.filter((r) => r.isActive);
+    return items;
+  }, [list.data, appliedSearch, appliedKindFilter, appliedActiveOnly]);
+
+  const filtersActive = appliedKindFilter !== '' || !appliedActiveOnly;
+
+  const { page, setPage, pageItems, totalPages } = useListPagination(filteredRows, 20);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -310,6 +330,20 @@ export function PaymentFormsPage() {
       </p>
 
       <CrudToolbar
+        leadingPrimary={
+          <CrudSearchFilterLeading
+            onSearch={() => {
+              setDraftSearch(appliedSearch);
+              setSearchOpen(true);
+            }}
+            onFilters={() => {
+              setDraftKindFilter(appliedKindFilter);
+              setDraftActiveOnly(appliedActiveOnly);
+              setFiltersOpen(true);
+            }}
+            filtersActive={filtersActive}
+          />
+        }
         onInclude={() => {
           setDraft(emptyDraft());
           setEditing(null);
@@ -321,6 +355,111 @@ export function PaymentFormsPage() {
           /* Sem relatórios dedicados neste cadastro */
         }}
       />
+
+      {searchOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setSearchOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h2>Pesquisar formas de pagamento</h2>
+            <div className="field">
+              <label htmlFor="pf-search-q">Termo</label>
+              <input
+                id="pf-search-q"
+                type="search"
+                autoFocus
+                value={draftSearch}
+                onChange={(e) => setDraftSearch(e.target.value)}
+                placeholder="Nome da forma…"
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setDraftSearch('');
+                  setAppliedSearch('');
+                  setSearchOpen(false);
+                }}
+              >
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setSearchOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setAppliedSearch(draftSearch.trim());
+                  setSearchOpen(false);
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {filtersOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setFiltersOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h2>Filtros da listagem</h2>
+            <div className="field">
+              <label htmlFor="pf-filter-kind">Tipo</label>
+              <select
+                id="pf-filter-kind"
+                value={draftKindFilter}
+                onChange={(e) => setDraftKindFilter(e.target.value as PaymentFormKind | '')}
+              >
+                <option value="">Todos os tipos</option>
+                {(Object.keys(PAYMENT_FORM_KIND_LABELS) as PaymentFormKind[]).map((k) => (
+                  <option key={k} value={k}>
+                    {PAYMENT_FORM_KIND_LABELS[k]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <label className="inline-checks">
+              <input
+                type="checkbox"
+                checked={draftActiveOnly}
+                onChange={(e) => setDraftActiveOnly(e.target.checked)}
+              />
+              Somente ativas
+            </label>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setDraftKindFilter('');
+                  setDraftActiveOnly(true);
+                  setAppliedKindFilter('');
+                  setAppliedActiveOnly(true);
+                  setFiltersOpen(false);
+                }}
+              >
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setFiltersOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setAppliedKindFilter(draftKindFilter);
+                  setAppliedActiveOnly(draftActiveOnly);
+                  setFiltersOpen(false);
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
 
       {err && <div className="alert alert-error">{err}</div>}
       {list.isLoading && <p>Carregando…</p>}
@@ -394,7 +533,7 @@ export function PaymentFormsPage() {
       <ListPagination
         page={page}
         totalPages={totalPages}
-        totalItems={rows.length}
+        totalItems={filteredRows.length}
         onPageChange={setPage}
         itemLabel="forma(s)"
       />

@@ -6,7 +6,9 @@ import {
   type ReactNode,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
+import '../components/crud-toolbar.css';
 import { api } from '../lib/api';
 import { isManager } from '../lib/auth';
 import { formatBRL } from '../lib/format';
@@ -22,7 +24,17 @@ import {
   sumReconciliationTotals,
   type CashMovementBreakdown,
 } from '../lib/cash-reconciliation';
+import {
+  FilterControlRangeFields,
+  FilterModalActions,
+  FilterPeriodRangeFields,
+} from '../components/ListFilterFields';
 import { CostCenterSelect } from '../components/CostCenterSelect';
+import {
+  controlRangeActive,
+  dateInInclusiveRange,
+  matchesControlValue,
+} from '../lib/list-filters';
 import {
   cardBrandLabel,
   cardOperationLabel,
@@ -409,7 +421,19 @@ export function CashPage() {
   const navigate = useNavigate();
   const manager = isManager();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('OPEN');
-  const [search, setSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [draftSearch, setDraftSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draftStatusFilter, setDraftStatusFilter] = useState<StatusFilter>('OPEN');
+  const [draftControlMin, setDraftControlMin] = useState('');
+  const [draftControlMax, setDraftControlMax] = useState('');
+  const [draftPeriodFrom, setDraftPeriodFrom] = useState('');
+  const [draftPeriodTo, setDraftPeriodTo] = useState('');
+  const [appliedControlMin, setAppliedControlMin] = useState('');
+  const [appliedControlMax, setAppliedControlMax] = useState('');
+  const [appliedPeriodFrom, setAppliedPeriodFrom] = useState('');
+  const [appliedPeriodTo, setAppliedPeriodTo] = useState('');
   const [detailId, setDetailId] = useState<string | null>(null);
   const [movOpenForId, setMovOpenForId] = useState<string | null>(null);
   const [movType, setMovType] = useState<'IN' | 'OUT'>('OUT');
@@ -502,16 +526,34 @@ export function CashPage() {
     }
   }, [movType]);
 
+  const filtersActive =
+    statusFilter !== 'OPEN' ||
+    controlRangeActive({ controlMin: appliedControlMin, controlMax: appliedControlMax }) ||
+    appliedPeriodFrom.trim() !== '' ||
+    appliedPeriodTo.trim() !== '';
+
   const filtered = useMemo(() => {
-    const data = list.data ?? [];
-    const term = search.trim().toLowerCase();
-    if (!term) return data;
-    return data.filter((s) => {
-      const name = s.user?.name?.toLowerCase() ?? '';
-      const email = s.user?.email?.toLowerCase() ?? '';
-      return name.includes(term) || email.includes(term);
-    });
-  }, [list.data, search]);
+    let data = list.data ?? [];
+    const term = appliedSearch.trim().toLowerCase();
+    if (term) {
+      data = data.filter((s) => {
+        const name = s.user?.name?.toLowerCase() ?? '';
+        const email = s.user?.email?.toLowerCase() ?? '';
+        return name.includes(term) || email.includes(term);
+      });
+    }
+    if (controlRangeActive({ controlMin: appliedControlMin, controlMax: appliedControlMax })) {
+      data = data.filter((s) =>
+        matchesControlValue(s.controlNumber, appliedControlMin, appliedControlMax),
+      );
+    }
+    if (appliedPeriodFrom.trim() || appliedPeriodTo.trim()) {
+      data = data.filter((s) =>
+        dateInInclusiveRange(s.openedAt, appliedPeriodFrom, appliedPeriodTo),
+      );
+    }
+    return data;
+  }, [list.data, appliedSearch, appliedControlMin, appliedControlMax, appliedPeriodFrom, appliedPeriodTo]);
 
   /**
    * Caixa alvo do lançamento. O gerente pode movimentar o caixa aberto de
@@ -578,30 +620,6 @@ export function CashPage() {
           </p>
         </div>
         <div className="cash-page-toolbar__actions">
-          <div className="cash-status-filters">
-            {STATUS_FILTERS.map((f) => (
-              <button
-                key={f.value || 'ALL'}
-                type="button"
-                onClick={() => setStatusFilter(f.value)}
-                className={
-                  statusFilter === f.value
-                    ? 'cash-status-filters__btn is-active'
-                    : 'cash-status-filters__btn'
-                }
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-          {manager && (
-            <input
-              className="cash-page-search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Pesquisar por operador…"
-            />
-          )}
           <button
             type="button"
             className="btn btn-secondary"
@@ -612,6 +630,155 @@ export function CashPage() {
           </button>
         </div>
       </div>
+
+      <div className="crud-toolbar no-print" style={{ marginBottom: '0.75rem' }}>
+        <div className="crud-toolbar-group crud-toolbar-primary-slot">
+          {manager ? (
+            <CrudSearchFilterLeading
+              onSearch={() => {
+                setDraftSearch(appliedSearch);
+                setSearchOpen(true);
+              }}
+              onFilters={() => {
+                setDraftStatusFilter(statusFilter);
+                setDraftControlMin(appliedControlMin);
+                setDraftControlMax(appliedControlMax);
+                setDraftPeriodFrom(appliedPeriodFrom);
+                setDraftPeriodTo(appliedPeriodTo);
+                setFiltersOpen(true);
+              }}
+              filtersActive={filtersActive}
+            />
+          ) : (
+            <button
+              type="button"
+              className={filtersActive ? 'btn btn-primary' : 'btn btn-secondary'}
+              onClick={() => {
+                setDraftStatusFilter(statusFilter);
+                setDraftControlMin(appliedControlMin);
+                setDraftControlMax(appliedControlMax);
+                setDraftPeriodFrom(appliedPeriodFrom);
+                setDraftPeriodTo(appliedPeriodTo);
+                setFiltersOpen(true);
+              }}
+            >
+              Filtros{filtersActive ? ' ●' : ''}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {manager && searchOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setSearchOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h2>Pesquisar caixas</h2>
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
+              Nome ou e-mail do operador (gerente).
+            </p>
+            <div className="field">
+              <label htmlFor="cash-search-q">Termo</label>
+              <input
+                id="cash-search-q"
+                type="search"
+                autoFocus
+                value={draftSearch}
+                onChange={(e) => setDraftSearch(e.target.value)}
+                placeholder="Ex.: Maria, operador@…"
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setDraftSearch('');
+                  setAppliedSearch('');
+                  setSearchOpen(false);
+                }}
+              >
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setSearchOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setAppliedSearch(draftSearch.trim());
+                  setSearchOpen(false);
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {filtersOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setFiltersOpen(false)}>
+          <div
+            className="modal modal--filters-compact"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>Filtros da listagem</h2>
+            <FilterControlRangeFields
+              idPrefix="cash"
+              controlMin={draftControlMin}
+              controlMax={draftControlMax}
+              onControlMinChange={setDraftControlMin}
+              onControlMaxChange={setDraftControlMax}
+            />
+            <FilterPeriodRangeFields
+              idPrefix="cash"
+              from={draftPeriodFrom}
+              to={draftPeriodTo}
+              onFromChange={setDraftPeriodFrom}
+              onToChange={setDraftPeriodTo}
+            />
+            <div className="field filter-modal-row">
+              <label htmlFor="cash-filter-status">Situação do caixa</label>
+              <select
+                id="cash-filter-status"
+                value={draftStatusFilter}
+                onChange={(e) => setDraftStatusFilter(e.target.value as StatusFilter)}
+              >
+                {STATUS_FILTERS.map((f) => (
+                  <option key={f.value || 'ALL'} value={f.value}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <FilterModalActions
+              onClear={() => {
+                setDraftStatusFilter('OPEN');
+                setDraftControlMin('');
+                setDraftControlMax('');
+                setDraftPeriodFrom('');
+                setDraftPeriodTo('');
+                setStatusFilter('OPEN');
+                setAppliedControlMin('');
+                setAppliedControlMax('');
+                setAppliedPeriodFrom('');
+                setAppliedPeriodTo('');
+                setFiltersOpen(false);
+              }}
+              onCancel={() => setFiltersOpen(false)}
+              onApply={() => {
+                setStatusFilter(draftStatusFilter);
+                setAppliedControlMin(draftControlMin.trim());
+                setAppliedControlMax(draftControlMax.trim());
+                setAppliedPeriodFrom(draftPeriodFrom.trim());
+                setAppliedPeriodTo(draftPeriodTo.trim());
+                setFiltersOpen(false);
+              }}
+            />
+          </div>
+        </FormModalBackdrop>
+      )}
 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {list.isLoading && (

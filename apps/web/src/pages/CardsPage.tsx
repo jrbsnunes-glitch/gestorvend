@@ -4,6 +4,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { CrudToolbar } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination, LIST_PAGE_SIZE } from '../components/ListPagination';
@@ -17,6 +18,7 @@ import {
   cardOperationLabel,
   type PaymentForm,
 } from '../lib/payment-forms';
+import { matchesListSearch } from '../lib/list-search';
 
 type CardRow = {
   id: string;
@@ -78,7 +80,10 @@ export function CardsPage() {
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const [applied, setApplied] = useState<Filters>(EMPTY);
   const [page, setPage] = useState(1);
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [draftSearch, setDraftSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [reportsOpen, setReportsOpen] = useState(false);
   const [viewId, setViewId] = useState<string | null>(null);
   const [editRow, setEditRow] = useState<CardRow | null>(null);
@@ -139,8 +144,44 @@ export function CardsPage() {
 
   const total = list.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
-  const rows = list.data?.items ?? [];
+  const apiRows = list.data?.items ?? [];
+  const rows = useMemo(() => {
+    const q = appliedSearch.trim();
+    if (!q) return apiRows;
+    return apiRows.filter((r) =>
+      matchesListSearch(
+        [String(r.sale.number), r.cardBrand, r.amount, r.sale.customer?.name],
+        q,
+      ),
+    );
+  }, [apiRows, appliedSearch]);
   const cardForms = (forms.data ?? []).filter((f) => f.kind === 'CARD');
+
+  const filtersActive =
+    applied.dateFrom !== '' ||
+    applied.dateTo !== '' ||
+    applied.brand !== '' ||
+    applied.settlement !== '' ||
+    applied.paymentFormId !== '' ||
+    applied.cardOperation !== '';
+
+  function openFiltersModal() {
+    setFilters({ ...applied });
+    setFiltersOpen(true);
+  }
+
+  function applyFilters() {
+    setApplied({ ...filters });
+    setPage(1);
+    setFiltersOpen(false);
+  }
+
+  function clearFilters() {
+    setFilters(EMPTY);
+    setApplied(EMPTY);
+    setPage(1);
+    setFiltersOpen(false);
+  }
 
   return (
     <div className="page print-area">
@@ -154,20 +195,75 @@ export function CardsPage() {
         onPrint={() => window.print()}
         onReports={() => setReportsOpen(true)}
         leadingPrimary={
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => setFiltersOpen((o) => !o)}
-          >
-            {filtersOpen ? 'Ocultar filtro' : 'Filtro'}
-          </button>
+          <CrudSearchFilterLeading
+            onSearch={() => {
+              setDraftSearch(appliedSearch);
+              setSearchOpen(true);
+            }}
+            onFilters={openFiltersModal}
+            filtersActive={filtersActive}
+          />
         }
       />
 
+      {searchOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setSearchOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h2>Pesquisar transações</h2>
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
+              Número da venda, bandeira, valor ou cliente — apenas nos {apiRows.length} registro(s) desta
+              página. Use Filtros para restringir no servidor.
+            </p>
+            <div className="field">
+              <label htmlFor="card-search-q">Termo</label>
+              <input
+                id="card-search-q"
+                type="search"
+                autoFocus
+                value={draftSearch}
+                onChange={(e) => setDraftSearch(e.target.value)}
+                placeholder="Ex.: #100, Visa, 150…"
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setDraftSearch('');
+                  setAppliedSearch('');
+                  setSearchOpen(false);
+                }}
+              >
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setSearchOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setAppliedSearch(draftSearch.trim());
+                  setSearchOpen(false);
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
       {filtersOpen && (
-        <details className="submenu-details no-print" open>
-          <summary className="submenu-summary">Filtros</summary>
-          <div className="submenu-body">
+        <FormModalBackdrop className="no-print" onClose={() => setFiltersOpen(false)}>
+          <div
+            className="modal"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 520 }}
+          >
+            <h2>Filtros da listagem</h2>
             <div className="form-row" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
               <div className="field">
                 <label>De</label>
@@ -246,31 +342,19 @@ export function CardsPage() {
                 </select>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => {
-                  setApplied({ ...filters });
-                  setPage(1);
-                }}
-              >
-                Aplicar
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => {
-                  setFilters(EMPTY);
-                  setApplied(EMPTY);
-                  setPage(1);
-                }}
-              >
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={clearFilters}>
                 Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setFiltersOpen(false)}>
+                Cancelar
+              </button>
+              <button type="button" className="btn btn-primary" onClick={applyFilters}>
+                Aplicar
               </button>
             </div>
           </div>
-        </details>
+        </FormModalBackdrop>
       )}
 
       <ModuleReportsModal
@@ -330,7 +414,11 @@ export function CardsPage() {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8}>Nenhuma transação de cartão com os filtros atuais.</td>
+                <td colSpan={8}>
+                  {apiRows.length
+                    ? 'Nenhuma transação nesta página com a pesquisa atual.'
+                    : 'Nenhuma transação de cartão com os filtros atuais.'}
+                </td>
               </tr>
             )}
             {rows.map((r) => (

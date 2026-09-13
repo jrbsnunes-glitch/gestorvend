@@ -4,6 +4,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { CrudToolbar } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
@@ -11,7 +12,19 @@ import { ProductSearchModal, type ProductSearchRow } from '../components/Product
 import { api } from '../lib/api';
 import { hasServiceOrderModule } from '../lib/auth';
 import { formatBRL } from '../lib/format';
+import {
+  FilterControlRangeFields,
+  FilterGroupField,
+  FilterModalActions,
+  FilterPeriodRangeFields,
+} from '../components/ListFilterFields';
+import { ListFilterCustomerField } from '../components/ListFilterCustomerField';
 import { useMenuAccess } from '../hooks/useMenuAccess';
+import {
+  controlRangeActive,
+  matchesControlValue,
+} from '../lib/list-filters';
+import { matchesListSearch } from '../lib/list-search';
 
 type OsStatus =
   | 'DRAFT'
@@ -142,11 +155,27 @@ export function ServiceOrdersPage() {
   const menu = useMenuAccess();
   const moduleOk = hasServiceOrderModule();
 
-  const [status, setStatus] = useState('ALL');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [q, setQ] = useState('');
+  const [appliedStatus, setAppliedStatus] = useState('ALL');
+  const [appliedFrom, setAppliedFrom] = useState('');
+  const [appliedTo, setAppliedTo] = useState('');
+  const [appliedQ, setAppliedQ] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+  const [draftStatus, setDraftStatus] = useState('ALL');
+  const [draftFrom, setDraftFrom] = useState('');
+  const [draftTo, setDraftTo] = useState('');
+  const [draftSearch, setDraftSearch] = useState('');
+  const [draftControlMin, setDraftControlMin] = useState('');
+  const [draftControlMax, setDraftControlMax] = useState('');
+  const [draftFilterCustomerId, setDraftFilterCustomerId] = useState('');
+  const [draftFilterCustomerLabel, setDraftFilterCustomerLabel] = useState('');
+  const [draftFilterGroup, setDraftFilterGroup] = useState('');
+  const [appliedControlMin, setAppliedControlMin] = useState('');
+  const [appliedControlMax, setAppliedControlMax] = useState('');
+  const [appliedFilterCustomerId, setAppliedFilterCustomerId] = useState('');
+  const [appliedFilterCustomerLabel, setAppliedFilterCustomerLabel] = useState('');
+  const [appliedFilterGroup, setAppliedFilterGroup] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
@@ -201,12 +230,12 @@ export function ServiceOrdersPage() {
   const billingMode = companyQ.data?.serviceOrderDefaultBillingMode ?? 'CHOICE_PER_ORDER';
 
   const listQ = useQuery({
-    queryKey: ['service-orders', { status, from, to }],
+    queryKey: ['service-orders', { status: appliedStatus, from: appliedFrom, to: appliedTo }],
     queryFn: () => {
       const qs = new URLSearchParams();
-      if (status && status !== 'ALL') qs.set('status', status);
-      if (from) qs.set('from', from);
-      if (to) qs.set('to', to);
+      if (appliedStatus && appliedStatus !== 'ALL') qs.set('status', appliedStatus);
+      if (appliedFrom) qs.set('from', appliedFrom);
+      if (appliedTo) qs.set('to', appliedTo);
       qs.set('take', '200');
       return api<OsRow[]>(`/service-orders?${qs}`);
     },
@@ -214,10 +243,26 @@ export function ServiceOrdersPage() {
   });
 
   const searchQ = useQuery({
-    queryKey: ['service-orders', 'search', q],
-    queryFn: () => api<OsRow[]>(`/service-orders/search?q=${encodeURIComponent(q)}`),
-    enabled: moduleOk && companyEnabled && q.trim().length >= 1,
+    queryKey: ['service-orders', 'search', appliedQ],
+    queryFn: () => api<OsRow[]>(`/service-orders/search?q=${encodeURIComponent(appliedQ)}`),
+    enabled: moduleOk && companyEnabled && appliedQ.trim().length >= 1,
   });
+
+  const customersForGroup = useQuery({
+    queryKey: ['customers'],
+    queryFn: () =>
+      api<Array<{ id: string; segment: string | null }>>('/customers'),
+    enabled: appliedFilterGroup.trim() !== '',
+    staleTime: 120_000,
+  });
+
+  const filtersActive =
+    appliedStatus !== 'ALL' ||
+    appliedFrom !== '' ||
+    appliedTo !== '' ||
+    appliedFilterCustomerId !== '' ||
+    appliedFilterGroup.trim() !== '' ||
+    controlRangeActive({ controlMin: appliedControlMin, controlMax: appliedControlMax });
 
   const detailQ = useQuery({
     queryKey: ['service-orders', detailId],
@@ -246,9 +291,34 @@ export function ServiceOrdersPage() {
   });
 
   const rows = useMemo(() => {
-    const base = q.trim().length >= 1 ? searchQ.data ?? [] : listQ.data ?? [];
+    let base = appliedQ.trim().length >= 1 ? searchQ.data ?? [] : listQ.data ?? [];
+    if (appliedFilterCustomerId) {
+      base = base.filter((r) => r.customer.id === appliedFilterCustomerId);
+    }
+    if (appliedFilterGroup.trim()) {
+      const ids = new Set(
+        (customersForGroup.data ?? [])
+          .filter((c) => matchesListSearch([c.segment], appliedFilterGroup))
+          .map((c) => c.id),
+      );
+      base = base.filter((r) => ids.has(r.customer.id));
+    }
+    if (controlRangeActive({ controlMin: appliedControlMin, controlMax: appliedControlMax })) {
+      base = base.filter((r) =>
+        matchesControlValue(r.number, appliedControlMin, appliedControlMax),
+      );
+    }
     return base;
-  }, [listQ.data, searchQ.data, q]);
+  }, [
+    listQ.data,
+    searchQ.data,
+    appliedQ,
+    appliedFilterCustomerId,
+    appliedFilterGroup,
+    appliedControlMin,
+    appliedControlMax,
+    customersForGroup.data,
+  ]);
 
   const resetForm = () => {
     setEditingId(null);
@@ -574,11 +644,11 @@ export function ServiceOrdersPage() {
   /** Kanban = fluxo em aberto; encerradas ficam na Lista (salvo filtro explícito). */
   const closedStatuses = new Set<OsStatus>(['DELIVERED', 'BILLED', 'CANCELLED']);
   const kanbanCols =
-    status !== 'ALL' && closedStatuses.has(status as OsStatus)
-      ? [status as OsStatus]
+    appliedStatus !== 'ALL' && closedStatuses.has(appliedStatus as OsStatus)
+      ? [appliedStatus as OsStatus]
       : activeKanbanCols;
   const kanbanRows =
-    status === 'ALL' ? rows.filter((r) => !closedStatuses.has(r.status)) : rows;
+    appliedStatus === 'ALL' ? rows.filter((r) => !closedStatuses.has(r.status)) : rows;
 
   return (
     <div className="page">
@@ -589,9 +659,187 @@ export function ServiceOrdersPage() {
       </p>
 
       <CrudToolbar
+        leadingPrimary={
+          <>
+            <CrudSearchFilterLeading
+              onSearch={() => {
+                setDraftSearch(appliedQ);
+                setSearchOpen(true);
+              }}
+              onFilters={() => {
+                setDraftStatus(appliedStatus);
+                setDraftFrom(appliedFrom);
+                setDraftTo(appliedTo);
+                setDraftControlMin(appliedControlMin);
+                setDraftControlMax(appliedControlMax);
+                setDraftFilterCustomerId(appliedFilterCustomerId);
+                setDraftFilterCustomerLabel(appliedFilterCustomerLabel);
+                setDraftFilterGroup(appliedFilterGroup);
+                setFiltersOpen(true);
+              }}
+              filtersActive={filtersActive}
+            />
+            <div className="crud-view-toggle" role="group" aria-label="Visualização">
+              <button
+                type="button"
+                className={`crud-view-toggle__btn${viewMode === 'list' ? ' is-active' : ''}`}
+                onClick={() => setViewMode('list')}
+              >
+                Lista
+              </button>
+              <button
+                type="button"
+                className={`crud-view-toggle__btn${viewMode === 'kanban' ? ' is-active' : ''}`}
+                onClick={() => setViewMode('kanban')}
+              >
+                Kanban
+              </button>
+            </div>
+          </>
+        }
         onInclude={menu.canCreate('serviceOrders') ? openCreate : undefined}
         onReports={() => setReportsOpen(true)}
       />
+
+      {searchOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setSearchOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h2>Pesquisar ordens de serviço</h2>
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
+              Número da OS, cliente, serial ou equipamento.
+            </p>
+            <div className="field">
+              <label htmlFor="os-search-q">Termo</label>
+              <input
+                id="os-search-q"
+                type="search"
+                autoFocus
+                value={draftSearch}
+                onChange={(e) => setDraftSearch(e.target.value)}
+                placeholder="Ex.: #12, João, serial…"
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setDraftSearch('');
+                  setAppliedQ('');
+                  setSearchOpen(false);
+                }}
+              >
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setSearchOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setAppliedQ(draftSearch.trim());
+                  setSearchOpen(false);
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {filtersOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setFiltersOpen(false)}>
+          <div
+            className="modal modal--filters-compact"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>Filtros da listagem</h2>
+            <FilterControlRangeFields
+              idPrefix="os"
+              controlMin={draftControlMin}
+              controlMax={draftControlMax}
+              onControlMinChange={setDraftControlMin}
+              onControlMaxChange={setDraftControlMax}
+            />
+            <ListFilterCustomerField
+              idPrefix="os"
+              customerId={draftFilterCustomerId}
+              customerLabel={draftFilterCustomerLabel}
+              onSelect={(c) => {
+                setDraftFilterCustomerId(c.id);
+                setDraftFilterCustomerLabel(c.name);
+              }}
+              onClear={() => {
+                setDraftFilterCustomerId('');
+                setDraftFilterCustomerLabel('');
+              }}
+            />
+            <FilterGroupField
+              id="os-filter-group"
+              value={draftFilterGroup}
+              onChange={setDraftFilterGroup}
+            />
+            <div className="field filter-modal-row">
+              <label htmlFor="os-filter-status">Status</label>
+              <select
+                id="os-filter-status"
+                value={draftStatus}
+                onChange={(e) => setDraftStatus(e.target.value)}
+              >
+                <option value="ALL">Todos status</option>
+                {Object.entries(STATUS_LABEL).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <FilterPeriodRangeFields
+              idPrefix="os"
+              from={draftFrom}
+              to={draftTo}
+              onFromChange={setDraftFrom}
+              onToChange={setDraftTo}
+            />
+            <FilterModalActions
+              onClear={() => {
+                setDraftStatus('ALL');
+                setDraftFrom('');
+                setDraftTo('');
+                setDraftControlMin('');
+                setDraftControlMax('');
+                setDraftFilterCustomerId('');
+                setDraftFilterCustomerLabel('');
+                setDraftFilterGroup('');
+                setAppliedStatus('ALL');
+                setAppliedFrom('');
+                setAppliedTo('');
+                setAppliedControlMin('');
+                setAppliedControlMax('');
+                setAppliedFilterCustomerId('');
+                setAppliedFilterCustomerLabel('');
+                setAppliedFilterGroup('');
+                setFiltersOpen(false);
+              }}
+              onCancel={() => setFiltersOpen(false)}
+              onApply={() => {
+                setAppliedStatus(draftStatus);
+                setAppliedFrom(draftFrom);
+                setAppliedTo(draftTo);
+                setAppliedControlMin(draftControlMin.trim());
+                setAppliedControlMax(draftControlMax.trim());
+                setAppliedFilterCustomerId(draftFilterCustomerId);
+                setAppliedFilterCustomerLabel(draftFilterCustomerLabel);
+                setAppliedFilterGroup(draftFilterGroup.trim());
+                setFiltersOpen(false);
+              }}
+            />
+          </div>
+        </FormModalBackdrop>
+      )}
 
       <ModuleReportsModal open={reportsOpen} title="Ordens de Serviço" onClose={() => setReportsOpen(false)} compactLauncher>
         <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
@@ -607,57 +855,6 @@ export function ServiceOrdersPage() {
           </li>
         </ul>
       </ModuleReportsModal>
-
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div className="form-row">
-          <div className="field" style={{ flex: '1.4', minWidth: '12rem' }}>
-            <label>Buscar</label>
-            <input
-              placeholder="Buscar #OS, cliente, serial…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label>Status</label>
-            <select value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="ALL">Todos status</option>
-              {Object.entries(STATUS_LABEL).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>De</label>
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </div>
-          <div className="field">
-            <label>Até</label>
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-          </div>
-          <div className="field" style={{ justifyContent: 'flex-end' }}>
-            <label>&nbsp;</label>
-            <div style={{ display: 'flex', gap: '0.35rem' }}>
-              <button
-                type="button"
-                className={`btn btn-secondary ${viewMode === 'list' ? 'is-active' : ''}`}
-                onClick={() => setViewMode('list')}
-              >
-                Lista
-              </button>
-              <button
-                type="button"
-                className={`btn btn-secondary ${viewMode === 'kanban' ? 'is-active' : ''}`}
-                onClick={() => setViewMode('kanban')}
-              >
-                Kanban
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {(listQ.isError || searchQ.isError) && (
         <div className="alert alert-error">

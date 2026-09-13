@@ -30,6 +30,8 @@ function startOfMonth(d: Date): Date {
 
 /** Teto do painel "Estoque crítico" (o card mostra 5; o "ver mais" abre o resto). */
 const LOW_STOCK_LIMIT = 100;
+/** Top produtos no card do Início (últimos 30 dias, por quantidade vendida). */
+const TOP_PRODUCTS_LIMIT = 3;
 
 /**
  * Dashboard "do dono da loja": entrega TODAS as métricas em uma única
@@ -130,7 +132,7 @@ export class DashboardController {
         },
         _sum: { quantity: true, totalLine: true },
         orderBy: { _sum: { quantity: 'desc' } },
-        take: 5,
+        take: TOP_PRODUCTS_LIMIT,
       }),
       db.cashRegisterSession.findMany({
         where: { status: CashSessionStatus.OPEN },
@@ -168,7 +170,7 @@ export class DashboardController {
     const countMonth = salesMonthAgg._count._all;
     const avgTicketMonth = countMonth > 0 ? revenueMonth / countMonth : 0;
 
-    // Carrega nomes/SKUs dos top 5 produtos em paralelo
+    // Carrega nomes/SKUs dos top 3 produtos em paralelo
     const topVariantIds = topItems.map((t) => t.variantId);
     const topVariants = topVariantIds.length
       ? await db.productVariant.findMany({

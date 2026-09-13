@@ -3,10 +3,22 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BalanceMovementModal } from '../components/BalanceMovementModal';
 import { BalancePrintModal } from '../components/BalancePrintModal';
+import { CostCenterSelect } from '../components/CostCenterSelect';
+import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
+import { CrudToolbar } from '../components/CrudToolbar';
+import { FormModalBackdrop } from '../components/FormModalBackdrop';
+import {
+  FilterGroupField,
+  FilterModalActions,
+  FilterPeriodRangeFields,
+} from '../components/ListFilterFields';
+import { ListFilterCustomerField } from '../components/ListFilterCustomerField';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
 import { ledgerDirectionLabel, ledgerKindLabel } from '../lib/financial-overview-ledger-labels';
+import { dateInInclusiveRange } from '../lib/list-filters';
+import { matchesListSearch } from '../lib/list-search';
 
 type LedgerRow = {
   occurredAt: string;
@@ -42,6 +54,24 @@ export function FinancialOverviewPage() {
   const [includeOpen, setIncludeOpen] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
   const [printInitial, setPrintInitial] = useState(() => monthRangeDefaults());
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draftSearch, setDraftSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [draftDirection, setDraftDirection] = useState<'ALL' | 'IN' | 'OUT'>('ALL');
+  const [appliedDirection, setAppliedDirection] = useState<'ALL' | 'IN' | 'OUT'>('ALL');
+  const [draftPeriodFrom, setDraftPeriodFrom] = useState('');
+  const [draftPeriodTo, setDraftPeriodTo] = useState('');
+  const [appliedPeriodFrom, setAppliedPeriodFrom] = useState('');
+  const [appliedPeriodTo, setAppliedPeriodTo] = useState('');
+  const [draftCostCenterId, setDraftCostCenterId] = useState('');
+  const [appliedCostCenterId, setAppliedCostCenterId] = useState('');
+  const [draftCustomerId, setDraftCustomerId] = useState('');
+  const [draftCustomerLabel, setDraftCustomerLabel] = useState('');
+  const [appliedCustomerId, setAppliedCustomerId] = useState('');
+  const [appliedCustomerLabel, setAppliedCustomerLabel] = useState('');
+  const [draftGroup, setDraftGroup] = useState('');
+  const [appliedGroup, setAppliedGroup] = useState('');
 
   const printCostCenters = useQuery({
     queryKey: ['financial-overview', 'cost-centers', 'all'],
@@ -51,9 +81,28 @@ export function FinancialOverviewPage() {
     enabled: printOpen,
   });
 
+  const summaryQs = useMemo(() => {
+    const p = new URLSearchParams();
+    if (appliedPeriodFrom.trim() && appliedPeriodTo.trim()) {
+      p.set('from', appliedPeriodFrom.trim());
+      p.set('to', appliedPeriodTo.trim());
+    }
+    if (appliedCostCenterId.trim()) p.set('costCenterId', appliedCostCenterId.trim());
+    return p.toString();
+  }, [appliedPeriodFrom, appliedPeriodTo, appliedCostCenterId]);
+
   const summary = useQuery({
-    queryKey: ['financial-overview', 'summary', 'acumulado'],
-    queryFn: () => api<Summary>('/financial-overview/summary'),
+    queryKey: ['financial-overview', 'summary', summaryQs || 'acumulado'],
+    queryFn: () =>
+      api<Summary>(`/financial-overview/summary${summaryQs ? `?${summaryQs}` : ''}`),
+  });
+
+  const customersForGroup = useQuery({
+    queryKey: ['customers'],
+    queryFn: () =>
+      api<Array<{ id: string; name: string; segment: string | null }>>('/customers'),
+    enabled: appliedGroup.trim() !== '',
+    staleTime: 120_000,
   });
 
   const data = summary.data;
@@ -63,10 +112,58 @@ export function FinancialOverviewPage() {
     setPrintOpen(true);
   }
 
+  const groupCustomerNames = useMemo(() => {
+    if (!appliedGroup.trim()) return null;
+    return (customersForGroup.data ?? [])
+      .filter((c) => matchesListSearch([c.segment], appliedGroup))
+      .map((c) => c.name.toLowerCase());
+  }, [appliedGroup, customersForGroup.data]);
+
   const movimentacoesFluxo = useMemo(() => {
-    const ledger = data?.ledger ?? [];
-    return ledger.filter((row) => row.direction !== 'INFO');
-  }, [data?.ledger]);
+    let rows = (data?.ledger ?? []).filter((row) => row.direction !== 'INFO');
+    if (appliedDirection === 'IN') rows = rows.filter((row) => row.direction === 'IN');
+    if (appliedDirection === 'OUT') rows = rows.filter((row) => row.direction === 'OUT');
+    if (appliedPeriodFrom.trim() || appliedPeriodTo.trim()) {
+      rows = rows.filter((row) =>
+        dateInInclusiveRange(row.occurredAt, appliedPeriodFrom, appliedPeriodTo),
+      );
+    }
+    if (appliedCustomerId && appliedCustomerLabel.trim()) {
+      const name = appliedCustomerLabel.trim().toLowerCase();
+      rows = rows.filter((row) => {
+        const hay = `${row.title ?? ''} ${row.detail ?? ''}`.toLowerCase();
+        return hay.includes(name);
+      });
+    }
+    if (groupCustomerNames?.length) {
+      rows = rows.filter((row) => {
+        const hay = `${row.title ?? ''} ${row.detail ?? ''}`.toLowerCase();
+        return groupCustomerNames.some((n) => hay.includes(n));
+      });
+    }
+    const q = appliedSearch.trim();
+    if (q) {
+      rows = rows.filter((row) => matchesListSearch([row.title, row.detail], q));
+    }
+    return rows;
+  }, [
+    data?.ledger,
+    appliedSearch,
+    appliedDirection,
+    appliedPeriodFrom,
+    appliedPeriodTo,
+    appliedCustomerId,
+    appliedCustomerLabel,
+    groupCustomerNames,
+  ]);
+
+  const filtersActive =
+    appliedDirection !== 'ALL' ||
+    appliedPeriodFrom.trim() !== '' ||
+    appliedPeriodTo.trim() !== '' ||
+    appliedCostCenterId.trim() !== '' ||
+    appliedCustomerId !== '' ||
+    appliedGroup.trim() !== '';
 
   return (
     <div className="page print-area">
@@ -79,14 +176,159 @@ export function FinancialOverviewPage() {
         <Link to="/balanco/relatorios">Relatórios por período</Link> (diário completo).
       </p>
 
-      <div className="toolbar no-print" style={{ flexWrap: 'wrap', gap: '0.75rem', justifyContent: 'flex-start' }}>
-        <button type="button" className="btn btn-primary" onClick={() => setIncludeOpen(true)}>
-          Incluir
-        </button>
-        <button type="button" className="btn btn-secondary" style={{ marginLeft: 'auto' }} onClick={openPrintModal}>
-          Impressões…
-        </button>
-      </div>
+      <CrudToolbar
+        leadingPrimary={
+          <CrudSearchFilterLeading
+            onSearch={() => {
+              setDraftSearch(appliedSearch);
+              setSearchOpen(true);
+            }}
+            onFilters={() => {
+              setDraftDirection(appliedDirection);
+              setDraftPeriodFrom(appliedPeriodFrom);
+              setDraftPeriodTo(appliedPeriodTo);
+              setDraftCostCenterId(appliedCostCenterId);
+              setDraftCustomerId(appliedCustomerId);
+              setDraftCustomerLabel(appliedCustomerLabel);
+              setDraftGroup(appliedGroup);
+              setFiltersOpen(true);
+            }}
+            filtersActive={filtersActive}
+          />
+        }
+        onInclude={() => setIncludeOpen(true)}
+        onReports={openPrintModal}
+      />
+
+      {searchOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setSearchOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h2>Pesquisar movimentações</h2>
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
+              Título ou detalhe na tabela abaixo.
+            </p>
+            <div className="field">
+              <label htmlFor="bal-search-q">Termo</label>
+              <input
+                id="bal-search-q"
+                type="search"
+                autoFocus
+                value={draftSearch}
+                onChange={(e) => setDraftSearch(e.target.value)}
+                placeholder="Ex.: venda, despesa…"
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setDraftSearch('');
+                  setAppliedSearch('');
+                  setSearchOpen(false);
+                }}
+              >
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setSearchOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setAppliedSearch(draftSearch.trim());
+                  setSearchOpen(false);
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {filtersOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setFiltersOpen(false)}>
+          <div
+            className="modal modal--filters-compact"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>Filtros da listagem</h2>
+            <FilterPeriodRangeFields
+              idPrefix="bal"
+              from={draftPeriodFrom}
+              to={draftPeriodTo}
+              onFromChange={setDraftPeriodFrom}
+              onToChange={setDraftPeriodTo}
+            />
+            <ListFilterCustomerField
+              idPrefix="bal"
+              customerId={draftCustomerId}
+              customerLabel={draftCustomerLabel}
+              onSelect={(c) => {
+                setDraftCustomerId(c.id);
+                setDraftCustomerLabel(c.name);
+              }}
+              onClear={() => {
+                setDraftCustomerId('');
+                setDraftCustomerLabel('');
+              }}
+            />
+            <FilterGroupField id="bal-filter-group" value={draftGroup} onChange={setDraftGroup} />
+            <CostCenterSelect
+              flow="OUT"
+              id="bal-filter-cc"
+              value={draftCostCenterId}
+              onChange={setDraftCostCenterId}
+              label="Centro de custo"
+            />
+            <div className="field filter-modal-row">
+              <label htmlFor="bal-filter-dir">Natureza</label>
+              <select
+                id="bal-filter-dir"
+                value={draftDirection}
+                onChange={(e) => setDraftDirection(e.target.value as 'ALL' | 'IN' | 'OUT')}
+              >
+                <option value="ALL">Entradas e saídas</option>
+                <option value="IN">Somente entradas</option>
+                <option value="OUT">Somente saídas</option>
+              </select>
+            </div>
+            <FilterModalActions
+              onClear={() => {
+                setDraftDirection('ALL');
+                setDraftPeriodFrom('');
+                setDraftPeriodTo('');
+                setDraftCostCenterId('');
+                setDraftCustomerId('');
+                setDraftCustomerLabel('');
+                setDraftGroup('');
+                setAppliedDirection('ALL');
+                setAppliedPeriodFrom('');
+                setAppliedPeriodTo('');
+                setAppliedCostCenterId('');
+                setAppliedCustomerId('');
+                setAppliedCustomerLabel('');
+                setAppliedGroup('');
+                setFiltersOpen(false);
+              }}
+              onCancel={() => setFiltersOpen(false)}
+              onApply={() => {
+                setAppliedDirection(draftDirection);
+                setAppliedPeriodFrom(draftPeriodFrom.trim());
+                setAppliedPeriodTo(draftPeriodTo.trim());
+                setAppliedCostCenterId(draftCostCenterId.trim());
+                setAppliedCustomerId(draftCustomerId);
+                setAppliedCustomerLabel(draftCustomerLabel);
+                setAppliedGroup(draftGroup.trim());
+                setFiltersOpen(false);
+              }}
+            />
+          </div>
+        </FormModalBackdrop>
+      )}
 
       {summary.isError && (
         <div className="alert alert-error">{(summary.error as Error).message}</div>

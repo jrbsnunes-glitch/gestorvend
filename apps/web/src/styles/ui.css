@@ -2415,6 +2415,74 @@
   color: #fff;
 }
 
+.dash-hero-topproducts {
+  background: linear-gradient(135deg, #5b21b6, #7c3aed);
+  color: #f8fafc;
+  border-color: transparent;
+  cursor: pointer;
+  min-height: 11.5rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dash-hero-topproducts:hover,
+.dash-hero-topproducts:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  outline: none;
+}
+
+.dash-hero-topproducts .dash-hero-label,
+.dash-hero-topproducts .dash-hero-foot {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.dash-hero-topproducts-hint {
+  color: rgba(255, 255, 255, 0.9) !important;
+  font-weight: 600;
+}
+
+.dash-top-hero-table {
+  width: 100%;
+  margin-top: 0.15rem;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  line-height: 1.25;
+}
+
+.dash-top-hero-table th {
+  padding: 0 0.35rem 0.35rem 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.72);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.dash-top-hero-table td {
+  padding: 0.38rem 0.35rem 0.38rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  vertical-align: middle;
+}
+
+.dash-top-hero-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.dash-top-hero-table .num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dash-top-hero-name {
+  display: block;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
 /* Estoque — painel (dashboard de movimentações) */
 .dash-hero-stock {
   background: linear-gradient(135deg, #7c2d12, #c2410c);
@@ -2464,10 +2532,77 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 1rem;
+  align-items: stretch;
+}
+
+/* Evita margin-top global de .card + .card desalinhando colunas da grid */
+.dash-grid > .card + .card {
+  margin-top: 0;
+}
+
+.dash-grid--row2 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dash-grid--row2 > .dash-block {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+@media (max-width: 1100px) {
+  .dash-grid--row2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dash-row-sessions {
+  margin-top: 1rem;
 }
 
 .dash-block {
   padding: 0.85rem 1rem;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.dash-block--payables {
+  border: 1px solid #fecaca;
+  border-left: 4px solid #dc2626;
+  background: linear-gradient(180deg, #fef2f2 0%, var(--color-surface) 55%);
+}
+
+.dash-block--receivables {
+  border: 1px solid #bbf7d0;
+  border-left: 4px solid #059669;
+  background: linear-gradient(180deg, #ecfdf5 0%, var(--color-surface) 55%);
+}
+
+.dash-block--lowstock {
+  border: 1px solid #fed7aa;
+  border-left: 4px solid #ea580c;
+  background: linear-gradient(180deg, #fff7ed 0%, var(--color-surface) 55%);
+}
+
+.dash-block--sessions {
+  border: 1px solid #bfdbfe;
+  border-left: 4px solid #2563eb;
+  background: linear-gradient(180deg, #eff6ff 0%, var(--color-surface) 55%);
+}
+
+.dash-block-sub {
+  margin: -0.35rem 0 0.55rem;
+  font-size: 0.76rem;
+  color: var(--color-text-muted);
+}
+
+.dash-sessions-count {
+  margin: 0.15rem 0 0;
+  font-size: 2.25rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: #1d4ed8;
 }
 
 .dash-block-more {

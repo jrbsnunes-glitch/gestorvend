@@ -20,6 +20,12 @@ type ReconciliationExpenseLine = {
   referentialAccount?: { id: string; code: string; description: string } | null;
 };
 
+type ExpenseLineReport = {
+  amount: number;
+  description: string;
+  sessionControl?: number;
+};
+
 type CashMovementBreakdown = {
   suprimentos: number;
   sangrias: number;
@@ -53,6 +59,7 @@ type ReportSession = {
   declaredByMethod: Record<string, number> | null;
   diffByMethod: Record<string, number> | null;
   reconciliationExpenseDetails: ReconciliationExpenseLine[] | null;
+  expenseLines?: ExpenseLineReport[];
 };
 
 type ReportData = {
@@ -258,6 +265,22 @@ export function CashPrintPage() {
     return operators.data?.find((u) => u.id === userId)?.name ?? null;
   }, [userId, operators.data]);
 
+  const aggregatedExpenseLines = useMemo((): ExpenseLineReport[] => {
+    const sessions = report.data?.sessions ?? [];
+    const multi = sessions.length > 1;
+    const lines: ExpenseLineReport[] = [];
+    for (const s of sessions) {
+      for (const line of s.expenseLines ?? []) {
+        lines.push({
+          amount: line.amount,
+          description: line.description,
+          sessionControl: multi ? s.controlNumber : undefined,
+        });
+      }
+    }
+    return lines;
+  }, [report.data?.sessions]);
+
   const allMethods = useMemo(() => {
     const set = new Set<string>();
     Object.keys(report.data?.totals.salesByMethod ?? {}).forEach((k) => set.add(k));
@@ -429,6 +452,7 @@ export function CashPrintPage() {
                   0
                 }
                 includeExpenseInPresentedTotal={closingOptions.includeExpenseInPresentedTotal}
+                expenseLines={aggregatedExpenseLines}
               />
             </section>
 
@@ -530,12 +554,20 @@ function ReconTableBody({
   );
 }
 
+function expenseLineLabel(line: ExpenseLineReport): string {
+  if (line.sessionControl != null) {
+    return `#${line.sessionControl} · ${line.description}`;
+  }
+  return line.description;
+}
+
 function ReconSection({
   methods,
   sales,
   expected,
   declared,
   expenseAmount,
+  expenseLines = [],
   includeExpenseInPresentedTotal = false,
 }: {
   methods: string[];
@@ -543,6 +575,7 @@ function ReconSection({
   expected: Record<string, number>;
   declared: Record<string, number> | null;
   expenseAmount: number;
+  expenseLines?: ExpenseLineReport[];
   includeExpenseInPresentedTotal?: boolean;
 }) {
   const paymentRows = buildReconRows(methods, sales, expected, declared);
@@ -569,6 +602,13 @@ function ReconSection({
     !includeExpenseInPresentedTotal && expenseExpected > 0
       ? analyticalExpenseReconFootnote(expenseExpected)
       : null;
+
+  const expenseDetailRows =
+    expenseLines.length > 0
+      ? expenseLines
+      : expenseExpected > 0
+        ? [{ amount: expenseExpected, description: PAYMENT_LABELS.EXPENSE }]
+        : [];
 
   if (paymentRows.length === 0 && !showExpenseTable) {
     return <p className="print-empty">Sem valores para conferência neste filtro.</p>;
@@ -606,17 +646,25 @@ function ReconSection({
         <>
           <h3 className="print-recon-subtitle print-recon-subtitle--expense">Despesas do caixa</h3>
           <table className="print-table print-table-compact print-table-expense">
-            {reconHead}
-            <tbody>
+            <thead>
               <tr>
-                <td>{PAYMENT_LABELS.EXPENSE}</td>
-                <td className="num">—</td>
-                <td className="num">{expenseDeclared == null ? '—' : formatBRL(expenseDeclared)}</td>
-                <td className="num">{formatBRL(expenseExpected)}</td>
-                <td className={'num ' + diffToneClass(reconDiffDisplay(expenseDiff, null).tone)}>
-                  {fmtDiff(expenseDiff)}
-                </td>
+                <th>Descrição</th>
+                <th className="num">Registrado</th>
+                <th className="num">Apresentado</th>
+                <th className="num">Esperado</th>
+                <th className="num">Dif.</th>
               </tr>
+            </thead>
+            <tbody>
+              {expenseDetailRows.map((line, idx) => (
+                <tr key={`exp-${idx}-${line.description}`}>
+                  <td>{expenseLineLabel(line)}</td>
+                  <td className="num">—</td>
+                  <td className="num">—</td>
+                  <td className="num">{formatBRL(line.amount)}</td>
+                  <td className="num">—</td>
+                </tr>
+              ))}
             </tbody>
             <tfoot>
               <tr>
@@ -624,7 +672,9 @@ function ReconSection({
                 <th className="num">—</th>
                 <th className="num">{expenseDeclared == null ? '—' : formatBRL(expenseDeclared)}</th>
                 <th className="num">{formatBRL(expenseExpected)}</th>
-                <th className="num">{fmtDiff(expenseDiff)}</th>
+                <th className={'num ' + diffToneClass(reconDiffDisplay(expenseDiff, null).tone)}>
+                  {fmtDiff(expenseDiff)}
+                </th>
               </tr>
             </tfoot>
           </table>

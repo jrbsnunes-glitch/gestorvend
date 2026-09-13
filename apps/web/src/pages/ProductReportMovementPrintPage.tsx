@@ -1,10 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatDate } from '../lib/format';
-import { buildProductMovementReportQuery, movementLabel, parseProductCodeBound } from '../lib/product-report-format';
+import {
+  buildProductMovementReportQuery,
+  movementLabel,
+  parseProductCodeBound,
+  productReportBackTo,
+} from '../lib/product-report-format';
 import './cash-print.css';
 
 type MovementRow = {
@@ -93,22 +98,18 @@ function movementSectionEmptyText(
 
 export function ProductReportMovementPrintPage() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [draft, setDraft] = useState<MovDraft>(() => movDraftFromSearchParams(searchParams));
-  const [applyErr, setApplyErr] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const backTo = productReportBackTo(searchParams);
 
-  const spKey = searchParams.toString();
-  useEffect(() => {
-    setDraft(movDraftFromSearchParams(searchParams));
-  }, [spKey]);
+  const params = useMemo(() => movDraftFromSearchParams(searchParams), [searchParams]);
 
-  const hasLegacyVariant = Boolean(draft.variantId.trim());
-  const cadFromN = parseCadMinBound(draft.minStockCadFrom);
-  const cadToN = parseCadMinBound(draft.minStockCadTo);
+  const hasLegacyVariant = Boolean(params.variantId.trim());
+  const cadFromN = parseCadMinBound(params.minStockCadFrom);
+  const cadToN = parseCadMinBound(params.minStockCadTo);
   const cadOk =
     !hasLegacyVariant &&
-    draft.minStockCadFrom.trim() !== '' &&
-    draft.minStockCadTo.trim() !== '' &&
+    params.minStockCadFrom.trim() !== '' &&
+    params.minStockCadTo.trim() !== '' &&
     cadFromN !== null &&
     cadToN !== null &&
     cadFromN <= cadToN;
@@ -116,33 +117,23 @@ export function ProductReportMovementPrintPage() {
   const qs = useMemo(
     () =>
       buildProductMovementReportQuery({
-        variantId: hasLegacyVariant ? draft.variantId : undefined,
-        minStockCadFrom: hasLegacyVariant ? undefined : draft.minStockCadFrom,
-        minStockCadTo: hasLegacyVariant ? undefined : draft.minStockCadTo,
-        categoryId: draft.categoryId || undefined,
-        from: draft.from,
-        to: draft.to,
-        locationId: draft.locationId || undefined,
-        useMinControl: draft.useMinControl,
-        useMaxControl: draft.useMaxControl,
-        alertsOnly: draft.alertsOnly,
-        showNoMovement: draft.showNoMovement,
-        maxStockCeiling: draft.maxStockCeiling,
+        variantId: hasLegacyVariant ? params.variantId : undefined,
+        minStockCadFrom: hasLegacyVariant ? undefined : params.minStockCadFrom,
+        minStockCadTo: hasLegacyVariant ? undefined : params.minStockCadTo,
+        categoryId: params.categoryId || undefined,
+        from: params.from,
+        to: params.to,
+        locationId: params.locationId || undefined,
+        useMinControl: params.useMinControl,
+        useMaxControl: params.useMaxControl,
+        alertsOnly: params.alertsOnly,
+        showNoMovement: params.showNoMovement,
+        maxStockCeiling: params.maxStockCeiling,
       }),
-    [draft, hasLegacyVariant],
+    [params, hasLegacyVariant],
   );
 
-  const enabled = Boolean(draft.from && draft.to && (hasLegacyVariant || cadOk));
-
-  const locations = useQuery({
-    queryKey: ['stock-locations'],
-    queryFn: () => api<Array<{ id: string; code: string; name: string }>>('/stock-locations'),
-  });
-
-  const categories = useQuery({
-    queryKey: ['categories', 'product-movement-print'],
-    queryFn: () => api<Array<{ id: string; name: string }>>('/categories?q='),
-  });
+  const enabled = Boolean(params.from && params.to && (hasLegacyVariant || cadOk));
 
   const report = useQuery({
     queryKey: ['reports', 'product-movements-print', qs],
@@ -152,58 +143,9 @@ export function ProductReportMovementPrintPage() {
 
   const data = report.data;
 
-  function applyFilters() {
-    setApplyErr(null);
-    const vid = draft.variantId.trim();
-    const from = draft.from.trim();
-    const to = draft.to.trim();
-    if (!from || !to) {
-      setApplyErr('Informe o período (de / até).');
-      return;
-    }
-    if (!vid) {
-      if (draft.minStockCadFrom.trim() === '' || draft.minStockCadTo.trim() === '') {
-        setApplyErr('Informe o intervalo de código do produto — “de” e “até”.');
-        return;
-      }
-      const a = parseCadMinBound(draft.minStockCadFrom);
-      const b = parseCadMinBound(draft.minStockCadTo);
-      if (a === null || b === null) {
-        setApplyErr('Intervalo inválido: use números válidos.');
-        return;
-      }
-      if (a > b) {
-        setApplyErr('“De” não pode ser maior que “até”.');
-        return;
-      }
-    }
-    if (draft.useMaxControl && !draft.maxStockCeiling.trim()) {
-      setApplyErr('Informe o teto ao usar controle máximo.');
-      return;
-    }
-    if (draft.alertsOnly && !draft.useMinControl && !(draft.useMaxControl && draft.maxStockCeiling.trim())) {
-      setApplyErr('Para “somente alertas”, ative o mínimo e/ou o máximo com teto informado.');
-      return;
-    }
-
-    const next = new URLSearchParams(
-      buildProductMovementReportQuery({
-        variantId: vid || undefined,
-        minStockCadFrom: vid ? undefined : draft.minStockCadFrom,
-        minStockCadTo: vid ? undefined : draft.minStockCadTo,
-        categoryId: draft.categoryId || undefined,
-        from,
-        to,
-        locationId: draft.locationId || undefined,
-        useMinControl: draft.useMinControl,
-        useMaxControl: draft.useMaxControl,
-        alertsOnly: draft.alertsOnly,
-        showNoMovement: draft.showNoMovement,
-        maxStockCeiling: draft.maxStockCeiling,
-      }),
-    );
-    setSearchParams(next, { replace: true });
-  }
+  useEffect(() => {
+    if (enabled && report.data) window.scrollTo({ top: 0 });
+  }, [enabled, report.data]);
 
   const headerSubtitle = data ? (
     <>
@@ -226,19 +168,28 @@ export function ProductReportMovementPrintPage() {
     </>
   ) : enabled ? (
     <p className="print-sub">Carregando…</p>
-  ) : (
-    <p className="print-sub">
-      Defina o intervalo de código do produto e o período nos filtros abaixo e clique em{' '}
-      <strong>Atualizar relatório</strong>.
-    </p>
-  );
+  ) : null;
 
   const sectionGate = !!data?.sections.length;
+
+  if (!enabled) {
+    return (
+      <div className="print-page">
+        <p className="print-empty no-print">
+          Parâmetros inválidos. Volte em Produtos, abra Relatórios e informe período
+          {hasLegacyVariant ? '' : ' e intervalo de código'} antes de gerar.
+        </p>
+        <button type="button" className="btn btn-primary no-print" onClick={() => navigate(backTo)}>
+          Voltar
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="print-page">
       <div className="print-toolbar no-print">
-        <button type="button" className="btn btn-secondary" onClick={() => navigate('/produtos')}>
+        <button type="button" className="btn btn-secondary" onClick={() => navigate(backTo)}>
           ← Voltar
         </button>
         <div style={{ flex: 1 }} />
@@ -247,167 +198,8 @@ export function ProductReportMovementPrintPage() {
         </button>
       </div>
 
-      <div
-        className="no-print pm-move-filters"
-        style={{
-          marginBottom: '0.65rem',
-          padding: '0.45rem 0.65rem',
-          background: '#f8fafc',
-          border: '1px solid #cbd5e1',
-          borderRadius: 8,
-          maxWidth: '100%',
-        }}
-      >
-        <div className="pm-move-filters__title">Parâmetros e controles min / máx</div>
-        {applyErr && <div className="alert alert-error pm-move-filters__alert">{applyErr}</div>}
-        {hasLegacyVariant ? (
-          <p className="pm-move-filters__legacy">
-            Ligado por URL a <strong style={{ wordBreak: 'break-all' }}>variantId={draft.variantId}</strong> — período, local e
-            opções continuam editáveis; para trabalhar só por intervalo, use Relatórios em Produtos.
-          </p>
-        ) : (
-          <p className="pm-move-filters__hint">
-            Por intervalo: entram <strong>todos os SKUs dos produtos</strong> cujo <strong>código sequencial</strong> estiver dentro do
-            intervalo informado.
-          </p>
-        )}
-
-        <div className="pm-move-filters__row">
-          {!hasLegacyVariant && (
-            <div className="pm-move-filters__cadgroup" aria-label="Intervalo código produto">
-              <span className="pm-move-filters__muted-label">Código</span>
-              <div className="field pm-move-filters__tinyfield">
-                <label htmlFor="pm-cfrom">De</label>
-                <input
-                  id="pm-cfrom"
-                  inputMode="numeric"
-                  value={draft.minStockCadFrom}
-                  onChange={(e) => setDraft((d) => ({ ...d, minStockCadFrom: e.target.value }))}
-                  placeholder="1"
-                  style={{ width: '5rem' }}
-                />
-              </div>
-              <div className="field pm-move-filters__tinyfield">
-                <label htmlFor="pm-cto">Até</label>
-                <input
-                  id="pm-cto"
-                  inputMode="numeric"
-                  value={draft.minStockCadTo}
-                  onChange={(e) => setDraft((d) => ({ ...d, minStockCadTo: e.target.value }))}
-                  placeholder="99"
-                  style={{ width: '5rem' }}
-                />
-              </div>
-            </div>
-          )}
-          {!hasLegacyVariant && (
-            <div className="field pm-move-filters__tinyfield">
-              <label htmlFor="pm-cat">Categoria</label>
-              <select
-                id="pm-cat"
-                value={draft.categoryId}
-                onChange={(e) => setDraft((d) => ({ ...d, categoryId: e.target.value }))}
-              >
-                <option value="">Todas</option>
-                {(categories.data ?? []).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          <div className="field pm-move-filters__tinyfield">
-            <label htmlFor="pm-from">Período de</label>
-            <input
-              id="pm-from"
-              type="date"
-              value={draft.from}
-              onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))}
-            />
-          </div>
-          <div className="field pm-move-filters__tinyfield">
-            <label htmlFor="pm-to">Período até</label>
-            <input id="pm-to" type="date" value={draft.to} onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))} />
-          </div>
-          <div className="field pm-move-filters__locfield">
-            <label htmlFor="pm-loc">Local</label>
-            <select id="pm-loc" value={draft.locationId} onChange={(e) => setDraft((d) => ({ ...d, locationId: e.target.value }))}>
-              <option value="">Todos</option>
-              {(locations.data ?? []).map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.code}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="pm-move-filters__row pm-move-filters__row--controls">
-          <label className="pm-move-filters__chk">
-            <input
-              type="checkbox"
-              checked={draft.useMaxControl}
-              onChange={(e) => setDraft((d) => ({ ...d, useMaxControl: e.target.checked }))}
-            />
-            Teto máx.
-          </label>
-          <div className="field pm-move-filters__tinyfield pm-move-filters__teto">
-            <label htmlFor="pm-max">Teto</label>
-            <input
-              id="pm-max"
-              inputMode="decimal"
-              placeholder="—"
-              disabled={!draft.useMaxControl}
-              value={draft.maxStockCeiling}
-              onChange={(e) => setDraft((d) => ({ ...d, maxStockCeiling: e.target.value }))}
-            />
-          </div>
-          <label className="pm-move-filters__chk">
-            <input
-              type="checkbox"
-              checked={draft.useMinControl}
-              onChange={(e) => setDraft((d) => ({ ...d, useMinControl: e.target.checked }))}
-            />
-            Usar mín. cadastrado
-          </label>
-          <label className="pm-move-filters__chk">
-            <input
-              type="checkbox"
-              checked={draft.alertsOnly}
-              onChange={(e) => setDraft((d) => ({ ...d, alertsOnly: e.target.checked }))}
-            />
-            Só linhas alerta
-          </label>
-          <label className="pm-move-filters__chk">
-            <input
-              title={hasLegacyVariant ? 'Opcão para relatório por intervalo na tela Produtos.' : undefined}
-              type="checkbox"
-              checked={draft.showNoMovement}
-              disabled={hasLegacyVariant}
-              onChange={(e) => setDraft((d) => ({ ...d, showNoMovement: e.target.checked }))}
-            />
-            Variantes sem lançamentos
-          </label>
-          <button type="button" className="btn btn-primary pm-move-filters__submit" onClick={() => applyFilters()}>
-            Atualizar
-          </button>
-        </div>
-        <p className="pm-move-filters__foot">
-          Alertas: saldo após o movimento abaixo do mínimo da variação ou acima do teto. Por padrão não listamos SKUs sem
-          lançamentos no período (marque <strong>Variantes sem lançamentos</strong> quando o intervalo cobre vários produtos).
-        </p>
-      </div>
-
       <div className="print-doc">
         <StandardReportHeader documentTitle="Movimentação de produtos" documentExtras={headerSubtitle} />
-
-        {!enabled && (
-          <p className="print-empty no-print">
-            Informe período válido {hasLegacyVariant ? '' : 'e intervalo de código '}
-            nos filtros e clique em <strong>Atualizar relatório</strong>.
-          </p>
-        )}
 
         {enabled && report.isLoading && <p>Carregando…</p>}
         {enabled && report.isError && (

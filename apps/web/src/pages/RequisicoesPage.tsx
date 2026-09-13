@@ -5,12 +5,25 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { CrudToolbar } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { ProductSearchModal, type ProductSearchRow } from '../components/ProductSearchModal';
 import { RecordViewModal, type RecordViewSection } from '../components/RecordViewModal';
 import { api } from '../lib/api';
+import {
+  FilterControlRangeFields,
+  FilterGroupField,
+  FilterModalActions,
+  FilterPeriodRangeFields,
+} from '../components/ListFilterFields';
+import { ListFilterCustomerField } from '../components/ListFilterCustomerField';
+import {
+  controlRangeActive,
+  matchesControlValue,
+} from '../lib/list-filters';
+import { matchesListSearch } from '../lib/list-search';
 
 type RequisitionRow = {
   id: string;
@@ -153,9 +166,32 @@ export function RequisicoesPage() {
   const [editNotes, setEditNotes] = useState('');
   const [editDueDates, setEditDueDates] = useState<Record<string, string>>({});
   const [editErr, setEditErr] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'COMPLETED' | 'CANCELLED'>('ALL');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  type ReqFilters = {
+    status: 'ALL' | 'COMPLETED' | 'CANCELLED';
+    from: string;
+    to: string;
+    controlMin: string;
+    controlMax: string;
+    customerId: string;
+    customerLabel: string;
+    group: string;
+  };
+  const DEFAULT_REQ_FILTERS: ReqFilters = {
+    status: 'ALL',
+    from: '',
+    to: '',
+    controlMin: '',
+    controlMax: '',
+    customerId: '',
+    customerLabel: '',
+    group: '',
+  };
+  const [appliedFilters, setAppliedFilters] = useState<ReqFilters>(DEFAULT_REQ_FILTERS);
+  const [draftFilters, setDraftFilters] = useState<ReqFilters>(DEFAULT_REQ_FILTERS);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [draftSearch, setDraftSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
 
   const [customer, setCustomer] = useState<CustomerRow | null>(null);
   const [customerSearch, setCustomerSearch] = useState('');
@@ -169,16 +205,58 @@ export function RequisicoesPage() {
   const [err, setErr] = useState<string | null>(null);
 
   const list = useQuery({
-    queryKey: ['requisitions', statusFilter, from, to],
+    queryKey: ['requisitions', appliedFilters.status, appliedFilters.from, appliedFilters.to],
     queryFn: () => {
       const params = new URLSearchParams();
-      if (statusFilter !== 'ALL') params.set('status', statusFilter);
-      if (from) params.set('from', from);
-      if (to) params.set('to', to);
+      if (appliedFilters.status !== 'ALL') params.set('status', appliedFilters.status);
+      if (appliedFilters.from) params.set('from', appliedFilters.from);
+      if (appliedFilters.to) params.set('to', appliedFilters.to);
       const qs = params.toString();
       return api<RequisitionRow[]>(`/requisitions${qs ? `?${qs}` : ''}`);
     },
   });
+
+  const customersForGroup = useQuery({
+    queryKey: ['customers'],
+    queryFn: () =>
+      api<Array<{ id: string; name: string; segment: string | null }>>('/customers'),
+    enabled: appliedFilters.group.trim() !== '',
+    staleTime: 120_000,
+  });
+
+  const displayedRows = useMemo(() => {
+    let items = list.data ?? [];
+    const q = appliedSearch.trim();
+    if (q) {
+      items = items.filter((r) =>
+        matchesListSearch([String(r.number), r.customer?.name], q),
+      );
+    }
+    const f = appliedFilters;
+    if (f.customerId) {
+      items = items.filter((r) => r.customer?.id === f.customerId);
+    }
+    if (f.group.trim()) {
+      const ids = new Set(
+        (customersForGroup.data ?? [])
+          .filter((c) => matchesListSearch([c.segment], f.group))
+          .map((c) => c.id),
+      );
+      items = items.filter((r) => r.customer?.id && ids.has(r.customer.id));
+    }
+    if (controlRangeActive({ controlMin: f.controlMin, controlMax: f.controlMax })) {
+      items = items.filter((r) => matchesControlValue(r.number, f.controlMin, f.controlMax));
+    }
+    return items;
+  }, [list.data, appliedSearch, appliedFilters, customersForGroup.data]);
+
+  const filtersActive =
+    appliedFilters.status !== DEFAULT_REQ_FILTERS.status ||
+    appliedFilters.from !== '' ||
+    appliedFilters.to !== '' ||
+    appliedFilters.customerId !== '' ||
+    appliedFilters.group.trim() !== '' ||
+    controlRangeActive({ controlMin: appliedFilters.controlMin, controlMax: appliedFilters.controlMax });
 
   const detail = useQuery({
     queryKey: ['requisitions', 'detail', viewingId],
@@ -229,7 +307,7 @@ export function RequisicoesPage() {
   });
 
   const totals = useMemo(() => {
-    const rows = list.data ?? [];
+    const rows = displayedRows;
     return {
       count: rows.length,
       total: rows
@@ -237,7 +315,7 @@ export function RequisicoesPage() {
         .reduce((sum, r) => sum + r.total, 0),
       remaining: rows.reduce((sum, r) => sum + r.titles.remaining, 0),
     };
-  }, [list.data]);
+  }, [displayedRows]);
 
   const draftTotal = useMemo(
     () => lines.reduce((sum, l) => sum + parseNum(l.quantity) * parseNum(l.unitPrice), 0),
@@ -458,6 +536,19 @@ export function RequisicoesPage() {
       </p>
 
       <CrudToolbar
+        leadingPrimary={
+          <CrudSearchFilterLeading
+            onSearch={() => {
+              setDraftSearch(appliedSearch);
+              setSearchOpen(true);
+            }}
+            onFilters={() => {
+              setDraftFilters({ ...appliedFilters });
+              setFiltersOpen(true);
+            }}
+            filtersActive={filtersActive}
+          />
+        }
         onInclude={() => {
           resetForm();
           setIncludeOpen(true);
@@ -465,6 +556,129 @@ export function RequisicoesPage() {
         onPrint={() => window.print()}
         onReports={() => setReportsOpen(true)}
       />
+
+      {searchOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setSearchOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h2>Pesquisar requisições</h2>
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
+              Número da requisição ou nome do cliente na listagem carregada.
+            </p>
+            <div className="field">
+              <label htmlFor="req-search-q">Termo</label>
+              <input
+                id="req-search-q"
+                type="search"
+                autoFocus
+                value={draftSearch}
+                onChange={(e) => setDraftSearch(e.target.value)}
+                placeholder="Ex.: 42, Maria…"
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setDraftSearch('');
+                  setAppliedSearch('');
+                  setSearchOpen(false);
+                }}
+              >
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setSearchOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setAppliedSearch(draftSearch.trim());
+                  setSearchOpen(false);
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {filtersOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setFiltersOpen(false)}>
+          <div
+            className="modal modal--filters-compact"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>Filtros da listagem</h2>
+            <FilterControlRangeFields
+              idPrefix="req"
+              controlMin={draftFilters.controlMin}
+              controlMax={draftFilters.controlMax}
+              onControlMinChange={(v) => setDraftFilters((f) => ({ ...f, controlMin: v }))}
+              onControlMaxChange={(v) => setDraftFilters((f) => ({ ...f, controlMax: v }))}
+            />
+            <ListFilterCustomerField
+              idPrefix="req"
+              customerId={draftFilters.customerId}
+              customerLabel={draftFilters.customerLabel}
+              onSelect={(c) =>
+                setDraftFilters((f) => ({
+                  ...f,
+                  customerId: c.id,
+                  customerLabel: c.name,
+                }))
+              }
+              onClear={() =>
+                setDraftFilters((f) => ({ ...f, customerId: '', customerLabel: '' }))
+              }
+            />
+            <FilterGroupField
+              id="req-filter-group"
+              value={draftFilters.group}
+              onChange={(v) => setDraftFilters((f) => ({ ...f, group: v }))}
+            />
+            <div className="field filter-modal-row">
+              <label htmlFor="req-filter-status">Situação</label>
+              <select
+                id="req-filter-status"
+                value={draftFilters.status}
+                onChange={(e) =>
+                  setDraftFilters((f) => ({
+                    ...f,
+                    status: e.target.value as ReqFilters['status'],
+                  }))
+                }
+              >
+                <option value="ALL">Todas</option>
+                <option value="COMPLETED">Efetivadas</option>
+                <option value="CANCELLED">Canceladas</option>
+              </select>
+            </div>
+            <FilterPeriodRangeFields
+              idPrefix="req"
+              from={draftFilters.from}
+              to={draftFilters.to}
+              onFromChange={(v) => setDraftFilters((f) => ({ ...f, from: v }))}
+              onToChange={(v) => setDraftFilters((f) => ({ ...f, to: v }))}
+            />
+            <FilterModalActions
+              onClear={() => {
+                setDraftFilters(DEFAULT_REQ_FILTERS);
+                setAppliedFilters(DEFAULT_REQ_FILTERS);
+                setFiltersOpen(false);
+              }}
+              onCancel={() => setFiltersOpen(false)}
+              onApply={() => {
+                setAppliedFilters({ ...draftFilters });
+                setFiltersOpen(false);
+              }}
+            />
+          </div>
+        </FormModalBackdrop>
+      )}
 
       <ModuleReportsModal open={reportsOpen} title="Requisições" onClose={() => setReportsOpen(false)}>
         <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
@@ -474,28 +688,6 @@ export function RequisicoesPage() {
       </ModuleReportsModal>
 
       <div className="card">
-        <div className="form-row">
-          <div className="field">
-            <label>Situação</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as 'ALL' | 'COMPLETED' | 'CANCELLED')}
-            >
-              <option value="ALL">Todas</option>
-              <option value="COMPLETED">Efetivadas</option>
-              <option value="CANCELLED">Canceladas</option>
-            </select>
-          </div>
-          <div className="field">
-            <label>De</label>
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </div>
-          <div className="field">
-            <label>Até</label>
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-          </div>
-        </div>
-
         <p className="page-desc">
           {totals.count} requisição(ões) · Total {money(totals.total)} · Em aberto{' '}
           <strong>{money(totals.remaining)}</strong>
@@ -528,14 +720,16 @@ export function RequisicoesPage() {
                   </td>
                 </tr>
               )}
-              {!list.isLoading && !(list.data ?? []).length && (
+              {!list.isLoading && !displayedRows.length && (
                 <tr>
                   <td colSpan={11} className="empty">
-                    Nenhuma requisição no período. Use Incluir para lançar fora do PDV.
+                    {(list.data ?? []).length
+                      ? 'Nenhuma requisição com os filtros atuais.'
+                      : 'Nenhuma requisição no período. Use Incluir para lançar fora do PDV.'}
                   </td>
                 </tr>
               )}
-              {(list.data ?? []).map((r) => (
+              {displayedRows.map((r) => (
                 <tr key={r.id}>
                   <td>#{r.number}</td>
                   <td style={{ whiteSpace: 'nowrap', fontSize: '0.85rem' }}>

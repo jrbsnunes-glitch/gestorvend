@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AddressFormBlock, EMPTY_ADDRESS, type AddressFormFields } from '../components/AddressFormBlock';
+import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination } from '../components/ListPagination';
@@ -12,6 +13,13 @@ import { api } from '../lib/api';
 import { formatCep, formatCnpj, formatCpfCnpj } from '../lib/format';
 import { lookupCnpj } from '../lib/lookups';
 import { useListPagination } from '../hooks/useListPagination';
+import {
+  FilterControlRangeFields,
+  FilterGroupField,
+  FilterModalActions,
+} from '../components/ListFilterFields';
+import { applyControlRangeSlice, controlRangeActive } from '../lib/list-filters';
+import { matchesListSearch } from '../lib/list-search';
 
 type Supplier = {
   id: string;
@@ -50,13 +58,59 @@ export function SuppliersPage() {
   const [segment, setSegment] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [cnpjBusy, setCnpjBusy] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draftSearch, setDraftSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [draftFilterCity, setDraftFilterCity] = useState('');
+  const [draftFilterState, setDraftFilterState] = useState('');
+  const [draftFilterGroup, setDraftFilterGroup] = useState('');
+  const [draftControlMin, setDraftControlMin] = useState('');
+  const [draftControlMax, setDraftControlMax] = useState('');
+  const [appliedFilterCity, setAppliedFilterCity] = useState('');
+  const [appliedFilterState, setAppliedFilterState] = useState('');
+  const [appliedFilterGroup, setAppliedFilterGroup] = useState('');
+  const [appliedControlMin, setAppliedControlMin] = useState('');
+  const [appliedControlMax, setAppliedControlMax] = useState('');
 
   const list = useQuery({
     queryKey: ['suppliers'],
     queryFn: () => api<Supplier[]>('/suppliers'),
   });
 
-  const pagination = useListPagination(list.data ?? []);
+  const filteredList = useMemo(() => {
+    let items = list.data ?? [];
+    const q = appliedSearch.trim();
+    if (q) {
+      items = items.filter((s) =>
+        matchesListSearch([s.legalName, s.tradeName, s.document, s.email, s.city], q),
+      );
+    }
+    const city = appliedFilterCity.trim();
+    const state = appliedFilterState.trim();
+    if (city) items = items.filter((s) => matchesListSearch([s.city], city));
+    if (state) items = items.filter((s) => matchesListSearch([s.state], state));
+    const group = appliedFilterGroup.trim();
+    if (group) items = items.filter((s) => matchesListSearch([s.segment], group));
+    return applyControlRangeSlice(items, appliedControlMin, appliedControlMax);
+  }, [
+    list.data,
+    appliedSearch,
+    appliedFilterCity,
+    appliedFilterState,
+    appliedFilterGroup,
+    appliedControlMin,
+    appliedControlMax,
+  ]);
+
+  const filtersActive =
+    appliedFilterCity.trim() !== '' ||
+    appliedFilterState.trim() !== '' ||
+    appliedFilterGroup.trim() !== '' ||
+    controlRangeActive({ controlMin: appliedControlMin, controlMax: appliedControlMax });
+  const searchActive = appliedSearch.trim() !== '';
+
+  const pagination = useListPagination(filteredList);
 
   const selected = list.data?.find((s) => s.id === viewId) ?? null;
   const selectedRow = list.data?.find((s) => s.id === selectedId) ?? null;
@@ -292,6 +346,23 @@ export function SuppliersPage() {
       />
 
       <CrudToolbar
+        leadingPrimary={
+          <CrudSearchFilterLeading
+            onSearch={() => {
+              setDraftSearch(appliedSearch);
+              setSearchOpen(true);
+            }}
+            onFilters={() => {
+              setDraftFilterCity(appliedFilterCity);
+              setDraftFilterState(appliedFilterState);
+              setDraftFilterGroup(appliedFilterGroup);
+              setDraftControlMin(appliedControlMin);
+              setDraftControlMax(appliedControlMax);
+              setFiltersOpen(true);
+            }}
+            filtersActive={filtersActive}
+          />
+        }
         onInclude={() => {
           resetForm();
           setCreateOpen(true);
@@ -299,6 +370,119 @@ export function SuppliersPage() {
         onPrint={() => window.print()}
         onReports={() => setReportsOpen(true)}
       />
+
+      {searchOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setSearchOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h2>Pesquisar fornecedores</h2>
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
+              Razão social, fantasia, documento, e-mail ou cidade.
+            </p>
+            <div className="field">
+              <label htmlFor="sup-search-q">Termo</label>
+              <input
+                id="sup-search-q"
+                type="search"
+                autoFocus
+                value={draftSearch}
+                onChange={(e) => setDraftSearch(e.target.value)}
+                placeholder="Ex.: Materiais, CNPJ…"
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setDraftSearch('');
+                  setAppliedSearch('');
+                  setSearchOpen(false);
+                }}
+              >
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setSearchOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setAppliedSearch(draftSearch.trim());
+                  setSearchOpen(false);
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {filtersOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setFiltersOpen(false)}>
+          <div
+            className="modal modal--filters-compact"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>Filtros da listagem</h2>
+            <FilterControlRangeFields
+              idPrefix="sup"
+              controlMin={draftControlMin}
+              controlMax={draftControlMax}
+              onControlMinChange={setDraftControlMin}
+              onControlMaxChange={setDraftControlMax}
+            />
+            <FilterGroupField id="sup-filter-group" value={draftFilterGroup} onChange={setDraftFilterGroup} />
+            <div className="form-row form-row--2 filter-modal-row">
+              <div className="field">
+                <label htmlFor="sup-filter-city">Cidade</label>
+                <input
+                  id="sup-filter-city"
+                  value={draftFilterCity}
+                  onChange={(e) => setDraftFilterCity(e.target.value)}
+                  placeholder="Opc."
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="sup-filter-state">UF</label>
+                <input
+                  id="sup-filter-state"
+                  value={draftFilterState}
+                  onChange={(e) => setDraftFilterState(e.target.value)}
+                  placeholder="Opc."
+                  maxLength={2}
+                />
+              </div>
+            </div>
+            <FilterModalActions
+              onClear={() => {
+                setDraftFilterCity('');
+                setDraftFilterState('');
+                setDraftFilterGroup('');
+                setDraftControlMin('');
+                setDraftControlMax('');
+                setAppliedFilterCity('');
+                setAppliedFilterState('');
+                setAppliedFilterGroup('');
+                setAppliedControlMin('');
+                setAppliedControlMax('');
+                setFiltersOpen(false);
+              }}
+              onCancel={() => setFiltersOpen(false)}
+              onApply={() => {
+                setAppliedFilterCity(draftFilterCity.trim());
+                setAppliedFilterState(draftFilterState.trim());
+                setAppliedFilterGroup(draftFilterGroup.trim());
+                setAppliedControlMin(draftControlMin.trim());
+                setAppliedControlMax(draftControlMax.trim());
+                setFiltersOpen(false);
+              }}
+            />
+          </div>
+        </FormModalBackdrop>
+      )}
 
       <ModuleReportsModal open={reportsOpen} title="Fornecedores" onClose={() => setReportsOpen(false)}>
         <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
@@ -310,8 +494,25 @@ export function SuppliersPage() {
       <div className="toolbar no-print">
         <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
           {list.data?.length ?? 0} registro(s)
+          {(searchActive || filtersActive) ? ` · filtrado: ${pagination.totalItems}` : ''}
           {selectedId ? ' · clique na linha para selecionar ou desmarcar' : ' · clique em uma linha para selecionar'}
         </span>
+        {(searchActive || filtersActive) && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-compact"
+            onClick={() => {
+              setAppliedSearch('');
+              setAppliedFilterCity('');
+              setAppliedFilterState('');
+              setAppliedFilterGroup('');
+              setAppliedControlMin('');
+              setAppliedControlMax('');
+            }}
+          >
+            Limpar filtros
+          </button>
+        )}
       </div>
 
       {list.isError && <div className="alert alert-error">{(list.error as Error).message}</div>}
@@ -339,10 +540,10 @@ export function SuppliersPage() {
                 </td>
               </tr>
             )}
-            {!list.isLoading && !list.data?.length && (
+            {!list.isLoading && !filteredList.length && (
               <tr>
                 <td colSpan={7} className="empty">
-                  Nenhum fornecedor.
+                  {list.data?.length ? 'Nenhum fornecedor com os filtros atuais.' : 'Nenhum fornecedor.'}
                 </td>
               </tr>
             )}

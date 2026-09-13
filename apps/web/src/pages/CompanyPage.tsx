@@ -7,6 +7,19 @@ import { resolveCompanyAssetUrl } from '../lib/company-branding';
 import { useMenuAccess } from '../hooks/useMenuAccess';
 import { digitsOnly, formatCep, formatCnpj } from '../lib/format';
 import { lookupCep } from '../lib/lookups';
+import '../components/crud-toolbar.css';
+
+type CompanyTab = 'dados' | 'pdv' | 'caixa' | 'os' | 'restaurante' | 'visual' | 'nfce';
+
+const COMPANY_TABS: Array<{ id: CompanyTab; label: string }> = [
+  { id: 'dados', label: 'Dados cadastrais' },
+  { id: 'pdv', label: 'PDV' },
+  { id: 'caixa', label: 'Caixa' },
+  { id: 'os', label: 'Ordem de serviços' },
+  { id: 'restaurante', label: 'Restaurante' },
+  { id: 'visual', label: 'Identidade visual' },
+  { id: 'nfce', label: 'Emissor NFC-e' },
+];
 
 type Company = {
   id: string;
@@ -578,6 +591,7 @@ export function CompanyPage() {
   const [feedback, setFeedback] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
   const [logoPreviewKey, setLogoPreviewKey] = useState(0);
   const [cepBusy, setCepBusy] = useState(false);
+  const [tab, setTab] = useState<CompanyTab>('dados');
   const logoFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -692,6 +706,20 @@ export function CompanyPage() {
 
       {company.data && (
         <form onSubmit={onSubmit} className="company-form">
+          <nav className="stock-subnav no-print" aria-label="Seções da empresa">
+            {COMPANY_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={tab === t.id ? 'active' : ''}
+                onClick={() => setTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
+
+          {tab === 'dados' && (
           <section className="card">
             <h2 className="company-form__h">Dados cadastrais</h2>
             <div className="form-row form-row--2">
@@ -835,7 +863,9 @@ export function CompanyPage() {
               </div>
             </div>
           </section>
+          )}
 
+          {tab === 'pdv' && (
           <section className="card">
             <h2 className="company-form__h">PDV</h2>
             <p className="company-form__hint">
@@ -919,7 +949,9 @@ export function CompanyPage() {
               </div>
             </div>
           </section>
+          )}
 
+          {tab === 'caixa' && (
           <section className="card">
             <h2 className="company-form__h">Caixa</h2>
             <p className="company-form__hint">
@@ -960,7 +992,9 @@ export function CompanyPage() {
               </label>
             </div>
           </section>
+          )}
 
+          {tab === 'os' && (
           <section className="card">
             <h2 className="company-form__h">Ordem de Serviços</h2>
             <p className="company-form__hint">
@@ -1037,7 +1071,9 @@ export function CompanyPage() {
               </>
             ) : null}
           </section>
+          )}
 
+          {tab === 'restaurante' && (
           <section className="card">
             <h2 className="company-form__h">Restaurante</h2>
             <p className="company-form__hint">
@@ -1272,7 +1308,9 @@ export function CompanyPage() {
               </>
             ) : null}
           </section>
+          )}
 
+          {tab === 'visual' && (
           <section className="card">
             <h2 className="company-form__h">Identidade visual</h2>
             <div className="company-form__logo-row">
@@ -1324,11 +1362,14 @@ export function CompanyPage() {
               PDV e impressões na hora. URL pública é alternativa se a imagem já estiver hospedada.
             </p>
           </section>
+          )}
 
+          {tab === 'nfce' && (
           <section className="card">
             <h2 className="company-form__h">Emissor NFC-e (servidor)</h2>
             <IssuerEmissorCard />
           </section>
+          )}
 
           {feedback && (
             <div className={feedback.kind === 'ok' ? 'alert alert-success' : 'alert alert-error'}>

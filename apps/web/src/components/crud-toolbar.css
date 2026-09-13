@@ -1,3 +1,77 @@
+/* Modais de filtro — compactos (Produtos, Clientes, etc.) */
+.modal.modal--filters-compact {
+  max-width: 400px;
+  padding: 1rem 1.1rem;
+}
+
+.modal.modal--filters-compact > h2 {
+  margin: 0 0 0.55rem;
+  font-size: 1.05rem;
+}
+
+.modal.modal--filters-compact .field {
+  margin-bottom: 0.5rem;
+}
+
+.modal.modal--filters-compact .filter-modal-row {
+  margin-bottom: 0.45rem;
+}
+
+.modal.modal--filters-compact .form-row.filter-modal-row {
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
+
+.modal.modal--filters-compact .modal-actions {
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+}
+
+.filter-customer-picked {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.filter-customer-hits {
+  margin-top: 0.35rem;
+  max-height: 8.5rem;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.filter-customer-hits__btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.55rem;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.filter-customer-hits__btn:hover {
+  background: var(--color-surface-muted, #f1f5f9);
+}
+
+.filter-customer-hits__btn:last-child {
+  border-bottom: 0;
+}
+
+.filter-customer-hits__empty {
+  margin: 0;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
 .crud-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -24,6 +98,32 @@
   align-items: center;
   gap: 0.5rem;
   min-width: 0;
+}
+
+.crud-view-toggle {
+  display: inline-flex;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+}
+
+.crud-view-toggle__btn {
+  border: none;
+  padding: 0.45rem 0.75rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.crud-view-toggle__btn + .crud-view-toggle__btn {
+  border-left: 1px solid var(--color-border-strong);
+}
+
+.crud-view-toggle__btn.is-active {
+  background: var(--color-primary);
+  color: #fff;
 }
 
 .crud-toolbar-placeholder {

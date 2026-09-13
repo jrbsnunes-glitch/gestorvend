@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { BillPaymentsButton } from '../components/BillSettlementsModal';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
@@ -8,10 +8,12 @@ import { api } from '../lib/api';
 import { companyDisplayName, useCompanyBranding } from '../lib/company-branding';
 import { isManager } from '../lib/auth';
 import { formatBRL, formatDate } from '../lib/format';
+import { buildProductTurnoverLastDaysPath } from '../lib/product-report-format';
 
 const DASH_PREVIEW_LIMIT = 5;
+const DASH_TOP_PRODUCTS_LIMIT = 3;
 
-type DashPanelKey = 'topProducts' | 'lowStock' | 'payables' | 'receivables';
+type DashPanelKey = 'lowStock' | 'payables' | 'receivables';
 
 type Overview = {
   revenue: {
@@ -134,32 +136,24 @@ function DashSeeMoreButton({ total, onClick }: { total: number; onClick: () => v
   );
 }
 
-function TopProductsTable({
-  items,
-  compact,
-}: {
-  items: Overview['topProducts'];
-  compact?: boolean;
-}) {
+function TopProductsHeroTable({ items }: { items: Overview['topProducts'] }) {
+  const top3 = items.slice(0, DASH_TOP_PRODUCTS_LIMIT);
   return (
-    <table className={`data-table${compact ? ' dash-block-table' : ''}`}>
+    <table className="dash-top-hero-table">
       <thead>
         <tr>
-          <th className="num" style={{ width: '3rem' }}>
-            #
-          </th>
+          <th className="num">#</th>
           <th>Produto</th>
-          <th style={{ textAlign: 'right' }}>Qtd</th>
-          <th style={{ textAlign: 'right' }}>Valor</th>
+          <th className="num">Qtd</th>
+          <th className="num">Valor</th>
         </tr>
       </thead>
       <tbody>
-        {items.map((p, idx) => (
+        {top3.map((p, idx) => (
           <tr key={p.variantId}>
             <td className="num">{idx + 1}</td>
             <td>
-              <strong>{p.productName}</strong>
-              <div className="dash-cell-sub">SKU {p.sku}</div>
+              <span className="dash-top-hero-name">{p.productName}</span>
             </td>
             <td className="num">{p.quantity.toLocaleString('pt-BR')}</td>
             <td className="num">{formatBRL(p.total)}</td>
@@ -268,16 +262,17 @@ function ReceivablesList({ items }: { items: Overview['receivablesSoon'] }) {
 }
 
 const PANEL_MODAL_TITLES: Record<DashPanelKey, string> = {
-  topProducts: 'Top produtos (últimos 30 dias)',
   lowStock: 'Estoque crítico',
-  payables: 'A pagar (vencidos e até 7 dias)',
-  receivables: 'A receber (vencidos e até 7 dias)',
+  payables: 'Contas a pagar (vencidos e até 7 dias)',
+  receivables: 'Contas a receber (vencidos e até 7 dias)',
 };
 
 export function DashboardPage() {
+  const navigate = useNavigate();
   const company = useCompanyBranding();
   const showMonthRevenue = isManager();
   const [expandedPanel, setExpandedPanel] = useState<DashPanelKey | null>(null);
+  const turnoverReportPath = buildProductTurnoverLastDaysPath(30, '/');
   const overview = useQuery({
     queryKey: ['dashboard', 'overview'],
     queryFn: () => api<Overview>('/dashboard/overview'),
@@ -294,12 +289,15 @@ export function DashboardPage() {
   const lowStock = data?.lowStock ?? [];
   const payablesSoon = data?.payablesSoon ?? [];
   const receivablesSoon = data?.receivablesSoon ?? [];
+  const openSessions = data?.openSessions ?? [];
+
+  function openTurnoverReport() {
+    navigate(turnoverReportPath);
+  }
 
   function renderExpandedPanel() {
     if (!expandedPanel || !data) return null;
     switch (expandedPanel) {
-      case 'topProducts':
-        return <TopProductsTable items={topProducts} />;
       case 'lowStock':
         return <LowStockTable items={lowStock} />;
       case 'payables':
@@ -373,66 +371,47 @@ export function DashboardPage() {
             ) : null}
           </article>
         )}
-        <article className="dash-hero-card dash-hero-sessions">
-          <span className="dash-hero-label">Caixas abertos</span>
-          <strong className="dash-hero-value">{data?.openSessions.length ?? 0}</strong>
-          <span className="dash-hero-foot">
-            {data?.openSessions.length
-              ? data.openSessions
-                  .slice(0, 2)
-                  .map((s) => `${s.operator} (#${s.controlNumber})`)
-                  .join(' · ')
-              : 'Nenhum operador em caixa no momento.'}
-          </span>
+        <article
+          className="dash-hero-card dash-hero-topproducts"
+          role="button"
+          tabIndex={0}
+          title="Abrir relatório de giro dos últimos 30 dias"
+          onClick={openTurnoverReport}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              openTurnoverReport();
+            }
+          }}
+        >
+          <span className="dash-hero-label">Top produtos (últimos 30 dias)</span>
+          {overview.isLoading ? (
+            <span className="dash-hero-foot">Carregando…</span>
+          ) : !topProducts.length ? (
+            <span className="dash-hero-foot">Ainda sem vendas no período.</span>
+          ) : (
+            <>
+              <TopProductsHeroTable items={topProducts} />
+              <span className="dash-hero-split dash-hero-topproducts-hint">
+                {topProducts.length < DASH_TOP_PRODUCTS_LIMIT
+                  ? `${topProducts.length} produto(s) com venda no período · `
+                  : null}
+                Clique para gerar o relatório de giro →
+              </span>
+            </>
+          )}
         </article>
       </section>
 
-      <section className="dash-grid">
-        <article className="card dash-block">
+      <section className="dash-grid dash-grid--row2">
+        <article className="card dash-block dash-block--payables">
           <header className="dash-block-head">
-            <h2>Top produtos (últimos 30 dias)</h2>
-            <Link to="/produtos" className="dash-block-link">
-              Ver produtos →
-            </Link>
-          </header>
-          {overview.isLoading && <p className="dash-empty">Carregando…</p>}
-          {!overview.isLoading && !topProducts.length && (
-            <p className="dash-empty">Ainda sem vendas no período.</p>
-          )}
-          {topProducts.length ? (
-            <>
-              <TopProductsTable items={previewItems(topProducts)} compact />
-              <DashSeeMoreButton total={topProducts.length} onClick={() => setExpandedPanel('topProducts')} />
-            </>
-          ) : null}
-        </article>
-
-        <article className="card dash-block">
-          <header className="dash-block-head">
-            <h2>Estoque crítico</h2>
-            <Link to="/estoque/painel" className="dash-block-link">
-              Ver estoque →
-            </Link>
-          </header>
-          {overview.isLoading && <p className="dash-empty">Carregando…</p>}
-          {!overview.isLoading && !lowStock.length && (
-            <p className="dash-empty">Nenhum produto abaixo do estoque mínimo.</p>
-          )}
-          {lowStock.length ? (
-            <>
-              <LowStockTable items={previewItems(lowStock)} compact />
-              <DashSeeMoreButton total={lowStock.length} onClick={() => setExpandedPanel('lowStock')} />
-            </>
-          ) : null}
-        </article>
-
-        <article className="card dash-block">
-          <header className="dash-block-head">
-            <h2>A pagar (vencidos e até 7 dias)</h2>
-            <Link to="/financeiro" className="dash-block-link">
+            <h2>Contas a pagar</h2>
+            <Link to="/financeiro?tab=pagar" className="dash-block-link">
               Financeiro →
             </Link>
           </header>
+          <p className="dash-block-sub">Vencidos e até 7 dias</p>
           {overview.isLoading && <p className="dash-empty">Carregando…</p>}
           {!overview.isLoading && !payablesSoon.length && (
             <p className="dash-empty">Sem títulos vencidos ou a vencer nos próximos 7 dias.</p>
@@ -445,13 +424,14 @@ export function DashboardPage() {
           ) : null}
         </article>
 
-        <article className="card dash-block">
+        <article className="card dash-block dash-block--receivables">
           <header className="dash-block-head">
-            <h2>A receber (vencidos e até 7 dias)</h2>
-            <Link to="/financeiro" className="dash-block-link">
+            <h2>Contas a receber</h2>
+            <Link to="/financeiro?tab=receber" className="dash-block-link">
               Financeiro →
             </Link>
           </header>
+          <p className="dash-block-sub">Vencidos e até 7 dias</p>
           {overview.isLoading && <p className="dash-empty">Carregando…</p>}
           {!overview.isLoading && !receivablesSoon.length && (
             <p className="dash-empty">Sem títulos vencidos ou a receber nos próximos 7 dias.</p>
@@ -461,6 +441,43 @@ export function DashboardPage() {
               <ReceivablesList items={previewItems(receivablesSoon)} />
               <DashSeeMoreButton total={receivablesSoon.length} onClick={() => setExpandedPanel('receivables')} />
             </>
+          ) : null}
+        </article>
+
+        <article className="card dash-block dash-block--lowstock">
+          <header className="dash-block-head">
+            <h2>Estoque crítico</h2>
+            <Link to="/estoque/painel" className="dash-block-link">
+              Ver estoque →
+            </Link>
+          </header>
+          <p className="dash-block-sub">Saldo no ou abaixo do mínimo</p>
+          {overview.isLoading && <p className="dash-empty">Carregando…</p>}
+          {!overview.isLoading && !lowStock.length && (
+            <p className="dash-empty">Nenhum produto abaixo do estoque mínimo.</p>
+          )}
+          {lowStock.length ? (
+            <>
+              <LowStockTable items={previewItems(lowStock)} compact />
+              <DashSeeMoreButton total={lowStock.length} onClick={() => setExpandedPanel('lowStock')} />
+            </>
+          ) : null}
+        </article>
+      </section>
+
+      <section className="dash-row-sessions">
+        <article className="card dash-block dash-block--sessions">
+          <header className="dash-block-head">
+            <h2>Caixas abertos</h2>
+            <Link to="/caixa" className="dash-block-link">
+              Ver caixa →
+            </Link>
+          </header>
+          <p className="dash-sessions-count">
+            {overview.isLoading ? '…' : openSessions.length}
+          </p>
+          {!overview.isLoading && !openSessions.length ? (
+            <p className="dash-empty">Nenhum operador em caixa no momento.</p>
           ) : null}
         </article>
       </section>
@@ -475,7 +492,6 @@ export function DashboardPage() {
           >
             <h2 id="dash-panel-modal-title">{PANEL_MODAL_TITLES[expandedPanel]}</h2>
             <p className="dash-panel-modal-count">
-              {expandedPanel === 'topProducts' && `${topProducts.length} produto(s) no ranking`}
               {expandedPanel === 'lowStock' && `${lowStock.length} variação(ões) com estoque crítico`}
               {expandedPanel === 'payables' && `${payablesSoon.length} título(s) a pagar`}
               {expandedPanel === 'receivables' && `${receivablesSoon.length} título(s) a receber`}

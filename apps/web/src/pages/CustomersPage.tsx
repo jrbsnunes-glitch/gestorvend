@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AddressFormBlock, EMPTY_ADDRESS, type AddressFormFields } from '../components/AddressFormBlock';
+import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination } from '../components/ListPagination';
@@ -14,6 +15,13 @@ import { api } from '../lib/api';
 import { validateDocumentIfCpf } from '../lib/cpf';
 import { formatBRL, formatCep, formatCpfCnpj, formatDate } from '../lib/format';
 import { useListPagination } from '../hooks/useListPagination';
+import {
+  FilterControlRangeFields,
+  FilterGroupField,
+  FilterModalActions,
+} from '../components/ListFilterFields';
+import { applyControlRangeSlice, controlRangeActive } from '../lib/list-filters';
+import { matchesListSearch } from '../lib/list-search';
 
 type Customer = {
   id: string;
@@ -128,13 +136,59 @@ export function CustomersPage() {
   const [limitEditMode, setLimitEditMode] = useState<'ADD' | 'SET'>('ADD');
   const [limitEditValue, setLimitEditValue] = useState('');
   const [limitEditErr, setLimitEditErr] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draftSearch, setDraftSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [draftFilterCity, setDraftFilterCity] = useState('');
+  const [draftFilterState, setDraftFilterState] = useState('');
+  const [draftFilterGroup, setDraftFilterGroup] = useState('');
+  const [draftControlMin, setDraftControlMin] = useState('');
+  const [draftControlMax, setDraftControlMax] = useState('');
+  const [appliedFilterCity, setAppliedFilterCity] = useState('');
+  const [appliedFilterState, setAppliedFilterState] = useState('');
+  const [appliedFilterGroup, setAppliedFilterGroup] = useState('');
+  const [appliedControlMin, setAppliedControlMin] = useState('');
+  const [appliedControlMax, setAppliedControlMax] = useState('');
 
   const list = useQuery({
     queryKey: ['customers'],
     queryFn: () => api<Customer[]>('/customers'),
   });
 
-  const pagination = useListPagination(list.data ?? []);
+  const filteredList = useMemo(() => {
+    let items = list.data ?? [];
+    const q = appliedSearch.trim();
+    if (q) {
+      items = items.filter((c) =>
+        matchesListSearch([c.name, c.document, c.email, c.phone, c.city], q),
+      );
+    }
+    const city = appliedFilterCity.trim();
+    const state = appliedFilterState.trim();
+    const group = appliedFilterGroup.trim();
+    if (city) items = items.filter((c) => matchesListSearch([c.city], city));
+    if (state) items = items.filter((c) => matchesListSearch([c.state], state));
+    if (group) items = items.filter((c) => matchesListSearch([c.segment], group));
+    return applyControlRangeSlice(items, appliedControlMin, appliedControlMax);
+  }, [
+    list.data,
+    appliedSearch,
+    appliedFilterCity,
+    appliedFilterState,
+    appliedFilterGroup,
+    appliedControlMin,
+    appliedControlMax,
+  ]);
+
+  const filtersActive =
+    appliedFilterCity.trim() !== '' ||
+    appliedFilterState.trim() !== '' ||
+    appliedFilterGroup.trim() !== '' ||
+    controlRangeActive({ controlMin: appliedControlMin, controlMax: appliedControlMax });
+  const searchActive = appliedSearch.trim() !== '';
+
+  const pagination = useListPagination(filteredList);
 
   const selected = list.data?.find((c) => c.id === viewId) ?? null;
   const selectedRow = list.data?.find((c) => c.id === selectedId) ?? null;
@@ -502,6 +556,23 @@ export function CustomersPage() {
       />
 
       <CrudToolbar
+        leadingPrimary={
+          <CrudSearchFilterLeading
+            onSearch={() => {
+              setDraftSearch(appliedSearch);
+              setSearchOpen(true);
+            }}
+            onFilters={() => {
+              setDraftFilterCity(appliedFilterCity);
+              setDraftFilterState(appliedFilterState);
+              setDraftFilterGroup(appliedFilterGroup);
+              setDraftControlMin(appliedControlMin);
+              setDraftControlMax(appliedControlMax);
+              setFiltersOpen(true);
+            }}
+            filtersActive={filtersActive}
+          />
+        }
         onInclude={() => {
           resetForm();
           setEditCustomer(null);
@@ -510,6 +581,119 @@ export function CustomersPage() {
         onPrint={() => window.print()}
         onReports={() => setReportsOpen(true)}
       />
+
+      {searchOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setSearchOpen(false)}>
+          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h2>Pesquisar clientes</h2>
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
+              Nome, documento, e-mail, telefone ou cidade.
+            </p>
+            <div className="field">
+              <label htmlFor="cust-search-q">Termo</label>
+              <input
+                id="cust-search-q"
+                type="search"
+                autoFocus
+                value={draftSearch}
+                onChange={(e) => setDraftSearch(e.target.value)}
+                placeholder="Ex.: João, 11999, São Paulo…"
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setDraftSearch('');
+                  setAppliedSearch('');
+                  setSearchOpen(false);
+                }}
+              >
+                Limpar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setSearchOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setAppliedSearch(draftSearch.trim());
+                  setSearchOpen(false);
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
+      {filtersOpen && (
+        <FormModalBackdrop className="no-print" onClose={() => setFiltersOpen(false)}>
+          <div
+            className="modal modal--filters-compact"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>Filtros da listagem</h2>
+            <FilterControlRangeFields
+              idPrefix="cust"
+              controlMin={draftControlMin}
+              controlMax={draftControlMax}
+              onControlMinChange={setDraftControlMin}
+              onControlMaxChange={setDraftControlMax}
+            />
+            <FilterGroupField id="cust-filter-group" value={draftFilterGroup} onChange={setDraftFilterGroup} />
+            <div className="form-row form-row--2 filter-modal-row">
+              <div className="field">
+                <label htmlFor="cust-filter-city">Cidade</label>
+                <input
+                  id="cust-filter-city"
+                  value={draftFilterCity}
+                  onChange={(e) => setDraftFilterCity(e.target.value)}
+                  placeholder="Opc."
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="cust-filter-state">UF</label>
+                <input
+                  id="cust-filter-state"
+                  value={draftFilterState}
+                  onChange={(e) => setDraftFilterState(e.target.value)}
+                  placeholder="Opc."
+                  maxLength={2}
+                />
+              </div>
+            </div>
+            <FilterModalActions
+              onClear={() => {
+                setDraftFilterCity('');
+                setDraftFilterState('');
+                setDraftFilterGroup('');
+                setDraftControlMin('');
+                setDraftControlMax('');
+                setAppliedFilterCity('');
+                setAppliedFilterState('');
+                setAppliedFilterGroup('');
+                setAppliedControlMin('');
+                setAppliedControlMax('');
+                setFiltersOpen(false);
+              }}
+              onCancel={() => setFiltersOpen(false)}
+              onApply={() => {
+                setAppliedFilterCity(draftFilterCity.trim());
+                setAppliedFilterState(draftFilterState.trim());
+                setAppliedFilterGroup(draftFilterGroup.trim());
+                setAppliedControlMin(draftControlMin.trim());
+                setAppliedControlMax(draftControlMax.trim());
+                setFiltersOpen(false);
+              }}
+            />
+          </div>
+        </FormModalBackdrop>
+      )}
 
       <ModuleReportsModal
         open={reportsOpen}
@@ -524,8 +708,25 @@ export function CustomersPage() {
       <div className="toolbar no-print">
         <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
           {list.data?.length ?? 0} registro(s)
+          {(searchActive || filtersActive) ? ` · filtrado: ${pagination.totalItems}` : ''}
           {selectedId ? ' · clique na linha para selecionar ou desmarcar' : ' · clique em uma linha para selecionar'}
         </span>
+        {(searchActive || filtersActive) && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-compact"
+            onClick={() => {
+              setAppliedSearch('');
+              setAppliedFilterCity('');
+              setAppliedFilterState('');
+              setAppliedFilterGroup('');
+              setAppliedControlMin('');
+              setAppliedControlMax('');
+            }}
+          >
+            Limpar filtros
+          </button>
+        )}
       </div>
 
       {list.isError && <div className="alert alert-error">{(list.error as Error).message}</div>}
@@ -554,10 +755,12 @@ export function CustomersPage() {
                 </td>
               </tr>
             )}
-            {!list.isLoading && !list.data?.length && (
+            {!list.isLoading && !filteredList.length && (
               <tr>
                 <td colSpan={8} className="empty">
-                  Nenhum cliente cadastrado.
+                  {list.data?.length
+                    ? 'Nenhum cliente com os filtros atuais.'
+                    : 'Nenhum cliente cadastrado.'}
                 </td>
               </tr>
             )}
