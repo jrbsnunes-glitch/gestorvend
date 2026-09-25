@@ -49,10 +49,17 @@ function buildSalesTrendMonth(
   }
   for (const s of sales) {
     const key = dayKeyLocal(s.createdAt);
-    const bucket = byDay.get(key);
-    if (!bucket) continue;
+    let bucket = byDay.get(key);
+    if (!bucket) {
+      // Venda no mês (filtro do findMany) mas dia fora do eixo — ex. borda de fuso horário.
+      bucket = { revenue: 0, count: 0 };
+      byDay.set(key, bucket);
+    }
     bucket.revenue += Number(s.total ?? 0);
     bucket.count += 1;
+  }
+  if (byDay.size === 0) {
+    byDay.set(dayKeyLocal(through), { revenue: 0, count: 0 });
   }
   return [...byDay.entries()]
     .sort(([a], [b]) => a.localeCompare(b))

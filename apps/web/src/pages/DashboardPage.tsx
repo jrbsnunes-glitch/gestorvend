@@ -8,6 +8,7 @@ import { api } from '../lib/api';
 import { companyDisplayName, useCompanyBranding } from '../lib/company-branding';
 import { isManager } from '../lib/auth';
 import { formatBRL, formatDate } from '../lib/format';
+import { localTodayIso, resolveSalesTrendMonth } from '../lib/dashboard-sales-trend';
 import { buildProductTurnoverLastDaysPath } from '../lib/product-report-format';
 
 const DASH_PREVIEW_LIMIT = 5;
@@ -274,11 +275,6 @@ function monthLabelFromIso(iso: string): string {
   return new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 }
 
-function localTodayIso(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 function isWeekendIso(iso: string): boolean {
   const [y, m, day] = iso.split('-').map(Number);
   if (!y || !m || !day) return false;
@@ -289,9 +285,11 @@ function isWeekendIso(iso: string): boolean {
 function SalesMonthTrendChart({
   points,
   loading,
+  approximate,
 }: {
   points: Array<{ date: string; revenue: number; count: number }>;
   loading: boolean;
+  approximate?: boolean;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
@@ -359,6 +357,16 @@ function SalesMonthTrendChart({
     return <p className="dash-empty">Sem vendas no mês até o momento.</p>;
   }
 
+  const monthHasSales = chart.totalCount > 0 || chart.totalRevenue > 0;
+  if (!monthHasSales) {
+    return (
+      <p className="dash-empty">
+        Sem vendas concluídas no mês até o momento. O gráfico mostra os dias do mês; as barras
+        sobem conforme novas vendas forem registradas.
+      </p>
+    );
+  }
+
   const activeIdx = hoverIdx ?? chart.peakIdx;
   const active = points[activeIdx]!;
 
@@ -366,6 +374,12 @@ function SalesMonthTrendChart({
     <div className="dash-sales-chart">
       <p className="dash-sales-chart__subtitle">
         Faturamento diário (vendas concluídas) · <span>{chart.monthTitle}</span>
+        {approximate ? (
+          <span className="dash-sales-chart__approx" title="Atualize API e web na mesma versão para detalhamento diário">
+            {' '}
+            · totais do mês (detalhe diário indisponível nesta versão da API)
+          </span>
+        ) : null}
       </p>
 
       <div className="dash-sales-chart__kpis">
@@ -506,6 +520,16 @@ export function DashboardPage() {
   });
 
   const data = overview.data;
+
+  const salesTrendResolved = useMemo(
+    () =>
+      resolveSalesTrendMonth(
+        data?.salesTrendMonth,
+        data?.sales.month ?? 0,
+        data?.revenue.month ?? 0,
+      ),
+    [data?.salesTrendMonth, data?.sales.month, data?.revenue.month],
+  );
 
   const topProducts = data?.topProducts ?? [];
   const lowStock = data?.lowStock ?? [];
@@ -710,7 +734,8 @@ export function DashboardPage() {
             <h2>Evolução de vendas no mês</h2>
           </header>
           <SalesMonthTrendChart
-            points={data?.salesTrendMonth ?? []}
+            points={salesTrendResolved.points}
+            approximate={salesTrendResolved.approximate}
             loading={overview.isLoading}
           />
         </article>
