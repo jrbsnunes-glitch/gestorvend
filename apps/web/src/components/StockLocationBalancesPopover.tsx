@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { formatStockQty } from '../lib/format';
 
 export type StockLocationBalanceRow = {
@@ -46,7 +46,7 @@ export function StockLocationBalancesPopover({ locations, triggerLabel }: Props)
         ? 'Ver locais'
         : 'Sem locais');
 
-  function toggleOpen(e: MouseEvent<HTMLButtonElement>) {
+  function toggleOpen(e: ReactMouseEvent<HTMLButtonElement>) {
     e.stopPropagation();
     if (open) {
       setOpen(false);
@@ -64,7 +64,7 @@ export function StockLocationBalancesPopover({ locations, triggerLabel }: Props)
 
   useEffect(() => {
     if (!open) return;
-    const onDoc = (e: MouseEvent) => {
+    const onDoc = (e: globalThis.MouseEvent) => {
       if (rootRef.current?.contains(e.target as Node)) return;
       setOpen(false);
     };
