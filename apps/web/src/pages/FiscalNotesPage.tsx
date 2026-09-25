@@ -761,12 +761,12 @@ export function FiscalNotesPage() {
 
       {openId && (
         <FormModalBackdrop
-          className="modal-backdrop--wide"
+          className="modal-backdrop--cadastro modal-backdrop--wide"
           onClose={() => {
             setOpenId(null);
           }}
         >
-          <div className="modal modal--wide" role="dialog">
+          <div className="modal modal--wide form-cadastro-modal form-cadastro-modal--md" role="dialog">
             <h2>Cadastro da nota</h2>
             {detail.isLoading && <p>Carregando…</p>}
             {detail.isError && (
@@ -829,8 +829,8 @@ export function FiscalNotesPage() {
       )}
 
       {inutOpen && (
-        <FormModalBackdrop onClose={() => setInutOpen(false)}>
-          <div className="modal" role="dialog">
+        <FormModalBackdrop className="modal-backdrop--cadastro" onClose={() => setInutOpen(false)}>
+          <div className="modal form-cadastro-modal form-cadastro-modal--md" role="dialog">
             <h2>Inutilizar numeração ({tab === 'NFC_E' ? 'NFC-e' : 'NF-e'})</h2>
             <p className="page-desc">
               Envia inutilização à SEFAZ para faixa não usada. Requer `FISCAL_EMIT_TRANSPORT=soap` e

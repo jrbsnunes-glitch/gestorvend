@@ -29,6 +29,7 @@ import {
   normalizePackItemQty,
   validatePackItemQty,
   resolveConversionFactor,
+  resolveDisplayStockQuantity,
 } from '../common/product-conversion.util';
 import { ProductImageStorage } from './product-image.storage';
 
@@ -130,6 +131,21 @@ export class ProductsController {
   }
 
   /** Unidade SERV (Serviço) → produto sem baixa de estoque. */
+  private async assertManufacturedBom(
+    db: Awaited<ReturnType<TenantPrismaService['getClient']>>,
+    productId: string,
+  ) {
+    const p = await db.product.findUnique({
+      where: { id: productId },
+      include: { recipe: { include: { items: true } } },
+    });
+    if (p?.isManufacturedFinishedGood && !(p.recipe?.items?.length)) {
+      throw new BadRequestException(
+        'Produto acabado fabricável exige ficha técnica (BOM) com ao menos um insumo.',
+      );
+    }
+  }
+
   private isServiceTaxUnit(taxUnit: string): boolean {
     return taxUnit === 'SERV' || taxUnit === 'SERVICO' || taxUnit === 'SERVIÇO';
   }
@@ -253,6 +269,8 @@ export class ProductsController {
         tareKg: Prisma.Decimal | null;
         defaultBarcode?: string | null;
         stockComponentVariantId: string | null;
+        conversion: string | null;
+        packItemQty: Prisma.Decimal | null;
         isService?: boolean;
         hasImage?: boolean;
         imageVersion?: number;
@@ -261,35 +279,57 @@ export class ProductsController {
   ) {
     if (!variants.length) return [];
 
-    const defaultLoc = await db.stockLocation.findFirst({
-      where: { isDefault: true },
-      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
-      select: { id: true },
-    });
-
     const stockVariantIds = [
       ...new Set(
         variants.map((v) => v.product.stockComponentVariantId?.trim() || v.id),
       ),
     ];
 
-    const balances = await db.stockBalance.findMany({
-      where: {
-        variantId: { in: stockVariantIds },
-        ...(defaultLoc ? { locationId: defaultLoc.id } : {}),
-      },
-      select: { variantId: true, quantity: true },
-    });
+    const [locations, balances] = await Promise.all([
+      db.stockLocation.findMany({
+        orderBy: [{ isDefault: 'desc' }, { code: 'asc' }],
+        select: { id: true, code: true, name: true },
+      }),
+      db.stockBalance.findMany({
+        where: { variantId: { in: stockVariantIds } },
+        select: { variantId: true, locationId: true, quantity: true },
+      }),
+    ]);
 
-    const stockByVariant = new Map<string, Prisma.Decimal>();
+    const rawByVariantLoc = new Map<string, number>();
     for (const b of balances) {
-      const prev = stockByVariant.get(b.variantId) ?? new Prisma.Decimal(0);
-      stockByVariant.set(b.variantId, prev.add(b.quantity));
+      const key = `${b.variantId}:${b.locationId}`;
+      rawByVariantLoc.set(key, (rawByVariantLoc.get(key) ?? 0) + Number(b.quantity));
     }
 
     return variants.map((v) => {
       const stockVariantId = v.product.stockComponentVariantId?.trim() || v.id;
-      const stockTotal = stockByVariant.get(stockVariantId) ?? new Prisma.Decimal(0);
+      const convOpts = {
+        variantId: v.id,
+        stockComponentVariantId: v.product.stockComponentVariantId,
+        conversion: v.product.conversion,
+        packItemQty: v.product.packItemQty != null ? Number(v.product.packItemQty) : null,
+      };
+
+      const stockByLocation = locations.map((loc) => {
+        const raw = rawByVariantLoc.get(`${stockVariantId}:${loc.id}`) ?? 0;
+        const display = resolveDisplayStockQuantity(
+          raw,
+          convOpts.variantId,
+          convOpts.stockComponentVariantId,
+          convOpts.conversion,
+          convOpts.packItemQty,
+        );
+        return {
+          locationId: loc.id,
+          locationCode: loc.code,
+          locationName: loc.name,
+          quantity: String(display),
+        };
+      });
+
+      const displayStock = stockByLocation.reduce((sum, row) => sum + Number(row.quantity), 0);
+
       return {
         productId: v.product.id,
         productName: v.product.name,
@@ -305,7 +345,8 @@ export class ProductsController {
         retailPrice: String(v.retailPrice),
         promoPrice: v.promoPrice ? String(v.promoPrice) : null,
         costAverage: String(v.costAverage),
-        stockTotal: stockTotal.toString(),
+        stockTotal: String(displayStock),
+        stockByLocation,
         minStock: String(v.minStock),
         stockVariantId,
         imageThumbUrl:
@@ -359,6 +400,8 @@ export class ProductsController {
           tareKg: true,
           defaultBarcode: true,
           stockComponentVariantId: true,
+          conversion: true,
+          packItemQty: true,
           isService: true,
           hasImage: true,
           imageVersion: true,
@@ -678,6 +721,9 @@ export class ProductsController {
         supplierId: string;
         supplierProductCode: string;
       }>;
+      isManufacturedFinishedGood?: boolean;
+      showInPublicCatalog?: boolean;
+      manufacturingLeadTimeDays?: number | string | null;
     },
   ) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
@@ -728,6 +774,13 @@ export class ProductsController {
           conversion: isService ? null : normalizeProductConversion(body.conversion),
           packItemQty: isService ? null : packItemQty != null ? String(packItemQty) : null,
           stockComponentVariantId: isService ? null : stockComponentVariantId,
+          isManufacturedFinishedGood: Boolean(body.isManufacturedFinishedGood),
+          showInPublicCatalog: Boolean(body.showInPublicCatalog),
+          manufacturingLeadTimeDays:
+            body.manufacturingLeadTimeDays != null &&
+            Number.isFinite(Number(body.manufacturingLeadTimeDays))
+              ? Number(body.manufacturingLeadTimeDays)
+              : null,
           variants: {
             create: body.variants.map((v, idx) => ({
               sku: v.sku,
@@ -764,6 +817,8 @@ export class ProductsController {
 
       return prod.id;
     });
+
+    await this.assertManufacturedBom(db, createdId);
 
     return db.product.findUniqueOrThrow({
       where: { id: createdId },
@@ -1081,7 +1136,7 @@ export class ProductsController {
       if (!fs) throw new BadRequestException('Situação fiscal não encontrada ou inativa.');
     }
 
-    return db.$transaction(async (tx) => {
+    const updated = await db.$transaction(async (tx) => {
       await tx.product.update({
         where: { id },
         data: {
@@ -1115,6 +1170,19 @@ export class ProductsController {
           ...(body.isActive !== undefined && { isActive: Boolean(body.isActive) }),
           ...(body.categoryId !== undefined && {
             categoryId: body.categoryId ? String(body.categoryId) : null,
+          }),
+          ...(body.isManufacturedFinishedGood !== undefined && {
+            isManufacturedFinishedGood: Boolean(body.isManufacturedFinishedGood),
+          }),
+          ...(body.showInPublicCatalog !== undefined && {
+            showInPublicCatalog: Boolean(body.showInPublicCatalog),
+          }),
+          ...(body.manufacturingLeadTimeDays !== undefined && {
+            manufacturingLeadTimeDays:
+              body.manufacturingLeadTimeDays == null ||
+              body.manufacturingLeadTimeDays === ''
+                ? null
+                : Number(body.manufacturingLeadTimeDays),
           }),
         },
       });
@@ -1155,6 +1223,8 @@ export class ProductsController {
         include: productDetailInclude,
       });
     });
+    await this.assertManufacturedBom(db, id);
+    return updated;
   }
 
   @Delete(':id')

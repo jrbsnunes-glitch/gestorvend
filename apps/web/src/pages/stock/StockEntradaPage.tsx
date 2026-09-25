@@ -14,6 +14,7 @@ import { formatConversionHint, isPackInvoiceUnit, suggestPackItemQtyFromText } f
 
 type Line = {
   lineNumber?: number;
+  productId: string;
   variantId: string;
   variantLabel: string;
   supplierProductCode: string;
@@ -34,6 +35,7 @@ type Line = {
 
 function emptyLine(): Line {
   return {
+    productId: '',
     variantId: '',
     variantLabel: '',
     supplierProductCode: '',
@@ -210,6 +212,7 @@ export function StockEntradaPage() {
     queryFn: () =>
       api<
         Array<{
+          id: string;
           name: string;
           ncm: string | null;
           conversion: string | null;
@@ -244,6 +247,33 @@ export function StockEntradaPage() {
     }
     return map;
   }, [products.data]);
+
+  const productIdByVariant = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of products.data ?? []) {
+      for (const v of p.variants) {
+        map.set(v.id, p.id);
+      }
+    }
+    return map;
+  }, [products.data]);
+
+  function supplierDisplayName(): string {
+    if (supplierNameHint.trim()) return supplierNameHint.trim();
+    if (supplierId) return 'Fornecedor selecionado no cabeçalho';
+    if (pendingEmitter?.name) return pendingEmitter.name;
+    return '—';
+  }
+
+  function openProductEdit(productId: string) {
+    if (!productId) return;
+    const url = `/produtos?edit=${encodeURIComponent(productId)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
+  function lineProductId(line: Line): string {
+    return line.productId || productIdByVariant.get(line.variantId) || '';
+  }
 
   const hasUnresolvedLines = lines.some((l) => l.fromNfe && !l.variantId);
   const unresolvedCount = lines.filter((l) => l.fromNfe && !l.variantId).length;
@@ -310,6 +340,7 @@ export function StockEntradaPage() {
             const unresolved = !match?.variantId;
             return {
               lineNumber: item.lineNumber,
+              productId: '',
               variantId: match?.variantId ?? '',
               variantLabel: match?.label ?? '',
               supplierProductCode: supplierCode,
@@ -623,6 +654,7 @@ export function StockEntradaPage() {
 
   function pickProductForLine(i: number, row: ProductSearchRow) {
     setLine(i, {
+      productId: row.productId,
       variantId: row.variantId,
       variantLabel: `${row.sku} — ${row.productName}`,
       pendingResolution: false,
@@ -643,6 +675,7 @@ export function StockEntradaPage() {
         l.supplierProductCode.trim() ||
         'Produto entrada';
       return api<{
+        id: string;
         variants: Array<{ id: string; sku: string; product?: { name: string } }>;
         name: string;
       }>('/products/from-inbound-line', {
@@ -663,7 +696,7 @@ export function StockEntradaPage() {
       const v = product.variants[0];
       if (v) {
         pickProductForLine(args.lineIndex, {
-          productId: '',
+          productId: product.id,
           productName: product.name,
           variantId: v.id,
           sku: v.sku,
@@ -695,6 +728,7 @@ export function StockEntradaPage() {
       if (!l) throw new Error('Linha inválida');
       const conversion = l.invoiceUnit.trim().toUpperCase() || 'CX';
       return api<{
+        id: string;
         variants: Array<{ id: string; sku: string }>;
         name: string;
         conversion: string | null;
@@ -730,7 +764,7 @@ export function StockEntradaPage() {
           },
         }));
         pickProductForLine(payload.lineIndex, {
-          productId: '',
+          productId: product.id,
           productName: product.name,
           variantId: v.id,
           sku: v.sku,
@@ -990,14 +1024,15 @@ export function StockEntradaPage() {
             {err && <div className="alert alert-error">{err}</div>}
 
             <div className="entrada-receipt-modal__scroll">
-              <p className="entrada-receipt-lead">
-                Lançamento espelhando NF-e (com ou sem chave). Informe o documento, o fornecedor quando houver, o local
-                de estoque e os itens recebidos — o mesmo padrão visual do cadastro de produtos. O{' '}
-                <strong>custo unitário</strong> de cada item atualiza o <strong>custo médio</strong> da variação no
-                cadastro (média ponderada pelo estoque); quando o custo médio mudar, o valor anterior fica no{' '}
-                <strong>histórico de preços</strong> do produto (origem “Entrada NF”). O{' '}
-                <strong>Pr. Venda</strong> informado em cada linha atualiza o preço de venda do produto ao confirmar.
-              </p>
+              <details className="submenu-details entrada-receipt-help">
+                <summary className="submenu-summary">Custo médio, histórico e preço de venda</summary>
+                <div className="submenu-body entrada-receipt-help__body">
+                  Lançamento espelhando NF-e (com ou sem chave). O <strong>custo unitário</strong> de cada item
+                  atualiza o <strong>custo médio</strong> da variação; alterações vão para o{' '}
+                  <strong>histórico de preços</strong> (origem “Entrada NF”). O <strong>Pr. Venda</strong> da linha
+                  atualiza o preço de venda ao confirmar.
+                </div>
+              </details>
 
               <div className="entrada-receipt-header-grid">
                 <details className="submenu-details entrada-receipt-header-grid__doc" open>
@@ -1075,12 +1110,14 @@ export function StockEntradaPage() {
                               Abrir Portal NF-e
                             </button>
                           </div>
-                          <p className="muted entrada-nfe-key-hint">
-                            <strong>Buscar NF-e</strong> consulta o webservice SEFAZ. Quando o webservice não
-                            entrega o XML (cStat 137/138/632/633/640, certificado sem permissão etc.), o Portal
-                            Nacional abre automaticamente — cole a chave (já copiada), baixe o XML e use{' '}
-                            <strong>Importar XML</strong>.
-                          </p>
+                          <details className="entrada-nfe-help">
+                            <summary>Ajuda: buscar NF-e ou importar XML</summary>
+                            <p className="muted entrada-nfe-key-hint">
+                              <strong>Buscar NF-e</strong> consulta o webservice SEFAZ. Quando o webservice não
+                              entrega o XML (cStat 137/138/632/633/640 etc.), use o Portal Nacional — baixe o XML
+                              e clique em <strong>Importar XML</strong>.
+                            </p>
+                          </details>
                           {portalFallback && (
                             <div className="alert alert-warn" style={{ marginTop: '0.5rem' }}>
                               <p style={{ margin: '0 0 0.5rem' }}>
@@ -1161,9 +1198,9 @@ export function StockEntradaPage() {
                           )}
                         </div>
                       )}
-                      <div className="form-row">
+                      <div className="form-row entrada-receipt-doc-row">
                         <div className="field">
-                          <label htmlFor="ent-num">Número do documento</label>
+                          <label htmlFor="ent-num">Nº documento</label>
                           <input
                             id="ent-num"
                             value={documentNumber}
@@ -1179,9 +1216,14 @@ export function StockEntradaPage() {
                           <input id="ent-dt" type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
                         </div>
                       </div>
-                      <div className="field">
+                      <div className="field entrada-receipt-nature-field">
                         <label htmlFor="ent-nat">Natureza da operação</label>
-                        <input id="ent-nat" value={natureOperation} onChange={(e) => setNatureOperation(e.target.value)} />
+                        <input
+                          id="ent-nat"
+                          value={natureOperation}
+                          onChange={(e) => setNatureOperation(e.target.value)}
+                          title={natureOperation || undefined}
+                        />
                       </div>
                     </div>
                   </details>
@@ -1190,7 +1232,7 @@ export function StockEntradaPage() {
                   <summary className="submenu-summary">Emitente (fornecedor)</summary>
                   <div className="submenu-body">
                     <div className="field">
-                      <span className="field-label-text">Pesquisar ou incluir fornecedor (opcional)</span>
+                      <span className="field-label-text">Fornecedor (opcional)</span>
                       <SupplierSearchCombo
                         id="ent-forn"
                         value={supplierId}
@@ -1225,11 +1267,13 @@ export function StockEntradaPage() {
                         </p>
                       ) : null}
                     </div>
-                    <div className="field" style={{ marginTop: '0.75rem' }}>
-                      <label htmlFor="ent-loc">Destinatário — local de recebimento *</label>
-                      <p className="muted entrada-receipt-dest-hint">
-                        Local onde a mercadoria será lançada ao confirmar.
-                      </p>
+                    <div className="field">
+                      <label
+                        htmlFor="ent-loc"
+                        title="Local onde a mercadoria será lançada ao confirmar"
+                      >
+                        Local de recebimento *
+                      </label>
                       <select id="ent-loc" value={locationId} onChange={(e) => setLocationId(e.target.value)} required>
                         <option value="">— Selecione —</option>
                         {locations.data?.map((l) => (
@@ -1246,7 +1290,7 @@ export function StockEntradaPage() {
                   <summary className="submenu-summary">Totais / observações</summary>
                   <div className="submenu-body">
                     <div className="field">
-                      <label htmlFor="ent-tot">Valor total informado no documento (opcional)</label>
+                      <label htmlFor="ent-tot">Valor total do documento (opc.)</label>
                       <input
                         id="ent-tot"
                         value={totalValue}
@@ -1256,12 +1300,13 @@ export function StockEntradaPage() {
                       />
                     </div>
                     <div className="field">
-                      <label htmlFor="ent-notes">Informações complementares</label>
+                      <label htmlFor="ent-notes">Observações</label>
                       <textarea
                         id="ent-notes"
+                        className="entrada-notes-field"
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}
-                        rows={3}
+                        rows={2}
                       />
                     </div>
                   </div>
@@ -1271,7 +1316,7 @@ export function StockEntradaPage() {
               <details className="submenu-details entrada-receipt-section-full" open>
                 <summary className="submenu-summary">Produtos / serviços (itens)</summary>
                 <div className="submenu-body">
-                  <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                  <p style={{ margin: '0 0 0.5rem', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
                     Campos NCM e CFOP seguem a estrutura do leiaute NF-e (produto). CFOP padrão sugerido: 1102. O custo
                     unitário informado aqui entra no cadastro do produto mediante recálculo do custo médio (e gera
                     histórico se houver alteração). O <strong>Pr. Venda</strong>, quando preenchido, atualiza o preço
@@ -1281,8 +1326,8 @@ export function StockEntradaPage() {
                     <table className="data-table entrada-items-table">
                       <thead>
                         <tr>
-                          <th>{mode === 'WITHOUT_NFE' ? 'Fornecedor / cód.' : 'Cód. fornecedor'}</th>
                           <th>Produto (interno)</th>
+                          <th>Fornecedor / cód. NF</th>
                           <th>Descrição NF</th>
                           <th>Un. NF</th>
                           <th>NCM</th>
@@ -1312,71 +1357,68 @@ export function StockEntradaPage() {
                             <Fragment key={i}>
                               <tr key={i}>
                                 <td>
-                                  {mode === 'WITHOUT_NFE' ? (
-                                    <div className="entrada-supplier-code-cell">
-                                      <SupplierSearchCombo
-                                        id={`ent-line-sup-${i}`}
-                                        value={supplierId}
-                                        hintName={supplierNameHint}
-                                        onChange={(id, picked) => {
-                                          setSupplierId(id);
-                                          setSupplierNameHint(picked ?? (id ? supplierNameHint : ''));
-                                          setPendingEmitter(null);
-                                        }}
-                                      />
-                                      <input
-                                        value={l.supplierProductCode}
-                                        onChange={(e) =>
-                                          setLine(i, { supplierProductCode: e.target.value })
-                                        }
-                                        placeholder="Cód. no fornecedor (cProd)"
-                                        title="Código do produto no fornecedor — usado para identificar automaticamente nas próximas entradas"
-                                      />
-                                    </div>
-                                  ) : (
-                                    <input
-                                      value={l.supplierProductCode}
-                                      onChange={(e) =>
-                                        setLine(i, { supplierProductCode: e.target.value })
-                                      }
-                                      placeholder="cProd NF-e"
-                                      title="Código do produto no fornecedor — usado para identificar automaticamente nas próximas entradas"
-                                    />
-                                  )}
-                                </td>
-                                <td>
-                                  <div className="entrada-product-pick">
+                                  <div
+                                    className={`entrada-product-pick entrada-product-pick--row${l.variantId ? '' : ' entrada-product-pick--empty'}`}
+                                  >
                                     <span
                                       className={
                                         l.variantLabel
                                           ? 'entrada-product-pick__label'
                                           : 'entrada-product-pick__label entrada-product-pick__label--empty'
                                       }
+                                      title={l.variantLabel || undefined}
                                     >
-                                      {l.variantLabel || '— não vinculado —'}
+                                      {l.variantLabel || '—'}
                                     </span>
-                                    <button
-                                      type="button"
-                                      className="btn btn-secondary btn-sm"
-                                      onClick={() => setProductSearchLine(i)}
-                                    >
-                                      Pesquisar
-                                    </button>
-                                    {l.variantId && (
+                                    <div className="entrada-product-pick__actions">
                                       <button
                                         type="button"
-                                        className="btn btn-ghost btn-sm"
-                                        title="Remover vínculo"
-                                        onClick={() =>
-                                          setLine(i, {
-                                            variantId: '',
-                                            variantLabel: '',
-                                            pendingResolution: l.fromNfe && !!l.supplierProductCode,
-                                          })
-                                        }
+                                        className="btn btn-primary btn-compact"
+                                        onClick={() => setProductSearchLine(i)}
                                       >
-                                        ✕
+                                        {l.variantId ? 'Trocar' : 'Escolher'}
                                       </button>
+                                      {lineProductId(l) ? (
+                                        <button
+                                          type="button"
+                                          className="btn btn-secondary btn-compact"
+                                          onClick={() => openProductEdit(lineProductId(l))}
+                                          title="Abrir cadastro do produto em nova aba"
+                                        >
+                                          Editar
+                                        </button>
+                                      ) : null}
+                                      {l.variantId ? (
+                                        <button
+                                          type="button"
+                                          className="btn btn-ghost btn-compact"
+                                          title="Remover vínculo"
+                                          onClick={() =>
+                                            setLine(i, {
+                                              productId: '',
+                                              variantId: '',
+                                              variantLabel: '',
+                                              pendingResolution: l.fromNfe && !!l.supplierProductCode,
+                                            })
+                                          }
+                                        >
+                                          ✕
+                                        </button>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                </td>
+                                <td>
+                                  <div className="entrada-item-supplier-meta">
+                                    <span className="entrada-item-supplier-meta__name" title="Fornecedor do cabeçalho">
+                                      {supplierDisplayName()}
+                                    </span>
+                                    {l.supplierProductCode.trim() ? (
+                                      <span className="entrada-item-supplier-meta__code">
+                                        cProd: <kbd>{l.supplierProductCode.trim()}</kbd>
+                                      </span>
+                                    ) : (
+                                      <span className="entrada-item-supplier-meta__code">Sem cód. na NF</span>
                                     )}
                                   </div>
                                 </td>
@@ -1387,12 +1429,11 @@ export function StockEntradaPage() {
                                     placeholder="Descrição no documento"
                                   />
                                 </td>
-                                <td>
+                                <td className="entrada-items-table__col-narrow">
                                   <input
                                     value={l.invoiceUnit}
                                     onChange={(e) => setLine(i, { invoiceUnit: e.target.value.toUpperCase() })}
                                     placeholder="UN"
-                                    style={{ width: '4rem' }}
                                   />
                                   {isPackInvoiceUnit(l.invoiceUnit) && (
                                     <span
@@ -1404,13 +1445,13 @@ export function StockEntradaPage() {
                                     </span>
                                   )}
                                 </td>
-                                <td>
+                                <td className="entrada-items-table__col-ncm">
                                   <input value={l.ncm} onChange={(e) => setLine(i, { ncm: e.target.value })} />
                                 </td>
-                                <td>
+                                <td className="entrada-items-table__col-narrow">
                                   <input value={l.cfop} onChange={(e) => setLine(i, { cfop: e.target.value })} />
                                 </td>
-                                <td>
+                                <td className="entrada-items-table__col-narrow">
                                   <input
                                     value={l.invoiceQuantity}
                                     onChange={(e) =>
@@ -1426,13 +1467,13 @@ export function StockEntradaPage() {
                                     </span>
                                   )}
                                 </td>
-                                <td>
+                                <td className="entrada-items-table__col-money">
                                   <input
                                     value={l.unitCost}
                                     onChange={(e) => setLine(i, { unitCost: e.target.value })}
                                   />
                                 </td>
-                                <td>
+                                <td className="entrada-items-table__col-money">
                                   <input
                                     value={l.retailPrice}
                                     onChange={(e) => setLine(i, { retailPrice: e.target.value })}
@@ -1441,10 +1482,10 @@ export function StockEntradaPage() {
                                     inputMode="decimal"
                                   />
                                 </td>
-                                <td>
+                                <td className="entrada-items-table__col-action">
                                   <button
                                     type="button"
-                                    className="btn btn-secondary"
+                                    className="btn btn-secondary btn-compact"
                                     disabled={lines.length <= 1}
                                     onClick={() => setLines((p) => p.filter((_, j) => j !== i))}
                                   >
@@ -1657,10 +1698,13 @@ export function StockEntradaPage() {
 
       <ProductSearchModal
         open={productSearchLine != null}
+        title="Vincular produto à linha da entrada"
         onClose={() => setProductSearchLine(null)}
         onPick={(row) => {
           if (productSearchLine != null) pickProductForLine(productSearchLine, row);
+          setProductSearchLine(null);
         }}
+        onEdit={(row) => openProductEdit(row.productId)}
         onCreateNew={
           productSearchLine != null
             ? (searchTerm) => {
@@ -1744,11 +1788,10 @@ function PackFromInboundModal({
 
   return (
     <>
-      <FormModalBackdrop onClose={onCancel}>
+      <FormModalBackdrop className="modal-backdrop--cadastro" onClose={onCancel}>
         <div
-          className="modal"
+          className="modal form-cadastro-modal form-cadastro-modal--md"
           onClick={(e) => e.stopPropagation()}
-          style={{ width: 'min(560px, 96vw)' }}
         >
           <h2>Cadastrar caixa + unitário</h2>
           <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
@@ -1909,21 +1952,22 @@ function EditReceiptModal({
           {cancelled ? 'Entrada cancelada' : 'Editar entrada'} #{receipt.controlNumber}
         </h2>
         <div className="entrada-receipt-modal__scroll">
-          <p className="entrada-receipt-lead">
-            {cancelled ? (
-              <>
-                Esta entrada foi <strong>estornada</strong>. Estoque e títulos abertos já foram revertidos. A NF-e
-                do fornecedor permanece válida na SEFAZ (só o emitente pode cancelá-la fiscalmente).
-              </>
-            ) : (
-              <>
-                Visualização completa da entrada. Você pode ajustar o <strong>cabeçalho</strong> (fornecedor,
-                documento, natureza e observações). Os <strong>itens</strong> já lançados aparecem abaixo e não
-                podem ser alterados individualmente — use <strong>Cancelar entrada</strong> para estornar estoque
-                e contas a pagar.
-              </>
-            )}
-          </p>
+          <details className="submenu-details entrada-receipt-help" open={cancelled}>
+            <summary className="submenu-summary">Informações sobre esta entrada</summary>
+            <div className="submenu-body entrada-receipt-help__body">
+              {cancelled ? (
+                <>
+                  Entrada <strong>estornada</strong> — estoque e títulos revertidos. A NF-e na SEFAZ só o emitente
+                  cancela.
+                </>
+              ) : (
+                <>
+                  Ajuste o <strong>cabeçalho</strong> (fornecedor, documento, observações). Itens lançados não
+                  editam linha a linha — use <strong>Cancelar entrada</strong> para estornar.
+                </>
+              )}
+            </div>
+          </details>
 
           <div className="entrada-receipt-header-grid">
             <details className="submenu-details entrada-receipt-header-grid__doc" open>

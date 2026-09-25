@@ -540,12 +540,13 @@ export function PaymentFormsPage() {
 
       {creating && (
         <FormModalBackdrop
+          className="modal-backdrop--cadastro"
           onClose={() => {
             setCreating(false);
             setEditing(null);
           }}
         >
-          <div className="modal" role="dialog">
+          <div className="modal form-cadastro-modal form-cadastro-modal--md" role="dialog">
             <h2>{editing ? 'Alterar forma' : 'Nova forma de pagamento'}</h2>
             {err && <div className="alert alert-error">{err}</div>}
             {formFields}

@@ -14,6 +14,7 @@ import { LookupsController } from './lookups.controller';
 import { OperationNaturesController } from './operation-natures.controller';
 import { CatalogProductImagesController } from './catalog-product-images.controller';
 import { ProductImageStorage } from './product-image.storage';
+import { ProductRecipeService } from './product-recipe.service';
 
 @Module({
   imports: [UsersModule],
@@ -31,7 +32,7 @@ import { ProductImageStorage } from './product-image.storage';
     LookupsController,
     CatalogProductImagesController,
   ],
-  providers: [CustomerCreditService, ProductImageStorage],
-  exports: [CustomerCreditService, ProductImageStorage],
+  providers: [CustomerCreditService, ProductImageStorage, ProductRecipeService],
+  exports: [CustomerCreditService, ProductImageStorage, ProductRecipeService],
 })
 export class CatalogModule {}

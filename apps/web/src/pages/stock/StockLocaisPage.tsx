@@ -190,13 +190,17 @@ export function StockLocaisPage() {
 
       {createOpen && (
         <FormModalBackdrop
-          className="no-print"
+          className="modal-backdrop--cadastro no-print"
           onClose={() => {
             setCreateOpen(false);
             setErr(null);
           }}
         >
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal form-cadastro-modal form-cadastro-modal--md"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Novo local de estoque</h2>
             {err && <div className="alert alert-error">{err}</div>}
             <div className="form-row">
@@ -257,8 +261,12 @@ export function StockLocaisPage() {
       />
 
       {editLocation && editOpen && (
-        <FormModalBackdrop className="no-print" onClose={() => setEditOpen(false)}>
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+        <FormModalBackdrop className="modal-backdrop--cadastro no-print" onClose={() => setEditOpen(false)}>
+          <div
+            className="modal form-cadastro-modal form-cadastro-modal--md"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Alterar local</h2>
             {err && <div className="alert alert-error">{err}</div>}
             <div className="form-row">

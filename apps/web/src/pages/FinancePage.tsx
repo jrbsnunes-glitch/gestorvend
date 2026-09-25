@@ -1474,8 +1474,11 @@ export function FinancePage() {
       )}
 
       {openTab && (
-        <FormModalBackdrop onClose={closeModal}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(560px, 96vw)' }}>
+        <FormModalBackdrop className="modal-backdrop--cadastro" onClose={closeModal}>
+          <div
+            className="modal form-cadastro-modal form-cadastro-modal--md"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>
               {editingId
                 ? openTab === 'pagar'
@@ -1765,12 +1768,8 @@ export function FinancePage() {
       )}
 
       {settleBill && (
-        <FormModalBackdrop onClose={closeSettle}>
-          <div
-            className="modal"
-            onClick={(e) => e.stopPropagation()}
-            style={{ width: 'min(480px, 96vw)' }}
-          >
+        <FormModalBackdrop className="modal-backdrop--cadastro" onClose={closeSettle}>
+          <div className="modal form-cadastro-modal form-cadastro-modal--sm" onClick={(e) => e.stopPropagation()}>
             <h2 style={{ fontSize: '1.15rem' }}>
               {'supplier' in settleBill ? 'Baixar conta a pagar' : 'Registrar recebimento'}
             </h2>

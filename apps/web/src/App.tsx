@@ -11,7 +11,7 @@ import {
   getToken,
   scheduleAccessTokenRefresh,
 } from './lib/api';
-import { hasRestaurantPlan, hasServiceOrderModule, isAdmin, isTechnician, isWaiter } from './lib/auth';
+import { hasFactoryModule, hasRestaurantPlan, hasServiceOrderModule, isAdmin, isTechnician, isWaiter } from './lib/auth';
 import { Login } from './pages/Login';
 import './index.css';
 import './styles/ui.css';
@@ -145,6 +145,38 @@ const RequisicoesPage = lazy(() =>
 const ServiceOrdersPage = lazy(() =>
   import('./pages/ServiceOrdersPage').then((m) => ({ default: m.ServiceOrdersPage })),
 );
+const ManufacturingPage = lazy(() =>
+  import('./pages/ManufacturingPage').then((m) => ({ default: m.ManufacturingPage })),
+);
+const ManufacturingShell = lazy(() =>
+  import('./pages/ManufacturingShell').then((m) => ({ default: m.ManufacturingShell })),
+);
+const ManufacturingRecipesPage = lazy(() =>
+  import('./pages/ManufacturingRecipesPage').then((m) => ({
+    default: m.ManufacturingRecipesPage,
+  })),
+);
+const ManufacturingAgendaPage = lazy(() =>
+  import('./pages/ManufacturingAgendaPage').then((m) => ({
+    default: m.ManufacturingAgendaPage,
+  })),
+);
+const ManufacturingMrpPage = lazy(() =>
+  import('./pages/ManufacturingMrpPage').then((m) => ({ default: m.ManufacturingMrpPage })),
+);
+const ManufacturingSettingsPage = lazy(() =>
+  import('./pages/ManufacturingSettingsPage').then((m) => ({
+    default: m.ManufacturingSettingsPage,
+  })),
+);
+const ManufacturingQuotePrintPage = lazy(() =>
+  import('./pages/ManufacturingQuotePrintPage').then((m) => ({
+    default: m.ManufacturingQuotePrintPage,
+  })),
+);
+const PublicStorePage = lazy(() =>
+  import('./pages/PublicStorePage').then((m) => ({ default: m.PublicStorePage })),
+);
 const ServiceOrderPrintPage = lazy(() =>
   import('./pages/ServiceOrderPrintPage').then((m) => ({ default: m.ServiceOrderPrintPage })),
 );
@@ -254,6 +286,12 @@ function RequireServiceOrder({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function RequireFactory({ children }: { children: ReactNode }) {
+  const allowed = useMemo(() => hasFactoryModule(), []);
+  if (!allowed) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
 /** Garçom / técnico não operam PDV/caixa — redirecionam ao módulo operacional. */
 function BlockWaiterFromPdv({ children }: { children: ReactNode }) {
   const waiterBlocked = useMemo(() => isWaiter(), []);
@@ -319,6 +357,21 @@ function AppInner() {
           <Routes>
             <Route path="/auto-atendimento" element={<KioskSalesPage />} />
             <Route path="*" element={<Navigate to="/auto-atendimento" replace />} />
+          </Routes>
+        </Suspense>
+      </BrowserRouter>
+    );
+  }
+
+  const isStorePath =
+    typeof window !== 'undefined' && window.location.pathname.startsWith('/loja/');
+
+  if (isStorePath) {
+    return (
+      <BrowserRouter>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/loja/:tenantSlug" element={<PublicStorePage />} />
           </Routes>
         </Suspense>
       </BrowserRouter>
@@ -454,6 +507,28 @@ function AppInner() {
                 <RequireServiceOrder>
                   <ServiceOrderPrintPage />
                 </RequireServiceOrder>
+              }
+            />
+            <Route
+              path="fabrica"
+              element={
+                <RequireFactory>
+                  <ManufacturingShell />
+                </RequireFactory>
+              }
+            >
+              <Route index element={<ManufacturingPage />} />
+              <Route path="fichas-tecnicas" element={<ManufacturingRecipesPage />} />
+              <Route path="agenda" element={<ManufacturingAgendaPage />} />
+              <Route path="mrp" element={<ManufacturingMrpPage />} />
+              <Route path="configuracoes" element={<ManufacturingSettingsPage />} />
+            </Route>
+            <Route
+              path="fabrica/impressao"
+              element={
+                <RequireFactory>
+                  <ManufacturingQuotePrintPage />
+                </RequireFactory>
               }
             />
             <Route path="caixa" element={<CashPage />} />

@@ -995,9 +995,12 @@ export function ServiceOrdersPage() {
       )}
 
       {formOpen && (
-        <FormModalBackdrop onClose={() => setFormOpen(false)}>
+        <FormModalBackdrop
+          className="modal-backdrop--cadastro modal-backdrop--wide"
+          onClose={() => setFormOpen(false)}
+        >
           <div
-            className="modal modal--wide service-order-form-modal"
+            className="modal modal--wide form-cadastro-modal form-cadastro-modal--sm service-order-form-modal"
             role="dialog"
             onClick={(e) => e.stopPropagation()}
           >
@@ -1584,8 +1587,12 @@ export function ServiceOrdersPage() {
       )}
 
       {billOpen && detailId && (
-        <FormModalBackdrop onClose={() => setBillOpen(false)}>
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+        <FormModalBackdrop className="modal-backdrop--cadastro" onClose={() => setBillOpen(false)}>
+          <div
+            className="modal form-cadastro-modal form-cadastro-modal--md"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
           <h2>Faturar OS</h2>
           {err && <div className="alert alert-error">{err}</div>}
           <div className="field">

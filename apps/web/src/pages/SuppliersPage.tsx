@@ -608,8 +608,15 @@ export function SuppliersPage() {
       )}
 
       {createOpen && (
-        <FormModalBackdrop className="no-print" onClose={() => setCreateOpen(false)}>
-          <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
+        <FormModalBackdrop
+          className="modal-backdrop--cadastro modal-backdrop--wide no-print"
+          onClose={() => setCreateOpen(false)}
+        >
+          <div
+            className="modal modal--wide form-cadastro-modal"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Novo fornecedor</h2>
             {err && <div className="alert alert-error">{err}</div>}
             {formFields}
@@ -631,8 +638,15 @@ export function SuppliersPage() {
       )}
 
       {editSupplier && editOpen && (
-        <FormModalBackdrop className="no-print" onClose={() => setEditOpen(false)}>
-          <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
+        <FormModalBackdrop
+          className="modal-backdrop--cadastro modal-backdrop--wide no-print"
+          onClose={() => setEditOpen(false)}
+        >
+          <div
+            className="modal modal--wide form-cadastro-modal"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Alterar fornecedor</h2>
             {err && <div className="alert alert-error">{err}</div>}
             {formFields}

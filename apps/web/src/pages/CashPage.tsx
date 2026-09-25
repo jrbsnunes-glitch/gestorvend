@@ -164,9 +164,9 @@ type SessionDetail = {
 };
 
 const STATUS_FILTERS = [
-  { value: 'OPEN', label: 'Abertos' },
-  { value: 'CLOSED', label: 'Fechados' },
-  { value: '', label: 'Todos' },
+  { value: '', label: 'Todos (abertos e fechados)' },
+  { value: 'OPEN', label: 'Somente abertos' },
+  { value: 'CLOSED', label: 'Somente fechados' },
 ] as const;
 
 type StatusFilter = (typeof STATUS_FILTERS)[number]['value'];
@@ -420,12 +420,12 @@ export function CashPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const manager = isManager();
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('OPEN');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [draftSearch, setDraftSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [draftStatusFilter, setDraftStatusFilter] = useState<StatusFilter>('OPEN');
+  const [draftStatusFilter, setDraftStatusFilter] = useState<StatusFilter>('');
   const [draftControlMin, setDraftControlMin] = useState('');
   const [draftControlMax, setDraftControlMax] = useState('');
   const [draftPeriodFrom, setDraftPeriodFrom] = useState('');
@@ -527,7 +527,7 @@ export function CashPage() {
   }, [movType]);
 
   const filtersActive =
-    statusFilter !== 'OPEN' ||
+    statusFilter !== '' ||
     controlRangeActive({ controlMin: appliedControlMin, controlMax: appliedControlMax }) ||
     appliedPeriodFrom.trim() !== '' ||
     appliedPeriodTo.trim() !== '';
@@ -552,7 +552,7 @@ export function CashPage() {
         dateInInclusiveRange(s.openedAt, appliedPeriodFrom, appliedPeriodTo),
       );
     }
-    return data;
+    return [...data].sort((a, b) => a.controlNumber - b.controlNumber);
   }, [list.data, appliedSearch, appliedControlMin, appliedControlMax, appliedPeriodFrom, appliedPeriodTo]);
 
   /**
@@ -754,12 +754,12 @@ export function CashPage() {
             </div>
             <FilterModalActions
               onClear={() => {
-                setDraftStatusFilter('OPEN');
+                setDraftStatusFilter('');
                 setDraftControlMin('');
                 setDraftControlMax('');
                 setDraftPeriodFrom('');
                 setDraftPeriodTo('');
-                setStatusFilter('OPEN');
+                setStatusFilter('');
                 setAppliedControlMin('');
                 setAppliedControlMax('');
                 setAppliedPeriodFrom('');
@@ -1304,12 +1304,11 @@ export function CashPage() {
       )}
 
       {movOpenForId && (
-        <FormModalBackdrop onClose={() => setMovOpenForId(null)}>
+        <FormModalBackdrop className="modal-backdrop--cadastro" onClose={() => setMovOpenForId(null)}>
           <div
-            className="modal"
+            className="modal form-cadastro-modal form-cadastro-modal--sm"
             role="dialog"
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 460 }}
           >
             <h2>
               Movimentar caixa

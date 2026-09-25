@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       /** IPv4 explícito — no Windows o Vite pode ficar só em [::1] e o proxy para 127.0.0.1:3000 falha intermitentemente. */
-      host: '127.0.0.1',
+      host: true,
       port: 5173,
       strictPort: true,
       proxy: {

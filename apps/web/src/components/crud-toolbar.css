@@ -27,6 +27,71 @@
   padding-top: 0.55rem;
 }
 
+.modal.product-reports-modal.modal--filters-compact {
+  max-width: 560px;
+}
+
+.modal.product-reports-modal .product-reports-modal__hint,
+.modal.modal--filters-compact .filter-modal-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  line-height: 1.3;
+}
+
+.product-reports-panel .stock-subnav {
+  margin-bottom: 0.15rem;
+}
+
+.product-reports-panel .stock-subnav button {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+.product-reports-panel .field {
+  margin-bottom: 0.45rem;
+}
+
+.product-reports-panel .form-row {
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.product-reports-panel .print-mode-actions {
+  margin-top: 0.35rem;
+}
+
+.filter-customer-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.filter-customer-label-row label {
+  margin-bottom: 0;
+}
+
+.filter-customer-new-btn {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.filter-customer-quick {
+  margin-top: 0.15rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted, #f8fafc);
+}
+
+.filter-customer-quick__hint {
+  margin: 0 0 0.55rem;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
 .filter-customer-picked {
   display: flex;
   align-items: center;
@@ -278,34 +343,35 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-height: min(92vh, 1000px);
+  max-height: min(94vh, 1000px);
   overflow: hidden;
   box-sizing: border-box;
 }
 
 .entrada-receipt-modal > h2 {
   flex-shrink: 0;
-  padding: 1.25rem 1.35rem 0.5rem;
+  padding: 0.65rem 1rem 0.25rem;
   margin: 0;
+  font-size: 1.05rem;
 }
 
 .entrada-receipt-modal > .alert {
   flex-shrink: 0;
-  margin: 0 1.35rem 0.75rem;
+  margin: 0 1rem 0.4rem;
 }
 
 .entrada-receipt-modal__scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 0.35rem 1.35rem 1.1rem;
+  padding: 0.15rem 1rem 0.65rem;
   -webkit-overflow-scrolling: touch;
 }
 
 .entrada-receipt-modal .modal-actions {
   flex-shrink: 0;
   margin-top: 0;
-  padding: 1rem 1.35rem 1.25rem;
+  padding: 0.65rem 1rem 0.85rem;
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
 }
@@ -313,8 +379,13 @@
 .entrada-nfe-key-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.35rem;
   align-items: stretch;
+}
+
+.entrada-nfe-key-row .btn {
+  padding: 0.32rem 0.55rem;
+  font-size: 0.78rem;
 }
 
 .entrada-nfe-key-row input[type='text'],

@@ -63,6 +63,7 @@ import './pos.css';
 const GV_POS_CHECKOUT_FAILURE_KEY = 'gv_pos_checkout_failure_v1';
 /** Comanda pendente de cobrança no PDV (sobrevive ao gateway de abertura de caixa). */
 const GV_PDV_COMANDA_KEY = 'gv_pdv_comanda';
+const GV_MFG_DEPOSIT_PROJECT_KEY = 'gv_mfg_deposit_project_v1';
 
 /* ----------------------------------------------------------------------------
  * Tipos de domínio
@@ -217,6 +218,8 @@ type CartLine = {
   isService?: boolean;
   /** Item veio da comanda: estoque já baixado no salão — não alertar no PDV. */
   fromComanda?: boolean;
+  /** Sinal de projeto Fábrica: valor parcial, sem baixa de estoque do PA. */
+  mfgDeposit?: boolean;
 };
 
 type CartPayment = {
@@ -1146,6 +1149,13 @@ function PosScreen({
   } | null>(null);
   const serviceOrderRef = useRef(serviceOrder);
   serviceOrderRef.current = serviceOrder;
+  const [manufacturingDeposit, setManufacturingDeposit] = useState<{
+    id: string;
+    number: number;
+    amount: number;
+  } | null>(null);
+  const manufacturingDepositRef = useRef(manufacturingDeposit);
+  manufacturingDepositRef.current = manufacturingDeposit;
   const [osLookup, setOsLookup] = useState('');
   const serviceTabLoadedRef = useRef<string | null>(null);
   const [tabLookup, setTabLookup] = useState('');
@@ -1751,17 +1761,22 @@ function PosScreen({
             : serviceOrderRef.current
               ? 'SERVICE_ORDER'
               : undefined,
-          deductStock: serviceTabRef.current ? false : undefined,
-          externalRef: serviceTabRef.current
-            ? `tab:${serviceTabRef.current.number}`
-            : serviceOrderRef.current
-              ? `OS:${serviceOrderRef.current.number}`
-              : undefined,
-          notes: serviceTabRef.current
-            ? `Comanda ${serviceTabRef.current.displayName}`
-            : serviceOrderRef.current
-              ? `OS #${serviceOrderRef.current.number}`
-              : undefined,
+          deductStock:
+            manufacturingDepositRef.current || serviceTabRef.current ? false : undefined,
+          externalRef: manufacturingDepositRef.current
+            ? `MFG:${manufacturingDepositRef.current.number}`
+            : serviceTabRef.current
+              ? `tab:${serviceTabRef.current.number}`
+              : serviceOrderRef.current
+                ? `OS:${serviceOrderRef.current.number}`
+                : undefined,
+          notes: manufacturingDepositRef.current
+            ? `Sinal projeto fabricação #${manufacturingDepositRef.current.number}`
+            : serviceTabRef.current
+              ? `Comanda ${serviceTabRef.current.displayName}`
+              : serviceOrderRef.current
+                ? `OS #${serviceOrderRef.current.number}`
+                : undefined,
           items: lines.map((l) => ({
             variantId: l.variantId,
             quantity: l.quantity,
@@ -1826,6 +1841,42 @@ function PosScreen({
           });
         }
       }
+      let mfgProjectId = '';
+      try {
+        mfgProjectId = sessionStorage.getItem(GV_MFG_DEPOSIT_PROJECT_KEY)?.trim() ?? '';
+      } catch {
+        /* ignore */
+      }
+      if (mfgProjectId) {
+        try {
+          await api(`/manufacturing/projects/${encodeURIComponent(mfgProjectId)}/link-deposit`, {
+            method: 'POST',
+            json: { saleId: sale.id },
+          });
+          void qc.invalidateQueries({ queryKey: ['manufacturing'] });
+          try {
+            sessionStorage.removeItem(GV_MFG_DEPOSIT_PROJECT_KEY);
+          } catch {
+            /* ignore */
+          }
+          setToast({
+            kind: 'ok',
+            text: `Venda #${sale.number} vinculada como sinal do projeto de fabricação.`,
+          });
+        } catch (e) {
+          try {
+            sessionStorage.removeItem(GV_MFG_DEPOSIT_PROJECT_KEY);
+          } catch {
+            /* ignore */
+          }
+          setToast({
+            kind: 'err',
+            text:
+              `Venda #${sale.number} concluída. Vincule o sinal em Fábrica (ID da venda: ${sale.id}): ` +
+              (e instanceof Error ? e.message : 'erro'),
+          });
+        }
+      }
       qc.invalidateQueries({ queryKey: ['cash', 'pdv-readiness'] });
       qc.invalidateQueries({ queryKey: ['sales'] });
       qc.invalidateQueries({ queryKey: ['reports', 'sales-summary'] });
@@ -1840,12 +1891,14 @@ function PosScreen({
       } else {
         setReceiptPrompt({ id: sale.id, number: sale.number });
       }
-      setToast({
-        kind: 'ok',
-        text: tabClosing
-          ? `Venda #${sale.number} · comanda ${tabClosing.displayName} fechada ${formatBRL(concluded)}`
-          : `Venda #${sale.number} concluída ${formatBRL(concluded)}`,
-      });
+      if (!mfgProjectId) {
+        setToast({
+          kind: 'ok',
+          text: tabClosing
+            ? `Venda #${sale.number} · comanda ${tabClosing.displayName} fechada ${formatBRL(concluded)}`
+            : `Venda #${sale.number} concluída ${formatBRL(concluded)}`,
+        });
+      }
       scannerRef.current?.focus();
     },
     onError: (e: Error) => {
@@ -2132,12 +2185,14 @@ function PosScreen({
     setSuggestOpen(false);
     setServiceTab(null);
     setServiceOrder(null);
+    setManufacturingDeposit(null);
     setOsLookup('');
     setTabCandidates([]);
     setTabLookup('');
     serviceTabLoadedRef.current = null;
     try {
       sessionStorage.removeItem(GV_PDV_COMANDA_KEY);
+      sessionStorage.removeItem(GV_MFG_DEPOSIT_PROJECT_KEY);
     } catch {
       /* ignore */
     }
@@ -2150,6 +2205,65 @@ function PosScreen({
       const next = new URLSearchParams(searchParams);
       next.delete('os');
       setSearchParams(next, { replace: true });
+    }
+  }
+
+  async function loadManufacturingDepositProject(projectId: string) {
+    type MfgPdvProject = {
+      id: string;
+      number: number;
+      depositAmount: string;
+      finishedVariant: {
+        id: string;
+        sku: string;
+        product: { name: string };
+      };
+    };
+    try {
+      const project = await api<MfgPdvProject>(`/manufacturing/projects/${projectId}`);
+      const amount = parseDecimal(project.depositAmount);
+      if (amount <= 0) {
+        setToast({
+          kind: 'err',
+          text: 'Informe o sinal previsto (R$) no projeto em Fábrica e abra o PDV de novo.',
+        });
+        return;
+      }
+      setManufacturingDeposit({ id: project.id, number: project.number, amount });
+      try {
+        sessionStorage.setItem(GV_MFG_DEPOSIT_PROJECT_KEY, project.id);
+      } catch {
+        /* ignore */
+      }
+      setLines([
+        {
+          variantId: project.finishedVariant.id,
+          productName: `Sinal — Projeto #${project.number} · ${project.finishedVariant.product.name}`,
+          sku: project.finishedVariant.sku,
+          barcode: null,
+          unitPrice: amount,
+          quantity: 1,
+          discount: 0,
+          stockTotal: 0,
+          minStock: 0,
+          taxUnit: 'UN',
+          isService: true,
+          mfgDeposit: true,
+        },
+      ]);
+      setQtyDraft({});
+      setDiscount(0);
+      setSurcharge(0);
+      setPayments([]);
+      setToast({
+        kind: 'ok',
+        text: `Sinal ${formatBRL(amount)} no carrinho (sem baixa de estoque). Finalize com F2.`,
+      });
+    } catch (e) {
+      setToast({
+        kind: 'err',
+        text: e instanceof Error ? e.message : 'Falha ao carregar sinal do projeto',
+      });
     }
   }
 
@@ -2247,6 +2361,46 @@ function PosScreen({
     const osNum = searchParams.get('os')?.trim();
     if (!osNum) return;
     void loadServiceOrderByNumber(osNum);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  useEffect(() => {
+    const cid = searchParams.get('mfgCustomer')?.trim();
+    const pid = searchParams.get('mfgProject')?.trim();
+    if (pid) {
+      try {
+        sessionStorage.setItem(GV_MFG_DEPOSIT_PROJECT_KEY, pid);
+      } catch {
+        /* ignore */
+      }
+    }
+    if (!cid && !pid) return;
+    void (async () => {
+      try {
+        if (cid) {
+          const row = await api<CustomerSearchRow>(`/customers/${cid}`);
+          await selectCustomerFromSearch(row);
+        }
+        if (pid) {
+          await loadManufacturingDepositProject(pid);
+        } else if (cid) {
+          setToast({
+            kind: 'ok',
+            text: 'Cliente do projeto de fabricação carregado no PDV.',
+          });
+        }
+      } catch (e) {
+        setToast({
+          kind: 'err',
+          text: e instanceof Error ? e.message : 'Falha ao carregar cliente do projeto',
+        });
+      } finally {
+        const next = new URLSearchParams(searchParams);
+        next.delete('mfgCustomer');
+        next.delete('mfgProject');
+        setSearchParams(next, { replace: true });
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -2670,6 +2824,34 @@ function PosScreen({
               </div>
             )}
 
+            {manufacturingDeposit && (
+              <div className="pos-card" style={{ marginBottom: '0.65rem', borderColor: 'var(--color-primary)' }}>
+                <div className="pos-card-body" style={{ padding: '0.55rem 0.75rem' }}>
+                  <strong>Projeto fabricação #{manufacturingDeposit.number}</strong>
+                  <span className="muted"> · sinal {formatBRL(manufacturingDeposit.amount)}</span>
+                  <span className="muted" style={{ display: 'block', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+                    Venda sem baixa de estoque do produto acabado. Ao concluir, vincula ao projeto.
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ marginLeft: '0.5rem', marginTop: '0.35rem' }}
+                    onClick={() => {
+                      setManufacturingDeposit(null);
+                      try {
+                        sessionStorage.removeItem(GV_MFG_DEPOSIT_PROJECT_KEY);
+                      } catch {
+                        /* ignore */
+                      }
+                      setLines([]);
+                    }}
+                  >
+                    Limpar
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="pos-card" style={{ marginBottom: '0.65rem' }}>
               <div className="pos-card-header">
                 <h3 className="pos-card-title">Ordem de Serviço</h3>
@@ -2806,7 +2988,7 @@ function PosScreen({
                       <tbody>
                         {lines.map((l) => {
                           const status =
-                            l.fromComanda || l.isService
+                            l.fromComanda || l.isService || l.mfgDeposit
                               ? 'ok'
                               : classifyStock(l.stockTotal, l.quantity, l.minStock);
                           const rowClass =

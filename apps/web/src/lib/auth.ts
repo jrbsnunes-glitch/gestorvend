@@ -11,7 +11,7 @@ export type UserProfile = 'manager' | 'cashier' | 'waiter' | 'technician';
 
 export type PlanCode = 'STANDARD' | 'WHATSAPP' | 'RESTAURANT';
 
-export type TenantModuleAddon = 'SERVICE_ORDER';
+export type TenantModuleAddon = 'SERVICE_ORDER' | 'FACTORY';
 
 export type JwtIdentity = {
   sub: string;
@@ -46,7 +46,9 @@ function decodeJwt(token: string): JwtIdentity | null {
           ? obj.planCode
           : undefined,
       enabledModules: Array.isArray(obj.enabledModules)
-        ? obj.enabledModules.filter((m): m is TenantModuleAddon => m === 'SERVICE_ORDER')
+        ? obj.enabledModules.filter(
+            (m): m is TenantModuleAddon => m === 'SERVICE_ORDER' || m === 'FACTORY',
+          )
         : undefined,
     };
   } catch {
@@ -110,4 +112,10 @@ export function hasRestaurantPlan(): boolean {
 export function hasServiceOrderModule(): boolean {
   const mods = getIdentity()?.enabledModules ?? [];
   return mods.includes('SERVICE_ORDER');
+}
+
+/** Addon Fábrica no portal (JWT enabledModules). */
+export function hasFactoryModule(): boolean {
+  const mods = getIdentity()?.enabledModules ?? [];
+  return mods.includes('FACTORY');
 }

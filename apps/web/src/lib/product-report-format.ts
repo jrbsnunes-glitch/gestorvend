@@ -73,6 +73,7 @@ export function buildProductTurnoverReportQuery(p: {
   useMaxControl: boolean;
   alertsOnly: boolean;
   maxStockCeiling: string;
+  showPeakSalesPeriod?: boolean;
 }): string {
   const params = new URLSearchParams({
     from: p.from,
@@ -82,6 +83,7 @@ export function buildProductTurnoverReportQuery(p: {
     useMaxControl: p.useMaxControl ? '1' : '0',
     alertsOnly: p.alertsOnly ? '1' : '0',
   });
+  if (p.showPeakSalesPeriod) params.set('showPeakSalesPeriod', '1');
   const vid = p.variantId?.trim();
   const cFrom = String(p.minStockCadFrom ?? '').trim();
   const cTo = String(p.minStockCadTo ?? '').trim();

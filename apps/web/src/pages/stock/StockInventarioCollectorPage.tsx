@@ -1,10 +1,18 @@
 /**
  * Coletor mobile de inventário: bip → pede quantidade → grava → próximo.
- * Reutiliza POST /stock-inventories/:id/items com barcode/sku e onDuplicate.
+ * Câmera: BarcodeDetector (Chrome/Android) ou ZXing (Safari/iPhone). Requer HTTPS ou localhost.
+ * POST /stock-inventories/:id/items com barcode/sku e onDuplicate.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import {
+  canUseInventoryCamera,
+  openInventoryCamera,
+  startInventoryBarcodeScan,
+  stopMediaStream,
+  type InventoryBarcodeSession,
+} from '../../lib/barcode-scanner';
 import { api } from '../../lib/api';
 import './inventory-collector.css';
 
@@ -38,10 +46,6 @@ type PendingProduct = {
   systemQty: string;
 };
 
-type BarcodeDetectorLike = {
-  detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue?: string }>>;
-};
-
 function playBeep(ok: boolean) {
   try {
     const Ctx =
@@ -62,10 +66,6 @@ function playBeep(ok: boolean) {
   }
 }
 
-function hasBarcodeDetector(): boolean {
-  return typeof window !== 'undefined' && 'BarcodeDetector' in window;
-}
-
 export function StockInventarioCollectorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -74,9 +74,10 @@ export function StockInventarioCollectorPage() {
   const qtyRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const detectingRef = useRef(false);
+  const scanSessionRef = useRef<InventoryBarcodeSession | null>(null);
   const lastScanRef = useRef<{ code: string; at: number }>({ code: '', at: 0 });
   const pendingRef = useRef(false);
+  const submitCodeRef = useRef<(raw: string) => void>(() => {});
 
   const [scanValue, setScanValue] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -117,7 +118,9 @@ export function StockInventarioCollectorPage() {
 
   useEffect(() => {
     return () => {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+      scanSessionRef.current?.stop();
+      scanSessionRef.current = null;
+      stopMediaStream(streamRef.current);
       streamRef.current = null;
     };
   }, []);
@@ -211,7 +214,6 @@ export function StockInventarioCollectorPage() {
     onSuccess: (p) => {
       setErr(null);
       setPending(p);
-      // Prefill com contagem atual se já existir; senão vazio para digitar logo
       setQtyInput(p.currentCounted !== '' ? p.currentCounted : '');
       playBeep(true);
       setScanValue('');
@@ -226,7 +228,6 @@ export function StockInventarioCollectorPage() {
   function submitCode(raw: string) {
     const code = raw.trim();
     if (!code || !id) return;
-    // Enquanto pede qty, ignora novos bips (evita sobrescrever o produto atual)
     if (pendingRef.current) return;
 
     const now = Date.now();
@@ -243,6 +244,8 @@ export function StockInventarioCollectorPage() {
 
     resolveAfterScan.mutate(code);
   }
+
+  submitCodeRef.current = submitCode;
 
   function confirmQty() {
     if (!pending) return;
@@ -262,7 +265,9 @@ export function StockInventarioCollectorPage() {
 
   async function toggleCamera() {
     if (cameraOn) {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+      scanSessionRef.current?.stop();
+      scanSessionRef.current = null;
+      stopMediaStream(streamRef.current);
       streamRef.current = null;
       if (videoRef.current) videoRef.current.srcObject = null;
       setCameraOn(false);
@@ -270,29 +275,14 @@ export function StockInventarioCollectorPage() {
       if (!pending) focusScan();
       return;
     }
-    if (!hasBarcodeDetector()) {
+    if (!canUseInventoryCamera()) {
       setCameraHint(
-        'Câmera com leitura automática disponível no Chrome/Android. Use o campo de código ou um leitor Bluetooth.',
+        'Câmera indisponível neste navegador. Use o campo de código ou um leitor Bluetooth.',
       );
       return;
     }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraHint('Este navegador não permite acesso à câmera.');
-      return;
-    }
     try {
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' } },
-          audio: false,
-        });
-      } catch {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false,
-        });
-      }
+      const stream = await openInventoryCamera();
       streamRef.current = stream;
       setCameraHint(null);
       setCameraOn(true);
@@ -303,49 +293,41 @@ export function StockInventarioCollectorPage() {
   }
 
   useEffect(() => {
-    if (!cameraOn || !hasBarcodeDetector()) return;
+    if (!cameraOn) return;
     let cancelled = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const Detector = (window as any).BarcodeDetector as new (opts: {
-      formats: string[];
-    }) => BarcodeDetectorLike;
-    let detector: BarcodeDetectorLike;
-    try {
-      detector = new Detector({
-        formats: ['ean_13', 'ean_8', 'code_128', 'upc_a', 'upc_e', 'qr_code'],
-      });
-    } catch {
-      setCameraHint('BarcodeDetector indisponível neste navegador.');
-      return;
-    }
 
-    const tick = async () => {
-      if (cancelled || detectingRef.current || pendingRef.current) {
-        if (!cancelled) requestAnimationFrame(() => void tick());
-        return;
-      }
-      const video = videoRef.current;
-      if (video && video.readyState >= 2) {
-        detectingRef.current = true;
-        try {
-          const codes = await detector.detect(video);
-          const raw = codes[0]?.rawValue?.trim();
-          if (raw) submitCode(raw);
-        } catch {
-          /* frame skip */
-        } finally {
-          detectingRef.current = false;
+    const video = videoRef.current;
+    if (!video) return;
+
+    const armScanner = async () => {
+      scanSessionRef.current?.stop();
+      scanSessionRef.current = null;
+      try {
+        const session = await startInventoryBarcodeScan(
+          video,
+          (raw) => submitCodeRef.current(raw),
+          () => pendingRef.current || cancelled,
+        );
+        if (cancelled) {
+          session.stop();
+          return;
+        }
+        scanSessionRef.current = session;
+      } catch {
+        if (!cancelled) {
+          setCameraHint('Não foi possível iniciar a leitura automática. Use o campo de código.');
         }
       }
-      if (!cancelled) {
-        window.setTimeout(() => requestAnimationFrame(() => void tick()), 280);
-      }
     };
-    void tick();
+
+    if (video.readyState >= 2) void armScanner();
+    else video.addEventListener('loadedmetadata', () => void armScanner(), { once: true });
+
     return () => {
       cancelled = true;
+      scanSessionRef.current?.stop();
+      scanSessionRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraOn, id, inv?.status]);
 
   const recent = (inv?.items ?? [])

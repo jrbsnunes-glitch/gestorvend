@@ -22,6 +22,8 @@ Fallback global (se o tenant não preencher na UI):
 | `FISCAL_NFCE_CSC_ID` / `FISCAL_NFCE_CSC` | CSC (obrigatório para NFC-e em SOAP) |
 | `FISCAL_SEFAZ_NFCE_SOAP_URL` | Autorização NFC-e |
 | `FISCAL_SEFAZ_NFE_SOAP_URL` | Autorização NF-e 55 |
+| `FISCAL_SEFAZ_NFCE_CONSULTA_URL` | Consulta protocolo NFC-e (recuperação pós-timeout) |
+| `FISCAL_SEFAZ_NFE_CONSULTA_URL` | Consulta protocolo NF-e 55 |
 | `FISCAL_SEFAZ_INUTILIZACAO_URL` | Inutilização (opcional) |
 | `FISCAL_NFCE_QR_BASE_URL` | Base do QR-code |
 | `NFE_OUTBOUND_DIR` | Pasta dos XMLs autorizados (`nfeProc`) |

@@ -7,7 +7,17 @@ import { DesktopUpdateBanner } from './DesktopUpdateBanner';
 import { NavIcon, type NavIconName } from './nav-icons';
 import { api } from '../lib/api';
 import { companyDisplayName } from '../lib/company-branding';
-import { getIdentity, hasRestaurantPlan, hasServiceOrderModule, isAdmin, isTechnician, isWaiter, profileFromRoles, profileLabel } from '../lib/auth';
+import {
+  getIdentity,
+  hasFactoryModule,
+  hasRestaurantPlan,
+  hasServiceOrderModule,
+  isAdmin,
+  isTechnician,
+  isWaiter,
+  profileFromRoles,
+  profileLabel,
+} from '../lib/auth';
 import { navPathToMenuKey } from '../lib/menu-access';
 import { useMenuAccess } from '../hooks/useMenuAccess';
 import { APP_VERSION } from '../version';
@@ -33,6 +43,8 @@ type NavItem = {
   restaurantPlan?: boolean;
   /** Exige addon SERVICE_ORDER no JWT + flag da empresa. */
   serviceOrderModule?: boolean;
+  /** Exige addon FACTORY no JWT + flag da empresa. */
+  factoryModule?: boolean;
   /** Garçom só vê itens marcados (Salão). */
   waiterAllowed?: boolean;
   /** Técnico (OS) só vê itens marcados (Ordens de Serviço). */
@@ -55,6 +67,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/estoque', label: 'Estoque', icon: 'stock', group: 'catalogo', managerOnly: true },
   { to: '/requisicoes', label: 'Requisições', icon: 'requisitions', group: 'gestao', managerOnly: true },
   { to: '/ordens-servico', label: 'Ordens de Serviço', icon: 'serviceOrders', group: 'gestao', managerOnly: true, serviceOrderModule: true, technicianAllowed: true },
+  { to: '/fabrica', label: 'Fábrica', icon: 'products', group: 'gestao', managerOnly: true, factoryModule: true },
   { to: '/caixa', label: 'Caixa', icon: 'cash', group: 'gestao' },
   { to: '/cartoes', label: 'Cartões', icon: 'cards', group: 'gestao' },
   { to: '/notas-fiscais', label: 'Notas Fiscais', icon: 'fiscal', group: 'gestao' },
@@ -99,6 +112,7 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
   const userIsAdmin = isAdmin();
   const restaurantOk = hasRestaurantPlan();
   const serviceOrderOk = hasServiceOrderModule();
+  const factoryOk = hasFactoryModule();
   const location = useLocation();
 
   const [collapsed, setCollapsed] = useState(readCollapsedPref);
@@ -121,6 +135,7 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
         logoUrl?: string | null;
         restaurantModuleEnabled?: boolean;
         serviceOrderModuleEnabled?: boolean;
+        factoryModuleEnabled?: boolean;
       }>('/company'),
     staleTime: 10 * 60_000,
   });
@@ -142,6 +157,10 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
     if (it.serviceOrderModule) {
       if (!serviceOrderOk) return false;
       if (company.isSuccess && company.data.serviceOrderModuleEnabled !== true) return false;
+    }
+    if (it.factoryModule) {
+      if (!factoryOk) return false;
+      if (company.isSuccess && company.data.factoryModuleEnabled !== true) return false;
     }
     // Caixa: visibilidade controlada pela matriz de menus (padrão oculta Balanço/Empresa/Impressão/Usuários).
     if (!isManager) {

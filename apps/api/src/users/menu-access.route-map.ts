@@ -20,6 +20,7 @@ const SKIP_PREFIXES = [
   'branding',
   'license',
   'wachat',
+  'webhooks',
   'sales',
   /** Caixa PDV: abertura/fechamento/movimento — operacional, não matriz. */
   'cash',
@@ -74,6 +75,7 @@ const PREFIX_TO_MENU: Array<{ prefix: string; menuKey: string }> = [
   { prefix: 'goods-receipts', menuKey: 'stock' },
   { prefix: 'requisitions', menuKey: 'requisitions' },
   { prefix: 'service-orders', menuKey: 'serviceOrders' },
+  { prefix: 'manufacturing', menuKey: 'factory' },
   { prefix: 'fiscal/inbound', menuKey: 'stock' },
   { prefix: 'fiscal/issuer-settings', menuKey: 'company' },
   { prefix: 'fiscal/documents', menuKey: 'fiscal' },

@@ -10,7 +10,7 @@ type Client = {
   cnpj: string;
   companyName: string;
   planCode: 'STANDARD' | 'WHATSAPP' | 'RESTAURANT';
-  enabledAddons?: Array<'SERVICE_ORDER'>;
+  enabledAddons?: Array<'SERVICE_ORDER' | 'FACTORY'>;
   licenseStatus: 'trial' | 'active' | 'suspended' | 'expired';
   licenseValidFrom: string | null;
   licenseExpiresAt: string | null;
@@ -31,7 +31,7 @@ type CreateForm = {
   companyName: string;
   slug: string;
   planCode: Client['planCode'];
-  enabledAddons: Array<'SERVICE_ORDER'>;
+  enabledAddons: Array<'SERVICE_ORDER' | 'FACTORY'>;
   licenseStatus: Client['licenseStatus'];
   licenseValidFrom: string;
   licenseExpiresAt: string;
@@ -39,6 +39,15 @@ type CreateForm = {
   firstAdminPassword: string;
   monthlyFee: string;
 };
+
+type TenantAddon = 'SERVICE_ORDER' | 'FACTORY';
+
+function toggleAddon(list: TenantAddon[], addon: TenantAddon, on: boolean): TenantAddon[] {
+  const set = new Set(list);
+  if (on) set.add(addon);
+  else set.delete(addon);
+  return [...set];
+}
 
 const STATUS_LABEL: Record<Client['licenseStatus'], string> = {
   trial: 'Avaliação',
@@ -89,7 +98,7 @@ function statusColor(s: Client['licenseStatus'], days: number | null): { bg: str
 type EditForm = {
   companyName: string;
   planCode: Client['planCode'];
-  enabledAddons: Array<'SERVICE_ORDER'>;
+  enabledAddons: Array<'SERVICE_ORDER' | 'FACTORY'>;
   licenseStatus: Client['licenseStatus'];
   licenseValidFrom: string;
   licenseExpiresAt: string;
@@ -469,6 +478,15 @@ export function PortalClientsPage() {
                           OS
                         </span>
                       ) : null}
+                      {(c.enabledAddons ?? []).includes('FACTORY') ? (
+                        <span
+                          className="badge"
+                          style={{ background: '#ecfdf5', color: '#047857', marginLeft: 4 }}
+                          title="Fábrica"
+                        >
+                          FAB
+                        </span>
+                      ) : null}
                     </td>
                     <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                       {c.monthlyFee != null ? formatBRL(c.monthlyFee) : '—'}
@@ -628,8 +646,11 @@ export function PortalClientsPage() {
       </div>
 
       {createOpen && (
-        <FormModalBackdrop onClose={() => setCreateOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(560px, 96vw)' }}>
+        <FormModalBackdrop className="modal-backdrop--cadastro" onClose={() => setCreateOpen(false)}>
+          <div
+            className="modal form-cadastro-modal form-cadastro-modal--md"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Nova licença / cliente</h2>
             {err && <div className="alert alert-error">{err}</div>}
             <div className="form-row">
@@ -700,7 +721,7 @@ export function PortalClientsPage() {
                   onChange={(e) =>
                     setForm({
                       ...form,
-                      enabledAddons: e.target.checked ? ['SERVICE_ORDER'] : [],
+                      enabledAddons: toggleAddon(form.enabledAddons, 'SERVICE_ORDER', e.target.checked),
                     })
                   }
                   style={{ marginTop: '0.15rem' }}
@@ -709,6 +730,27 @@ export function PortalClientsPage() {
                   Adicional: Ordem de Serviços
                   <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>
                     Libera menu Ordens de Serviço, API e integração PDV
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="field" style={{ marginBottom: '0.75rem' }}>
+              <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                <input
+                  type="checkbox"
+                  checked={form.enabledAddons.includes('FACTORY')}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      enabledAddons: toggleAddon(form.enabledAddons, 'FACTORY', e.target.checked),
+                    })
+                  }
+                  style={{ marginTop: '0.15rem' }}
+                />
+                <span>
+                  Adicional: Fábrica
+                  <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>
+                    Projetos de fabricação, BOM por fase e catálogo público
                   </span>
                 </span>
               </label>
@@ -796,13 +838,17 @@ export function PortalClientsPage() {
 
       {editing && editForm && (
         <FormModalBackdrop
+          className="modal-backdrop--cadastro"
           onClose={() => {
             setEditing(null);
             setEditForm(null);
             setEditErr(null);
           }}
         >
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(560px, 96vw)' }}>
+          <div
+            className="modal form-cadastro-modal form-cadastro-modal--md"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Editar cliente / licença</h2>
             {editErr && <div className="alert alert-error">{editErr}</div>}
             <p style={{ margin: '0 0 0.75rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
@@ -863,7 +909,7 @@ export function PortalClientsPage() {
                   onChange={(e) =>
                     setEditForm({
                       ...editForm,
-                      enabledAddons: e.target.checked ? ['SERVICE_ORDER'] : [],
+                      enabledAddons: toggleAddon(editForm.enabledAddons, 'SERVICE_ORDER', e.target.checked),
                     })
                   }
                   style={{ marginTop: '0.15rem' }}
@@ -872,6 +918,27 @@ export function PortalClientsPage() {
                   Adicional: Ordem de Serviços
                   <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>
                     Libera menu Ordens de Serviço, API e integração PDV
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="field" style={{ marginBottom: '0.75rem' }}>
+              <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                <input
+                  type="checkbox"
+                  checked={editForm.enabledAddons.includes('FACTORY')}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      enabledAddons: toggleAddon(editForm.enabledAddons, 'FACTORY', e.target.checked),
+                    })
+                  }
+                  style={{ marginTop: '0.15rem' }}
+                />
+                <span>
+                  Adicional: Fábrica
+                  <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>
+                    Projetos de fabricação, BOM por fase e catálogo público
                   </span>
                 </span>
               </label>

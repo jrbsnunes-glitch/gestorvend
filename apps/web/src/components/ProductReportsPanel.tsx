@@ -60,6 +60,7 @@ export function ProductReportsPanel({ onClose }: { onClose?: () => void }) {
   const [turnUseMin, setTurnUseMin] = useState(true);
   const [turnUseMax, setTurnUseMax] = useState(false);
   const [turnAlertsOnly, setTurnAlertsOnly] = useState(false);
+  const [turnShowPeakSalesPeriod, setTurnShowPeakSalesPeriod] = useState(false);
   const [turnErr, setTurnErr] = useState<string | null>(null);
 
   const [stkCadFrom, setStkCadFrom] = useState('');
@@ -190,6 +191,7 @@ export function ProductReportsPanel({ onClose }: { onClose?: () => void }) {
       useMaxControl: turnUseMax,
       alertsOnly: turnAlertsOnly,
       maxStockCeiling: turnMaxCeiling,
+      showPeakSalesPeriod: turnShowPeakSalesPeriod,
     });
     onClose?.();
     navigate(`/produtos/relatorio/giro?${appendProductReportReturn(qs)}`);
@@ -232,9 +234,21 @@ export function ProductReportsPanel({ onClose }: { onClose?: () => void }) {
   }
 
   const narrow: CSSProperties = { maxWidth: '420px', width: '100%' };
+  const compactGap: CSSProperties = { display: 'flex', flexDirection: 'column', gap: '0.45rem' };
+  const checkRow: CSSProperties = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '0.5rem 0.85rem',
+    fontSize: '0.82rem',
+  };
+  const checkLabel: CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.3rem',
+  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+    <div className="product-reports-panel" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <nav className="stock-subnav" aria-label="Tipo de relatório de produtos">
         <button type="button" className={tab === 'move' ? 'active' : ''} onClick={() => setTab('move')}>
           Movimentação
@@ -403,16 +417,14 @@ export function ProductReportsPanel({ onClose }: { onClose?: () => void }) {
       )}
 
       {tab === 'turnover' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-          <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--color-text-muted)', maxWidth: '26rem', lineHeight: 1.35 }}>
-            Ranking por qtd. vendida no período. <strong>Código</strong> opcional = mesmo filtro da movimentação; em branco, só quem vendeu
-            (respeitando categoria, se informada).
+        <div style={compactGap}>
+          <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--color-text-muted)', lineHeight: 1.3 }}>
+            Ranking por qtd. vendida. Código opcional = conjunto da movimentação; vazio = só quem vendeu.
           </p>
-          <details style={{ fontSize: '0.76rem', color: 'var(--color-text-secondary)', maxWidth: '100%' }}>
+          <details style={{ fontSize: '0.74rem', color: 'var(--color-text-secondary)' }}>
             <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Min / máx / alertas</summary>
-            <p style={{ margin: '0.35rem 0 0', lineHeight: 1.35 }}>
-              Mínimo por SKU; teto opcional. Estoque atual somado nos locais. Com intervalo cad., marque <strong>Incluir sem venda</strong> para
-              linhas com qtd. 0. “Só alertas” usa o saldo atual.
+            <p style={{ margin: '0.25rem 0 0', lineHeight: 1.3 }}>
+              Mín. por SKU; teto opcional. Com intervalo de código, <strong>Incluir sem venda</strong> mantém qtd. 0.
             </p>
           </details>
           {turnErr && <div className="alert alert-error">{turnErr}</div>}
@@ -442,7 +454,7 @@ export function ProductReportsPanel({ onClose }: { onClose?: () => void }) {
                 />
               </div>
             </div>
-            <div className="field" style={{ marginTop: '0.65rem' }}>
+            <div className="field" style={{ marginTop: '0.4rem', marginBottom: 0 }}>
               <label htmlFor="pr-turn-cat">Categoria</label>
               <select id="pr-turn-cat" value={turnCategory} onChange={(e) => setTurnCategory(e.target.value)}>
                 <option value="">Todas</option>
@@ -485,23 +497,16 @@ export function ProductReportsPanel({ onClose }: { onClose?: () => void }) {
               />
             </div>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.85rem', fontSize: '0.85rem' }}>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+          <div style={checkRow}>
+            <label style={checkLabel}>
               <input type="checkbox" checked={turnUseMin} onChange={(e) => setTurnUseMin(e.target.checked)} />
-              Usar estoque mínimo cadastrado
+              Estoque mínimo
             </label>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            <label style={checkLabel}>
               <input type="checkbox" checked={turnAlertsOnly} onChange={(e) => setTurnAlertsOnly(e.target.checked)} />
-              Só linhas em alerta
+              Só alertas
             </label>
-            <label
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                opacity: turnCadOk ? 1 : 0.55,
-              }}
-            >
+            <label style={{ ...checkLabel, opacity: turnCadOk ? 1 : 0.55 }}>
               <input
                 type="checkbox"
                 checked={turnShowNoSale}
@@ -509,6 +514,14 @@ export function ProductReportsPanel({ onClose }: { onClose?: () => void }) {
                 onChange={(e) => setTurnShowNoSale(e.target.checked)}
               />
               Incluir sem venda
+            </label>
+            <label style={checkLabel} title="Horário de pico no relatório (fuso de Manaus)">
+              <input
+                type="checkbox"
+                checked={turnShowPeakSalesPeriod}
+                onChange={(e) => setTurnShowPeakSalesPeriod(e.target.checked)}
+              />
+              Pico de movimento no dia
             </label>
           </div>
           <div className="print-mode-actions">

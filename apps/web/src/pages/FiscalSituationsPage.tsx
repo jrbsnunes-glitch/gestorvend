@@ -821,13 +821,17 @@ export function FiscalSituationsPage() {
 
       {editingRow && editOpen && (
         <FormModalBackdrop
-          className="no-print"
+          className="modal-backdrop--cadastro modal-backdrop--wide no-print"
           onClose={() => {
             setEditOpen(false);
             setErr(null);
           }}
         >
-          <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal modal--wide form-cadastro-modal form-cadastro-modal--xl"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Situação fiscal — editar</h2>
             {err && <div className="alert alert-error">{err}</div>}
             <FiscalSituationFormFields draft={editDraft} setDraft={setEditDraft} idPrefix="edit" />

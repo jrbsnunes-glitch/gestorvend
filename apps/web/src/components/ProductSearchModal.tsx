@@ -22,6 +22,8 @@ type Props = {
   title?: string;
   onClose: () => void;
   onPick: (row: ProductSearchRow) => void;
+  /** Abre o cadastro do produto (ex.: nova aba em Produtos). */
+  onEdit?: (row: ProductSearchRow) => void;
   /** Quando informado, exibe botão para cadastrar produto que ainda não existe. */
   onCreateNew?: (searchTerm: string) => void;
   createNewPending?: boolean;
@@ -32,6 +34,7 @@ export function ProductSearchModal({
   title = 'Pesquisar produto',
   onClose,
   onPick,
+  onEdit,
   onCreateNew,
   createNewPending = false,
 }: Props) {
@@ -82,7 +85,7 @@ export function ProductSearchModal({
                 <th>SKU</th>
                 <th className="num col-money">Venda</th>
                 <th className="num col-money">Custo</th>
-                <th style={{ width: 100 }}></th>
+                <th style={{ width: onEdit ? 168 : 100 }}></th>
               </tr>
             </thead>
             <tbody>
@@ -115,16 +118,28 @@ export function ProductSearchModal({
                   <td className="num col-money">{formatBRL(row.retailPrice)}</td>
                   <td className="num col-money">{formatBRL(row.costAverage)}</td>
                   <td>
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      onClick={() => {
-                        onPick(row);
-                        onClose();
-                      }}
-                    >
-                      Selecionar
-                    </button>
+                    <div className="product-search-modal__actions">
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => {
+                          onPick(row);
+                          onClose();
+                        }}
+                      >
+                        Selecionar
+                      </button>
+                      {onEdit ? (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => onEdit(row)}
+                          title="Abrir cadastro do produto para alterar"
+                        >
+                          Editar
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}

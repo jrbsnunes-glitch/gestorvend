@@ -800,17 +800,16 @@ export function RequisicoesPage() {
 
       {includeOpen && (
         <FormModalBackdrop
-          className="no-print"
+          className="modal-backdrop--cadastro modal-backdrop--wide no-print"
           onClose={() => {
             setIncludeOpen(false);
             setErr(null);
           }}
         >
           <div
-            className="modal"
+            className="modal modal--wide form-cadastro-modal"
             role="dialog"
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 780 }}
           >
             <h2>Nova requisição</h2>
             <p className="page-desc" style={{ marginBottom: '1rem' }}>
@@ -1063,12 +1062,11 @@ export function RequisicoesPage() {
       )}
 
       {editingId && (
-        <FormModalBackdrop className="no-print" onClose={closeEdit}>
+        <FormModalBackdrop className="modal-backdrop--cadastro no-print" onClose={closeEdit}>
           <div
-            className="modal"
+            className="modal form-cadastro-modal form-cadastro-modal--md"
             role="dialog"
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 640 }}
           >
             <h2>
               {editDetail.data ? `Alterar requisição #${editDetail.data.number}` : 'Alterar requisição'}

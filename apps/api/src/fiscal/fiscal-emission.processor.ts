@@ -32,7 +32,15 @@ import {
   parseSefazAutorizacaoResponse,
   postNfceAutorizacaoLote,
 } from './sefaz/nfce-autorizacao-soap';
+import {
+  buildConsSitNFeXml,
+  defaultConsultaProtocoloEndpoint,
+  parseNfeConsultaProtocoloResponse,
+  postNfeConsultaProtocolo,
+} from './sefaz/nfe-consulta-protocolo.soap';
+import { withIssuerEmitLock } from './fiscal-issuer-emit-lock';
 import { FiscalIssuerSettingsService } from './fiscal-issuer-settings.service';
+import type * as https from 'https';
 
 const DEFAULT_SEFAZ_NFCE_SOAP_HOM =
   'https://nfce-homologacao.svrs.rs.gov.br/ws/NfeAutorizacao/NFeAutorizacao4.asmx';
@@ -131,6 +139,51 @@ export class FiscalEmissionProcessorService {
     return m === 'soap' ? 'soap' : 'dry-run';
   }
 
+  private consultaProtocoloUrl(isNfce: boolean, production: boolean): string {
+    const envKey = isNfce ? 'FISCAL_SEFAZ_NFCE_CONSULTA_URL' : 'FISCAL_SEFAZ_NFE_CONSULTA_URL';
+    return (
+      this.config.get<string>(envKey)?.trim() ||
+      defaultConsultaProtocoloEndpoint(isNfce, production)
+    );
+  }
+
+  private shouldAttemptConsultaRecovery(cStat: string | undefined, motive: string): boolean {
+    if (cStat === '539' || cStat === '104' || cStat === '108' || cStat === '109') {
+      return true;
+    }
+    return /timeout|ECONN|socket|TLS|certificate|403|unavailable|indispon|ETIMEDOUT|ENOTFOUND/i.test(
+      motive,
+    );
+  }
+
+  private async tryRecoverAuthorizationViaConsulta(params: {
+    consultUrl: string;
+    tpAmb: 1 | 2;
+    chNFe: string;
+    signedNfe: string;
+    agent: https.Agent;
+  }): Promise<{ accessKey: string; protocol: string | null; nfeProc: string } | null> {
+    try {
+      const consXml = buildConsSitNFeXml({ tpAmb: params.tpAmb, chNFe: params.chNFe });
+      const respXml = await postNfeConsultaProtocolo(params.consultUrl, consXml, params.agent);
+      const parsed = parseNfeConsultaProtocoloResponse(respXml);
+      if (!parsed.ok) {
+        return null;
+      }
+      const nfeProc = parsed.protNFeXml
+        ? buildNfeProcXml(params.signedNfe, parsed.protNFeXml)
+        : params.signedNfe;
+      return {
+        accessKey: parsed.accessKey,
+        protocol: parsed.protocol ?? null,
+        nfeProc,
+      };
+    } catch (e) {
+      this.log.warn(`Consulta protocolo pós-emissão falhou: ${(e as Error).message?.slice(0, 300)}`);
+      return null;
+    }
+  }
+
   private async processTenant(tenantSlug: string): Promise<void> {
     const db = await this.tenantPrisma.getClient(tenantSlug);
     const pending = await db.fiscalDocument.findMany({
@@ -208,6 +261,7 @@ export class FiscalEmissionProcessorService {
     }
     const { company, settings } = ensured;
 
+    await withIssuerEmitLock(db, settings.id, async () => {
     const cnpj = company.cnpj.replace(/\D/g, '');
     if (cnpj.length !== 14 || cnpj === '00000000000000') {
       throw new Error('CNPJ da empresa inválido para emissão fiscal.');
@@ -299,7 +353,58 @@ export class FiscalEmissionProcessorService {
         });
         const agent = createMutualTlsAgentFromPfx(certPath, certPassword);
         const enviNFe = wrapEnviNFe(stored);
-        const respXml = await postNfceAutorizacaoLote(soapUrl, enviNFe, agent);
+        const consultUrl = this.consultaProtocoloUrl(isNfce, production);
+        const nfeOnlyStored = stored.match(/<NFe[\s\S]*?<\/NFe>/i)?.[0] ?? stored;
+        let respXml: string;
+        try {
+          respXml = await postNfceAutorizacaoLote(soapUrl, enviNFe, agent);
+        } catch (postErr) {
+          const recovered = await this.tryRecoverAuthorizationViaConsulta({
+            consultUrl,
+            tpAmb,
+            chNFe: reuseAccessKey,
+            signedNfe: nfeOnlyStored,
+            agent,
+          });
+          if (recovered) {
+            const saved = await this.outboundStorage.saveXml(
+              tenantSlug,
+              recovered.accessKey,
+              recovered.nfeProc,
+            );
+            await db.$transaction(async (tx) => {
+              await tx.fiscalIssuerSettings.update({
+                where: { id: settings.id },
+                data: isNfe
+                  ? { nfeLastNumber: parsedKey.nNF }
+                  : { nfceLastNumber: parsedKey.nNF },
+              });
+              await tx.fiscalDocument.update({
+                where: { id: doc.id },
+                data: {
+                  status: FiscalDocumentStatus.AUTHORIZED,
+                  accessKey: recovered.accessKey,
+                  protocol: recovered.protocol,
+                  sefazEnvironment: settings.sefazEnvironment,
+                  tpEmis: parsedKey.tpEmis,
+                  xmlPath: saved.path,
+                  xmlSha256: saved.sha256,
+                  lastError: null,
+                },
+              });
+              await tx.sale.update({
+                where: { id: doc.saleId },
+                data: { fiscalIntegrationError: null },
+              });
+            });
+            this.logFiscalAuthorized(tenantSlug, sale, recovered.accessKey);
+            this.log.log(
+              `${isNfce ? 'NFC-e' : 'NF-e'} recuperada por consulta tenant=${tenantSlug} chave=${recovered.accessKey}`,
+            );
+            return;
+          }
+          throw postErr;
+        }
         const parsed = parseSefazAutorizacaoResponse(respXml);
         if (parsed.ok) {
           const nfeOnly = stored.match(/<NFe[\s\S]*?<\/NFe>/i)?.[0] ?? stored;
@@ -343,6 +448,52 @@ export class FiscalEmissionProcessorService {
           return;
         }
         const short = parsed.motive.slice(0, 2000);
+        if (this.shouldAttemptConsultaRecovery(parsed.cStat, short)) {
+          const recovered = await this.tryRecoverAuthorizationViaConsulta({
+            consultUrl,
+            tpAmb,
+            chNFe: reuseAccessKey,
+            signedNfe: nfeOnlyStored,
+            agent,
+          });
+          if (recovered) {
+            const saved = await this.outboundStorage.saveXml(
+              tenantSlug,
+              recovered.accessKey,
+              recovered.nfeProc,
+            );
+            await db.$transaction(async (tx) => {
+              await tx.fiscalIssuerSettings.update({
+                where: { id: settings.id },
+                data: isNfe
+                  ? { nfeLastNumber: parsedKey.nNF }
+                  : { nfceLastNumber: parsedKey.nNF },
+              });
+              await tx.fiscalDocument.update({
+                where: { id: doc.id },
+                data: {
+                  status: FiscalDocumentStatus.AUTHORIZED,
+                  accessKey: recovered.accessKey,
+                  protocol: recovered.protocol,
+                  sefazEnvironment: settings.sefazEnvironment,
+                  tpEmis: parsedKey.tpEmis,
+                  xmlPath: saved.path,
+                  xmlSha256: saved.sha256,
+                  lastError: null,
+                },
+              });
+              await tx.sale.update({
+                where: { id: doc.saleId },
+                data: { fiscalIntegrationError: null },
+              });
+            });
+            this.logFiscalAuthorized(tenantSlug, sale, recovered.accessKey);
+            this.log.log(
+              `${isNfce ? 'NFC-e' : 'NF-e'} recuperada por consulta tenant=${tenantSlug} chave=${recovered.accessKey}`,
+            );
+            return;
+          }
+        }
         const isCommFail =
           /timeout|ECONN|socket|TLS|certificate|403|unavailable|indispon/i.test(short) ||
           parsed.cStat === '108' ||
@@ -654,7 +805,51 @@ export class FiscalEmissionProcessorService {
     });
 
     const agent = createMutualTlsAgentFromPfx(certPath, certPassword);
-    const respXml = await postNfceAutorizacaoLote(soapUrl, enviNFe, agent);
+    const consultUrl = this.consultaProtocoloUrl(isNfce, production);
+    let respXml: string;
+    try {
+      respXml = await postNfceAutorizacaoLote(soapUrl, enviNFe, agent);
+    } catch (postErr) {
+      const recovered = await this.tryRecoverAuthorizationViaConsulta({
+        consultUrl,
+        tpAmb,
+        chNFe: chave44,
+        signedNfe: signed,
+        agent,
+      });
+      if (recovered) {
+        await persistAuthorized(recovered.accessKey, recovered.protocol, recovered.nfeProc);
+        this.log.log(
+          `${isNfce ? 'NFC-e' : 'NF-e'} recuperada por consulta tenant=${tenantSlug} chave=${recovered.accessKey}`,
+        );
+        return;
+      }
+      const postMsg = (postErr as Error).message?.slice(0, 2000) ?? String(postErr);
+      if (isNfce && /timeout|ECONN|socket|TLS|ETIMEDOUT|ENOTFOUND|403|unavailable|indispon/i.test(postMsg)) {
+        await db.fiscalDocument.update({
+          where: { id: doc.id },
+          data: {
+            status: FiscalDocumentStatus.CONTINGENCY,
+            tpEmis: 9,
+            accessKey: chave44,
+            lastError: `Contingência: ${postMsg}`.slice(0, 2000),
+          },
+        });
+        await this.outboundStorage.saveXml(tenantSlug, chave44, signed);
+        await db.sale.update({
+          where: { id: doc.saleId },
+          data: {
+            fiscalIntegrationError: `Contingência NFC-e: reenvie pela tela Notas Fiscais. ${postMsg}`.slice(
+              0,
+              1024,
+            ),
+          },
+        });
+        this.log.warn(`NFC-e em contingência tenant=${tenantSlug}: ${postMsg}`);
+        return;
+      }
+      throw postErr;
+    }
     const parsed = parseSefazAutorizacaoResponse(respXml);
 
     if (parsed.ok) {
@@ -670,6 +865,22 @@ export class FiscalEmissionProcessorService {
     }
 
     const short = parsed.motive.slice(0, 2000);
+    if (this.shouldAttemptConsultaRecovery(parsed.cStat, short)) {
+      const recovered = await this.tryRecoverAuthorizationViaConsulta({
+        consultUrl,
+        tpAmb,
+        chNFe: chave44,
+        signedNfe: signed,
+        agent,
+      });
+      if (recovered) {
+        await persistAuthorized(recovered.accessKey, recovered.protocol, recovered.nfeProc);
+        this.log.log(
+          `${isNfce ? 'NFC-e' : 'NF-e'} recuperada por consulta tenant=${tenantSlug} chave=${recovered.accessKey}`,
+        );
+        return;
+      }
+    }
     // Falha de comunicação: marca contingência para reenvio (mantém número não consumido).
     const isCommFail =
       /timeout|ECONN|socket|TLS|certificate|403|unavailable|indispon/i.test(short) ||
@@ -709,5 +920,6 @@ export class FiscalEmissionProcessorService {
       data: { fiscalIntegrationError: `SEFAZ: ${short}`.slice(0, 1024) },
     });
     this.log.warn(`Documento rejeitado tenant=${tenantSlug}: ${short}`);
+    });
   }
 }

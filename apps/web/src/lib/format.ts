@@ -1,3 +1,5 @@
+import { toLocalISODate } from './local-date';
+
 export function digitsOnly(value: string | undefined | null, max?: number): string {
   const d = String(value ?? '').replace(/\D/g, '');
   return max != null ? d.slice(0, max) : d;
@@ -42,6 +44,19 @@ export function formatBRL(value: number | string | undefined | null): string {
   const n = typeof value === 'string' ? parseFloat(value) : Number(value ?? 0);
   if (Number.isNaN(n)) return '—';
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
+}
+
+/** Data civil (sem hora) para prazos, vencimentos e inputs type=date. */
+export function formatCalendarDate(iso: string | Date | undefined | null): string {
+  if (!iso) return '—';
+  const key =
+    typeof iso === 'string'
+      ? /^\d{4}-\d{2}-\d{2}$/.test(iso.slice(0, 10))
+        ? iso.slice(0, 10)
+        : toLocalISODate(iso)
+      : toLocalISODate(iso.toISOString());
+  if (!key) return '—';
+  return new Date(`${key}T12:00:00`).toLocaleDateString('pt-BR');
 }
 
 export function formatDate(iso: string | Date | undefined | null): string {

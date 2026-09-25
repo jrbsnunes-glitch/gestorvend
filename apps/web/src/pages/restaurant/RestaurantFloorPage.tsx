@@ -553,9 +553,9 @@ export function RestaurantFloorPage() {
       ))}
 
       {setupOpen && !waiterOnly ? (
-        <FormModalBackdrop onClose={closeSetup}>
+        <FormModalBackdrop className="modal-backdrop--cadastro modal-backdrop--wide" onClose={closeSetup}>
           <div
-            className="modal restaurant-setup-modal"
+            className="modal modal--wide form-cadastro-modal restaurant-setup-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="restaurant-setup-title"

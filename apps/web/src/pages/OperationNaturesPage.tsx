@@ -378,8 +378,12 @@ export function OperationNaturesPage() {
       />
 
       {createOpen && (
-        <FormModalBackdrop onClose={() => setCreateOpen(false)}>
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+        <FormModalBackdrop className="modal-backdrop--cadastro" onClose={() => setCreateOpen(false)}>
+          <div
+            className="modal form-cadastro-modal form-cadastro-modal--md"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Nova natureza</h2>
             {err && <div className="alert alert-error">{err}</div>}
             {formFields}
@@ -401,8 +405,12 @@ export function OperationNaturesPage() {
       )}
 
       {editRow && (
-        <FormModalBackdrop onClose={() => setEditRow(null)}>
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+        <FormModalBackdrop className="modal-backdrop--cadastro" onClose={() => setEditRow(null)}>
+          <div
+            className="modal form-cadastro-modal form-cadastro-modal--md"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Alterar natureza</h2>
             {err && <div className="alert alert-error">{err}</div>}
             {formFields}

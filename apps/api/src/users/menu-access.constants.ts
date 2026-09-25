@@ -19,6 +19,7 @@ export const MENU_ACCESS_CATALOG: MenuAccessMeta[] = [
   { key: 'stock', label: 'Estoque', supportsDelete: true },
   { key: 'requisitions', label: 'Requisições', supportsDelete: true },
   { key: 'serviceOrders', label: 'Ordens de Serviço', supportsDelete: true },
+  { key: 'factory', label: 'Fábrica', supportsDelete: true },
   { key: 'cash', label: 'Caixa', supportsDelete: false },
   { key: 'cards', label: 'Cartões', supportsDelete: false },
   { key: 'fiscal', label: 'Notas Fiscais', supportsDelete: true },
@@ -65,6 +66,7 @@ export function routeToMenuKey(pathname: string): string | null {
   if (p.startsWith('/estoque')) return 'stock';
   if (p.startsWith('/requisicoes')) return 'requisitions';
   if (p.startsWith('/ordens-servico')) return 'serviceOrders';
+  if (p.startsWith('/fabrica')) return 'factory';
   if (p.startsWith('/caixa')) return 'cash';
   if (p.startsWith('/cartoes')) return 'cards';
   if (p.startsWith('/notas-fiscais')) return 'fiscal';

@@ -344,13 +344,17 @@ export function StockSaidasPage() {
 
       {includeOpen && (
         <FormModalBackdrop
-          className="no-print"
+          className="modal-backdrop--cadastro modal-backdrop--wide no-print"
           onClose={() => {
             setIncludeOpen(false);
             setErr(null);
           }}
         >
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
+          <div
+            className="modal modal--wide form-cadastro-modal"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Nova saída de estoque</h2>
             <p className="page-desc" style={{ marginBottom: '1rem' }}>
               Baixa de estoque sem vínculo com venda. Informe o local e o motivo e adicione quantos

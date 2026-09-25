@@ -4,6 +4,7 @@ import { RequiresPlan } from '../auth/plan.decorator';
 import { PlanCode } from '../generated/central-client';
 import { PaymentMethod as TenantPaymentMethod } from '../generated/tenant-client';
 import { WaChatApiKeyGuard } from './wachat-apikey.guard';
+import { WaChatFactoryService } from './wachat-factory.service';
 import { WaChatService } from './wachat.service';
 
 type CreateOrderBody = {
@@ -22,8 +23,9 @@ type CreateOrderBody = {
 
 /**
  * Bridge HTTP consumida pelo GestorVendChat (FastAPI) para:
- *  - ler o catálogo/estoque do tenant
+ *  - ler o catálogo/estoque do tenant (varejo)
  *  - registrar pedidos confirmados no WhatsApp como Sale do GestorVend
+ *  - catálogo de PAs fabricados e leads de orçamento (`/wachat/factory/*`)
  *
  * Autenticação: header `X-WaChat-Key` (segredo `WACHAT_API_KEY`).
  * Autorização: plano `WHATSAPP` no tenant.
@@ -32,12 +34,57 @@ type CreateOrderBody = {
 @UseGuards(WaChatApiKeyGuard, PlanGuard)
 @RequiresPlan(PlanCode.WHATSAPP)
 export class WaChatController {
-  constructor(private readonly wachat: WaChatService) {}
+  constructor(
+    private readonly wachat: WaChatService,
+    private readonly wachatFactory: WaChatFactoryService,
+  ) {}
 
   @Get('catalog')
   catalog(@Query('tenantSlug') tenantSlug: string) {
     if (!tenantSlug) throw new BadRequestException('Informe tenantSlug');
     return this.wachat.getCatalog(tenantSlug);
+  }
+
+  @Get('factory/catalog')
+  factoryCatalog(@Query('tenantSlug') tenantSlug: string) {
+    if (!tenantSlug) throw new BadRequestException('Informe tenantSlug');
+    return this.wachatFactory.getCatalog(tenantSlug.trim());
+  }
+
+  @Get('factory/leads/by-ref')
+  factoryLeadByRef(
+    @Query('tenantSlug') tenantSlug: string,
+    @Query('externalRef') externalRef: string,
+  ) {
+    if (!tenantSlug) throw new BadRequestException('Informe tenantSlug');
+    if (!externalRef?.trim()) throw new BadRequestException('Informe externalRef');
+    return this.wachatFactory.findLeadByExternalRef(tenantSlug.trim(), externalRef.trim());
+  }
+
+  @Post('factory/leads')
+  @HttpCode(201)
+  createFactoryLead(
+    @Body()
+    body: {
+      tenantSlug: string;
+      customerPhone: string;
+      customerName?: string | null;
+      finishedVariantId: string;
+      quantity?: number | string;
+      notes?: string | null;
+      externalRef: string;
+    },
+  ) {
+    if (!body?.tenantSlug) throw new BadRequestException('Informe tenantSlug');
+    return this.wachatFactory.createLead({
+      tenantSlug: body.tenantSlug.trim(),
+      customerPhone: body.customerPhone,
+      customerName: body.customerName ?? null,
+      finishedVariantId: body.finishedVariantId,
+      quantity: body.quantity,
+      notes: body.notes ?? null,
+      externalRef: body.externalRef,
+    });
   }
 
   @Post('orders')

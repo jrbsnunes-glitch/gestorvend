@@ -556,8 +556,8 @@ export function CardsPage() {
       />
 
       {editRow && (
-        <FormModalBackdrop onClose={() => setEditRow(null)}>
-          <div className="modal" role="dialog">
+        <FormModalBackdrop className="modal-backdrop--cadastro" onClose={() => setEditRow(null)}>
+          <div className="modal form-cadastro-modal form-cadastro-modal--md" role="dialog">
             <h2>Editar pagamento cartão — venda #{editRow.sale.number}</h2>
             {patch.isError && (
               <div className="alert alert-error">{(patch.error as Error).message}</div>

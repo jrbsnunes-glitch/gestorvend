@@ -19,6 +19,7 @@ import { ReportsModule } from './reports/reports.module';
 import { RequisitionsModule } from './requisitions/requisitions.module';
 import { SalesModule } from './sales/sales.module';
 import { ServiceOrdersModule } from './service-orders/service-orders.module';
+import { ManufacturingModule } from './manufacturing/manufacturing.module';
 import { TenantModule } from './tenant/tenant.module';
 import { UsersModule } from './users/users.module';
 import { WaChatModule } from './wachat/wachat.module';
@@ -46,6 +47,7 @@ import { PrintingModule } from './printing/printing.module';
     SalesModule,
     RequisitionsModule,
     ServiceOrdersModule,
+    ManufacturingModule,
     CashModule,
     FinanceModule,
     FinancialOverviewModule,

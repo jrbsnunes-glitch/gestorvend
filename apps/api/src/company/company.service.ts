@@ -46,6 +46,18 @@ type CompanyInput = {
   serviceOrderRequireEquipment?: boolean;
   serviceOrderAllowQuote?: boolean;
   serviceOrderTermsText?: string | null;
+  factoryModuleEnabled?: boolean;
+  factoryIssuePctAtStart?: number | string;
+  factoryIssuePctDevelopment?: number | string;
+  factoryQuoteTermsText?: string | null;
+  factoryStockLocationId?: string | null;
+  factoryWhatsappBotEnabled?: boolean;
+  factoryWhatsappPhoneNumberId?: string | null;
+  factoryWhatsappAccessToken?: string | null;
+  factoryCatalogWhatsappMessageTemplate?: string | null;
+  factoryWhatsappWelcomeText?: string | null;
+  factoryWhatsappMenuText?: string | null;
+  factoryWhatsappHandoffText?: string | null;
 };
 
 /**
@@ -149,6 +161,66 @@ export class CompanyService {
     if (body.serviceOrderModuleEnabled !== undefined) {
       data.serviceOrderModuleEnabled = Boolean(body.serviceOrderModuleEnabled);
     }
+    if (body.factoryModuleEnabled !== undefined) {
+      data.factoryModuleEnabled = Boolean(body.factoryModuleEnabled);
+    }
+    if (body.factoryQuoteTermsText !== undefined) {
+      data.factoryQuoteTermsText = trimOrNull(body.factoryQuoteTermsText);
+    }
+    if (body.factoryStockLocationId !== undefined) {
+      const locId = trimOrNull(body.factoryStockLocationId);
+      if (locId) {
+        const loc = await db.stockLocation.findUnique({ where: { id: locId } });
+        if (!loc) throw new BadRequestException('Local de estoque da Fábrica inválido.');
+        data.factoryStockLocation = { connect: { id: locId } };
+      } else {
+        data.factoryStockLocation = { disconnect: true };
+      }
+    }
+    if (body.factoryIssuePctAtStart !== undefined) {
+      const n = parseFloat(String(body.factoryIssuePctAtStart).replace(',', '.'));
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        throw new BadRequestException('factoryIssuePctAtStart deve ser entre 0 e 100.');
+      }
+      data.factoryIssuePctAtStart = n;
+    }
+    if (body.factoryIssuePctDevelopment !== undefined) {
+      const n = parseFloat(String(body.factoryIssuePctDevelopment).replace(',', '.'));
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        throw new BadRequestException('factoryIssuePctDevelopment deve ser entre 0 e 100.');
+      }
+      data.factoryIssuePctDevelopment = n;
+    }
+    if (body.factoryWhatsappBotEnabled !== undefined) {
+      data.factoryWhatsappBotEnabled = Boolean(body.factoryWhatsappBotEnabled);
+    }
+    if (body.factoryWhatsappPhoneNumberId !== undefined) {
+      const pid = trimOrNull(body.factoryWhatsappPhoneNumberId);
+      data.factoryWhatsappPhoneNumberId = pid;
+    }
+    if (
+      body.factoryWhatsappAccessToken !== undefined &&
+      body.factoryWhatsappAccessToken !== '********'
+    ) {
+      const tok = trimOrNull(body.factoryWhatsappAccessToken);
+      if (tok !== undefined) {
+        data.factoryWhatsappAccessToken = tok;
+      }
+    }
+    if (body.factoryCatalogWhatsappMessageTemplate !== undefined) {
+      data.factoryCatalogWhatsappMessageTemplate = trimOrNull(
+        body.factoryCatalogWhatsappMessageTemplate,
+      );
+    }
+    if (body.factoryWhatsappWelcomeText !== undefined) {
+      data.factoryWhatsappWelcomeText = trimOrNull(body.factoryWhatsappWelcomeText);
+    }
+    if (body.factoryWhatsappMenuText !== undefined) {
+      data.factoryWhatsappMenuText = trimOrNull(body.factoryWhatsappMenuText);
+    }
+    if (body.factoryWhatsappHandoffText !== undefined) {
+      data.factoryWhatsappHandoffText = trimOrNull(body.factoryWhatsappHandoffText);
+    }
     if (body.serviceOrderRequireEquipment !== undefined) {
       data.serviceOrderRequireEquipment = Boolean(body.serviceOrderRequireEquipment);
     }
@@ -249,7 +321,14 @@ export class CompanyService {
     const waiterTipValue = parseFeeValue(body.waiterTipValue, 'Valor da taxa do garçom');
     if (waiterTipValue !== undefined) data.waiterTipValue = String(waiterTipValue);
 
-    return db.company.update({ where: { id: current.id }, data });
+    const updated = await db.company.update({ where: { id: current.id }, data });
+    if (body.factoryWhatsappPhoneNumberId !== undefined) {
+      await this.tenants.setFactoryWhatsappPhoneNumberId(
+        tenantSlug,
+        updated.factoryWhatsappPhoneNumberId,
+      );
+    }
+    return updated;
   }
 
   async uploadLogo(

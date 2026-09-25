@@ -827,14 +827,14 @@ export function CustomersPage() {
 
       {createOpen && (
         <FormModalBackdrop
-          className="no-print"
+          className="modal-backdrop--cadastro modal-backdrop--wide no-print"
           onClose={() => {
             setCreateOpen(false);
             setErr(null);
           }}
         >
           <div
-            className="modal modal--wide customer-form-modal"
+            className="modal modal--wide form-cadastro-modal form-cadastro-modal--md customer-form-modal"
             role="dialog"
             onClick={(e) => e.stopPropagation()}
           >
@@ -865,9 +865,12 @@ export function CustomersPage() {
       )}
 
       {editCustomer && editOpen && (
-        <FormModalBackdrop className="no-print" onClose={() => setEditOpen(false)}>
+        <FormModalBackdrop
+          className="modal-backdrop--cadastro modal-backdrop--wide no-print"
+          onClose={() => setEditOpen(false)}
+        >
           <div
-            className="modal modal--wide customer-form-modal"
+            className="modal modal--wide form-cadastro-modal form-cadastro-modal--md customer-form-modal"
             role="dialog"
             onClick={(e) => e.stopPropagation()}
           >
@@ -1097,18 +1100,17 @@ export function CustomersPage() {
 
       {limitEditKind && (
         <FormModalBackdrop
-          className="no-print"
+          className="modal-backdrop--cadastro no-print"
           onClose={() => {
             setLimitEditKind(null);
             setLimitEditErr(null);
           }}
         >
           <div
-            className="modal"
+            className="modal form-cadastro-modal form-cadastro-modal--md"
             role="dialog"
             aria-modal="true"
             onClick={(e) => e.stopPropagation()}
-            style={{ width: 'min(560px, 96vw)', maxHeight: '90vh', overflow: 'auto' }}
           >
             <h2>
               {limitEditKind === 'CREDIT' ? 'Atualizar Saldo' : 'Valor de Requisição'}

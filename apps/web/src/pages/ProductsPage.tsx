@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ListPagination } from '../components/ListPagination';
@@ -20,8 +20,9 @@ import {
 import { ProductReportsPanel } from '../components/ProductReportsPanel';
 import { RecordViewModal, type RecordViewSection } from '../components/RecordViewModal';
 import { ProductSearchModal, type ProductSearchRow as SearchPickRow } from '../components/ProductSearchModal';
+import { StockLocationBalancesPopover } from '../components/StockLocationBalancesPopover';
 import { api, apiUpload } from '../lib/api';
-import { getIdentity } from '../lib/auth';
+import { getIdentity, hasFactoryModule } from '../lib/auth';
 import { formatBRL, formatDate } from '../lib/format';
 import { useListPagination } from '../hooks/useListPagination';
 import {
@@ -185,7 +186,14 @@ type ProductSearchRow = {
   retailPrice: string;
   costAverage: string;
   stockTotal: string;
+  stockByLocation?: Array<{
+    locationId: string;
+    locationCode: string;
+    locationName: string;
+    quantity: string;
+  }>;
   minStock?: string;
+  isService?: boolean;
 };
 
 type Variant = {
@@ -216,6 +224,9 @@ type Product = {
   conversion: string | null;
   /** Produto de serviço (unidade SERV) — sem baixa de estoque. */
   isService?: boolean;
+  isManufacturedFinishedGood?: boolean;
+  manufacturingLeadTimeDays?: number | null;
+  showInPublicCatalog?: boolean;
   /** Itens unitários por caixa/pack (ex.: 12, 50). */
   packItemQty?: string | null;
   stockComponentVariantId?: string | null;
@@ -286,8 +297,80 @@ function minMinStockFromVariantForm(
   );
 }
 
+function ManufacturingProductFields(props: {
+  isPa: boolean;
+  onPaChange: (v: boolean) => void;
+  leadDays: string;
+  onLeadDaysChange: (v: string) => void;
+  publicCatalog: boolean;
+  onPublicCatalogChange: (v: boolean) => void;
+  productId?: string;
+}) {
+  return (
+    <section className="product-form__section product-form__section--compact-mfg" aria-label="Fabricação">
+      <p className="product-form__section-title">Fabricação (produto acabado)</p>
+      <label className="product-form__mfg-check">
+        <input
+          type="checkbox"
+          checked={props.isPa}
+          onChange={(e) => props.onPaChange(e.target.checked)}
+        />
+        <span>
+          Produto acabado fabricável
+          <span className="product-form__mfg-check-hint">
+            Exige ficha técnica (BOM) no cadastro. Usado em projetos da Fábrica.
+          </span>
+        </span>
+      </label>
+      {props.isPa ? (
+        <>
+          <div className="field">
+            <label htmlFor="p-mfg-lead">Prazo sugerido (dias)</label>
+            <input
+              id="p-mfg-lead"
+              type="number"
+              min={0}
+              step={1}
+              value={props.leadDays}
+              onChange={(e) => props.onLeadDaysChange(e.target.value)}
+              placeholder="Opcional — ex.: 15"
+            />
+          </div>
+          <label className="product-form__mfg-check">
+            <input
+              type="checkbox"
+              checked={props.publicCatalog}
+              onChange={(e) => props.onPublicCatalogChange(e.target.checked)}
+            />
+            <span>
+              Exibir no catálogo público (<code>/loja</code>)
+              <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                Aparece na loja, no bot WhatsApp (lista) e nos leads. Use <strong>descrição</strong> e aba{' '}
+                <strong>Imagem</strong> para o card na loja; o bot envia foto e descrição ao escolher o item.
+              </span>
+            </span>
+          </label>
+          {props.productId ? (
+            <p style={{ margin: '0.65rem 0 0', fontSize: '0.82rem' }}>
+              <Link to={`/fabrica/fichas-tecnicas`}>Cadastrar insumos (ficha técnica)</Link>
+              {' · '}
+              <Link to="/fabrica">Projetos de fabricação</Link>
+            </p>
+          ) : (
+            <p style={{ margin: '0.65rem 0 0', fontSize: '0.82rem' }}>
+              Após salvar o produto, cadastre os insumos em{' '}
+              <Link to="/fabrica/fichas-tecnicas">Fábrica → Fichas técnicas</Link>.
+            </p>
+          )}
+        </>
+      ) : null}
+    </section>
+  );
+}
+
 export function ProductsPage() {
   const qc = useQueryClient();
+  const factoryLicensed = hasFactoryModule();
   const [searchParams, setSearchParams] = useSearchParams();
   const [viewProductId, setViewProductId] = useState<string | null>(null);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
@@ -329,6 +412,7 @@ export function ProductsPage() {
     next.delete('q');
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
+
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [defaultBarcode, setDefaultBarcode] = useState('');
@@ -355,6 +439,9 @@ export function ProductsPage() {
   >({});
   const [err, setErr] = useState<string | null>(null);
   const [supplierLinks, setSupplierLinks] = useState<SupplierLinkDraft[]>([]);
+  const [isManufacturedFinishedGood, setIsManufacturedFinishedGood] = useState(false);
+  const [manufacturingLeadTimeDays, setManufacturingLeadTimeDays] = useState('');
+  const [showInPublicCatalog, setShowInPublicCatalog] = useState(false);
 
   const list = useQuery({
     queryKey: ['products', 'includeInactive'],
@@ -566,6 +653,9 @@ export function ProductsPage() {
     setMinStockInput('1');
     setSupplierLinks([]);
     setIsActive(true);
+    setIsManufacturedFinishedGood(false);
+    setManufacturingLeadTimeDays('');
+    setShowInPublicCatalog(false);
     setErr(null);
     setProductFormTab('identificacao');
   }
@@ -597,6 +687,11 @@ export function ProductsPage() {
     );
     setFiscalSituationId(p.fiscalSituation?.id ?? p.fiscalSituationId ?? '');
     setIsActive(p.isActive);
+    setIsManufacturedFinishedGood(Boolean(p.isManufacturedFinishedGood));
+    setManufacturingLeadTimeDays(
+      p.manufacturingLeadTimeDays != null ? String(p.manufacturingLeadTimeDays) : '',
+    );
+    setShowInPublicCatalog(Boolean(p.showInPublicCatalog));
     const vp: Record<string, { retail: string; cost: string; minStock: string }> = {};
     for (const v of p.variants) {
       vp[v.id] = {
@@ -647,6 +742,16 @@ export function ProductsPage() {
             },
           ],
           supplierLinks: linksToCreatePayload(supplierLinks),
+          ...(factoryLicensed
+            ? {
+                isManufacturedFinishedGood,
+                showInPublicCatalog: isManufacturedFinishedGood && showInPublicCatalog,
+                manufacturingLeadTimeDays:
+                  isManufacturedFinishedGood && manufacturingLeadTimeDays.trim()
+                    ? Number(manufacturingLeadTimeDays)
+                    : null,
+              }
+            : {}),
         },
       });
     },
@@ -697,6 +802,16 @@ export function ProductsPage() {
                   ),
             };
           }),
+          ...(factoryLicensed
+            ? {
+                isManufacturedFinishedGood,
+                showInPublicCatalog: isManufacturedFinishedGood && showInPublicCatalog,
+                manufacturingLeadTimeDays:
+                  isManufacturedFinishedGood && manufacturingLeadTimeDays.trim()
+                    ? Number(manufacturingLeadTimeDays)
+                    : null,
+              }
+            : {}),
         },
       });
       await api(`/products/${payload.id}/supplier-links`, {
@@ -906,6 +1021,16 @@ export function ProductsPage() {
     }
   }
 
+  useEffect(() => {
+    const editId = searchParams.get('edit')?.trim();
+    if (!editId) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('edit');
+    setSearchParams(next, { replace: true });
+    void openEditFromSearch(editId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- abre modal quando ?edit= na URL
+  }, [searchParams]);
+
   return (
     <div className="page print-area">
       <h1 className="page-title">Produtos</h1>
@@ -966,16 +1091,15 @@ export function ProductsPage() {
           onClick={() => setReportsOpen(false)}
         >
           <div
-            className="modal product-reports-modal"
+            className="modal product-reports-modal modal--filters-compact"
             role="dialog"
             aria-labelledby="product-reports-title"
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 640 }}
+            style={{ maxWidth: 560 }}
           >
             <h2 id="product-reports-title">Relatórios de produtos</h2>
-            <p style={{ marginTop: 0, fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
-              Preencha os filtros abaixo e clique em <strong>Gerar relatório</strong>. O resultado abre
-              numa página limpa, pronta para impressão ou PDF.
+            <p className="product-reports-modal__hint">
+              Filtros por aba → <strong>Gerar relatório</strong> abre a impressão/PDF.
             </p>
             <ProductReportsPanel onClose={() => setReportsOpen(false)} />
             <div className="modal-actions">
@@ -990,15 +1114,14 @@ export function ProductsPage() {
       {filtersOpen && (
         <FormModalBackdrop className="no-print" onClose={() => setFiltersOpen(false)}>
           <div
-            className="modal"
+            className="modal modal--filters-compact"
             role="dialog"
             aria-labelledby="product-filters-title"
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 420 }}
           >
             <h2 id="product-filters-title">Filtros da listagem</h2>
-            <p style={{ margin: '0 0 0.85rem', fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
-              Por padrão só aparecem produtos ativos. Use o status para ver inativos e reativá-los.
+            <p className="filter-modal-hint">
+              Padrão: só ativos. Status «inativos» para reativar.
             </p>
             <div className="field">
               <label htmlFor="pf-status">Status</label>
@@ -1083,7 +1206,8 @@ export function ProductsPage() {
           <div className="modal modal--wide" role="dialog" aria-labelledby="product-search-title" onClick={(e) => e.stopPropagation()}>
             <h2 id="product-search-title">Pesquisar produtos</h2>
             <p style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>
-              Busca em tempo real por nome, descrição, SKU ou código de barras. Uma linha por variação.
+              Busca em tempo real por nome, descrição, SKU ou código de barras. O total de estoque aparece na lista;
+              use <strong>Ver locais</strong> para o detalhe por depósito.
             </p>
             <div className="field" style={{ marginBottom: '0.75rem' }}>
               <label htmlFor="product-search-q">Termo</label>
@@ -1112,7 +1236,7 @@ export function ProductsPage() {
                     <th>Descrição</th>
                     <th className="num col-money th-nowrap products-search-table__money">Venda</th>
                     <th className="num col-money th-nowrap products-search-table__money">Custo</th>
-                    <th className="num th-nowrap products-search-table__stk">Est. total</th>
+                    <th className="num th-nowrap products-search-table__stk">Estoque</th>
                     <th className="col-actions no-print">Ações</th>
                   </tr>
                 </thead>
@@ -1171,7 +1295,21 @@ export function ProductsPage() {
                       </td>
                       <td className="num col-money products-search-table__money">{formatBRL(row.retailPrice)}</td>
                       <td className="num col-money products-search-table__money">{formatBRL(row.costAverage)}</td>
-                      <td className="num products-search-table__stk">{formatStockQty(row.stockTotal)}</td>
+                      <td
+                        className="products-search-table__stk-cell"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {row.isService ? (
+                          <span className="muted">—</span>
+                        ) : (
+                          <div className="products-search-table__stk-stack">
+                            <span className="num products-search-table__stk-total">
+                              {formatStockQty(row.stockTotal)}
+                            </span>
+                            <StockLocationBalancesPopover locations={row.stockByLocation ?? []} />
+                          </div>
+                        )}
+                      </td>
                       <td className="col-actions no-print">
                         <button
                           type="button"
@@ -1279,29 +1417,37 @@ export function ProductsPage() {
 
       {createOpen && (
         <FormModalBackdrop
-          className="modal-backdrop--wide no-print"
+          className="modal-backdrop--wide modal-backdrop--cadastro no-print"
           onClose={() => {
             setCreateOpen(false);
             setErr(null);
           }}
         >
-          <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
-            <h2>Novo produto</h2>
-            <p style={{ margin: '0 0 1rem', fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>
-              Primeira variação (SKU) pode ser ajustada depois. O <strong>código sequencial</strong> do produto é gerado automaticamente ao salvar.
-            </p>
-            {err && <div className="alert alert-error">{err}</div>}
-            <ProductFormTabNav tab={productFormTab} onChange={setProductFormTab} />
+          <div
+            className="modal modal--wide form-cadastro-modal"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="form-cadastro-modal__head">
+              <h2>Novo produto</h2>
+              <p className="form-cadastro-modal__hint">
+                Primeira variação (SKU) pode ser ajustada depois. O <strong>código sequencial</strong> do produto é
+                gerado automaticamente ao salvar.
+              </p>
+              {err && <div className="alert alert-error">{err}</div>}
+              <ProductFormTabNav tab={productFormTab} onChange={setProductFormTab} />
+            </div>
+            <div className="form-cadastro-modal__body">
             <div className="product-form">
               {productFormTab === 'identificacao' && (
                 <div className="form-modal-tab-panel" role="tabpanel">
                   <section className="product-form__section" aria-label="Identificação">
                     <p className="product-form__section-title">Identificação</p>
-                    <div className="field product-form__name">
-                      <label htmlFor="p-name">Nome *</label>
-                      <input id="p-name" value={name} onChange={(e) => setName(e.target.value)} required />
-                    </div>
-                    <div className="product-form__grid product-form__grid--2">
+                    <div className="product-form__ident-grid">
+                      <div className="field product-form__name">
+                        <label htmlFor="p-name">Nome *</label>
+                        <input id="p-name" value={name} onChange={(e) => setName(e.target.value)} required />
+                      </div>
                       <div className="field">
                         <label htmlFor="p-sku">SKU</label>
                         <input id="p-sku" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Auto se vazio" />
@@ -1316,39 +1462,45 @@ export function ProductsPage() {
                           inputMode="numeric"
                         />
                       </div>
+                      <div className="field">
+                        <span className="field-label-text">Categoria</span>
+                        <CategorySearchCombo
+                          id="p-cat"
+                          value={categoryId}
+                          onChange={(id, picked) => {
+                            setCategoryId(id);
+                            if (picked) setCategoryNameHint(picked);
+                            if (!id) setCategoryNameHint('');
+                          }}
+                          hintName={categoryNameHint}
+                        />
+                      </div>
+                      <div className="field field--grow product-form__ident-desc">
+                        <label htmlFor="p-desc-c">Descrição</label>
+                        <textarea
+                          id="p-desc-c"
+                          value={description}
+                          onChange={(e) => setDescription(e.target.value)}
+                          rows={2}
+                          placeholder="Complementar (recibos e relatórios)"
+                        />
+                      </div>
                     </div>
                   </section>
 
-                  <section className="product-form__section" aria-label="Descrição">
-                    <p className="product-form__section-title">Descrição</p>
-                    <div className="field field--grow">
-                      <label htmlFor="p-desc-c">Descrição</label>
-                      <textarea
-                        id="p-desc-c"
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        rows={4}
-                        placeholder="Descrição complementar (aparece em recibos e relatórios)"
-                      />
-                    </div>
-                  </section>
-
-                  <section className="product-form__section" aria-label="Classificação">
-                    <p className="product-form__section-title">Classificação</p>
-                    <div className="field">
-                      <span className="field-label-text">Categoria — pesquisar ou incluir</span>
-                      <CategorySearchCombo
-                        id="p-cat"
-                        value={categoryId}
-                        onChange={(id, picked) => {
-                          setCategoryId(id);
-                          if (picked) setCategoryNameHint(picked);
-                          if (!id) setCategoryNameHint('');
-                        }}
-                        hintName={categoryNameHint}
-                      />
-                    </div>
-                  </section>
+                  {factoryLicensed ? (
+                    <ManufacturingProductFields
+                      isPa={isManufacturedFinishedGood}
+                      onPaChange={(v) => {
+                        setIsManufacturedFinishedGood(v);
+                        if (!v) setShowInPublicCatalog(false);
+                      }}
+                      leadDays={manufacturingLeadTimeDays}
+                      onLeadDaysChange={setManufacturingLeadTimeDays}
+                      publicCatalog={showInPublicCatalog}
+                      onPublicCatalogChange={setShowInPublicCatalog}
+                    />
+                  ) : null}
 
                   <section className="product-form__section" aria-label="Preços por variação">
                     <p className="product-form__section-title">Preços por variação</p>
@@ -1395,10 +1547,10 @@ export function ProductsPage() {
                           onChange={(e) => setMinStockInput(e.target.value)}
                           disabled={isServiceTaxUnit(taxUnit)}
                         />
-                        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                        <span className="product-form__field-hint">
                           {isServiceTaxUnit(taxUnit)
                             ? 'Serviço: não controla estoque (mínimo 0).'
-                            : 'Cadastro mínimo 1. PDV avisa quando o saldo ficar abaixo deste valor.'}
+                            : 'Mín. 1 — PDV avisa abaixo deste saldo.'}
                         </span>
                       </div>
                     </div>
@@ -1704,6 +1856,7 @@ export function ProductsPage() {
                 </div>
               )}
             </div>
+            </div>
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setCreateOpen(false)}>
                 Cancelar
@@ -1723,69 +1876,85 @@ export function ProductsPage() {
 
       {editProduct && editOpen && (
         <FormModalBackdrop
-          className="modal-backdrop--wide no-print"
+          className="modal-backdrop--wide modal-backdrop--cadastro no-print"
           onClose={() => setEditOpen(false)}
         >
-          <div className="modal modal--wide" role="dialog" onClick={(e) => e.stopPropagation()}>
-            <h2>Alterar produto</h2>
-            {editProduct.controlNumber != null && (
-              <p style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>
-                Código do produto: <strong>{formatProductCode(editProduct.controlNumber)}</strong>
-              </p>
-            )}
-            {err && <div className="alert alert-error">{err}</div>}
-            <ProductFormTabNav tab={productFormTab} onChange={setProductFormTab} />
+          <div
+            className="modal modal--wide form-cadastro-modal"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="form-cadastro-modal__head">
+              <h2>Alterar produto</h2>
+              {editProduct.controlNumber != null && (
+                <p className="form-cadastro-modal__hint">
+                  Código do produto: <strong>{formatProductCode(editProduct.controlNumber)}</strong>
+                </p>
+              )}
+              {err && <div className="alert alert-error">{err}</div>}
+              <ProductFormTabNav tab={productFormTab} onChange={setProductFormTab} />
+            </div>
+            <div className="form-cadastro-modal__body">
             <div className="product-form">
               {productFormTab === 'identificacao' && (
                 <div className="form-modal-tab-panel" role="tabpanel">
                   <section className="product-form__section" aria-label="Identificação">
                     <p className="product-form__section-title">Identificação</p>
-                    <div className="field product-form__name">
-                      <label htmlFor="pe-name">Nome *</label>
-                      <input id="pe-name" value={name} onChange={(e) => setName(e.target.value)} required />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="pe-bar">Código de barras</label>
-                      <input
-                        id="pe-bar"
-                        value={defaultBarcode}
-                        onChange={(e) => setDefaultBarcode(e.target.value.trim())}
-                        placeholder="EAN do produto"
-                        inputMode="numeric"
-                      />
+                    <div className="product-form__ident-grid">
+                      <div className="field product-form__name">
+                        <label htmlFor="pe-name">Nome *</label>
+                        <input id="pe-name" value={name} onChange={(e) => setName(e.target.value)} required />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="pe-bar">Código de barras</label>
+                        <input
+                          id="pe-bar"
+                          value={defaultBarcode}
+                          onChange={(e) => setDefaultBarcode(e.target.value.trim())}
+                          placeholder="EAN do produto"
+                          inputMode="numeric"
+                        />
+                      </div>
+                      <div className="field">
+                        <span className="field-label-text">Categoria</span>
+                        <CategorySearchCombo
+                          id="pe-cat"
+                          value={categoryId}
+                          onChange={(id, picked) => {
+                            setCategoryId(id);
+                            if (picked) setCategoryNameHint(picked);
+                            if (!id) setCategoryNameHint('');
+                          }}
+                          hintName={categoryNameHint}
+                        />
+                      </div>
+                      <div className="field field--grow product-form__ident-desc">
+                        <label htmlFor="pe-desc">Descrição</label>
+                        <textarea
+                          id="pe-desc"
+                          value={description}
+                          onChange={(e) => setDescription(e.target.value)}
+                          rows={2}
+                          placeholder="Complementar (recibos e relatórios)"
+                        />
+                      </div>
                     </div>
                   </section>
 
-                  <section className="product-form__section" aria-label="Descrição">
-                    <p className="product-form__section-title">Descrição</p>
-                    <div className="field field--grow">
-                      <label htmlFor="pe-desc">Descrição</label>
-                      <textarea
-                        id="pe-desc"
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        rows={4}
-                        placeholder="Descrição complementar (aparece em recibos e relatórios)"
-                      />
-                    </div>
-                  </section>
-
-                  <section className="product-form__section" aria-label="Classificação">
-                    <p className="product-form__section-title">Classificação</p>
-                    <div className="field">
-                      <span className="field-label-text">Categoria — pesquisar ou incluir</span>
-                      <CategorySearchCombo
-                        id="pe-cat"
-                        value={categoryId}
-                        onChange={(id, picked) => {
-                          setCategoryId(id);
-                          if (picked) setCategoryNameHint(picked);
-                          if (!id) setCategoryNameHint('');
-                        }}
-                        hintName={categoryNameHint}
-                      />
-                    </div>
-                  </section>
+                  {factoryLicensed ? (
+                    <ManufacturingProductFields
+                      isPa={isManufacturedFinishedGood}
+                      onPaChange={(v) => {
+                        setIsManufacturedFinishedGood(v);
+                        if (!v) setShowInPublicCatalog(false);
+                      }}
+                      leadDays={manufacturingLeadTimeDays}
+                      onLeadDaysChange={setManufacturingLeadTimeDays}
+                      publicCatalog={showInPublicCatalog}
+                      onPublicCatalogChange={setShowInPublicCatalog}
+                      productId={editProduct.id}
+                    />
+                  ) : null}
 
                   <section className="product-form__section" aria-label="Preços por variação">
                     <p className="product-form__section-title">Preços por variação</p>
@@ -2196,11 +2365,12 @@ export function ProductsPage() {
                 </div>
               )}
             </div>
-            <div className="field">
+            <div className="field" style={{ marginBottom: 0 }}>
               <label style={{ flexDirection: 'row', alignItems: 'center', gap: '0.5rem' }}>
                 <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
                 Ativo
               </label>
+            </div>
             </div>
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setEditOpen(false)}>

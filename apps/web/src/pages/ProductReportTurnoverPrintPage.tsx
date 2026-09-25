@@ -23,7 +23,14 @@ type TurnoverResponse = {
     maxStockCeiling: number | null;
     alertsOnly: boolean;
     showNoSale: boolean;
+    showPeakSalesPeriod?: boolean;
   };
+  peakSalesPeriod?: {
+    hourFrom: number;
+    hourTo: number;
+    label: string;
+    movementQty: number;
+  } | null;
   lines: Array<{
     variantId: string;
     sku: string;
@@ -54,6 +61,7 @@ type TurnParams = {
   useMaxControl: boolean;
   alertsOnly: boolean;
   maxStockCeiling: string;
+  showPeakSalesPeriod: boolean;
 };
 
 function parseCadMinBound(raw: string): number | null {
@@ -74,6 +82,7 @@ function turnParamsFromSearchParams(sp: URLSearchParams): TurnParams {
     useMaxControl: sp.get('useMaxControl') === '1',
     alertsOnly: sp.get('alertsOnly') === '1',
     maxStockCeiling: sp.get('maxStockCeiling') ?? '',
+    showPeakSalesPeriod: sp.get('showPeakSalesPeriod') === '1',
   };
 }
 
@@ -110,6 +119,7 @@ export function ProductReportTurnoverPrintPage() {
         useMaxControl: params.useMaxControl,
         alertsOnly: params.alertsOnly,
         maxStockCeiling: params.maxStockCeiling,
+        showPeakSalesPeriod: params.showPeakSalesPeriod,
       }),
     [params, hasVariant, cadOk],
   );
@@ -199,6 +209,30 @@ export function ProductReportTurnoverPrintPage() {
 
         {data && (
           <>
+            {data.options.showPeakSalesPeriod && data.peakSalesPeriod && (
+              <p
+                className="print-sub"
+                style={{
+                  margin: '0 0 0.75rem',
+                  padding: '0.5rem 0.65rem',
+                  background: 'var(--color-surface-muted, #f4f4f5)',
+                  borderRadius: 6,
+                  fontSize: '0.9rem',
+                }}
+              >
+                <strong>Horário de maior movimento (vendas no período):</strong>{' '}
+                {data.peakSalesPeriod.label} (horário de Manaus) —{' '}
+                {data.peakSalesPeriod.movementQty.toLocaleString('pt-BR', {
+                  maximumFractionDigits: 2,
+                })}{' '}
+                un. vendidas nessa faixa horária (soma de itens).
+              </p>
+            )}
+            {data.options.showPeakSalesPeriod && !data.peakSalesPeriod && (
+              <p className="print-sub" style={{ marginBottom: '0.75rem', fontSize: '0.88rem' }}>
+                Sem vendas concluídas no período para calcular o horário de pico.
+              </p>
+            )}
             {!!data.methodology.trim() && (
               <p
                 className="print-sub no-print"

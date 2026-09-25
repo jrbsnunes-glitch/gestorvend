@@ -551,6 +551,7 @@ export function UsersPage() {
       {/* --- Modal: criar/editar --- */}
       {(createOpen || editing) && (
         <FormModalBackdrop
+          className="modal-backdrop--cadastro"
           onClose={() => {
             setCreateOpen(false);
             setEditing(null);
@@ -558,11 +559,10 @@ export function UsersPage() {
           }}
         >
           <div
-            className="modal"
+            className="modal form-cadastro-modal form-cadastro-modal--md"
             role="dialog"
             aria-modal="true"
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 560 }}
           >
             <h2>{editing ? `Editar “${editing.name}”` : 'Novo usuário'}</h2>
 

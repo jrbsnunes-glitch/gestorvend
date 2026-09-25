@@ -39,6 +39,37 @@ export class TenantService {
     return tenant;
   }
 
+  async findSlugByFactoryWhatsappPhoneNumberId(phoneNumberId: string): Promise<string | null> {
+    const id = phoneNumberId.trim();
+    if (!id) return null;
+    const tenant = await this.central.tenant.findFirst({
+      where: { factoryWhatsappPhoneNumberId: id },
+      select: { slug: true },
+    });
+    return tenant?.slug ?? null;
+  }
+
+  async setFactoryWhatsappPhoneNumberId(
+    slug: string,
+    phoneNumberId: string | null,
+  ): Promise<void> {
+    const tenant = await this.getBySlug(slug);
+    const pid = phoneNumberId?.trim() || null;
+    if (pid) {
+      await this.central.tenant.updateMany({
+        where: {
+          factoryWhatsappPhoneNumberId: pid,
+          NOT: { id: tenant.id },
+        },
+        data: { factoryWhatsappPhoneNumberId: null },
+      });
+    }
+    await this.central.tenant.update({
+      where: { id: tenant.id },
+      data: { factoryWhatsappPhoneNumberId: pid },
+    });
+  }
+
   /** Sincroniza status `expired` quando a data de validade já passou. */
   async syncLicenseExpiryStatus(tenant: Tenant): Promise<Tenant> {
     const now = new Date();
@@ -127,7 +158,9 @@ export class TenantService {
       const label =
         module === TenantModuleAddon.SERVICE_ORDER
           ? 'Ordem de Serviços'
-          : String(module);
+          : module === TenantModuleAddon.FACTORY
+            ? 'Fábrica'
+            : String(module);
       throw new ForbiddenException(
         `Módulo ${label} não contratado. Contate o suporte GestorVend.`,
       );

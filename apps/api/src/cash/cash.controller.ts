@@ -455,9 +455,7 @@ export class CashController {
 
     const sessions = await db.cashRegisterSession.findMany({
       where,
-      // Lista por ordem cronológica natural: mais antigo no topo.
-      // Caixas abertos aparecem no fim apenas se forem os mais recentes.
-      orderBy: { openedAt: 'asc' },
+      orderBy: { controlNumber: 'asc' },
       include: {
         user: { select: { id: true, name: true, email: true } },
         reconciledBy: { select: { id: true, name: true, email: true } },

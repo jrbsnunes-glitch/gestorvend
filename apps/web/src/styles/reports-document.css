@@ -227,7 +227,11 @@
   }
 
   /* Em impressões de módulos, esconder chrome do app quando possível */
-  .sidebar {
+  .sidebar,
+  .mobile-tabbar,
+  .main-topbar,
+  .sidebar-backdrop,
+  .sidebar-hamburger {
     display: none !important;
   }
 

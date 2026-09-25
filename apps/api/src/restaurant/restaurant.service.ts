@@ -17,6 +17,7 @@ import { TenantService } from '../tenant/tenant.service';
 import { SalesService } from '../sales/sales.service';
 import { CompanyService } from '../company/company.service';
 import { PrintingService } from '../printing/printing.service';
+import { ProductRecipeService } from '../catalog/product-recipe.service';
 
 function money(n: number): number {
   return Math.round(n * 100) / 100;
@@ -41,6 +42,7 @@ export class RestaurantService {
     private readonly sales: SalesService,
     private readonly company: CompanyService,
     private readonly printing: PrintingService,
+    private readonly productRecipes: ProductRecipeService,
   ) {}
 
   /** Plano RESTAURANT no central + flag da empresa. */
@@ -892,19 +894,7 @@ export class RestaurantService {
   // --- Ficha técnica (BOM) ---
 
   async getRecipe(tenantSlug: string, productId: string) {
-    const db = await this.db(tenantSlug);
-    return db.productRecipe.findUnique({
-      where: { productId },
-      include: {
-        items: {
-          include: {
-            ingredientVariant: {
-              include: { product: { select: { id: true, name: true, taxUnit: true } } },
-            },
-          },
-        },
-      },
-    });
+    return this.productRecipes.getRecipe(tenantSlug, productId);
   }
 
   async upsertRecipe(
@@ -915,64 +905,6 @@ export class RestaurantService {
       items: Array<{ ingredientVariantId: string; quantity: number | string }>;
     },
   ) {
-    const db = await this.db(tenantSlug);
-    const product = await db.product.findUnique({ where: { id: productId } });
-    if (!product) throw new NotFoundException('Produto não encontrado.');
-
-    const items = (body.items ?? [])
-      .map((it) => ({
-        ingredientVariantId: String(it.ingredientVariantId),
-        quantity: parseQty(it.quantity),
-      }))
-      .filter((it) => it.ingredientVariantId && it.quantity > 0);
-
-    return db.$transaction(async (tx) => {
-      const existing = await tx.productRecipe.findUnique({ where: { productId } });
-      if (existing) {
-        await tx.productRecipeItem.deleteMany({ where: { recipeId: existing.id } });
-        return tx.productRecipe.update({
-          where: { id: existing.id },
-          data: {
-            notes: body.notes?.trim() || null,
-            items: {
-              create: items.map((it) => ({
-                ingredientVariantId: it.ingredientVariantId,
-                quantity: String(it.quantity),
-              })),
-            },
-          },
-          include: {
-            items: {
-              include: {
-                ingredientVariant: {
-                  include: { product: { select: { id: true, name: true, taxUnit: true } } },
-                },
-              },
-            },
-          },
-        });
-      }
-      return tx.productRecipe.create({
-        data: {
-          productId,
-          notes: body.notes?.trim() || null,
-          items: {
-            create: items.map((it) => ({
-              ingredientVariantId: it.ingredientVariantId,
-              quantity: String(it.quantity),
-            })),
-          },
-        },
-        include: {
-          items: {
-            include: {
-              ingredientVariant: {
-                include: { product: { select: { id: true, name: true, taxUnit: true } } },
-              },
-            },
-          },
-        },
-      });
-    });
+    return this.productRecipes.upsertRecipe(tenantSlug, productId, body);
   }
 }

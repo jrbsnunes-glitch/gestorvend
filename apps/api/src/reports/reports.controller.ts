@@ -38,6 +38,46 @@ function parseReportDate(raw: string, mode: 'start' | 'end'): Date {
   return mode === 'end' ? endOfDay(date) : startOfDay(date);
 }
 
+/** Horário de pico no giro — America/Manaus (UTC−4). */
+const REPORT_TZ = 'America/Manaus';
+
+function localHourInReportTz(d: Date): number {
+  const parts = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: REPORT_TZ,
+    hour: 'numeric',
+    hour12: false,
+  }).formatToParts(d);
+  const h = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  return Number.isFinite(h) ? Math.min(23, Math.max(0, h)) : 0;
+}
+
+/** Faixa horária com maior soma de quantidade vendida (itens de venda concluída). */
+function peakSalesPeriodFromItems(
+  saleItems: Array<{ quantity: Prisma.Decimal | number | string; sale: { createdAt: Date } }>,
+): { hourFrom: number; hourTo: number; label: string; movementQty: number } | null {
+  if (!saleItems.length) return null;
+  const byHour = new Array<number>(24).fill(0);
+  for (const it of saleItems) {
+    const h = localHourInReportTz(it.sale.createdAt);
+    byHour[h] += Number(it.quantity);
+  }
+  let bestH = 0;
+  let best = 0;
+  for (let h = 0; h < 24; h++) {
+    if (byHour[h] > best) {
+      best = byHour[h];
+      bestH = h;
+    }
+  }
+  if (best <= 0) return null;
+  const hourTo = bestH === 23 ? 24 : bestH + 1;
+  const label =
+    hourTo === 24
+      ? `${String(bestH).padStart(2, '0')}h–24h`
+      : `${String(bestH).padStart(2, '0')}h–${String(hourTo).padStart(2, '0')}h`;
+  return { hourFrom: bestH, hourTo, label, movementQty: best };
+}
+
 type StockMovementSnap = {
   type: StockMovementType;
   quantity: Prisma.Decimal;
@@ -683,6 +723,7 @@ export class ReportsController {
     @Query('useMinControl') useMinControl?: string,
     @Query('useMaxControl') useMaxControl?: string,
     @Query('alertsOnly') alertsOnly?: string,
+    @Query('showPeakSalesPeriod') showPeakSalesPeriodRaw?: string,
   ) {
     if (!fromRaw || !toRaw) throw new BadRequestException('Informe from e to (YYYY-MM-DD).');
     const periodStart = parseReportDate(fromRaw, 'start');
@@ -695,6 +736,8 @@ export class ReportsController {
     const useMin = useMinControl === '1' || useMinControl === 'true';
     const useMax = useMaxControl === '1' || useMaxControl === 'true';
     const onlyAlerts = alertsOnly === '1' || alertsOnly === 'true';
+    const showPeakSalesPeriod =
+      showPeakSalesPeriodRaw === '1' || showPeakSalesPeriodRaw === 'true';
     let maxCeiling: number | null = null;
     if (maxStockCeilingRaw != null && String(maxStockCeilingRaw).trim() !== '') {
       maxCeiling = Number(String(maxStockCeilingRaw).replace(',', '.'));
@@ -924,6 +967,8 @@ export class ReportsController {
           )?.name ?? null
         : null;
 
+    const peakSalesPeriod = showPeakSalesPeriod ? peakSalesPeriodFromItems(items) : null;
+
     return {
       title: 'Giro de produtos',
       period: { from: fromRaw, to: toRaw },
@@ -936,7 +981,9 @@ export class ReportsController {
         maxStockCeiling: maxCeiling,
         alertsOnly: onlyAlerts,
         showNoSale: isConjuntoMode ? showNoSale : false,
+        showPeakSalesPeriod,
       },
+      peakSalesPeriod,
       methodology,
       lines,
     };

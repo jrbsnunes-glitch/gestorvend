@@ -284,8 +284,12 @@ export function StockMovimentosPage() {
       />
 
       {movOpen && (
-        <FormModalBackdrop className="no-print" onClose={() => setMovOpen(false)}>
-          <div className="modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+        <FormModalBackdrop className="modal-backdrop--cadastro no-print" onClose={() => setMovOpen(false)}>
+          <div
+            className="modal form-cadastro-modal form-cadastro-modal--md"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Registrar movimento</h2>
             {movErr && <div className="alert alert-error">{movErr}</div>}
             <div className="field">

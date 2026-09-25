@@ -3,19 +3,21 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { api, apiUpload } from '../lib/api';
+import { hasFactoryModule } from '../lib/auth';
 import { resolveCompanyAssetUrl } from '../lib/company-branding';
 import { useMenuAccess } from '../hooks/useMenuAccess';
 import { digitsOnly, formatCep, formatCnpj } from '../lib/format';
 import { lookupCep } from '../lib/lookups';
 import '../components/crud-toolbar.css';
 
-type CompanyTab = 'dados' | 'pdv' | 'caixa' | 'os' | 'restaurante' | 'visual' | 'nfce';
+type CompanyTab = 'dados' | 'pdv' | 'caixa' | 'os' | 'fabrica' | 'restaurante' | 'visual' | 'nfce';
 
 const COMPANY_TABS: Array<{ id: CompanyTab; label: string }> = [
   { id: 'dados', label: 'Dados cadastrais' },
   { id: 'pdv', label: 'PDV' },
   { id: 'caixa', label: 'Caixa' },
   { id: 'os', label: 'Ordem de serviços' },
+  { id: 'fabrica', label: 'Fábrica' },
   { id: 'restaurante', label: 'Restaurante' },
   { id: 'visual', label: 'Identidade visual' },
   { id: 'nfce', label: 'Emissor NFC-e' },
@@ -65,6 +67,18 @@ type Company = {
   serviceOrderRequireEquipment?: boolean;
   serviceOrderAllowQuote?: boolean;
   serviceOrderTermsText?: string | null;
+  factoryModuleEnabled?: boolean;
+  factoryIssuePctAtStart?: string | number | null;
+  factoryIssuePctDevelopment?: string | number | null;
+  factoryQuoteTermsText?: string | null;
+  factoryStockLocationId?: string | null;
+  factoryWhatsappBotEnabled?: boolean;
+  factoryWhatsappPhoneNumberId?: string | null;
+  factoryWhatsappAccessToken?: string | null;
+  factoryCatalogWhatsappMessageTemplate?: string | null;
+  factoryWhatsappWelcomeText?: string | null;
+  factoryWhatsappMenuText?: string | null;
+  factoryWhatsappHandoffText?: string | null;
 };
 
 type FormState = Omit<Company, 'id'>;
@@ -113,6 +127,18 @@ const EMPTY_FORM: FormState = {
   serviceOrderRequireEquipment: false,
   serviceOrderAllowQuote: true,
   serviceOrderTermsText: '',
+  factoryModuleEnabled: false,
+  factoryIssuePctAtStart: 0,
+  factoryIssuePctDevelopment: 0,
+  factoryQuoteTermsText: '',
+  factoryStockLocationId: '',
+  factoryWhatsappBotEnabled: false,
+  factoryWhatsappPhoneNumberId: '',
+  factoryWhatsappAccessToken: '',
+  factoryCatalogWhatsappMessageTemplate: '',
+  factoryWhatsappWelcomeText: '',
+  factoryWhatsappMenuText: '',
+  factoryWhatsappHandoffText: '',
 };
 
 function toForm(c: Company): FormState {
@@ -162,6 +188,18 @@ function toForm(c: Company): FormState {
     serviceOrderRequireEquipment: Boolean(c.serviceOrderRequireEquipment),
     serviceOrderAllowQuote: c.serviceOrderAllowQuote !== false,
     serviceOrderTermsText: c.serviceOrderTermsText ?? '',
+    factoryModuleEnabled: Boolean(c.factoryModuleEnabled),
+    factoryIssuePctAtStart: Number(c.factoryIssuePctAtStart ?? 0),
+    factoryIssuePctDevelopment: Number(c.factoryIssuePctDevelopment ?? 0),
+    factoryQuoteTermsText: c.factoryQuoteTermsText ?? '',
+    factoryStockLocationId: c.factoryStockLocationId ?? '',
+    factoryWhatsappBotEnabled: Boolean(c.factoryWhatsappBotEnabled),
+    factoryWhatsappPhoneNumberId: c.factoryWhatsappPhoneNumberId ?? '',
+    factoryWhatsappAccessToken: c.factoryWhatsappAccessToken ? '********' : '',
+    factoryCatalogWhatsappMessageTemplate: c.factoryCatalogWhatsappMessageTemplate ?? '',
+    factoryWhatsappWelcomeText: c.factoryWhatsappWelcomeText ?? '',
+    factoryWhatsappMenuText: c.factoryWhatsappMenuText ?? '',
+    factoryWhatsappHandoffText: c.factoryWhatsappHandoffText ?? '',
   };
 }
 
@@ -578,6 +616,7 @@ function IssuerEmissorCard() {
 export function CompanyPage() {
   const qc = useQueryClient();
   const menuAccess = useMenuAccess();
+  const factoryLicensed = hasFactoryModule();
   const canViewCompany = menuAccess.canView('company');
   const canUpdateCompany = menuAccess.canUpdate('company');
   const company = useQuery({
@@ -593,6 +632,12 @@ export function CompanyPage() {
   const [cepBusy, setCepBusy] = useState(false);
   const [tab, setTab] = useState<CompanyTab>('dados');
   const logoFileRef = useRef<HTMLInputElement>(null);
+
+  const stockLocQ = useQuery({
+    queryKey: ['stock-locations'],
+    queryFn: () => api<Array<{ id: string; code: string; name: string }>>('/stock-locations'),
+    enabled: canViewCompany && tab === 'fabrica' && Boolean(form.factoryModuleEnabled),
+  });
 
   useEffect(() => {
     if (company.data && !touched) setForm(toForm(company.data));
@@ -707,7 +752,7 @@ export function CompanyPage() {
       {company.data && (
         <form onSubmit={onSubmit} className="company-form">
           <nav className="stock-subnav no-print" aria-label="Seções da empresa">
-            {COMPANY_TABS.map((t) => (
+            {COMPANY_TABS.filter((t) => (t.id === 'fabrica' ? factoryLicensed : true)).map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -1068,6 +1113,211 @@ export function CompanyPage() {
                     placeholder="Texto impresso no espelho (garantia, responsabilidade…)"
                   />
                 </div>
+              </>
+            ) : null}
+          </section>
+          )}
+
+          {tab === 'fabrica' && factoryLicensed && (
+          <section className="card">
+            <h2 className="company-form__h">Fábrica</h2>
+            <p className="company-form__hint">
+              Requer o adicional <strong>Fábrica</strong> no portal de licenças. Ativa projetos de
+              fabricação, consumo de insumos por fase e catálogo público em{' '}
+              <code>/loja/seu-slug</code>.
+            </p>
+            <div className="field">
+              <label
+                htmlFor="c-factory-enabled"
+                style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}
+              >
+                <input
+                  id="c-factory-enabled"
+                  type="checkbox"
+                  checked={Boolean(form.factoryModuleEnabled)}
+                  onChange={(e) => update('factoryModuleEnabled', e.target.checked)}
+                  style={{ marginTop: '0.15rem' }}
+                />
+                <span>
+                  Ativar módulo Fábrica neste estabelecimento
+                  <span className="sub" style={{ fontWeight: 400 }}>
+                    Exibe o menu quando o addon estiver contratado no portal.
+                  </span>
+                </span>
+              </label>
+            </div>
+            {form.factoryModuleEnabled ? (
+              <>
+                <div className="form-row form-row--2" style={{ marginTop: '0.75rem' }}>
+                  <div className="field">
+                    <label htmlFor="c-factory-pct-start">Baixa automática na fase Início (% do BOM)</label>
+                    <input
+                      id="c-factory-pct-start"
+                      type="number"
+                      min={0}
+                      max={100}
+                      step="0.01"
+                      value={form.factoryIssuePctAtStart ?? 0}
+                      onChange={(e) =>
+                        update('factoryIssuePctAtStart', parseFloat(e.target.value.replace(',', '.')) || 0)
+                      }
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="c-factory-pct-dev">Baixa na fase Em desenvolvimento (% do BOM)</label>
+                    <input
+                      id="c-factory-pct-dev"
+                      type="number"
+                      min={0}
+                      max={100}
+                      step="0.01"
+                      value={form.factoryIssuePctDevelopment ?? 0}
+                      onChange={(e) =>
+                        update(
+                          'factoryIssuePctDevelopment',
+                          parseFloat(e.target.value.replace(',', '.')) || 0,
+                        )
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="field">
+                  <label htmlFor="c-factory-terms">Termos no orçamento de fabricação</label>
+                  <textarea
+                    id="c-factory-terms"
+                    rows={3}
+                    value={form.factoryQuoteTermsText ?? ''}
+                    onChange={(e) => update('factoryQuoteTermsText', e.target.value)}
+                    placeholder="Prazos, sinal, alterações de escopo…"
+                  />
+                </div>
+                <h3 className="company-form__h" style={{ marginTop: '1rem', fontSize: '1rem' }}>
+                  Catálogo público (`/loja`)
+                </h3>
+                <p className="company-form__hint">
+                  Fotos e descrição de cada produto vêm do cadastro em <strong>Produtos</strong> (aba
+                  Imagem e campo descrição). Abaixo, a mensagem pré-preenchida do botão WhatsApp na loja.
+                </p>
+                <div className="field">
+                  <label htmlFor="c-factory-catalog-wa-msg">Mensagem WhatsApp (link na loja)</label>
+                  <textarea
+                    id="c-factory-catalog-wa-msg"
+                    rows={2}
+                    value={form.factoryCatalogWhatsappMessageTemplate ?? ''}
+                    onChange={(e) => update('factoryCatalogWhatsappMessageTemplate', e.target.value)}
+                    placeholder="Olá! Gostaria de um orçamento para o produto #{codigo} — {nome}."
+                  />
+                  <p className="sub" style={{ marginTop: '0.35rem' }}>
+                    Placeholders: <code>{'{codigo}'}</code> (nº controle), <code>{'{nome}'}</code>. Vazio =
+                    texto padrão do sistema.
+                  </p>
+                </div>
+                <div className="field">
+                  <label htmlFor="c-factory-loc">Local de estoque da fábrica</label>
+                  <select
+                    id="c-factory-loc"
+                    value={form.factoryStockLocationId ?? ''}
+                    onChange={(e) => update('factoryStockLocationId', e.target.value)}
+                  >
+                    <option value="">Padrão do sistema</option>
+                    {(stockLocQ.data ?? []).map((loc) => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.code} — {loc.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="sub" style={{ marginTop: '0.35rem' }}>
+                    Reservas, baixas e entrada do PA usam este local quando definido. Também em{' '}
+                    <Link to="/fabrica/configuracoes">Fábrica → Configurações</Link>.
+                  </p>
+                </div>
+                <h3 className="company-form__h" style={{ marginTop: '1rem', fontSize: '1rem' }}>
+                  Bot WhatsApp (orçamento fabricado)
+                </h3>
+                <p className="company-form__hint">
+                  Requer plano <strong>WhatsApp</strong> no portal. O atendimento automático roda na
+                  API do GestorVend (webhook Meta). Após a escolha do modelo, o consultor formaliza o
+                  orçamento em Fábrica → Projetos.
+                </p>
+                <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.factoryWhatsappBotEnabled)}
+                    onChange={(e) => update('factoryWhatsappBotEnabled', e.target.checked)}
+                    style={{ marginTop: '0.15rem' }}
+                  />
+                  <span>Ativar bot de catálogo e lead no WhatsApp</span>
+                </label>
+                {form.factoryWhatsappBotEnabled ? (
+                  <div className="form-row form-row--2" style={{ marginTop: '0.65rem' }}>
+                    <div className="field">
+                      <label htmlFor="c-factory-wa-phone-id">Phone number ID (Meta)</label>
+                      <input
+                        id="c-factory-wa-phone-id"
+                        value={form.factoryWhatsappPhoneNumberId ?? ''}
+                        onChange={(e) => update('factoryWhatsappPhoneNumberId', e.target.value)}
+                        placeholder="ID do número no WhatsApp Cloud"
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="c-factory-wa-token">Token de acesso (Meta)</label>
+                      <input
+                        id="c-factory-wa-token"
+                        type="password"
+                        autoComplete="off"
+                        value={form.factoryWhatsappAccessToken ?? ''}
+                        onChange={(e) => update('factoryWhatsappAccessToken', e.target.value)}
+                        placeholder={form.factoryWhatsappAccessToken === '********' ? '********' : 'EAA…'}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+                {form.factoryWhatsappBotEnabled ? (
+                  <>
+                    <div className="field" style={{ marginTop: '0.75rem' }}>
+                      <label htmlFor="c-factory-wa-welcome">Boas-vindas do bot</label>
+                      <textarea
+                        id="c-factory-wa-welcome"
+                        rows={2}
+                        value={form.factoryWhatsappWelcomeText ?? ''}
+                        onChange={(e) => update('factoryWhatsappWelcomeText', e.target.value)}
+                        placeholder="Padrão do sistema se vazio"
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="c-factory-wa-menu">Menu do bot</label>
+                      <textarea
+                        id="c-factory-wa-menu"
+                        rows={4}
+                        value={form.factoryWhatsappMenuText ?? ''}
+                        onChange={(e) => update('factoryWhatsappMenuText', e.target.value)}
+                        placeholder="Padrão do sistema se vazio"
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="c-factory-wa-handoff">Mensagem após confirmar pedido</label>
+                      <textarea
+                        id="c-factory-wa-handoff"
+                        rows={2}
+                        value={form.factoryWhatsappHandoffText ?? ''}
+                        onChange={(e) => update('factoryWhatsappHandoffText', e.target.value)}
+                        placeholder="Recebemos seu pedido (ref. #{numero})… — padrão se vazio"
+                      />
+                      <p className="sub" style={{ marginTop: '0.35rem' }}>
+                        Placeholder <code>{'{numero}'}</code> = número do projeto na Fábrica. Ao escolher um
+                        produto, o bot envia a <strong>foto</strong> (se houver) e a <strong>descrição</strong>{' '}
+                        do cadastro — configure <code>PUBLIC_API_BASE_URL</code> no servidor para imagens.
+                      </p>
+                    </div>
+                    <p className="sub" style={{ marginTop: '0.35rem' }}>
+                      Webhook Meta:{' '}
+                      <code>{typeof window !== 'undefined' ? `${window.location.origin}/api/webhooks/whatsapp/factory` : '/api/webhooks/whatsapp/factory'}</code>
+                      . Verify token: variável <code>WHATSAPP_WEBHOOK_VERIFY_TOKEN</code> no servidor
+                      (padrão <code>gestorvend-factory</code>). Ver{' '}
+                      <code>docs/WACHAT-FACTORY.md</code>.
+                    </p>
+                  </>
+                ) : null}
               </>
             ) : null}
           </section>

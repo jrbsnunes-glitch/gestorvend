@@ -1,0 +1,332 @@
+/**
+ * Orçamento de fabricação — layout tipo proposta comercial (tabela + totais).
+ */
+
+.mfg-quote-print.print-doc {
+  --mfg-quote-base: 12px;
+  --mfg-quote-head: #5c5c5c;
+  --mfg-quote-zebra: #f2f2f2;
+  --mfg-quote-border: #d4d4d4;
+  font-family: var(--gv-report-font-sans);
+  font-size: var(--mfg-quote-base);
+  line-height: 1.4;
+  color: #1a1a1a;
+  padding: 12mm 14mm;
+}
+
+.mfg-quote-print .print-company {
+  margin-bottom: 0.55rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--mfg-quote-border);
+}
+
+.mfg-quote-print .print-company-text strong {
+  font-size: 1.08rem;
+  font-weight: 700;
+}
+
+.mfg-quote-print__head {
+  margin-bottom: 0.65rem;
+}
+
+.mfg-quote-print__head h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: #111;
+}
+
+.mfg-quote-print__ref {
+  margin: 0.25rem 0 0;
+  font-size: 0.88rem;
+  color: #555;
+}
+
+.mfg-quote-print__meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem 0.65rem;
+  margin-bottom: 0.65rem;
+}
+
+.mfg-quote-print__meta-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.mfg-quote-print__meta-box {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--mfg-quote-border);
+  border-radius: 4px;
+  background: #fafafa;
+  min-height: 100%;
+}
+
+.mfg-quote-print__meta-label {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #666;
+  margin-bottom: 0.2rem;
+}
+
+.mfg-quote-print__meta-value {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.mfg-quote-print__meta-sub {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #555;
+}
+
+.mfg-quote-print__section {
+  margin-bottom: 0.65rem;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.mfg-quote-print__section-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #444;
+}
+
+.mfg-quote-print__notes-box {
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--mfg-quote-border);
+  border-radius: 4px;
+  background: #fafafa;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: #222;
+}
+
+.mfg-quote-print__notes-block + .mfg-quote-print__notes-block {
+  margin-top: 0.45rem;
+}
+
+.mfg-quote-print__notes-block strong {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #666;
+  margin-bottom: 0.2rem;
+}
+
+/* === Tabela de itens (modelo proposta) === */
+.mfg-quote-print__items-wrap {
+  margin: 0.75rem 0 0.5rem;
+  border: 1px solid var(--mfg-quote-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.mfg-quote-print__items {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.mfg-quote-print__items thead th {
+  background: var(--mfg-quote-head);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+  border: 1px solid #4a4a4a;
+}
+
+.mfg-quote-print__items thead th.col-num {
+  text-align: right;
+  width: 14%;
+}
+
+.mfg-quote-print__items tbody td {
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--mfg-quote-border);
+  vertical-align: top;
+}
+
+.mfg-quote-print__items tbody tr:nth-child(even) {
+  background: var(--mfg-quote-zebra);
+}
+
+.mfg-quote-print__items tbody tr:nth-child(odd) {
+  background: #fff;
+}
+
+.mfg-quote-print__items .col-desc {
+  line-height: 1.35;
+}
+
+.mfg-quote-print__items .col-desc-sub {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.82rem;
+  color: #555;
+  font-weight: 400;
+}
+
+.mfg-quote-print__items .col-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mfg-quote-print__items .col-muted {
+  color: #666;
+  font-style: italic;
+}
+
+/* === Totais à direita === */
+.mfg-quote-print__totals-wrap {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0.35rem 0 0.75rem;
+}
+
+.mfg-quote-print__totals {
+  width: min(100%, 20rem);
+  font-size: 0.88rem;
+}
+
+.mfg-quote-print__totals-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.28rem 0.15rem;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.mfg-quote-print__totals-row span:first-child {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  color: #444;
+}
+
+.mfg-quote-print__totals-row span:last-child {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.mfg-quote-print__grand {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.35rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--mfg-quote-zebra);
+  border: 1px solid var(--mfg-quote-border);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.mfg-quote-print__grand span:last-child {
+  font-variant-numeric: tabular-nums;
+}
+
+.mfg-quote-print__section--terms {
+  margin-bottom: 0.55rem;
+}
+
+.mfg-quote-print__terms {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: #555;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--mfg-quote-border);
+  border-radius: 4px;
+  background: #fafafa;
+}
+
+.mfg-quote-print__sign {
+  margin-top: 1.5rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  break-inside: avoid;
+}
+
+.mfg-quote-print__sign-block {
+  text-align: center;
+}
+
+.mfg-quote-print__sign-line {
+  border-top: 1px solid #333;
+  margin: 0 0.5rem;
+  height: 0;
+}
+
+.mfg-quote-print__sign-label {
+  margin: 0.45rem 0 0;
+  font-size: 0.82rem;
+  font-style: italic;
+  color: #444;
+}
+
+@media print {
+  .mfg-quote-print.print-doc {
+    padding: 0;
+    box-shadow: none;
+  }
+
+  .mfg-quote-print__items-wrap,
+  .mfg-quote-print__totals-wrap,
+  .mfg-quote-print__sign {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .mfg-quote-print__items thead th {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .mfg-quote-print__items tbody tr:nth-child(even),
+  .mfg-quote-print__grand {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+@media (max-width: 720px) {
+  .mfg-quote-print__meta-grid--3 {
+    grid-template-columns: 1fr;
+  }
+
+  .mfg-quote-print__items thead th.col-num,
+  .mfg-quote-print__items .col-num {
+    font-size: 0.78rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .mfg-quote-print.print-doc {
+    padding: 10mm 8mm;
+  }
+}

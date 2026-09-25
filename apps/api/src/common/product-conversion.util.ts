@@ -266,3 +266,23 @@ export function resolveSaleStockQuantity(
   const factor = resolveConversionFactor(conversion, packItemQty);
   return soldQty * factor;
 }
+
+/**
+ * Saldo para exibição (pesquisa, listagens): produto composto mostra embalagens
+ * (caixas); o saldo físico continua no SKU unitário vinculado.
+ */
+export function resolveDisplayStockQuantity(
+  componentStockQty: number,
+  ownVariantId: string,
+  stockComponentVariantId: string | null | undefined,
+  conversion: string | null | undefined,
+  packItemQty?: number | string | null,
+): number {
+  const componentId = stockComponentVariantId?.trim();
+  if (!componentId || componentId === ownVariantId.trim()) {
+    return componentStockQty;
+  }
+  const factor = resolveConversionFactor(conversion, packItemQty);
+  if (factor <= 1) return componentStockQty;
+  return componentStockQty / factor;
+}

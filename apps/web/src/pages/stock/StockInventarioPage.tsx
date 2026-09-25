@@ -2,6 +2,8 @@
  * Inventário físico: documento com 1 a N produtos no mesmo local.
  * Rascunho → incluir produtos → informar contagens → postar (gera ADJUST).
  * Também: import/export CSV e coletor mobile (/estoque/inventario/:id/coletar).
+ * Coletor — câmera: BarcodeDetector (Chrome/Android) ou ZXing (Safari/iPhone); HTTPS ou localhost.
+ * Teste manual: Chrome Android (nativo), Safari iPhone (ZXing), permissão negada → campo manual.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useRef, useState } from 'react';
@@ -447,12 +449,13 @@ export function StockInventarioPage() {
 
       {createOpen && (
         <FormModalBackdrop
+          className="modal-backdrop--cadastro"
           onClose={() => {
             setCreateOpen(false);
             setCreateErr(null);
           }}
         >
-          <div className="modal" role="dialog">
+          <div className="modal form-cadastro-modal form-cadastro-modal--md" role="dialog">
             <h2>Novo inventário</h2>
             {createErr && <div className="alert alert-error">{createErr}</div>}
             <div className="field">
@@ -502,14 +505,14 @@ export function StockInventarioPage() {
 
       {editId && editing && (
         <FormModalBackdrop
-          className="modal-backdrop--wide"
+          className="modal-backdrop--cadastro modal-backdrop--wide"
           onClose={() => {
             setEditId(null);
             setQtyDraft({});
             setEditErr(null);
           }}
         >
-          <div className="modal modal--wide" role="dialog">
+          <div className="modal modal--wide form-cadastro-modal form-cadastro-modal--xl" role="dialog">
             <h2>
               Inventário #{editing.controlNumber} —{' '}
               {editing.location.code} {editing.location.name}

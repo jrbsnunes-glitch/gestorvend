@@ -27,8 +27,11 @@ export class StockTransfersController {
     body: {
       fromLocationId: string;
       toLocationId: string;
-      variantId: string;
-      quantity: number;
+      /** Legado: um item por requisição. */
+      variantId?: string;
+      quantity?: number;
+      /** Um ou mais itens na mesma transferência (mesma referência TRF). */
+      lines?: Array<{ variantId: string; quantity: number }>;
       notes?: string | null;
       managerPassword?: string;
     },
@@ -50,16 +53,43 @@ export class StockTransfersController {
       throw new BadRequestException('Origem e destino devem ser diferentes.');
     }
 
-    const qtyNum = Number(body.quantity);
-    if (Number.isNaN(qtyNum) || qtyNum <= 0) {
-      throw new BadRequestException('Quantidade inválida.');
+    type Line = { variantId: string; quantity: number };
+    let lines: Line[] = [];
+    if (Array.isArray(body.lines) && body.lines.length > 0) {
+      lines = body.lines.map((l, i) => {
+        const variantId = (l.variantId ?? '').trim();
+        const qtyNum = Number(l.quantity);
+        if (!variantId) {
+          throw new BadRequestException(`Linha ${i + 1}: produto inválido.`);
+        }
+        if (Number.isNaN(qtyNum) || qtyNum <= 0) {
+          throw new BadRequestException(`Linha ${i + 1}: quantidade inválida.`);
+        }
+        return { variantId, quantity: qtyNum };
+      });
+    } else if (body.variantId?.trim()) {
+      const qtyNum = Number(body.quantity);
+      if (Number.isNaN(qtyNum) || qtyNum <= 0) {
+        throw new BadRequestException('Quantidade inválida.');
+      }
+      lines = [{ variantId: body.variantId.trim(), quantity: qtyNum }];
+    } else {
+      throw new BadRequestException('Informe ao menos um produto na transferência.');
     }
+
+    const merged = new Map<string, number>();
+    for (const l of lines) {
+      merged.set(l.variantId, (merged.get(l.variantId) ?? 0) + l.quantity);
+    }
+    lines = [...merged.entries()].map(([variantId, quantity]) => ({ variantId, quantity }));
 
     const notes = (body.notes ?? '').trim();
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
 
-    const variant = await db.productVariant.findUnique({ where: { id: body.variantId } });
-    if (!variant) throw new BadRequestException('Produto / variação não encontrado.');
+    for (const l of lines) {
+      const variant = await db.productVariant.findUnique({ where: { id: l.variantId } });
+      if (!variant) throw new BadRequestException('Produto / variação não encontrado.');
+    }
 
     const refKey = `TRF:${randomUUID()}`;
     const noteSuffix = notes ? ` — ${notes}` : '';
@@ -72,67 +102,92 @@ export class StockTransfersController {
       if (!fromLoc) throw new BadRequestException('Local de origem não encontrado.');
       if (!toLoc) throw new BadRequestException('Local de destino não encontrado.');
 
-      const bal = await tx.stockBalance.findUnique({
-        where: { variantId_locationId: { variantId: body.variantId, locationId: fromId } },
-      });
-      const currentFrom = bal ? Number(bal.quantity) : 0;
-      if (currentFrom < qtyNum) {
-        throw new BadRequestException('Estoque insuficiente no local de origem.');
+      const baseRef = `${refKey} | ${fromLoc.code} → ${toLoc.code}${noteSuffix}`;
+      const movements: Array<{ variantId: string; outId: string; inId: string; quantity: number }> =
+        [];
+
+      for (const line of lines) {
+        const qtyNum = line.quantity;
+        const bal = await tx.stockBalance.findUnique({
+          where: { variantId_locationId: { variantId: line.variantId, locationId: fromId } },
+        });
+        const currentFrom = bal ? Number(bal.quantity) : 0;
+        if (currentFrom + 1e-9 < qtyNum) {
+          const ing = await tx.productVariant.findUnique({
+            where: { id: line.variantId },
+            include: { product: { select: { name: true } } },
+          });
+          throw new BadRequestException(
+            `Estoque insuficiente no origem para "${ing?.product.name ?? line.variantId}" (disp. ${currentFrom}, solicitado ${qtyNum}).`,
+          );
+        }
+
+        await tx.stockBalance.upsert({
+          where: { variantId_locationId: { variantId: line.variantId, locationId: fromId } },
+          create: {
+            variantId: line.variantId,
+            locationId: fromId,
+            quantity: String(currentFrom - qtyNum),
+          },
+          update: { quantity: String(currentFrom - qtyNum) },
+        });
+
+        const balTo = await tx.stockBalance.findUnique({
+          where: { variantId_locationId: { variantId: line.variantId, locationId: toId } },
+        });
+        const currentTo = balTo ? Number(balTo.quantity) : 0;
+
+        await tx.stockBalance.upsert({
+          where: { variantId_locationId: { variantId: line.variantId, locationId: toId } },
+          create: {
+            variantId: line.variantId,
+            locationId: toId,
+            quantity: String(currentTo + qtyNum),
+          },
+          update: { quantity: String(currentTo + qtyNum) },
+        });
+
+        const outMov = await tx.stockMovement.create({
+          data: {
+            type: StockMovementType.OUT,
+            source: StockMovementSource.TRANSFER,
+            variantId: line.variantId,
+            locationId: fromId,
+            quantity: String(qtyNum),
+            reference: baseRef,
+            userId: user.sub,
+          },
+        });
+
+        const inMov = await tx.stockMovement.create({
+          data: {
+            type: StockMovementType.IN,
+            source: StockMovementSource.TRANSFER,
+            variantId: line.variantId,
+            locationId: toId,
+            quantity: String(qtyNum),
+            unitCost: null,
+            reference: baseRef,
+            userId: user.sub,
+          },
+        });
+
+        movements.push({
+          variantId: line.variantId,
+          outId: outMov.id,
+          inId: inMov.id,
+          quantity: qtyNum,
+        });
       }
 
-      await tx.stockBalance.upsert({
-        where: { variantId_locationId: { variantId: body.variantId, locationId: fromId } },
-        create: {
-          variantId: body.variantId,
-          locationId: fromId,
-          quantity: String(currentFrom - qtyNum),
-        },
-        update: { quantity: String(currentFrom - qtyNum) },
-      });
-
-      const balTo = await tx.stockBalance.findUnique({
-        where: { variantId_locationId: { variantId: body.variantId, locationId: toId } },
-      });
-      const currentTo = balTo ? Number(balTo.quantity) : 0;
-
-      await tx.stockBalance.upsert({
-        where: { variantId_locationId: { variantId: body.variantId, locationId: toId } },
-        create: {
-          variantId: body.variantId,
-          locationId: toId,
-          quantity: String(currentTo + qtyNum),
-        },
-        update: { quantity: String(currentTo + qtyNum) },
-      });
-
-      const baseRef = `${refKey} | ${fromLoc.code} → ${toLoc.code}${noteSuffix}`;
-
-      const outMov = await tx.stockMovement.create({
-        data: {
-          type: StockMovementType.OUT,
-          source: StockMovementSource.TRANSFER,
-          variantId: body.variantId,
-          locationId: fromId,
-          quantity: String(qtyNum),
-          reference: baseRef,
-          userId: user.sub,
-        },
-      });
-
-      const inMov = await tx.stockMovement.create({
-        data: {
-          type: StockMovementType.IN,
-          source: StockMovementSource.TRANSFER,
-          variantId: body.variantId,
-          locationId: toId,
-          quantity: String(qtyNum),
-          unitCost: null,
-          reference: baseRef,
-          userId: user.sub,
-        },
-      });
-
-      return { transferRef: refKey, outMovement: outMov, inMovement: inMov };
+      const first = movements[0]!;
+      return {
+        transferRef: refKey,
+        lineCount: movements.length,
+        outMovement: { id: first.outId },
+        inMovement: { id: first.inId },
+        movements,
+      };
     });
   }
 }

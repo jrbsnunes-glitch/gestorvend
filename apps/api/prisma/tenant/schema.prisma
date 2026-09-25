@@ -78,6 +78,28 @@ model Company {
   serviceOrderAllowQuote Boolean @default(true)
   /// Termo impresso no espelho da OS.
   serviceOrderTermsText String? @db.Text
+  /// Módulo Fábrica (addon FACTORY no portal).
+  factoryModuleEnabled Boolean @default(false)
+  /// % do BOM baixado ao entrar na fase Início (0–100).
+  factoryIssuePctAtStart Decimal @default(0) @db.Decimal(5, 2)
+  /// % adicional do saldo planejado ao entrar em Em desenvolvimento.
+  factoryIssuePctDevelopment Decimal @default(50) @db.Decimal(5, 2)
+  factoryQuoteTermsText String? @db.Text
+  /// Local de estoque preferencial para consumo/entrada da Fábrica (opcional).
+  factoryStockLocationId String?
+  factoryStockLocation   StockLocation? @relation("CompanyFactoryStockLocation", fields: [factoryStockLocationId], references: [id], onDelete: SetNull)
+  /// Bot WhatsApp (Meta Cloud) — orçamento fabricado; processado pela API GestorVend.
+  factoryWhatsappBotEnabled Boolean @default(false)
+  factoryWhatsappPhoneNumberId String? @db.VarChar(32)
+  factoryWhatsappAccessToken String? @db.Text
+  /// Mensagem do link wa.me na loja `/loja` — placeholders `{codigo}`, `{nome}`.
+  factoryCatalogWhatsappMessageTemplate String? @db.Text
+  /// Boas-vindas do bot (vazio = padrão do sistema).
+  factoryWhatsappWelcomeText String? @db.Text
+  /// Menu principal do bot (vazio = padrão do sistema).
+  factoryWhatsappMenuText String? @db.Text
+  /// Após confirmar lead — placeholder `{numero}` (nº do projeto).
+  factoryWhatsappHandoffText String? @db.Text
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   fiscalIssuerSettings FiscalIssuerSettings?
@@ -277,6 +299,9 @@ model User {
   serviceTabsOpened ServiceTab[] @relation("ServiceTabOpenedBy")
   serviceOrdersOpened ServiceOrder[] @relation("ServiceOrderOpenedBy")
   serviceOrdersAssigned ServiceOrder[] @relation("ServiceOrderAssignedTo")
+  manufacturingOpened ManufacturingProject[] @relation("ManufacturingOpenedBy")
+  manufacturingTechnical ManufacturingProject[] @relation("ManufacturingTechnical")
+  manufacturingCommercial ManufacturingProject[] @relation("ManufacturingCommercial")
   pdvTerminalsOperated PdvTerminal[] @relation("PdvTerminalOperator")
 }
 
@@ -386,6 +411,7 @@ model Customer {
   creditAdjustments CustomerCreditAdjustment[]
   equipment    CustomerEquipment[]
   serviceOrders ServiceOrder[]
+  manufacturingProjects ManufacturingProject[]
 }
 
 /// Histórico de inclusão/atualização de saldo de crédito ou valor de requisição.
@@ -510,12 +536,19 @@ model Product {
   /// Versão da imagem (cache bust em URLs públicas).
   imageVersion Int             @default(0)
   hasImage     Boolean         @default(false)
+  /// PA fabricável pelo módulo Fábrica (exige BOM ao salvar).
+  isManufacturedFinishedGood Boolean @default(false)
+  manufacturingLeadTimeDays Int?
+  /// Exibir na loja pública /loja/:slug
+  showInPublicCatalog Boolean @default(false)
   variants    ProductVariant[]
   recipe      ProductRecipe?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
   @@index([stockComponentVariantId])
+  @@index([isManufacturedFinishedGood])
+  @@index([showInPublicCatalog])
 }
 
 /// Ficha técnica (BOM): 1 produto acabado → N insumos. Fase 2 do módulo restaurante.
@@ -568,6 +601,10 @@ model ProductVariant {
   recipeIngredients  ProductRecipeItem[]
   serviceTabItems    ServiceTabItem[]
   serviceOrderItems  ServiceOrderItem[]
+  manufacturingProjectsFinished ManufacturingProject[]
+  manufacturingBomAsIngredient ManufacturingBomLine[] @relation("ManufacturingBomIngredient")
+  manufacturingReservations ManufacturingMaterialReservation[] @relation("ManufacturingReservationIngredient")
+  manufacturingIssues ManufacturingMaterialIssue[] @relation("ManufacturingIssueIngredient")
   priceHistory       ProductVariantPriceHistory[]
   supplierLinks      SupplierProductLink[]
 }
@@ -620,6 +657,7 @@ model StockLocation {
   movements StockMovement[]
   inventories StockInventory[]
   exits     StockExit[]
+  factoryForCompanies Company[] @relation("CompanyFactoryStockLocation")
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 }
@@ -695,6 +733,7 @@ enum StockMovementSource {
   ADJUSTMENT
   TRANSFER
   SERVICE_ORDER
+  MANUFACTURING
   OTHER
 }
 
@@ -829,6 +868,8 @@ model StockMovement {
   stockInventory   StockInventory?      @relation(fields: [stockInventoryId], references: [id], onDelete: SetNull)
   stockExitId      String?
   stockExit        StockExit?           @relation(fields: [stockExitId], references: [id], onDelete: SetNull)
+  manufacturingMaterialIssue ManufacturingMaterialIssue?
+  manufacturingFinishedReceipt ManufacturingFinishedReceipt?
   createdAt        DateTime             @default(now())
 
   @@index([stockInventoryId])
@@ -1001,6 +1042,8 @@ model Sale {
   serviceTab             ServiceTab?
   serviceOrder           ServiceOrder?
   serviceOrderDeposit    ServiceOrder? @relation("ServiceOrderDepositSale")
+  manufacturingProject   ManufacturingProject?
+  manufacturingDeposit   ManufacturingProject? @relation("ManufacturingDepositSale")
   activeDraftForTerminal PdvTerminal?  @relation("PdvTerminalActiveDraft")
 
   @@index([operationNatureId])
@@ -1773,4 +1816,158 @@ model ServiceOrderStatusLog {
   createdAt  DateTime           @default(now())
 
   @@index([orderId, createdAt])
+}
+
+// --- Fábrica (fabricação de PA) ---
+
+enum ManufacturingProjectStatus {
+  PRODUCT_SELECTION
+  QUOTE
+  STARTED
+  IN_DEVELOPMENT
+  TESTING
+  FINISHED
+  CANCELLED
+}
+
+enum ManufacturingProjectSource {
+  INTERNAL
+  CATALOG
+  WHATSAPP_LINK
+  INSTAGRAM
+  OTHER
+}
+
+enum ManufacturingConsumePhase {
+  STARTED
+  IN_DEVELOPMENT
+  TESTING
+  FINISHED
+  MANUAL
+}
+
+model ManufacturingProject {
+  id                      String                     @id @default(uuid())
+  number                  Int                        @unique @default(autoincrement())
+  status                  ManufacturingProjectStatus @default(PRODUCT_SELECTION)
+  source                  ManufacturingProjectSource @default(INTERNAL)
+  externalRef             String?                    @db.VarChar(120)
+  customerId              String
+  customer                Customer                   @relation(fields: [customerId], references: [id])
+  finishedVariantId       String
+  finishedVariant         ProductVariant             @relation(fields: [finishedVariantId], references: [id])
+  quantity                Decimal                    @db.Decimal(18, 4)
+  title                   String?                    @db.VarChar(200)
+  customerBrief           String?                    @db.Text
+  technicalSpec           String?                    @db.Text
+  deliveryNotes           String?                    @db.Text
+  internalNotes           String?                    @db.Text
+  qualityNotes            String?                    @db.Text
+  quoteTotal              Decimal?                   @db.Decimal(14, 2)
+  depositAmount           Decimal                    @default(0) @db.Decimal(14, 2)
+  promisedAt              DateTime?
+  quotedAt                DateTime?
+  approvedAt              DateTime?
+  startedAt               DateTime?
+  finishedAt              DateTime?
+  openedById              String?
+  openedBy                User?                      @relation("ManufacturingOpenedBy", fields: [openedById], references: [id], onDelete: SetNull)
+  technicalResponsibleId  String?
+  technicalResponsible    User?                      @relation("ManufacturingTechnical", fields: [technicalResponsibleId], references: [id], onDelete: SetNull)
+  commercialResponsibleId String?
+  commercialResponsible   User?                      @relation("ManufacturingCommercial", fields: [commercialResponsibleId], references: [id], onDelete: SetNull)
+  saleId                  String?                    @unique
+  sale                    Sale?                      @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  depositSaleId           String?                    @unique
+  depositSale             Sale?                      @relation("ManufacturingDepositSale", fields: [depositSaleId], references: [id], onDelete: SetNull)
+  bomLines                ManufacturingBomLine[]
+  reservations            ManufacturingMaterialReservation[]
+  materialIssues          ManufacturingMaterialIssue[]
+  finishedReceipt         ManufacturingFinishedReceipt?
+  statusHistory           ManufacturingStatusLog[]
+  createdAt               DateTime                   @default(now())
+  updatedAt               DateTime                   @updatedAt
+
+  @@index([status, promisedAt])
+  @@index([customerId])
+  @@index([finishedVariantId])
+}
+
+model ManufacturingBomLine {
+  id                  String            @id @default(uuid())
+  projectId           String
+  project             ManufacturingProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  ingredientVariantId String
+  ingredientVariant   ProductVariant    @relation("ManufacturingBomIngredient", fields: [ingredientVariantId], references: [id])
+  plannedQty          Decimal           @db.Decimal(18, 4)
+  scrapPct            Decimal           @default(0) @db.Decimal(5, 2)
+  issueAtStart        Boolean           @default(false)
+  consumedQty         Decimal           @default(0) @db.Decimal(18, 4)
+  reservedQty         Decimal           @default(0) @db.Decimal(18, 4)
+  sortOrder           Int               @default(0)
+  reservations        ManufacturingMaterialReservation[]
+  materialIssues      ManufacturingMaterialIssue[]
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@unique([projectId, ingredientVariantId])
+  @@index([projectId])
+}
+
+model ManufacturingMaterialReservation {
+  id                  String               @id @default(uuid())
+  projectId           String
+  project             ManufacturingProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  bomLineId           String?
+  bomLine             ManufacturingBomLine? @relation(fields: [bomLineId], references: [id], onDelete: SetNull)
+  ingredientVariantId String
+  ingredientVariant   ProductVariant       @relation("ManufacturingReservationIngredient", fields: [ingredientVariantId], references: [id])
+  quantity            Decimal              @db.Decimal(18, 4)
+  active              Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  releasedAt          DateTime?
+
+  @@index([projectId, active])
+  @@index([ingredientVariantId, active])
+}
+
+model ManufacturingMaterialIssue {
+  id                  String                    @id @default(uuid())
+  projectId           String
+  project             ManufacturingProject      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  bomLineId           String?
+  bomLine             ManufacturingBomLine?     @relation(fields: [bomLineId], references: [id], onDelete: SetNull)
+  ingredientVariantId String
+  ingredientVariant   ProductVariant            @relation("ManufacturingIssueIngredient", fields: [ingredientVariantId], references: [id])
+  quantity            Decimal                   @db.Decimal(18, 4)
+  phase               ManufacturingConsumePhase
+  userId              String?
+  stockMovementId     String?                   @unique
+  stockMovement       StockMovement?            @relation(fields: [stockMovementId], references: [id], onDelete: SetNull)
+  createdAt           DateTime                  @default(now())
+
+  @@index([projectId])
+}
+
+model ManufacturingFinishedReceipt {
+  id              String               @id @default(uuid())
+  projectId       String               @unique
+  project         ManufacturingProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  quantity        Decimal              @db.Decimal(18, 4)
+  stockMovementId String?              @unique
+  stockMovement   StockMovement?       @relation(fields: [stockMovementId], references: [id], onDelete: SetNull)
+  createdAt       DateTime             @default(now())
+}
+
+model ManufacturingStatusLog {
+  id         String                      @id @default(uuid())
+  projectId  String
+  project    ManufacturingProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fromStatus ManufacturingProjectStatus?
+  toStatus   ManufacturingProjectStatus
+  userId     String?
+  note       String?
+  createdAt  DateTime                    @default(now())
+
+  @@index([projectId, createdAt])
 }

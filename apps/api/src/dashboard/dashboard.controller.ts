@@ -28,6 +28,37 @@ function startOfMonth(d: Date): Date {
   return x;
 }
 
+function dayKeyLocal(d: Date): string {
+  const x = startOfDay(d);
+  const m = `${x.getMonth() + 1}`.padStart(2, '0');
+  const day = `${x.getDate()}`.padStart(2, '0');
+  return `${x.getFullYear()}-${m}-${day}`;
+}
+
+function buildSalesTrendMonth(
+  monthStart: Date,
+  through: Date,
+  sales: Array<{ createdAt: Date; total: { toString(): string } | number | null }>,
+): Array<{ date: string; revenue: number; count: number }> {
+  const byDay = new Map<string, { revenue: number; count: number }>();
+  const cursor = new Date(monthStart);
+  const end = startOfDay(through);
+  while (cursor.getTime() <= end.getTime()) {
+    byDay.set(dayKeyLocal(cursor), { revenue: 0, count: 0 });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  for (const s of sales) {
+    const key = dayKeyLocal(s.createdAt);
+    const bucket = byDay.get(key);
+    if (!bucket) continue;
+    bucket.revenue += Number(s.total ?? 0);
+    bucket.count += 1;
+  }
+  return [...byDay.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, v]) => ({ date, revenue: v.revenue, count: v.count }));
+}
+
 /** Teto do painel "Estoque crítico" (o card mostra 5; o "ver mais" abre o resto). */
 const LOW_STOCK_LIMIT = 100;
 /** Top produtos no card do Início (últimos 30 dias, por quantidade vendida). */
@@ -65,6 +96,7 @@ export class DashboardController {
       openSessions,
       payablesSoon,
       receivablesSoon,
+      monthSalesForTrend,
     ] = await Promise.all([
       db.sale.aggregate({
         where: {
@@ -158,6 +190,13 @@ export class DashboardController {
         include: { customer: { select: { name: true } } },
         take: 10,
       }),
+      db.sale.findMany({
+        where: {
+          status: SaleStatus.COMPLETED,
+          createdAt: { gte: monthStart, lte: todayEnd },
+        },
+        select: { createdAt: true, total: true },
+      }),
     ]);
 
     const revenueToday = Number(salesTodayAgg._sum.total ?? 0);
@@ -169,6 +208,7 @@ export class DashboardController {
     const countToday = salesTodayAgg._count._all;
     const countMonth = salesMonthAgg._count._all;
     const avgTicketMonth = countMonth > 0 ? revenueMonth / countMonth : 0;
+    const salesTrendMonth = buildSalesTrendMonth(monthStart, now, monthSalesForTrend);
 
     // Carrega nomes/SKUs dos top 3 produtos em paralelo
     const topVariantIds = topItems.map((t) => t.variantId);
@@ -243,6 +283,7 @@ export class DashboardController {
         month: countMonth,
         avgTicketMonth,
       },
+      salesTrendMonth,
       topProducts,
       lowStock,
       openSessions: openSessions.map((s) => ({

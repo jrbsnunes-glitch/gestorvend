@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 import { CrudToolbar } from '../../components/CrudToolbar';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
+import { ProductSearchModal, type ProductSearchRow } from '../../components/ProductSearchModal';
 import { api } from '../../lib/api';
 
 type Location = { id: string; code: string; name: string };
@@ -18,49 +19,87 @@ type MovementRow = {
   location: { code: string; name: string };
 };
 
-type CreateTransferRes = {
-  transferRef: string;
-  outMovement: { id: string };
-  inMovement: { id: string };
+type TransferLineDraft = {
+  variantId: string;
+  label: string;
+  quantity: string;
 };
 
+function transferRefKey(reference: string | null): string | null {
+  const ref = (reference ?? '').trim();
+  if (!ref.startsWith('TRF:')) return null;
+  const pipe = ref.indexOf(' | ');
+  return pipe >= 0 ? ref.slice(0, pipe).trim() : ref;
+}
+
+function variantKey(v: MovementRow['variant']) {
+  return `${v.sku}\0${v.product.name}`;
+}
+
+function parseQty(raw: string): number {
+  const n = parseFloat(raw.replace(',', '.'));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Uma linha por produto; vários produtos podem compartilhar o mesmo TRF. */
 function parseTransferGroups(rows: MovementRow[]) {
   const map = new Map<string, MovementRow[]>();
   for (const m of rows) {
-    const ref = (m.reference ?? '').trim();
-    if (!ref.startsWith('TRF:')) continue;
-    if (!map.has(ref)) map.set(ref, []);
-    map.get(ref)!.push(m);
+    const refKey = transferRefKey(m.reference);
+    if (!refKey) continue;
+    if (!map.has(refKey)) map.set(refKey, []);
+    map.get(refKey)!.push(m);
   }
   const out: Array<{
     key: string;
+    rowKey: string;
     createdAt: string;
     quantity: string;
     variant: MovementRow['variant'];
     from: { code: string; name: string };
     to: { code: string; name: string };
-    outM?: MovementRow;
-    inM?: MovementRow;
   }> = [];
   for (const [refKey, ms] of map) {
-    const outM = ms.find((x) => x.type === 'OUT');
-    const inM = ms.find((x) => x.type === 'IN');
+    const outs = ms.filter((x) => x.type === 'OUT');
+    const ins = ms.filter((x) => x.type === 'IN');
     const createdAt = ms.reduce(
       (best, m) => (new Date(m.createdAt) > new Date(best) ? m.createdAt : best),
       ms[0]!.createdAt,
     );
-    const qty = outM?.quantity ?? inM?.quantity ?? '0';
-    const variant = outM?.variant ?? inM?.variant ?? ms[0]!.variant;
-    out.push({
-      key: refKey,
-      createdAt,
-      quantity: qty,
-      variant,
-      from: outM?.location ?? { code: '—', name: '—' },
-      to: inM?.location ?? { code: '—', name: '—' },
-      outM,
-      inM,
-    });
+    const from = outs[0]?.location ?? ins[0]?.location ?? { code: '—', name: '—' };
+    const to =
+      ins.find((i) => i.location.code !== from.code)?.location ??
+      ins[0]?.location ??
+      { code: '—', name: '—' };
+
+    const usedIn = new Set<string>();
+    for (const outM of outs) {
+      const vk = variantKey(outM.variant);
+      const inM =
+        ins.find((i) => !usedIn.has(i.id) && variantKey(i.variant) === vk) ??
+        ins.find((i) => !usedIn.has(i.id) && i.quantity === outM.quantity);
+      if (inM) usedIn.add(inM.id);
+      out.push({
+        key: refKey,
+        rowKey: `${refKey}:${vk}`,
+        createdAt,
+        quantity: outM.quantity,
+        variant: outM.variant,
+        from,
+        to,
+      });
+    }
+    for (const inM of ins.filter((i) => !usedIn.has(i.id))) {
+      out.push({
+        key: refKey,
+        rowKey: `${refKey}:${inM.id}`,
+        createdAt,
+        quantity: inM.quantity,
+        variant: inM.variant,
+        from,
+        to,
+      });
+    }
   }
   return out.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
@@ -70,22 +109,14 @@ export function StockTransferenciasPage() {
   const [reportsOpen, setReportsOpen] = useState(false);
   const [fromLocationId, setFromLocationId] = useState('');
   const [toLocationId, setToLocationId] = useState('');
-  const [variantId, setVariantId] = useState('');
-  const [quantity, setQuantity] = useState('1');
+  const [lines, setLines] = useState<TransferLineDraft[]>([]);
+  const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [notes, setNotes] = useState('');
   const [err, setErr] = useState<string | null>(null);
 
   const locations = useQuery({
     queryKey: ['stock-locations'],
     queryFn: () => api<Location[]>('/stock-locations'),
-  });
-
-  const variantOptions = useQuery({
-    queryKey: ['products-for-select'],
-    queryFn: async () => {
-      const products = await api<Array<{ name: string; variants: Array<{ id: string; sku: string }> }>>('/products');
-      return products.flatMap((p) => p.variants.map((v) => ({ id: v.id, label: `${v.sku} — ${p.name}` })));
-    },
   });
 
   const transferRows = useQuery({
@@ -101,21 +132,22 @@ export function StockTransferenciasPage() {
   function resetForm() {
     setFromLocationId('');
     setToLocationId('');
-    setVariantId('');
-    setQuantity('1');
+    setLines([]);
     setNotes('');
     setErr(null);
   }
 
   const transferMut = useMutation({
     mutationFn: () =>
-      api<CreateTransferRes>('/stock-transfers', {
+      api('/stock-transfers', {
         method: 'POST',
         json: {
           fromLocationId,
           toLocationId,
-          variantId,
-          quantity: parseFloat(quantity.replace(',', '.')) || 0,
+          lines: lines.map((l) => ({
+            variantId: l.variantId,
+            quantity: parseQty(l.quantity),
+          })),
           notes: notes.trim() || null,
         },
       }),
@@ -129,6 +161,34 @@ export function StockTransferenciasPage() {
     },
     onError: (e: Error) => setErr(e.message),
   });
+
+  function pickProduct(row: ProductSearchRow) {
+    setLines((prev) => {
+      const idx = prev.findIndex((l) => l.variantId === row.variantId);
+      if (idx >= 0) {
+        return prev.map((l, i) =>
+          i === idx ? { ...l, quantity: String(parseQty(l.quantity) + 1) } : l,
+        );
+      }
+      return [
+        ...prev,
+        { variantId: row.variantId, label: `${row.sku} — ${row.productName}`, quantity: '1' },
+      ];
+    });
+    setProductSearchOpen(false);
+    setErr(null);
+  }
+
+  function setLineQty(variantId: string, quantity: string) {
+    setLines((prev) => prev.map((l) => (l.variantId === variantId ? { ...l, quantity } : l)));
+  }
+
+  function removeLine(variantId: string) {
+    setLines((prev) => prev.filter((l) => l.variantId !== variantId));
+  }
+
+  const linesValid =
+    lines.length > 0 && lines.every((l) => parseQty(l.quantity) > 0);
 
   return (
     <div>
@@ -199,42 +259,74 @@ export function StockTransferenciasPage() {
               ))}
             </select>
           </div>
-          <div className="field">
-            <label htmlFor="tr-variant">Produto / variação</label>
-            <select
-              id="tr-variant"
-              value={variantId}
-              onChange={(e) => setVariantId(e.target.value)}
-              required
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.5rem',
+              flexWrap: 'wrap',
+              margin: '0.75rem 0 0.5rem',
+            }}
+          >
+            <strong style={{ fontSize: '0.95rem' }}>Produtos ({lines.length})</strong>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setProductSearchOpen(true)}
             >
-              <option value="">Selecione…</option>
-              {(variantOptions.data ?? []).map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              + Pesquisar produto
+            </button>
           </div>
-          <div className="form-row">
-            <div className="field">
-              <label htmlFor="tr-qty">Quantidade</label>
-              <input
-                id="tr-qty"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                inputMode="decimal"
-                required
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="tr-notes">Observação (opcional)</label>
-              <input
-                id="tr-notes"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Ex.: remessa para ponto de venda"
-              />
-            </div>
+          <div className="table-wrap" style={{ maxHeight: '16rem', overflow: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Produto</th>
+                  <th style={{ width: '8rem' }}>Quantidade</th>
+                  <th style={{ width: '5rem' }} />
+                </tr>
+              </thead>
+              <tbody>
+                {lines.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="empty">
+                      Nenhum produto. Use &quot;Pesquisar produto&quot; para incluir um ou mais itens.
+                    </td>
+                  </tr>
+                ) : null}
+                {lines.map((l) => (
+                  <tr key={l.variantId}>
+                    <td>{l.label}</td>
+                    <td>
+                      <input
+                        value={l.quantity}
+                        inputMode="decimal"
+                        onChange={(e) => setLineQty(l.variantId, e.target.value)}
+                      />
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-compact"
+                        onClick={() => removeLine(l.variantId)}
+                      >
+                        Remover
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="field" style={{ marginTop: '0.75rem' }}>
+            <label htmlFor="tr-notes">Observação (opcional)</label>
+            <input
+              id="tr-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Ex.: remessa para ponto de venda"
+            />
           </div>
           <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <button
@@ -244,7 +336,7 @@ export function StockTransferenciasPage() {
                 transferMut.isPending ||
                 !fromLocationId ||
                 !toLocationId ||
-                !variantId ||
+                !linesValid ||
                 fromLocationId === toLocationId
               }
               onClick={() => transferMut.mutate()}
@@ -290,7 +382,7 @@ export function StockTransferenciasPage() {
               </thead>
               <tbody>
                 {grouped.map((g, idx) => (
-                  <tr key={g.key}>
+                  <tr key={g.rowKey}>
                     <td className="num">{idx + 1}</td>
                     <td>{new Date(g.createdAt).toLocaleString()}</td>
                     <td>
@@ -310,6 +402,13 @@ export function StockTransferenciasPage() {
           </div>
         )}
       </div>
+
+      <ProductSearchModal
+        open={productSearchOpen}
+        title="Pesquisar produto para transferência"
+        onClose={() => setProductSearchOpen(false)}
+        onPick={pickProduct}
+      />
     </div>
   );
 }
