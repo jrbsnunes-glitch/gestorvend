@@ -2975,247 +2975,399 @@
   overflow: hidden;
 }
 
-.dash-sales-chart {
+/* Gráfico "Evolução de vendas no mês" (SalesMonthChart) */
+.smc {
+  --smc-plot-h: 9rem;
+  --smc-tip-h: 4.25rem;
+  --smc-day-h: 1.05rem;
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 0.75rem;
 }
 
-.dash-sales-chart__subtitle {
+.smc__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 0.85rem;
+}
+
+.smc__caption {
   margin: 0;
   font-size: 0.82rem;
   color: var(--color-text-muted);
 }
 
-.dash-sales-chart__subtitle span {
+.smc__caption span {
   color: var(--color-text);
   font-weight: 600;
   text-transform: capitalize;
 }
 
-.dash-sales-chart__approx {
-  font-size: 0.78rem;
-  font-weight: 400;
+.smc__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.7rem;
   color: var(--color-text-muted);
 }
 
-.dash-sales-chart__kpis {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
-  gap: 0.65rem;
+.smc__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
 }
 
-.dash-sales-chart__kpi {
-  padding: 0.65rem 0.75rem;
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(99, 102, 241, 0.12);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+.smc__legend-item::before {
+  content: '';
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 3px;
+  background: #6366f1;
+}
+
+.smc__legend-item--best::before {
+  background: linear-gradient(180deg, #34d399, #059669);
+}
+
+.smc__legend-item--worst::before {
+  background: linear-gradient(180deg, #fbbf24, #d97706);
+}
+
+.smc__legend-item--avg::before {
+  height: 0;
+  border-radius: 0;
+  background: none;
+  border-top: 2px dashed #6366f1;
+  width: 0.9rem;
+}
+
+.smc__kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.6rem;
+}
+
+.smc__kpi {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  min-height: 4.25rem;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  gap: 0.12rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(99, 102, 241, 0.14);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
-.dash-sales-chart__kpi--primary {
-  background: linear-gradient(135deg, rgba(79, 70, 229, 0.12), rgba(6, 182, 212, 0.08));
-  border-color: rgba(79, 70, 229, 0.22);
+.smc__kpi--total {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.13), rgba(6, 182, 212, 0.08));
+  border-color: rgba(79, 70, 229, 0.24);
 }
 
-.dash-sales-chart__kpi--focus {
-  border-color: rgba(6, 182, 212, 0.35);
-  box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.12);
+.smc__kpi--best {
+  border-color: rgba(5, 150, 105, 0.28);
 }
 
-.dash-sales-chart__kpi-label {
-  font-size: 0.68rem;
+.smc__kpi--worst {
+  border-color: rgba(217, 119, 6, 0.28);
+}
+
+.smc__kpi-label {
+  font-size: 0.67rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--color-text-muted);
 }
 
-.dash-sales-chart__kpi-value {
+.smc__kpi-value {
   font-size: 1.05rem;
-  font-variant-numeric: tabular-nums;
   color: #312e81;
+  font-variant-numeric: tabular-nums;
 }
 
-.dash-sales-chart__kpi-hint {
-  font-size: 0.72rem;
+.smc__kpi--best .smc__kpi-value {
+  color: #047857;
+}
+
+.smc__kpi--worst .smc__kpi-value {
+  color: #b45309;
+}
+
+.smc__kpi--var.is-up .smc__kpi-value {
+  color: #047857;
+}
+
+.smc__kpi--var.is-down .smc__kpi-value {
+  color: #b91c1c;
+}
+
+.smc__kpi--var.is-flat .smc__kpi-value {
   color: var(--color-text-muted);
 }
 
-.dash-sales-chart__figure {
-  position: relative;
-  padding: 0.5rem 0.35rem 0.25rem;
+.smc__kpi-hint {
+  font-size: 0.71rem;
+  color: var(--color-text-muted);
+}
+
+.smc__plot {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.5rem;
+  padding: 0.6rem 0.6rem 0.35rem;
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid rgba(99, 102, 241, 0.1);
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(99, 102, 241, 0.12);
 }
 
-.dash-sales-chart__area-svg {
-  position: absolute;
-  left: 0.35rem;
-  right: 0.35rem;
-  top: 0.5rem;
-  height: 5.5rem;
-  width: calc(100% - 0.7rem);
-  pointer-events: none;
-  z-index: 0;
+.smc__axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: var(--smc-plot-h);
+  margin-top: var(--smc-tip-h);
+  font-size: 0.62rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
-.dash-sales-chart__grid-line {
-  stroke: rgba(99, 102, 241, 0.12);
-  stroke-width: 1;
-  stroke-dasharray: 4 6;
-}
-
-.dash-sales-chart__trend-line {
-  filter: drop-shadow(0 1px 2px rgba(79, 70, 229, 0.35));
-}
-
-.dash-sales-chart__dot {
-  fill: #fff;
-  stroke: #4f46e5;
-  stroke-width: 2;
-  opacity: 0.85;
-}
-
-.dash-sales-chart__dot--active {
-  fill: #06b6d4;
-  stroke: #0e7490;
-  stroke-width: 2.5;
-  opacity: 1;
-}
-
-.dash-sales-chart__bars {
+/* A faixa superior (--smc-tip-h) é reservada ao tooltip, que assim nunca cobre barras nem KPIs. */
+.smc__canvas {
   position: relative;
-  z-index: 1;
+  padding-top: var(--smc-tip-h);
+  padding-bottom: var(--smc-day-h);
+}
+
+.smc__grid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed rgba(99, 102, 241, 0.16);
+  pointer-events: none;
+}
+
+.smc__grid--top {
+  top: var(--smc-tip-h);
+}
+
+.smc__grid--mid {
+  top: calc(var(--smc-tip-h) + var(--smc-plot-h) / 2);
+}
+
+.smc__avg-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 2px dashed rgba(99, 102, 241, 0.6);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.smc__bars {
   display: flex;
   align-items: flex-end;
-  gap: 3px;
-  min-height: 7.5rem;
-  overflow-x: auto;
-  padding: 5.75rem 0.1rem 0.1rem;
-  scrollbar-width: thin;
+  gap: 2px;
+  height: var(--smc-plot-h);
 }
 
-.dash-sales-chart__bar-col {
+.smc__col {
   flex: 1 1 0;
-  min-width: 1.25rem;
-  max-width: 2.5rem;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.25rem;
-  cursor: default;
-  outline: none;
-  border-radius: 6px;
-  padding: 0.15rem 0.1rem 0;
-  transition: transform 0.15s ease, background 0.15s ease;
+  gap: 0.2rem;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 5px 5px 0 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.12s ease;
 }
 
-.dash-sales-chart__bar-col:hover,
-.dash-sales-chart__bar-col:focus-visible,
-.dash-sales-chart__bar-col.is-active {
-  transform: translateY(-2px);
-  background: rgba(99, 102, 241, 0.08);
+.smc__col:hover,
+.smc__col.is-focus {
+  background: rgba(99, 102, 241, 0.09);
 }
 
-.dash-sales-chart__bar-col.is-today .dash-sales-chart__bar-day {
+.smc__col:focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 1px;
+}
+
+.smc__col-track {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-bottom: 1px solid rgba(99, 102, 241, 0.25);
+}
+
+.smc__col-fill {
+  width: 70%;
+  max-width: 1.5rem;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, #a5b4fc 0%, #6366f1 50%, #4338ca 100%);
+  box-shadow: 0 1px 6px rgba(67, 56, 202, 0.22);
+  transition: height 0.25s ease, filter 0.12s ease;
+}
+
+.smc__col.is-empty .smc__col-fill {
+  height: 2px !important;
+  background: rgba(148, 163, 184, 0.55);
+  box-shadow: none;
+}
+
+.smc__col.is-best .smc__col-fill {
+  background: linear-gradient(180deg, #6ee7b7 0%, #10b981 50%, #047857 100%);
+  box-shadow: 0 1px 10px rgba(5, 150, 105, 0.35);
+}
+
+.smc__col.is-worst .smc__col-fill {
+  background: linear-gradient(180deg, #fcd34d 0%, #f59e0b 55%, #b45309 100%);
+  box-shadow: 0 1px 10px rgba(217, 119, 6, 0.3);
+}
+
+.smc__col:hover .smc__col-fill,
+.smc__col.is-focus .smc__col-fill {
+  filter: brightness(1.08) saturate(1.05);
+}
+
+.smc__col-day {
+  font-size: 0.6rem;
+  line-height: 1;
+  height: 0.85rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.smc__col.is-weekend .smc__col-day {
+  opacity: 0.5;
+}
+
+.smc__col.is-today .smc__col-day {
   color: #0e7490;
   font-weight: 700;
 }
 
-.dash-sales-chart__bar-col.is-weekend .dash-sales-chart__bar-day {
-  opacity: 0.55;
-}
-
-.dash-sales-chart__bar-col.is-peak .dash-sales-chart__bar-fill {
-  background: linear-gradient(180deg, #22d3ee, #0891b2);
-  box-shadow: 0 0 12px rgba(6, 182, 212, 0.45);
-}
-
-.dash-sales-chart__bar-track {
-  width: 100%;
-  height: 3.25rem;
+.smc__tip {
+  position: absolute;
+  bottom: calc(var(--smc-plot-h) + var(--smc-day-h) + 0.2rem);
+  z-index: 4;
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 8.5rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-md);
+  background: rgba(30, 27, 75, 0.96);
+  color: #eef2ff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25);
+  pointer-events: none;
+  transition: left 0.12s ease;
 }
 
-.dash-sales-chart__bar-fill {
-  width: 72%;
-  max-width: 1.35rem;
-  border-radius: 999px 999px 4px 4px;
-  background: linear-gradient(180deg, #a5b4fc 0%, #6366f1 45%, #4338ca 100%);
-  min-height: 3px;
-  box-shadow: 0 2px 8px rgba(67, 56, 202, 0.25);
-  transform-origin: bottom center;
-  animation: dashSalesBarGrow 0.55s ease backwards;
-  transition:
-    height 0.25s ease,
-    filter 0.15s ease,
-    box-shadow 0.15s ease;
+.smc__tip--center {
+  transform: translateX(-50%);
 }
 
-.dash-sales-chart__bar-col.is-active .dash-sales-chart__bar-fill {
-  filter: brightness(1.08);
-  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.45);
+.smc__tip--start {
+  transform: translateX(-0.5rem);
 }
 
-.dash-sales-chart__bar-day {
-  font-size: 0.62rem;
-  color: var(--color-text-muted);
+.smc__tip--end {
+  transform: translateX(-100%) translateX(0.5rem);
+}
+
+.smc__tip-day {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.smc__tip-value {
+  font-size: 0.95rem;
   font-variant-numeric: tabular-nums;
 }
 
-@keyframes dashSalesBarGrow {
-  from {
-    transform: scaleY(0.15);
-    opacity: 0.35;
-  }
-  to {
-    transform: scaleY(1);
-    opacity: 1;
-  }
+.smc__tip-meta {
+  font-size: 0.68rem;
+  color: rgba(199, 210, 254, 0.9);
 }
 
-.dash-sales-chart--loading .dash-sales-chart__skeleton-kpis {
+.smc__tip-tag {
+  margin-top: 0.15rem;
+  align-self: flex-start;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.smc__tip-tag--best {
+  background: rgba(16, 185, 129, 0.22);
+  color: #6ee7b7;
+}
+
+.smc__tip-tag--worst {
+  background: rgba(245, 158, 11, 0.22);
+  color: #fcd34d;
+}
+
+.smc__foot {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.smc--loading .smc__skeleton {
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    90deg,
+    rgba(99, 102, 241, 0.07) 0%,
+    rgba(99, 102, 241, 0.15) 50%,
+    rgba(99, 102, 241, 0.07) 100%
+  );
+  background-size: 200% 100%;
+  animation: smcShimmer 1.2s ease infinite;
+}
+
+.smc--loading .smc__skeleton--kpis {
   height: 4.25rem;
-  border-radius: var(--radius-md);
-  background: linear-gradient(
-    90deg,
-    rgba(99, 102, 241, 0.08) 0%,
-    rgba(99, 102, 241, 0.16) 50%,
-    rgba(99, 102, 241, 0.08) 100%
-  );
-  background-size: 200% 100%;
-  animation: dashSalesShimmer 1.2s ease infinite;
 }
 
-.dash-sales-chart--loading .dash-sales-chart__skeleton-chart {
-  height: 8.5rem;
-  margin-top: 0.85rem;
-  border-radius: var(--radius-md);
-  background: linear-gradient(
-    90deg,
-    rgba(99, 102, 241, 0.06) 0%,
-    rgba(99, 102, 241, 0.12) 50%,
-    rgba(99, 102, 241, 0.06) 100%
-  );
-  background-size: 200% 100%;
-  animation: dashSalesShimmer 1.2s ease infinite;
+.smc--loading .smc__skeleton--plot {
+  height: 10.5rem;
 }
 
-@keyframes dashSalesShimmer {
+@keyframes smcShimmer {
   0% {
     background-position: 200% 0;
   }
   100% {
     background-position: -200% 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .smc {
+    --smc-plot-h: 7.5rem;
+  }
+
+  .smc__col-day {
+    font-size: 0.52rem;
   }
 }
 

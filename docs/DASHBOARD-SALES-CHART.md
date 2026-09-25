@@ -4,7 +4,14 @@
 
 - Fonte: vendas **`COMPLETED`** na tabela `Sale`, filtradas do 1º dia do mês até hoje (fim do dia).
 - Agregação: **SQL** `GROUP BY` dia civil no fuso **`APP_TIMEZONE`** (padrão `America/Sao_Paulo`), função PostgreSQL `timezone(tz, "createdAt")`.
-- Endpoint: `GET /api/dashboard/overview` (`salesTrendMonth`) e, se necessário, `GET /api/dashboard/sales-trend-month`.
+- Endpoint: `GET /api/dashboard/overview` (`salesTrendMonth`) e `GET /api/dashboard/sales-trend-month` (usado pelo gráfico).
+
+## Front
+
+- Componente: `apps/web/src/components/SalesMonthChart.tsx` (barras por dia, tooltip no hover/teclado).
+- Eixo: sempre dia **01 → hoje**, montado no front (`apps/web/src/lib/month-sales-chart.ts`) e mesclado com os totais da API.
+- A query usa a chave do mês (`YYYY-MM`), então a contagem **reinicia sozinha ao virar o mês**.
+- Destaques: melhor dia (verde), dia com menos vendas (âmbar), média por dia com vendas (linha tracejada), variação do dia vs dia anterior.
 
 ## Deploy
 
