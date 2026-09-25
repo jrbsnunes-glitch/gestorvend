@@ -319,6 +319,24 @@ export function DashboardPage() {
     !salesTrendMonth.data &&
     !(data?.salesTrendMonth?.length ?? 0);
 
+  /**
+   * Zeros na série podem significar "mês sem vendas" ou "API não entregou o detalhe
+   * diário" (versão antiga sem o endpoint, ou falha na agregação). O card de
+   * faturamento do mês serve de referência para diferenciar os dois casos.
+   */
+  const salesTrendNotice = useMemo(() => {
+    if (salesTrendLoading) return null;
+    if (salesTrendMonth.isError) {
+      return 'Não foi possível carregar o detalhe diário das vendas. Se o problema persistir, atualize o servidor e reinicie a API.';
+    }
+    const monthRevenue = data?.revenue.month ?? 0;
+    const seriesRevenue = salesTrendPoints.reduce((sum, p) => sum + p.revenue, 0);
+    if (monthRevenue > 0.005 && seriesRevenue < 0.005) {
+      return `O mês tem ${formatBRL(monthRevenue)} em vendas, mas a API não devolveu o detalhe por dia. Atualize o servidor e reinicie a API.`;
+    }
+    return null;
+  }, [salesTrendLoading, salesTrendMonth.isError, data?.revenue.month, salesTrendPoints]);
+
   const topProducts = data?.topProducts ?? [];
   const lowStock = data?.lowStock ?? [];
   const payablesSoon = data?.payablesSoon ?? [];
@@ -521,7 +539,11 @@ export function DashboardPage() {
           <header className="dash-block-head">
             <h2>Evolução de vendas no mês</h2>
           </header>
-          <SalesMonthChart points={salesTrendPoints} loading={salesTrendLoading} />
+          <SalesMonthChart
+            points={salesTrendPoints}
+            loading={salesTrendLoading}
+            notice={salesTrendNotice}
+          />
         </article>
       </section>
 

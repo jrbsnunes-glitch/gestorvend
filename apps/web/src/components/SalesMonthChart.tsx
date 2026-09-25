@@ -67,9 +67,12 @@ function variationTone(v: Variation): 'up' | 'down' | 'flat' {
 export function SalesMonthChart({
   points,
   loading = false,
+  notice = null,
 }: {
   points: MonthSalesPoint[];
   loading?: boolean;
+  /** Aviso quando a série do mês não pôde ser carregada (evita ler zeros como "sem vendas"). */
+  notice?: string | null;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
@@ -141,6 +144,12 @@ export function SalesMonthChart({
           <li className="smc__legend-item smc__legend-item--avg">Média por dia com vendas</li>
         </ul>
       </div>
+
+      {notice ? (
+        <p className="smc__notice" role="alert">
+          {notice}
+        </p>
+      ) : null}
 
       <div className="smc__kpis">
         <div className="smc__kpi smc__kpi--total">
@@ -267,7 +276,7 @@ export function SalesMonthChart({
       <p className="smc__foot">
         {stats.maxRevenue > 0
           ? `Média ${formatBRL(stats.avgSoldDay)} nos ${stats.soldDaysCount} dia(s) com vendas · passe o mouse nas colunas para ver cada dia.`
-          : 'Nenhuma venda concluída neste mês até agora — o eixo mostra os dias já decorridos.'}
+          : 'O gráfico cobre apenas o mês corrente (dias já decorridos) — meses anteriores não entram nesta visão.'}
       </p>
     </div>
   );

@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Logger, UseGuards } from '@nestjs/common';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -66,6 +66,8 @@ const TOP_PRODUCTS_LIMIT = 3;
 
 export class DashboardController {
 
+  private readonly logger = new Logger(DashboardController.name);
+
   constructor(private readonly tenantPrisma: TenantPrismaService) {}
 
   private async salesTrendMonthPoints(
@@ -73,10 +75,15 @@ export class DashboardController {
     monthStart: Date,
     todayEnd: Date,
     now: Date,
+    tenantSlug: string,
   ) {
     try {
       return await loadSalesTrendMonth(db, monthStart, todayEnd, now);
-    } catch {
+    } catch (err) {
+      this.logger.error(
+        `Falha ao agregar a série diária de vendas (tenant ${tenantSlug}); gráfico do Início ficará zerado.`,
+        err instanceof Error ? err.stack : String(err),
+      );
       return mergeSalesTrendAxis(monthStart, now, new Map());
     }
   }
@@ -309,7 +316,7 @@ export class DashboardController {
 
       }),
 
-      this.salesTrendMonthPoints(db, monthStart, todayEnd, now),
+      this.salesTrendMonthPoints(db, monthStart, todayEnd, now, user.tenantSlug),
 
     ]);
 
@@ -561,7 +568,13 @@ export class DashboardController {
 
     const todayEnd = endOfDay(now);
 
-    const points = await this.salesTrendMonthPoints(db, monthStart, todayEnd, now);
+    const points = await this.salesTrendMonthPoints(
+      db,
+      monthStart,
+      todayEnd,
+      now,
+      user.tenantSlug,
+    );
 
     return { points };
 

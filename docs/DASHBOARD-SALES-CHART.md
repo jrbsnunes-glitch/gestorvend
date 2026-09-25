@@ -24,6 +24,15 @@ npm run build
 
 Confirme no `.env` da API: `APP_TIMEZONE=America/Sao_Paulo` (ou fuso da loja).
 
+## Gráfico todo zerado: como diferenciar
+
+1. Olhe o card **Faturamento do mês** no Início:
+   - também R$ 0,00 → não há venda `COMPLETED` no mês corrente (comportamento correto; o gráfico não mostra meses anteriores).
+   - com valor → a série diária não chegou. O card do gráfico exibe aviso em âmbar.
+2. Causas típicas da série não chegar:
+   - API antiga no servidor (endpoint `sales-trend-month` existe desde a v1.0.96) ou API não reiniciada após o build → 404.
+   - Falha na agregação SQL → a API devolve o eixo zerado e **registra o erro no log** com o slug do tenant.
+
 ## Sintomas antigos (corrigidos)
 
 | Sintoma | Causa |

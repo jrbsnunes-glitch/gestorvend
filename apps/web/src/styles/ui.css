@@ -3046,6 +3046,16 @@
   width: 0.9rem;
 }
 
+.smc__notice {
+  margin: 0;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-md);
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.76rem;
+}
+
 .smc__kpis {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
