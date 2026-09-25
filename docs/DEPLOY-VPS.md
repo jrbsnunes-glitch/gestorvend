@@ -139,6 +139,14 @@ sudo systemctl restart gestorvend-api   # ou pm2 restart gestorvend-api
 
 Se alterar qualquer variável `VITE_*`, rode `npm run build` de novo antes de publicar o `dist`.
 
+O **restart da API é obrigatório**: sem ele o processo continua servindo o `dist` antigo e as rotas novas
+respondem 404, o que deixa telas recém-publicadas vazias. Quando isso acontece, o sistema mostra o banner
+“A API do servidor está desatualizada”. Para checar uma rota sem token (401 = existe, 404 = API antiga):
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/api/dashboard/sales-trend-month
+```
+
 ## API em subdomínio separado
 
 Se a API for `https://api.seudominio.com`, defina no **momento do build**:

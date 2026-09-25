@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { CompanyLogo } from './CompanyLogo';
+import { ApiOutdatedBanner } from './ApiOutdatedBanner';
 import { ConnectionStatusBanner } from './ConnectionStatusBanner';
 import { DesktopUpdateBanner } from './DesktopUpdateBanner';
 import { NavIcon, type NavIconName } from './nav-icons';
@@ -452,6 +453,7 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
           {profileMenu}
         </div>
         <ConnectionStatusBanner />
+        <ApiOutdatedBanner />
         <DesktopUpdateBanner />
         <main className="main-content">
           <Outlet />

@@ -21,6 +21,26 @@ export const GV_AUTH_CHANGED_EVENT = 'gv:auth-changed';
 /** Dispara após limpar o token em resposta 401 — use para voltar à tela de login. */
 export const GV_UNAUTHORIZED_EVENT = 'gv:unauthorized';
 
+/**
+ * Dispara quando a API responde "rota inexistente" — sinal de que o processo em
+ * execução é anterior ao front (build novo publicado sem reiniciar a API).
+ */
+export const GV_API_OUTDATED_EVENT = 'gv:api-outdated';
+
+/**
+ * O Nest responde `Cannot GET /api/...` quando **a rota não existe**, diferente
+ * de um `NotFoundException` de recurso (que traz mensagem própria do domínio).
+ */
+function looksLikeMissingRoute(status: number, raw: string): boolean {
+  if (status !== 404) return false;
+  return /Cannot (GET|POST|PUT|PATCH|DELETE) \//u.test(raw);
+}
+
+function notifyApiOutdated(path: string): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(GV_API_OUTDATED_EVENT, { detail: { path } }));
+}
+
 /** Renovar ~90s antes do access token expirar (evita 401 em uso contínuo). */
 const REFRESH_BEFORE_EXPIRY_MS = 90_000;
 const PROACTIVE_MIN_DELAY_MS = 5_000;
@@ -473,6 +493,9 @@ export async function api<T>(
       if (!onKiosk) {
         handleAuthFailure(res.status, res.statusText, text);
       }
+    }
+    if (looksLikeMissingRoute(res.status, text)) {
+      notifyApiOutdated(path);
     }
     const message = formatApiErrorBody(res.status, res.statusText, text);
 
