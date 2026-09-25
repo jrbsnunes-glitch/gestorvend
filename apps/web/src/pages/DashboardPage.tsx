@@ -8,6 +8,11 @@ import { api } from '../lib/api';
 import { companyDisplayName, useCompanyBranding } from '../lib/company-branding';
 import { isManager } from '../lib/auth';
 import { formatBRL, formatDate } from '../lib/format';
+import {
+  buildCurrentMonthAxisThroughToday,
+  currentMonthKey,
+  mergeTrendIntoMonthAxis,
+} from '../lib/month-sales-chart';
 import { buildProductTurnoverLastDaysPath } from '../lib/product-report-format';
 
 const DASH_PREVIEW_LIMIT = 5;
@@ -279,13 +284,6 @@ function localTodayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function sumTrend(pts: Overview['salesTrendMonth']) {
-  return pts.reduce(
-    (acc, p) => ({ revenue: acc.revenue + p.revenue, count: acc.count + p.count }),
-    { revenue: 0, count: 0 },
-  );
-}
-
 function isWeekendIso(iso: string): boolean {
   const [y, m, day] = iso.split('-').map(Number);
   if (!y || !m || !day) return false;
@@ -304,7 +302,7 @@ function SalesMonthTrendChart({
 
   const chart = useMemo(() => {
     if (!points.length) return null;
-    const maxRevenue = Math.max(...points.map((p) => p.revenue), 1);
+    const maxRevenue = Math.max(...points.map((p) => p.revenue), 0) || 1;
     const totalRevenue = points.reduce((s, p) => s + p.revenue, 0);
     const totalCount = points.reduce((s, p) => s + p.count, 0);
     let peakIdx = 0;
@@ -514,31 +512,32 @@ export function DashboardPage() {
 
   const data = overview.data;
 
-  const salesTrendMismatch = useMemo(() => {
-    if (!data) return false;
-    const pts = data.salesTrendMonth ?? [];
-    const monthRev = data.revenue.month ?? 0;
-    const monthCnt = data.sales.month ?? 0;
-    if (monthCnt === 0 && monthRev === 0) return false;
-    if (!pts.length) return true;
-    const sum = sumTrend(pts);
-    return Math.abs(sum.revenue - monthRev) > 0.5 || sum.count !== monthCnt;
-  }, [data]);
+  const monthKey = currentMonthKey();
+  const monthAxis = useMemo(() => buildCurrentMonthAxisThroughToday(), [monthKey]);
 
-  const salesTrendFix = useQuery({
-    queryKey: ['dashboard', 'sales-trend-month'],
+  const salesTrendMonth = useQuery({
+    queryKey: ['dashboard', 'sales-trend-month', monthKey],
     queryFn: async () => {
       const res = await api<{ points: Overview['salesTrendMonth'] }>('/dashboard/sales-trend-month');
       return res.points;
     },
-    enabled: Boolean(data && salesTrendMismatch),
     staleTime: 60_000,
+    refetchInterval: () =>
+      typeof document !== 'undefined' && document.visibilityState === 'hidden'
+        ? false
+        : 120_000,
   });
 
-  const salesTrendPoints = useMemo(() => {
-    if (salesTrendFix.data?.length) return salesTrendFix.data;
-    return data?.salesTrendMonth ?? [];
-  }, [salesTrendFix.data, data?.salesTrendMonth]);
+  const salesTrendPoints = useMemo(
+    () => mergeTrendIntoMonthAxis(monthAxis, salesTrendMonth.data ?? data?.salesTrendMonth),
+    [monthAxis, salesTrendMonth.data, data?.salesTrendMonth],
+  );
+
+  const salesTrendLoading =
+    overview.isLoading &&
+    salesTrendMonth.isLoading &&
+    !salesTrendMonth.data &&
+    !(data?.salesTrendMonth?.length ?? 0);
 
   const topProducts = data?.topProducts ?? [];
   const lowStock = data?.lowStock ?? [];
@@ -742,10 +741,7 @@ export function DashboardPage() {
           <header className="dash-block-head">
             <h2>Evolução de vendas no mês</h2>
           </header>
-          <SalesMonthTrendChart
-            points={salesTrendPoints}
-            loading={overview.isLoading || (salesTrendMismatch && salesTrendFix.isLoading)}
-          />
+          <SalesMonthTrendChart points={salesTrendPoints} loading={salesTrendLoading} />
         </article>
       </section>
 
