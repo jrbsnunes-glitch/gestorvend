@@ -381,6 +381,7 @@ export function PortalClientsPage() {
         </button>
       </div>
 
+      {editErr && !editing && <div className="alert alert-error">{editErr}</div>}
       {list.isError && <div className="alert alert-error">{(list.error as Error).message}</div>}
 
       <div className="portal-clients-toolbar card">
@@ -551,24 +552,29 @@ export function PortalClientsPage() {
                         type="button"
                         className="btn btn-ghost"
                         style={{ fontSize: '0.78rem' }}
-                        disabled={editLoadingCnpj === c.cnpj}
-                        onClick={async () => {
+                        onClick={() => {
                           setEditErr(null);
+                          setEditing(c);
+                          setEditForm(clientToEditForm(c));
+                          const cnpjKey = onlyDigitsCnpj(c.cnpj);
                           setEditLoadingCnpj(c.cnpj);
-                          try {
-                            const fresh = await portalApi<Client>(
-                              `/portal/clients/${onlyDigitsCnpj(c.cnpj)}`,
-                            );
-                            setEditing(fresh);
-                            setEditForm(clientToEditForm(fresh));
-                          } catch (e) {
-                            setEditErr(e instanceof Error ? e.message : 'Erro ao carregar licença.');
-                          } finally {
-                            setEditLoadingCnpj(null);
-                          }
+                          void portalApi<Client>(`/portal/clients/${cnpjKey}`)
+                            .then((fresh) => {
+                              setEditing(fresh);
+                              setEditForm(clientToEditForm(fresh));
+                            })
+                            .catch((e) => {
+                              setEditErr(
+                                e instanceof Error
+                                  ? e.message
+                                  : 'Não foi possível atualizar os addons do servidor; dados da lista.',
+                              );
+                            })
+                            .finally(() => setEditLoadingCnpj(null));
                         }}
                       >
-                        {editLoadingCnpj === c.cnpj ? '…' : 'Editar'}
+                        Editar
+                        {editLoadingCnpj === c.cnpj ? '…' : ''}
                       </button>
                       {prov === 'READY' && (
                         <button

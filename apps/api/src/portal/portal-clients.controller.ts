@@ -147,7 +147,7 @@ export class PortalClientsController {
       const msg = e instanceof Error ? e.message : String(e);
       if (/TenantModuleAddon|invalid input value for enum/i.test(msg)) {
         throw new BadRequestException(
-          'Addon indisponível no banco central. Rode `npm run db:migrate:central` no servidor e reinicie a API.',
+          'Addon indisponível no banco central. Rode `npm run db:migrate:central` (raiz) ou `npm run prisma:migrate:central -w @gestorvend/api` e reinicie a API.',
         );
       }
       throw e;
