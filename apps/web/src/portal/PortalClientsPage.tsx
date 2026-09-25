@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { formatBRL } from '../lib/format';
+import { patchPortalClientModules } from './portal-client-save';
 import { portalApi } from './portal-api';
 
 type Client = {
@@ -166,7 +167,6 @@ export function PortalClientsPage() {
   const [editing, setEditing] = useState<Client | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [editErr, setEditErr] = useState<string | null>(null);
-  const [editLoadingCnpj, setEditLoadingCnpj] = useState<string | null>(null);
   const [renewing, setRenewing] = useState<Client | null>(null);
   const [renewDays, setRenewDays] = useState(30);
   const [err, setErr] = useState<string | null>(null);
@@ -211,10 +211,7 @@ export function PortalClientsPage() {
             : null,
         },
       });
-      return portalApi<Client>(`/portal/clients/${onlyDigitsCnpj(created.cnpj)}/modules`, {
-        method: 'PATCH',
-        json: { modules: form.enabledAddons },
-      });
+      return patchPortalClientModules<Client>(created.cnpj, form.enabledAddons);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['portal', 'clients'] });
@@ -228,23 +225,25 @@ export function PortalClientsPage() {
   const updateClient = useMutation({
     mutationFn: async (payload: { cnpj: string; form: EditForm }) => {
       const cnpj = onlyDigitsCnpj(payload.cnpj);
+      const licenseBody = {
+        companyName: payload.form.companyName.trim(),
+        planCode: payload.form.planCode,
+        licenseStatus: payload.form.licenseStatus,
+        licenseValidFrom: payload.form.licenseValidFrom || null,
+        licenseExpiresAt: payload.form.licenseExpiresAt || null,
+        monthlyFee: payload.form.monthlyFee.trim()
+          ? parseFloat(payload.form.monthlyFee.replace(',', '.'))
+          : null,
+      };
       await portalApi<Client>(`/portal/clients/${cnpj}/license`, {
         method: 'PATCH',
-        json: {
-          companyName: payload.form.companyName.trim(),
-          planCode: payload.form.planCode,
-          licenseStatus: payload.form.licenseStatus,
-          licenseValidFrom: payload.form.licenseValidFrom || null,
-          licenseExpiresAt: payload.form.licenseExpiresAt || null,
-          monthlyFee: payload.form.monthlyFee.trim()
-            ? parseFloat(payload.form.monthlyFee.replace(',', '.'))
-            : null,
-        },
+        json: licenseBody,
       });
-      return portalApi<Client>(`/portal/clients/${cnpj}/modules`, {
-        method: 'PATCH',
-        json: { modules: payload.form.enabledAddons },
-      });
+      return patchPortalClientModules<Client>(
+        cnpj,
+        payload.form.enabledAddons,
+        licenseBody,
+      );
     },
     onSuccess: (updated) => {
       const cnpjKey = onlyDigitsCnpj(updated.cnpj);
@@ -381,7 +380,6 @@ export function PortalClientsPage() {
         </button>
       </div>
 
-      {editErr && !editing && <div className="alert alert-error">{editErr}</div>}
       {list.isError && <div className="alert alert-error">{(list.error as Error).message}</div>}
 
       <div className="portal-clients-toolbar card">
@@ -556,25 +554,9 @@ export function PortalClientsPage() {
                           setEditErr(null);
                           setEditing(c);
                           setEditForm(clientToEditForm(c));
-                          const cnpjKey = onlyDigitsCnpj(c.cnpj);
-                          setEditLoadingCnpj(c.cnpj);
-                          void portalApi<Client>(`/portal/clients/${cnpjKey}`)
-                            .then((fresh) => {
-                              setEditing(fresh);
-                              setEditForm(clientToEditForm(fresh));
-                            })
-                            .catch((e) => {
-                              setEditErr(
-                                e instanceof Error
-                                  ? e.message
-                                  : 'Não foi possível atualizar os addons do servidor; dados da lista.',
-                              );
-                            })
-                            .finally(() => setEditLoadingCnpj(null));
                         }}
                       >
                         Editar
-                        {editLoadingCnpj === c.cnpj ? '…' : ''}
                       </button>
                       {prov === 'READY' && (
                         <button
