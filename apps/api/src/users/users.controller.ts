@@ -14,6 +14,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { UserPermissionCode } from '../generated/tenant-client';
+import { TenantService } from '../tenant/tenant.service';
 import { MenuAccessService, type MenuAccessGrantInput } from './menu-access.service';
 import { UserPermissionsService } from './user-permissions.service';
 import { UsersService } from './users.service';
@@ -30,6 +31,7 @@ export class UsersController {
     private readonly users: UsersService,
     private readonly permissions: UserPermissionsService,
     private readonly menuAccess: MenuAccessService,
+    private readonly tenants: TenantService,
   ) {}
 
   /** Catálogo de permissões disponíveis para concessão. */
@@ -69,11 +71,19 @@ export class UsersController {
     return { ok: true };
   }
 
-  /** Identidade do usuário corrente — usada pelo front para exibir nome/perfil. */
+  /**
+   * Identidade do usuário corrente — usada pelo front para exibir nome/perfil.
+   * Inclui `enabledModules` do banco central para que addons contratados no portal
+   * valham na sessão atual, sem esperar a renovação do JWT (logout/login).
+   */
   @Get('me')
   @Roles('admin', 'manager', 'seller', 'finance', 'waiter', 'technician')
   async me(@CurrentUser() user: JwtPayload) {
-    return this.users.getById(user.tenantSlug, user.sub);
+    const [me, enabledModules] = await Promise.all([
+      this.users.getById(user.tenantSlug, user.sub),
+      this.tenants.getEnabledModules(user.tenantSlug).catch(() => []),
+    ]);
+    return { ...me, enabledModules };
   }
 
   @Get()

@@ -18,6 +18,8 @@ import {
   isWaiter,
   profileFromRoles,
   profileLabel,
+  setCachedEnabledModules,
+  type TenantModuleAddon,
 } from '../lib/auth';
 import { navPathToMenuKey } from '../lib/menu-access';
 import { useMenuAccess } from '../hooks/useMenuAccess';
@@ -86,7 +88,13 @@ const NAV_ITEMS: NavItem[] = [
 /** Preferência de abas inferiores no mobile (completar com próximas permitidas). */
 const MOBILE_TAB_PREF = ['/', '/estoque', '/caixa', '/financeiro'];
 
-type Me = { name: string; email: string; profile: 'manager' | 'cashier' | 'waiter' | 'technician' };
+type Me = {
+  name: string;
+  email: string;
+  profile: 'manager' | 'cashier' | 'waiter' | 'technician';
+  /** Addons do portal conforme o banco central (API ≥ v1.1.3); ausente em API antiga. */
+  enabledModules?: TenantModuleAddon[];
+};
 
 function readCollapsedPref(): boolean {
   try {
@@ -112,8 +120,6 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
   const hasFinance = identity?.roles.includes('finance') ?? false;
   const userIsAdmin = isAdmin();
   const restaurantOk = hasRestaurantPlan();
-  const serviceOrderOk = hasServiceOrderModule();
-  const factoryOk = hasFactoryModule();
   const location = useLocation();
 
   const [collapsed, setCollapsed] = useState(readCollapsedPref);
@@ -126,6 +132,17 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
     queryFn: () => api<Me>('/users/me'),
     staleTime: 5 * 60_000,
   });
+
+  const serverModules = me.data?.enabledModules;
+  const serviceOrderOk = serverModules
+    ? serverModules.includes('SERVICE_ORDER')
+    : hasServiceOrderModule();
+  const factoryOk = serverModules ? serverModules.includes('FACTORY') : hasFactoryModule();
+
+  // Guardas de rota e páginas leem de `lib/auth`; manter o cache alinhado ao servidor.
+  useEffect(() => {
+    if (serverModules) setCachedEnabledModules(serverModules);
+  }, [serverModules]);
 
   const company = useQuery({
     queryKey: ['company'],

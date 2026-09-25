@@ -35,3 +35,19 @@ npm run build
 1. Migration central `20260914120000_tenant_module_factory` (valor `FACTORY` no enum).
 2. Portal: marcar **Adicional: Fábrica** e salvar.
 3. No tenant: **Empresa → Fábrica → Usar módulo Fábrica**.
+4. Tabelas do módulo no banco do tenant: `npm run tenant:migrate-all -w @gestorvend/api`.
+
+### Quando o addon não aparece no sistema
+
+Os addons iam apenas no **JWT** (`enabledModules`), emitido no login/refresh — então o menu só surgia
+após relogar. A partir da **v1.1.3**, `GET /api/users/me` devolve `enabledModules` do banco central e o
+front usa esse valor (JWT é fallback), fazendo o addon valer na sessão atual.
+
+Conferir o que o central tem para o tenant (público, sem token):
+
+```bash
+curl -s "https://SEU-DOMINIO/api/license/status?tenant=<slug>"
+# enabledModules deve conter FACTORY
+```
+
+Se `enabledModules` vier sem `FACTORY`, o problema é a gravação no portal — não o sistema do cliente.

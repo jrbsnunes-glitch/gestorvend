@@ -2,6 +2,8 @@ import { getKioskToken } from './kiosk-auth';
 
 const TOKEN_KEY = 'gv_access_token';
 const REFRESH_KEY = 'gv_refresh_token';
+/** Espelho de `lib/auth.ts` — limpo no logout junto dos tokens. */
+const ENABLED_MODULES_KEY = 'gv_enabled_modules';
 
 /** Token Bearer ativo: no kiosk usa JWT do terminal; senão sessão do usuário. */
 function resolveAuthToken(): string | null {
@@ -149,6 +151,7 @@ export function clearAuthStorage(): void {
   clearProactiveRefresh();
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(REFRESH_KEY);
+  localStorage.removeItem(ENABLED_MODULES_KEY);
   window.dispatchEvent(new Event(GV_AUTH_CHANGED_EVENT));
 }
 
