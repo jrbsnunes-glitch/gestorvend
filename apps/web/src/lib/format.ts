@@ -61,6 +61,12 @@ export function formatCalendarDate(iso: string | Date | undefined | null): strin
 
 export function formatDate(iso: string | Date | undefined | null): string {
   if (!iso) return '—';
+  if (typeof iso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(iso.trim())) {
+    const [y, m, d] = iso.trim().split('-').map(Number);
+    if (y && m && d) {
+      return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(new Date(y, m - 1, d));
+    }
+  }
   const d = typeof iso === 'string' ? new Date(iso) : iso;
   if (Number.isNaN(d.getTime())) return '—';
   return new Intl.DateTimeFormat('pt-BR', {
