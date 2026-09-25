@@ -29,6 +29,10 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { usernameFromEmail } from '../users/username.util';
 import { PortalAuthGuard } from './portal-auth.guard';
 import { TenantService } from '../tenant/tenant.service';
+import {
+  CreatePortalClientBodyDto,
+  UpdatePortalLicenseBodyDto,
+} from './dto/portal-client-license.dto';
 
 function slugify(input: string): string {
   return String(input)
@@ -59,7 +63,13 @@ function parseMonthlyFee(raw: unknown): string | null {
   return n.toFixed(2);
 }
 
-const ADDON_VALUES = new Set<string>(Object.values(TenantModuleAddon));
+/** Não depender só de `Object.values(TenantModuleAddon)` — build antigo no servidor omitia FACTORY. */
+const PORTAL_KNOWN_ADDONS = ['SERVICE_ORDER', 'FACTORY'] as const;
+
+const ADDON_VALUES = new Set<string>([
+  ...PORTAL_KNOWN_ADDONS,
+  ...Object.values(TenantModuleAddon),
+]);
 
 function normalizeAddons(raw: unknown): TenantModuleAddon[] {
   if (!Array.isArray(raw)) return [];
@@ -224,28 +234,7 @@ export class PortalClientsController {
 
   /** Cria um novo cliente + licença inicial e enfileira provisionamento do banco (assíncrono). */
   @Post()
-  async create(
-    @Body()
-    body: {
-      cnpj: string;
-      companyName: string;
-      slug?: string;
-      databaseName?: string;
-      planCode?: PlanCode;
-      licenseStatus?: LicenseStatus;
-      licenseValidFrom?: string | null;
-      licenseExpiresAt?: string | null;
-      /** E-mail interno do primeiro admin (padrão: admin.<slug>@gestorvend.local). */
-      firstAdminEmail?: string;
-      /** Login na tela (slug + username + senha). Se omitido, deriva do e-mail. */
-      firstAdminUsername?: string;
-      /** Senha do primeiro admin (padrão interna Admin123!). */
-      firstAdminPassword?: string;
-      monthlyFee?: number | string | null;
-      /** Módulos adicionais (ex.: SERVICE_ORDER). */
-      enabledAddons?: TenantModuleAddon[] | string[];
-    },
-  ) {
+  async create(@Body() body: CreatePortalClientBodyDto) {
     const cnpj = onlyDigits(body.cnpj);
     if (cnpj.length !== 14) {
       throw new BadRequestException('CNPJ deve ter 14 dígitos.');
@@ -319,9 +308,12 @@ export class PortalClientsController {
       adminPassword,
       adminUsername,
     });
-    const enabledAddons = normalizeAddons(body.enabledAddons);
-    if (enabledAddons.length) {
-      await this.tenantService.setEnabledModules(created.id, created.slug, enabledAddons);
+    if (body.enabledAddons !== undefined) {
+      await this.tenantService.setEnabledModules(
+        created.id,
+        created.slug,
+        normalizeAddons(body.enabledAddons),
+      );
     }
     return {
       ...created,
@@ -334,18 +326,7 @@ export class PortalClientsController {
   @Patch(':cnpj/license')
   async updateLicense(
     @Param('cnpj') cnpjParam: string,
-    @Body()
-    body: {
-      planCode?: PlanCode;
-      licenseStatus?: LicenseStatus;
-      licenseValidFrom?: string | null;
-      licenseExpiresAt?: string | null;
-      companyName?: string;
-      monthlyFee?: number | string | null;
-      /** Atalho: adicionar N dias na licença a partir de hoje. */
-      renewDays?: number;
-      enabledAddons?: TenantModuleAddon[] | string[];
-    },
+    @Body() body: UpdatePortalLicenseBodyDto,
   ) {
     const cnpj = onlyDigits(cnpjParam);
     const tenant = await this.central.tenant.findUnique({ where: { cnpj } });
@@ -386,11 +367,22 @@ export class PortalClientsController {
     }
     const updated = await this.central.tenant.update({ where: { id: tenant.id }, data });
     if (body.enabledAddons !== undefined) {
-      await this.tenantService.setEnabledModules(
-        tenant.id,
-        tenant.slug,
-        normalizeAddons(body.enabledAddons),
-      );
+      try {
+        await this.tenantService.setEnabledModules(
+          tenant.id,
+          tenant.slug,
+          normalizeAddons(body.enabledAddons),
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (/TenantModuleAddon|invalid input value for enum/i.test(msg)) {
+          throw new BadRequestException(
+            'Addon Fábrica indisponível no banco central. Rode as migrations Prisma central ' +
+              '(20260914120000_tenant_module_factory) e reinicie a API.',
+          );
+        }
+        throw e;
+      }
     } else {
       this.tenantService.invalidateCaches(tenant.slug);
     }

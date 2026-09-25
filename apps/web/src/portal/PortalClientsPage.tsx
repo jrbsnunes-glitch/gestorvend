@@ -236,7 +236,11 @@ export function PortalClientsPage() {
             : null,
         },
       }),
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      const cnpjKey = onlyDigitsCnpj(updated.cnpj);
+      qc.setQueryData<Client[]>(['portal', 'clients'], (rows) =>
+        rows?.map((c) => (onlyDigitsCnpj(c.cnpj) === cnpjKey ? { ...c, ...updated } : c)),
+      );
       qc.invalidateQueries({ queryKey: ['portal', 'clients'] });
       setEditing(null);
       setEditForm(null);
