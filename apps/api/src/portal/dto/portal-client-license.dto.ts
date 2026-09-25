@@ -9,8 +9,7 @@ import {
   Min,
 } from 'class-validator';
 import { LicenseStatus, PlanCode, TenantModuleAddon } from '../../generated/central-client';
-
-const PORTAL_ADDON_CODES = ['SERVICE_ORDER', 'FACTORY'] as const;
+import { PORTAL_MODULE_ADDON_CODES } from '../../common/tenant-module-addons.util';
 
 /**
  * Corpo PATCH /portal/clients/:cnpj/license — classe explícita para o ValidationPipe
@@ -46,8 +45,15 @@ export class UpdatePortalLicenseBodyDto {
 
   @IsOptional()
   @IsArray()
-  @IsIn(PORTAL_ADDON_CODES, { each: true })
+  @IsIn(PORTAL_MODULE_ADDON_CODES, { each: true })
   enabledAddons?: TenantModuleAddon[];
+}
+
+/** PATCH /portal/clients/:cnpj/modules — só addons (evita perda de campo no PATCH da licença). */
+export class UpdatePortalModulesBodyDto {
+  @IsArray()
+  @IsIn(PORTAL_MODULE_ADDON_CODES, { each: true })
+  modules!: TenantModuleAddon[];
 }
 
 /** POST /portal/clients — enabledAddons e demais campos do cadastro inicial. */
@@ -97,6 +103,6 @@ export class CreatePortalClientBodyDto {
 
   @IsOptional()
   @IsArray()
-  @IsIn(PORTAL_ADDON_CODES, { each: true })
+  @IsIn(PORTAL_MODULE_ADDON_CODES, { each: true })
   enabledAddons?: TenantModuleAddon[];
 }

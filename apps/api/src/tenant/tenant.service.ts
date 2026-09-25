@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '../generated/central-client';
 import {
   LicenseStatus,
   PlanCode,
@@ -6,6 +7,10 @@ import {
   TenantModuleAddon,
 } from '../generated/central-client';
 import { CentralPrismaService } from '../prisma/central-prisma.service';
+import {
+  isPortalModuleAddonCode,
+  normalizePortalModuleAddons,
+} from '../common/tenant-module-addons.util';
 
 type LicenseCacheEntry =
   | { ok: true; checkedAt: number; planCode: PlanCode }
@@ -113,11 +118,26 @@ export class TenantService {
   }
 
   async getEnabledModulesByTenantId(tenantId: string): Promise<TenantModuleAddon[]> {
-    const grants = await this.central.tenantModuleGrant.findMany({
-      where: { tenantId },
-      select: { module: true },
-    });
-    return grants.map((g) => g.module);
+    try {
+      const grants = await this.central.tenantModuleGrant.findMany({
+        where: { tenantId },
+        select: { module: true },
+      });
+      return grants.map((g) => g.module);
+    } catch {
+      return this.readModuleGrantsRaw(tenantId);
+    }
+  }
+
+  private async readModuleGrantsRaw(tenantId: string): Promise<TenantModuleAddon[]> {
+    const rows = await this.central.$queryRaw<Array<{ module: string }>>(Prisma.sql`
+      SELECT module::text AS module
+      FROM "TenantModuleGrant"
+      WHERE "tenantId" = ${tenantId}
+    `);
+    return rows
+      .map((r) => String(r.module ?? '').trim().toUpperCase())
+      .filter(isPortalModuleAddonCode) as TenantModuleAddon[];
   }
 
   async setEnabledModules(
@@ -125,28 +145,39 @@ export class TenantService {
     slug: string,
     modules: TenantModuleAddon[],
   ): Promise<TenantModuleAddon[]> {
-    const wanted = [...new Set(modules)];
-    const existing = await this.central.tenantModuleGrant.findMany({
-      where: { tenantId },
-    });
-    const existingSet = new Set(existing.map((g) => g.module));
-    const wantedSet = new Set(wanted);
-
-    const toDelete = existing.filter((g) => !wantedSet.has(g.module)).map((g) => g.id);
-    if (toDelete.length) {
-      await this.central.tenantModuleGrant.deleteMany({
-        where: { id: { in: toDelete } },
+    const wanted = normalizePortalModuleAddons(modules);
+    try {
+      await this.central.$transaction(async (tx) => {
+        await tx.tenantModuleGrant.deleteMany({ where: { tenantId } });
+        for (const mod of wanted) {
+          await tx.tenantModuleGrant.create({ data: { tenantId, module: mod } });
+        }
       });
-    }
-    for (const mod of wanted) {
-      if (!existingSet.has(mod)) {
-        await this.central.tenantModuleGrant.create({
-          data: { tenantId, module: mod },
-        });
-      }
+    } catch (e) {
+      await this.writeModuleGrantsRaw(tenantId, wanted, e);
     }
     this.invalidateCaches(slug);
-    return wanted;
+    return this.getEnabledModulesByTenantId(tenantId);
+  }
+
+  private async writeModuleGrantsRaw(
+    tenantId: string,
+    wanted: TenantModuleAddon[],
+    originalError: unknown,
+  ): Promise<void> {
+    const msg = originalError instanceof Error ? originalError.message : String(originalError);
+    if (!/TenantModuleAddon|invalid input value for enum/i.test(msg) && wanted.length > 0) {
+      throw originalError;
+    }
+    await this.central.$executeRaw(Prisma.sql`
+      DELETE FROM "TenantModuleGrant" WHERE "tenantId" = ${tenantId}
+    `);
+    for (const mod of wanted) {
+      await this.central.$executeRaw(Prisma.sql`
+        INSERT INTO "TenantModuleGrant" (id, "tenantId", module, "enabledAt")
+        VALUES (gen_random_uuid(), ${tenantId}, ${mod}::"TenantModuleAddon", NOW())
+      `);
+    }
   }
 
   /**

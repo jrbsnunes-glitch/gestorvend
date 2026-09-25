@@ -15,7 +15,6 @@ import { ConfigService } from '@nestjs/config';
 import {
   LicenseStatus,
   PlanCode,
-  TenantModuleAddon,
   TenantProvisioningStatus,
 } from '../generated/central-client';
 import {
@@ -29,9 +28,11 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { usernameFromEmail } from '../users/username.util';
 import { PortalAuthGuard } from './portal-auth.guard';
 import { TenantService } from '../tenant/tenant.service';
+import { normalizePortalModuleAddons } from '../common/tenant-module-addons.util';
 import {
   CreatePortalClientBodyDto,
   UpdatePortalLicenseBodyDto,
+  UpdatePortalModulesBodyDto,
 } from './dto/portal-client-license.dto';
 
 function slugify(input: string): string {
@@ -61,24 +62,6 @@ function parseMonthlyFee(raw: unknown): string | null {
     throw new BadRequestException('Informe um valor de mensalidade válido (≥ 0).');
   }
   return n.toFixed(2);
-}
-
-/** Não depender só de `Object.values(TenantModuleAddon)` — build antigo no servidor omitia FACTORY. */
-const PORTAL_KNOWN_ADDONS = ['SERVICE_ORDER', 'FACTORY'] as const;
-
-const ADDON_VALUES = new Set<string>([
-  ...PORTAL_KNOWN_ADDONS,
-  ...Object.values(TenantModuleAddon),
-]);
-
-function normalizeAddons(raw: unknown): TenantModuleAddon[] {
-  if (!Array.isArray(raw)) return [];
-  const out: TenantModuleAddon[] = [];
-  for (const item of raw) {
-    const s = String(item ?? '').trim().toUpperCase();
-    if (ADDON_VALUES.has(s)) out.push(s as TenantModuleAddon);
-  }
-  return [...new Set(out)];
 }
 
 @Controller('portal/clients')
@@ -133,6 +116,43 @@ export class PortalClientsController {
         };
       }),
     );
+  }
+
+  /** Detalhe de um cliente (addons lidos direto do banco central). */
+  @Get(':cnpj')
+  async getOne(@Param('cnpj') cnpjParam: string) {
+    const cnpj = onlyDigits(cnpjParam);
+    if (cnpj.length !== 14) {
+      throw new BadRequestException('CNPJ deve ter 14 dígitos.');
+    }
+    return this.loadClientRow(cnpj);
+  }
+
+  /** Atualiza somente módulos adicionais (Fábrica, OS). */
+  @Patch(':cnpj/modules')
+  async updateModules(
+    @Param('cnpj') cnpjParam: string,
+    @Body() body: UpdatePortalModulesBodyDto,
+  ) {
+    const cnpj = onlyDigits(cnpjParam);
+    const tenant = await this.central.tenant.findUnique({ where: { cnpj } });
+    if (!tenant) throw new NotFoundException('Cliente não encontrado.');
+    try {
+      await this.tenantService.setEnabledModules(
+        tenant.id,
+        tenant.slug,
+        normalizePortalModuleAddons(body.modules),
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/TenantModuleAddon|invalid input value for enum/i.test(msg)) {
+        throw new BadRequestException(
+          'Addon indisponível no banco central. Rode `npm run db:migrate:central` no servidor e reinicie a API.',
+        );
+      }
+      throw e;
+    }
+    return this.loadClientRow(cnpj);
   }
 
   /** Reexecuta CREATE DATABASE + migrate + seed (após falha ou pendente travado). */
@@ -312,7 +332,7 @@ export class PortalClientsController {
       await this.tenantService.setEnabledModules(
         created.id,
         created.slug,
-        normalizeAddons(body.enabledAddons),
+        normalizePortalModuleAddons(body.enabledAddons),
       );
     }
     return {
@@ -371,7 +391,7 @@ export class PortalClientsController {
         await this.tenantService.setEnabledModules(
           tenant.id,
           tenant.slug,
-          normalizeAddons(body.enabledAddons),
+          normalizePortalModuleAddons(body.enabledAddons),
         );
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -425,5 +445,39 @@ export class PortalClientsController {
         licenseExpiresAt: new Date(),
       },
     });
+  }
+
+  private async loadClientRow(cnpj: string) {
+    const tenant = await this.central.tenant.findUnique({ where: { cnpj } });
+    if (!tenant) throw new NotFoundException('Cliente não encontrado.');
+    const t = await this.tenantService.syncLicenseExpiryStatus(tenant);
+    const enabledAddons = await this.tenantService.getEnabledModulesByTenantId(t.id);
+    const now = Date.now();
+    return {
+      id: t.id,
+      slug: t.slug,
+      cnpj: t.cnpj,
+      companyName: t.companyName,
+      planCode: t.planCode,
+      enabledAddons,
+      licenseStatus: t.licenseStatus,
+      licenseValidFrom: t.licenseValidFrom,
+      licenseExpiresAt: t.licenseExpiresAt,
+      licenseLastValidatedAt: t.licenseLastValidatedAt,
+      remainingDays:
+        t.licenseExpiresAt
+          ? Math.ceil((new Date(t.licenseExpiresAt).getTime() - now) / (24 * 60 * 60 * 1000))
+          : null,
+      databaseName: t.databaseName,
+      provisioningStatus: t.provisioningStatus,
+      provisioningError: t.provisioningError,
+      provisioningUpdatedAt: t.provisioningUpdatedAt,
+      provisionAdminEmail: t.provisionAdminEmail,
+      provisionAdminUsername: t.provisionAdminEmail
+        ? usernameFromEmail(t.provisionAdminEmail)
+        : null,
+      monthlyFee: t.monthlyFee != null ? String(t.monthlyFee) : null,
+      createdAt: t.createdAt,
+    };
   }
 }

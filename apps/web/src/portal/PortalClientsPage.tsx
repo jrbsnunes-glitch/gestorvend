@@ -166,6 +166,7 @@ export function PortalClientsPage() {
   const [editing, setEditing] = useState<Client | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [editErr, setEditErr] = useState<string | null>(null);
+  const [editLoadingCnpj, setEditLoadingCnpj] = useState<string | null>(null);
   const [renewing, setRenewing] = useState<Client | null>(null);
   const [renewDays, setRenewDays] = useState(30);
   const [err, setErr] = useState<string | null>(null);
@@ -192,15 +193,14 @@ export function PortalClientsPage() {
   });
 
   const create = useMutation({
-    mutationFn: () =>
-      portalApi<Client>('/portal/clients', {
+    mutationFn: async () => {
+      const created = await portalApi<Client>('/portal/clients', {
         method: 'POST',
         json: {
           cnpj: form.cnpj.replace(/\D+/g, ''),
           companyName: form.companyName,
           slug: form.slug || undefined,
           planCode: form.planCode,
-          enabledAddons: form.enabledAddons,
           licenseStatus: form.licenseStatus,
           licenseValidFrom: form.licenseValidFrom || null,
           licenseExpiresAt: form.licenseExpiresAt || null,
@@ -210,7 +210,12 @@ export function PortalClientsPage() {
             ? parseFloat(form.monthlyFee.replace(',', '.'))
             : null,
         },
-      }),
+      });
+      return portalApi<Client>(`/portal/clients/${onlyDigitsCnpj(created.cnpj)}/modules`, {
+        method: 'PATCH',
+        json: { modules: form.enabledAddons },
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['portal', 'clients'] });
       setCreateOpen(false);
@@ -221,13 +226,13 @@ export function PortalClientsPage() {
   });
 
   const updateClient = useMutation({
-    mutationFn: (payload: { cnpj: string; form: EditForm }) =>
-      portalApi<Client>(`/portal/clients/${onlyDigitsCnpj(payload.cnpj)}/license`, {
+    mutationFn: async (payload: { cnpj: string; form: EditForm }) => {
+      const cnpj = onlyDigitsCnpj(payload.cnpj);
+      await portalApi<Client>(`/portal/clients/${cnpj}/license`, {
         method: 'PATCH',
         json: {
           companyName: payload.form.companyName.trim(),
           planCode: payload.form.planCode,
-          enabledAddons: payload.form.enabledAddons,
           licenseStatus: payload.form.licenseStatus,
           licenseValidFrom: payload.form.licenseValidFrom || null,
           licenseExpiresAt: payload.form.licenseExpiresAt || null,
@@ -235,7 +240,12 @@ export function PortalClientsPage() {
             ? parseFloat(payload.form.monthlyFee.replace(',', '.'))
             : null,
         },
-      }),
+      });
+      return portalApi<Client>(`/portal/clients/${cnpj}/modules`, {
+        method: 'PATCH',
+        json: { modules: payload.form.enabledAddons },
+      });
+    },
     onSuccess: (updated) => {
       const cnpjKey = onlyDigitsCnpj(updated.cnpj);
       qc.setQueryData<Client[]>(['portal', 'clients'], (rows) =>
@@ -541,13 +551,24 @@ export function PortalClientsPage() {
                         type="button"
                         className="btn btn-ghost"
                         style={{ fontSize: '0.78rem' }}
-                        onClick={() => {
+                        disabled={editLoadingCnpj === c.cnpj}
+                        onClick={async () => {
                           setEditErr(null);
-                          setEditing(c);
-                          setEditForm(clientToEditForm(c));
+                          setEditLoadingCnpj(c.cnpj);
+                          try {
+                            const fresh = await portalApi<Client>(
+                              `/portal/clients/${onlyDigitsCnpj(c.cnpj)}`,
+                            );
+                            setEditing(fresh);
+                            setEditForm(clientToEditForm(fresh));
+                          } catch (e) {
+                            setEditErr(e instanceof Error ? e.message : 'Erro ao carregar licença.');
+                          } finally {
+                            setEditLoadingCnpj(null);
+                          }
                         }}
                       >
-                        Editar
+                        {editLoadingCnpj === c.cnpj ? '…' : 'Editar'}
                       </button>
                       {prov === 'READY' && (
                         <button
