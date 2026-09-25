@@ -147,6 +147,34 @@ respondem 404, o que deixa telas recém-publicadas vazias. Quando isso acontece,
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/api/dashboard/sales-trend-month
 ```
 
+### Reinicie o PM2 do usuário certo
+
+O PM2 é **por usuário**: cada um tem seu daemon (`/root/.pm2`, `/home/deploy/.pm2`) e `pm2 list` mostra
+somente o do usuário atual. Se a API roda sob `deploy`, um `pm2 restart` como root cria uma **segunda
+instância** que nunca consegue a porta (`EADDRINUSE` no log) enquanto a API real segue com o `dist`
+antigo — o restart "funciona" sem atualizar nada.
+
+Antes de reiniciar, descubra quem detém a porta e se há daemons duplicados:
+
+```bash
+sudo ss -ltnp | grep ':3000'                              # dono da porta (pode ser o "PM2 God")
+ps -eo pid,user,cmd | grep -i 'PM2' | grep -v grep        # um daemon por usuário
+ps -eo pid,ppid,user,cmd | grep 'dist/src/main.js' | grep -v grep
+```
+
+Reinicie no usuário dono do processo e remova as duplicatas:
+
+```bash
+sudo -iu deploy pm2 restart gestorvend-api --update-env
+sudo -iu deploy pm2 save
+
+# na conta que subiu a instância duplicada:
+pm2 delete gestorvend-api && pm2 kill
+```
+
+Deixe **um único** `pm2-<usuario>.service` habilitado (`systemctl status pm2-deploy`). Com dois, cada
+reboot recria a disputa pela porta 3000.
+
 ## API em subdomínio separado
 
 Se a API for `https://api.seudominio.com`, defina no **momento do build**:

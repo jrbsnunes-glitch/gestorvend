@@ -40,6 +40,9 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/api/dashboard/sal
 # 401 → rota existe: veja o log da API
 ```
 
+Caso real: o 404 persistia porque havia **dois daemons PM2** (root e `deploy`) — o restart era feito como
+root e a API no ar era a do `deploy`. Ver “Reinicie o PM2 do usuário certo” em [DEPLOY-VPS.md](DEPLOY-VPS.md).
+
 ## Sintomas antigos (corrigidos)
 
 | Sintoma | Causa |
