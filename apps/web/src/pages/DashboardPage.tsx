@@ -5,7 +5,7 @@ import { CompanyLogo } from '../components/CompanyLogo';
 import { BillPaymentsButton } from '../components/BillSettlementsModal';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { SalesMonthChart } from '../components/SalesMonthChart';
-import { api } from '../lib/api';
+import { ApiHttpError, api } from '../lib/api';
 import { companyDisplayName, useCompanyBranding } from '../lib/company-branding';
 import { isManager } from '../lib/auth';
 import { formatBRL, formatDate } from '../lib/format';
@@ -268,6 +268,21 @@ function ReceivablesList({ items }: { items: Overview['receivablesSoon'] }) {
   );
 }
 
+/** Traduz a falha de `/dashboard/sales-trend-month` em causa acionável para o suporte. */
+function salesTrendErrorCause(error: unknown): string {
+  const status = error instanceof ApiHttpError ? error.status : 0;
+  if (status === 404) {
+    return 'A API deste servidor é anterior à v1.0.96 e não tem o detalhe diário de vendas. Atualize o servidor (git pull + build) e reinicie a API.';
+  }
+  if (status === 403) {
+    return 'Seu perfil não tem permissão para ver o detalhe diário de vendas.';
+  }
+  if (status >= 500) {
+    return `A API falhou ao montar o detalhe diário de vendas (HTTP ${status}). O motivo está no log da API.`;
+  }
+  return 'Não foi possível carregar o detalhe diário das vendas. Verifique se a API está no ar e atualizada.';
+}
+
 const PANEL_MODAL_TITLES: Record<DashPanelKey, string> = {
   lowStock: 'Estoque crítico',
   payables: 'Contas a pagar (vencidos e até 7 dias)',
@@ -326,16 +341,24 @@ export function DashboardPage() {
    */
   const salesTrendNotice = useMemo(() => {
     if (salesTrendLoading) return null;
-    if (salesTrendMonth.isError) {
-      return 'Não foi possível carregar o detalhe diário das vendas. Se o problema persistir, atualize o servidor e reinicie a API.';
-    }
     const monthRevenue = data?.revenue.month ?? 0;
+    const monthHint = monthRevenue > 0.005 ? ` O mês tem ${formatBRL(monthRevenue)} em vendas.` : '';
+
+    if (salesTrendMonth.isError) {
+      return `${salesTrendErrorCause(salesTrendMonth.error)}${monthHint}`;
+    }
     const seriesRevenue = salesTrendPoints.reduce((sum, p) => sum + p.revenue, 0);
     if (monthRevenue > 0.005 && seriesRevenue < 0.005) {
-      return `O mês tem ${formatBRL(monthRevenue)} em vendas, mas a API não devolveu o detalhe por dia. Atualize o servidor e reinicie a API.`;
+      return `A API não devolveu o detalhe por dia, então o gráfico ficou zerado.${monthHint} Confira o log da API e reinicie o serviço.`;
     }
     return null;
-  }, [salesTrendLoading, salesTrendMonth.isError, data?.revenue.month, salesTrendPoints]);
+  }, [
+    salesTrendLoading,
+    salesTrendMonth.isError,
+    salesTrendMonth.error,
+    data?.revenue.month,
+    salesTrendPoints,
+  ]);
 
   const topProducts = data?.topProducts ?? [];
   const lowStock = data?.lowStock ?? [];

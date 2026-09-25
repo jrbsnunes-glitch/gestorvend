@@ -32,6 +32,13 @@ Confirme no `.env` da API: `APP_TIMEZONE=America/Sao_Paulo` (ou fuso da loja).
 2. Causas típicas da série não chegar:
    - API antiga no servidor (endpoint `sales-trend-month` existe desde a v1.0.96) ou API não reiniciada após o build → 404.
    - Falha na agregação SQL → a API devolve o eixo zerado e **registra o erro no log** com o slug do tenant.
+3. Teste objetivo no servidor (rota existente responde 401; inexistente, 404):
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/api/dashboard/sales-trend-month
+# 404 → API antiga em memória: reinicie o serviço
+# 401 → rota existe: veja o log da API
+```
 
 ## Sintomas antigos (corrigidos)
 
