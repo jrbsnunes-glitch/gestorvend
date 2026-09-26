@@ -127,6 +127,18 @@ Configure **backup** periódico do PostgreSQL.
 
 ## Atualização
 
+Caminho recomendado (descobre o usuário do PM2, reinicia e valida):
+
+```bash
+cd /var/www/gestorvend
+bash deploy/restart-api.sh --pull --migrate
+```
+
+O script falha com mensagem clara se a API no ar continuar servindo o `dist` antigo e avisa quando
+encontra processos duplicados da API. Sem argumentos, só faz build + restart + validação.
+
+Passo a passo equivalente, se preferir manual:
+
 ```bash
 cd /opt/gestorvend
 git pull
