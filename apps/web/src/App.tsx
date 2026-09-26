@@ -169,6 +169,11 @@ const ManufacturingSettingsPage = lazy(() =>
     default: m.ManufacturingSettingsPage,
   })),
 );
+const ManufacturingProjectReportsPrintPage = lazy(() =>
+  import('./pages/ManufacturingProjectReportsPrintPage').then((m) => ({
+    default: m.ManufacturingProjectReportsPrintPage,
+  })),
+);
 const ManufacturingQuotePrintPage = lazy(() =>
   import('./pages/ManufacturingQuotePrintPage').then((m) => ({
     default: m.ManufacturingQuotePrintPage,
@@ -528,6 +533,14 @@ function AppInner() {
               element={
                 <RequireFactory>
                   <ManufacturingQuotePrintPage />
+                </RequireFactory>
+              }
+            />
+            <Route
+              path="fabrica/relatorio/impressao"
+              element={
+                <RequireFactory>
+                  <ManufacturingProjectReportsPrintPage />
                 </RequireFactory>
               }
             />

@@ -1,0 +1,132 @@
+.mfg-reports-head {
+  margin-bottom: 1rem;
+}
+
+.mfg-reports-head h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.25rem;
+}
+
+.mfg-reports-head p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--color-text-muted);
+}
+
+.mfg-reports-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted, #f1f5f9);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.mfg-reports-filters .field {
+  margin: 0;
+  min-width: 9rem;
+}
+
+.mfg-reports-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.mfg-reports-kind {
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  background: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #4338ca;
+  cursor: pointer;
+}
+
+.mfg-reports-kind.is-active {
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
+  color: #fff;
+  border-color: transparent;
+}
+
+.mfg-reports-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
+.mfg-reports-summary strong {
+  color: var(--color-text);
+}
+
+.mfg-reports-table-wrap {
+  overflow-x: auto;
+}
+
+.mfg-reports-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.mfg-reports-table th,
+.mfg-reports-table td {
+  padding: 0.45rem 0.55rem;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  text-align: left;
+}
+
+.mfg-reports-table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+}
+
+.mfg-reports-table tbody tr {
+  cursor: pointer;
+}
+
+.mfg-reports-table tbody tr:hover {
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.mfg-reports-tag {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.mfg-reports-tag--ok {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+
+.mfg-reports-tag--bad {
+  background: rgba(220, 38, 38, 0.1);
+  color: #b91c1c;
+}
+
+.mfg-reports-tag--muted {
+  background: rgba(148, 163, 184, 0.2);
+  color: #64748b;
+}
+
+.mfg-reports-customer-filter {
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.mfg-reports-customer-filter button {
+  margin-left: 0.5rem;
+}

@@ -11,7 +11,7 @@ import {
   Prisma,
 } from '../generated/tenant-client';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
-import { parseQueryDate } from '../common/date-range.util';
+import { endOfDay, formatLocalDateISO, parseQueryDate, startOfDay } from '../common/date-range.util';
 import { CompanyService } from '../company/company.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { ManufacturingStockService } from './manufacturing-stock.service';
@@ -1010,6 +1010,257 @@ export class ManufacturingService {
         suggestedPurchaseQty: s.gap,
         reason: 'Demanda agregada de projetos ativos menos disponível (ATP).',
       })),
+    };
+  }
+
+  private static readonly MFG_ACTIVE: ManufacturingProjectStatus[] = [
+    ManufacturingProjectStatus.PRODUCT_SELECTION,
+    ManufacturingProjectStatus.QUOTE,
+    ManufacturingProjectStatus.STARTED,
+    ManufacturingProjectStatus.IN_DEVELOPMENT,
+    ManufacturingProjectStatus.TESTING,
+  ];
+
+  private classifyDelivery(
+    status: ManufacturingProjectStatus,
+    promisedAt: Date | null,
+    finishedAt: Date | null,
+    todayStart: Date,
+  ):
+    | 'no_promise'
+    | 'on_track'
+    | 'overdue'
+    | 'delivered_on_time'
+    | 'delivered_late'
+    | 'cancelled' {
+    if (status === ManufacturingProjectStatus.CANCELLED) return 'cancelled';
+    if (!promisedAt) return 'no_promise';
+    if (status === ManufacturingProjectStatus.FINISHED) {
+      if (!finishedAt) return 'delivered_on_time';
+      const deadline = endOfDay(promisedAt);
+      return finishedAt.getTime() <= deadline.getTime() ? 'delivered_on_time' : 'delivered_late';
+    }
+    if (ManufacturingService.MFG_ACTIVE.includes(status)) {
+      return promisedAt.getTime() < todayStart.getTime() ? 'overdue' : 'on_track';
+    }
+    return 'no_promise';
+  }
+
+  async projectReports(
+    tenantSlug: string,
+    opts: {
+      report: string;
+      dateField: string;
+      from?: string;
+      to?: string;
+      customerId?: string;
+    },
+  ) {
+    await this.assertModule(tenantSlug);
+    const report = opts.report.trim().toLowerCase();
+    const allowedReports = ['on_time', 'overdue', 'top_price', 'low_price', 'by_customer'] as const;
+    if (!allowedReports.includes(report as (typeof allowedReports)[number])) {
+      throw new BadRequestException(
+        'Relatório inválido. Use: on_time, overdue, top_price, low_price, by_customer.',
+      );
+    }
+
+    const dateField = opts.dateField.trim();
+    const allowedFields = ['createdAt', 'promisedAt', 'quotedAt', 'finishedAt', 'approvedAt'] as const;
+    if (!allowedFields.includes(dateField as (typeof allowedFields)[number])) {
+      throw new BadRequestException('Campo de data inválido.');
+    }
+
+    const now = new Date();
+    const defFrom = formatLocalDateISO(new Date(now.getFullYear(), 0, 1));
+    const defTo = formatLocalDateISO(now);
+    const fromStr = opts.from?.trim() || defFrom;
+    const toStr = opts.to?.trim() || defTo;
+    const rangeStart = parseQueryDate(fromStr, 'start');
+    const rangeEnd = parseQueryDate(toStr, 'end');
+    if (rangeStart.getTime() > rangeEnd.getTime()) {
+      throw new BadRequestException('Data inicial não pode ser posterior à final.');
+    }
+
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const todayStart = startOfDay(new Date());
+
+    const inRange = { gte: rangeStart, lte: rangeEnd };
+    const dateWhere: Prisma.ManufacturingProjectWhereInput =
+      dateField === 'createdAt'
+        ? { createdAt: inRange }
+        : {
+            OR: [
+              { [dateField]: inRange },
+              { [dateField]: null, createdAt: inRange },
+              { createdAt: inRange },
+            ],
+          };
+
+    const andParts: Prisma.ManufacturingProjectWhereInput[] = [dateWhere];
+    if (report !== 'by_customer') {
+      andParts.unshift({ status: { not: ManufacturingProjectStatus.CANCELLED } });
+    }
+    if (opts.customerId?.trim()) {
+      andParts.push({ customerId: opts.customerId.trim() });
+    }
+    const where: Prisma.ManufacturingProjectWhereInput = { AND: andParts };
+
+    const rows = await db.manufacturingProject.findMany({
+      where,
+      include: {
+        customer: { select: { id: true, name: true } },
+        finishedVariant: {
+          select: {
+            sku: true,
+            product: { select: { name: true, controlNumber: true } },
+          },
+        },
+      },
+      take: 1500,
+      orderBy: { number: 'desc' },
+    });
+
+    type Situation = ReturnType<ManufacturingService['classifyDelivery']>;
+    const enriched = rows.map((p) => {
+      const deliverySituation = this.classifyDelivery(
+        p.status,
+        p.promisedAt,
+        p.finishedAt,
+        todayStart,
+      );
+      return {
+        id: p.id,
+        number: p.number,
+        status: p.status,
+        title: p.title,
+        promisedAt: p.promisedAt,
+        quoteTotal: p.quoteTotal != null ? Number(p.quoteTotal) : null,
+        quoteTotalStr: p.quoteTotal != null ? String(p.quoteTotal) : null,
+        createdAt: p.createdAt,
+        finishedAt: p.finishedAt,
+        quotedAt: p.quotedAt,
+        customer: p.customer,
+        finishedVariant: p.finishedVariant,
+        deliverySituation,
+      };
+    });
+
+    const onTimeSet = new Set<Situation>(['on_track', 'delivered_on_time', 'no_promise']);
+    const overdueSet = new Set<Situation>(['overdue', 'delivered_late']);
+
+    let filtered = enriched;
+    if (report === 'on_time') {
+      filtered = enriched.filter((r) => onTimeSet.has(r.deliverySituation));
+    } else if (report === 'overdue') {
+      filtered = enriched.filter((r) => overdueSet.has(r.deliverySituation));
+    } else if (report === 'top_price') {
+      filtered = [...enriched].sort((a, b) => (b.quoteTotal ?? 0) - (a.quoteTotal ?? 0));
+    } else if (report === 'low_price') {
+      filtered = [...enriched].sort((a, b) => (a.quoteTotal ?? 0) - (b.quoteTotal ?? 0));
+    }
+
+    const dateFieldLabels: Record<string, string> = {
+      createdAt: 'Abertura do projeto',
+      promisedAt: 'Promessa de entrega',
+      quotedAt: 'Orçamento',
+      finishedAt: 'Conclusão',
+      approvedAt: 'Aprovação',
+    };
+
+    const reportLabels: Record<string, string> = {
+      on_time: 'Projetos dentro do prazo',
+      overdue: 'Projetos atrasados',
+      top_price: 'Maior valor de orçamento',
+      low_price: 'Menor valor de orçamento',
+      by_customer: 'Resumo por cliente',
+    };
+
+    if (report === 'by_customer') {
+      const map = new Map<
+        string,
+        {
+          customerId: string;
+          customerName: string;
+          projectCount: number;
+          quotedTotal: number;
+          onTimeCount: number;
+          overdueCount: number;
+        }
+      >();
+      for (const r of enriched) {
+        const cur = map.get(r.customer.id) ?? {
+          customerId: r.customer.id,
+          customerName: r.customer.name,
+          projectCount: 0,
+          quotedTotal: 0,
+          onTimeCount: 0,
+          overdueCount: 0,
+        };
+        cur.projectCount += 1;
+        if (r.quoteTotal != null) cur.quotedTotal += r.quoteTotal;
+        if (onTimeSet.has(r.deliverySituation)) cur.onTimeCount += 1;
+        if (overdueSet.has(r.deliverySituation)) cur.overdueCount += 1;
+        map.set(r.customer.id, cur);
+      }
+      const groups = [...map.values()].sort(
+        (a, b) => b.quotedTotal - a.quotedTotal || b.projectCount - a.projectCount,
+      );
+      return {
+        report,
+        reportLabel: reportLabels[report],
+        period: {
+          from: fromStr,
+          to: toStr,
+          dateField,
+          dateFieldLabel: dateFieldLabels[dateField] ?? dateField,
+        },
+        summary: {
+          projectCount: enriched.length,
+          truncated: rows.length >= 1500,
+          quotedTotal: enriched.reduce((s, r) => s + (r.quoteTotal ?? 0), 0),
+          customerCount: groups.length,
+        },
+        groups: groups.map((g) => ({
+          ...g,
+          quotedTotal: Math.round(g.quotedTotal * 100) / 100,
+        })),
+        rows: [],
+      };
+    }
+
+    const listRows = filtered.slice(0, 500).map((r) => ({
+      id: r.id,
+      number: r.number,
+      status: r.status,
+      title: r.title,
+      promisedAt: r.promisedAt,
+      quoteTotal: r.quoteTotalStr,
+      createdAt: r.createdAt,
+      finishedAt: r.finishedAt,
+      quotedAt: r.quotedAt,
+      customer: r.customer,
+      finishedVariant: r.finishedVariant,
+      deliverySituation: r.deliverySituation,
+    }));
+
+    return {
+      report,
+      reportLabel: reportLabels[report],
+      period: {
+        from: fromStr,
+        to: toStr,
+        dateField,
+        dateFieldLabel: dateFieldLabels[dateField] ?? dateField,
+      },
+      summary: {
+        projectCount: listRows.length,
+        totalInPeriod: enriched.length,
+        truncated: rows.length >= 1500,
+        quotedTotal: listRows.reduce((s, r) => s + Number(r.quoteTotal ?? 0), 0),
+      },
+      groups: [],
+      rows: listRows,
     };
   }
 }

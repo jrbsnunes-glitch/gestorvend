@@ -19,9 +19,17 @@ export function ModuleReportsModal({
   compactLauncher?: boolean;
 }) {
   if (!open) return null;
+  const modalClass = [
+    'modal',
+    wide ? 'modal--wide' : '',
+    compactLauncher ? 'modal--filters-compact module-reports-modal--launcher' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <div className={`modal${wide ? ' modal--wide' : ''}`} onClick={(e) => e.stopPropagation()}>
+      <div className={modalClass} onClick={(e) => e.stopPropagation()}>
         <h2 className="no-print">Relatórios — {title}</h2>
         {!compactLauncher && (
           <p className="page-desc no-print" style={{ marginBottom: '1rem' }}>
@@ -29,12 +37,14 @@ export function ModuleReportsModal({
           </p>
         )}
         {compactLauncher && (
-          <p className="page-desc no-print" style={{ marginBottom: '0.75rem', fontSize: '0.86rem' }}>
-            Informe filtros aqui. O resultado abre numa página limpa para leitura e impressão.
+          <p className="filter-modal-hint no-print">
+            Filtros abaixo; o resultado abre em página para impressão.
           </p>
         )}
-        <div className="card" style={{ padding: compactLauncher ? '0.85rem 1rem' : '1rem' }}>
-          {!compactLauncher ? (
+        {compactLauncher ? (
+          children
+        ) : (
+          <div className="card" style={{ padding: '1rem' }}>
             <div className="gv-report-sheet">
               <StandardReportHeader
                 documentTitle={`Relatórios — ${title}`}
@@ -47,12 +57,10 @@ export function ModuleReportsModal({
               />
               {children}
             </div>
-          ) : (
-            children
-          )}
-        </div>
+          </div>
+        )}
         <div className="modal-actions no-print">
-          <button type="button" className="btn btn-primary" onClick={onClose}>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
             Fechar
           </button>
         </div>

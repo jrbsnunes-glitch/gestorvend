@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { ManufacturingProjectReportsLauncher } from '../components/ManufacturingProjectReportsLauncher';
+import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { useManufacturingCreateDraft } from '../context/manufacturing-create-draft';
 import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { CrudToolbar } from '../components/CrudToolbar';
@@ -22,6 +24,7 @@ import {
   type MfgSource,
   type MfgStatus,
 } from '../lib/manufacturing-labels';
+import { MFG_REPORTS_MODAL_PARAM } from '../lib/manufacturing-project-reports';
 import type { MfgOperationalAlerts } from '../lib/manufacturing-types';
 
 type MfgRow = {
@@ -64,6 +67,7 @@ function suggestedPromisedDate(leadDays: number | null | undefined): string {
 }
 
 export function ManufacturingPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
   const moduleOk = hasFactoryModule();
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
@@ -78,7 +82,34 @@ export function ManufacturingPage() {
   const [draftControlMax, setDraftControlMax] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [reportsOpen, setReportsOpen] = useState(
+    () => searchParams.get(MFG_REPORTS_MODAL_PARAM) === '1',
+  );
   const [draftSearch, setDraftSearch] = useState('');
+
+  const closeReportsModal = () => {
+    setReportsOpen(false);
+    if (searchParams.get(MFG_REPORTS_MODAL_PARAM) === '1') {
+      const next = new URLSearchParams(searchParams);
+      for (const key of [
+        MFG_REPORTS_MODAL_PARAM,
+        'report',
+        'dateField',
+        'from',
+        'to',
+        'customerId',
+      ]) {
+        next.delete(key);
+      }
+      setSearchParams(next, { replace: true });
+    }
+  };
+
+  useEffect(() => {
+    if (searchParams.get(MFG_REPORTS_MODAL_PARAM) === '1') {
+      setReportsOpen(true);
+    }
+  }, [searchParams]);
   const [detailId, setDetailId] = useState<string | null>(null);
   const { draft, patchDraft, resetDraft, openNewProject, closeModal } = useManufacturingCreateDraft();
   const createOpen = draft.open;
@@ -318,9 +349,18 @@ export function ManufacturingPage() {
           setErr(null);
           openNewProject();
         }}
-        onReports={() => {}}
+        onReports={() => setReportsOpen(true)}
         includeLabel="Novo projeto"
       />
+
+      <ModuleReportsModal
+        open={reportsOpen}
+        title="Projetos"
+        compactLauncher
+        onClose={closeReportsModal}
+      >
+        <ManufacturingProjectReportsLauncher onClose={closeReportsModal} />
+      </ModuleReportsModal>
 
       {filtersOpen && (
         <FormModalBackdrop className="no-print" onClose={() => setFiltersOpen(false)}>

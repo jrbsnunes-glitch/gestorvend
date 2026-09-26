@@ -31,6 +31,50 @@
   max-width: 560px;
 }
 
+.modal.module-reports-modal--launcher.modal--filters-compact {
+  max-width: 400px;
+  margin-top: 1.25rem;
+}
+
+.mfg-reports-launcher {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.mfg-reports-launcher__period {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem 0.5rem;
+}
+
+.mfg-reports-launcher__period .field {
+  margin-bottom: 0;
+}
+
+.mfg-reports-launcher__date-field {
+  grid-column: 1 / -1;
+}
+
+.mfg-reports-launcher__types {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+}
+
+.mfg-reports-launcher__types .btn {
+  justify-content: center;
+  text-align: center;
+  padding: 0.38rem 0.45rem;
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+.mfg-reports-launcher .alert {
+  padding: 0.45rem 0.55rem;
+  font-size: 0.82rem;
+}
+
 .modal.product-reports-modal .product-reports-modal__hint,
 .modal.modal--filters-compact .filter-modal-hint {
   margin: 0 0 0.5rem;

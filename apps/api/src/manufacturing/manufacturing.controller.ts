@@ -177,6 +177,25 @@ export class ManufacturingController {
     return this.manufacturing.operationalAlerts(user.tenantSlug);
   }
 
+  @Get('reports/projects')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  projectReports(
+    @CurrentUser() user: JwtPayload,
+    @Query('report') report?: string,
+    @Query('dateField') dateField?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('customerId') customerId?: string,
+  ) {
+    return this.manufacturing.projectReports(user.tenantSlug, {
+      report: report ?? 'on_time',
+      dateField: dateField ?? 'promisedAt',
+      from,
+      to,
+      customerId,
+    });
+  }
+
   @Get('mrp/suggestions')
   @Roles('admin', 'manager', 'seller', 'finance')
   mrpSuggestions(@CurrentUser() user: JwtPayload) {

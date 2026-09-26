@@ -65,6 +65,23 @@ export function canMoveMfgStatus(from: MfgStatus, to: MfgStatus): boolean {
   return (MFG_ALLOWED_STATUS_MOVES[from] ?? []).includes(to);
 }
 
+export type MfgDeliverySituation =
+  | 'no_promise'
+  | 'on_track'
+  | 'overdue'
+  | 'delivered_on_time'
+  | 'delivered_late'
+  | 'cancelled';
+
+export const MFG_DELIVERY_SITUATION_LABEL: Record<MfgDeliverySituation, string> = {
+  no_promise: 'Sem prazo',
+  on_track: 'No prazo (em aberto)',
+  overdue: 'Atrasado',
+  delivered_on_time: 'Entregue no prazo',
+  delivered_late: 'Entregue com atraso',
+  cancelled: 'Cancelado',
+};
+
 export function mfgStatusChipStyle(status: MfgStatus): { background: string; color: string } {
   switch (status) {
     case 'PRODUCT_SELECTION':

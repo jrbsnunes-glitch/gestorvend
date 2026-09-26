@@ -15,6 +15,14 @@ export function endOfDay(d: Date): Date {
   return out;
 }
 
+/** YYYY-MM-DD no fuso local (evita `toISOString()` deslocar o dia). */
+export function formatLocalDateISO(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export function parseQueryDate(raw: string, mode: 'start' | 'end'): Date {
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
   if (dateOnly) {
