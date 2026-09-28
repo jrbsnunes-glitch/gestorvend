@@ -7,6 +7,7 @@ import {
   NotFoundException,
   Param,
   Patch,
+  Headers,
   Post,
   Query,
   UseGuards,
@@ -30,6 +31,7 @@ import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { describeMapChanges, describePaymentMethodAmounts } from '../activity-logs/activity-log.helpers';
 import { referentialCodeMatchesFlow } from '../common/referential-account-flow';
 import { assertLastSaleAllowsPdvEntry } from './pdv-entry.guard';
+import { sumReceivableSettlementsViaCash } from '../sales/sales-payment-breakdown.util';
 import {
   aggregateCompletedSalesTotals,
   buildSalesByMethod,
@@ -44,6 +46,7 @@ import {
   syncReconciliationExpenseMovements,
   type ReconciliationExpenseLineStored,
 } from './cash-reconciliation-expense-sync';
+import { assertCashAllowedForTerminalHeader } from '../pdv-terminals/pdv-terminal-request.util';
 
 function isPlainObjectRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -112,6 +115,8 @@ function computeSessionListAggregates(params: {
 }): {
   totalCompletedSales: number;
   totalReceivedAtSale: number;
+  totalRequisitionAtSale: number;
+  totalCreditAtSale: number;
   totalDeferredSales: number;
   reconciliationDifference: number | null;
 } {
@@ -146,6 +151,8 @@ function computeSessionListAggregates(params: {
   return {
     totalCompletedSales: salesTotals.totalInvoiced,
     totalReceivedAtSale: salesTotals.totalReceivedAtSale,
+    totalRequisitionAtSale: salesTotals.totalRequisitionAtSale,
+    totalCreditAtSale: salesTotals.totalCreditAtSale,
     totalDeferredSales: salesTotals.totalDeferred,
     reconciliationDifference,
   };
@@ -511,6 +518,23 @@ export class CashController {
       });
     }
 
+    const receivableBySessionId = new Map<string, number>();
+    if (sessionIds.length) {
+      const recvRows = await db.receivableSettlement.groupBy({
+        by: ['cashSessionId'],
+        where: { cashSessionId: { in: sessionIds } },
+        _sum: { amount: true },
+      });
+      for (const r of recvRows) {
+        if (r.cashSessionId) {
+          receivableBySessionId.set(
+            r.cashSessionId,
+            roundMoney(Number(r._sum.amount ?? 0)),
+          );
+        }
+      }
+    }
+
     const salesBySessionId = new Map<string, typeof batchSales>();
     const salesByUserId = new Map<string, typeof batchSales>();
     for (const sale of batchSales) {
@@ -545,6 +569,8 @@ export class CashController {
       const {
         totalCompletedSales,
         totalReceivedAtSale,
+        totalRequisitionAtSale,
+        totalCreditAtSale,
         totalDeferredSales,
         reconciliationDifference,
       } = computeSessionListAggregates({
@@ -562,6 +588,9 @@ export class CashController {
         movementsOut: movOut,
         totalCompletedSales,
         totalReceivedAtSale,
+        totalRequisitionAtSale,
+        totalCreditAtSale,
+        totalReceivableCollectionsViaCash: receivableBySessionId.get(s.id) ?? 0,
         totalDeferredSales,
         reconciliationDifference,
       };
@@ -654,6 +683,23 @@ export class CashController {
 
     const closingOptions = await loadCashReconClosingOptions(db);
 
+    const receivableBySessionId = new Map<string, number>();
+    if (sessions.length) {
+      const recvRows = await db.receivableSettlement.groupBy({
+        by: ['cashSessionId'],
+        where: { cashSessionId: { in: sessions.map((x) => x.id) } },
+        _sum: { amount: true },
+      });
+      for (const r of recvRows) {
+        if (r.cashSessionId) {
+          receivableBySessionId.set(
+            r.cashSessionId,
+            roundMoney(Number(r._sum.amount ?? 0)),
+          );
+        }
+      }
+    }
+
     // Para cada sessão, busca vendas dentro da janela (uniformizado com sessionDetail).
     const detailed = await Promise.all(
       sessions.map(async (s) => {
@@ -718,6 +764,9 @@ export class CashController {
         const salesPaymentTotals = aggregateCompletedSalesTotals(sales);
         totalReceivedAtSale = salesPaymentTotals.totalReceivedAtSale;
         totalDeferredSales = salesPaymentTotals.totalDeferred;
+        const totalRequisitionAtSale = salesPaymentTotals.totalRequisitionAtSale;
+        const totalCreditAtSale = salesPaymentTotals.totalCreditAtSale;
+        const totalReceivableCollectionsViaCash = receivableBySessionId.get(s.id) ?? 0;
 
         const salesByMethod = buildSalesByMethod(sales);
 
@@ -791,6 +840,9 @@ export class CashController {
           itemsCount,
           totalCompleted,
           totalReceivedAtSale,
+          totalRequisitionAtSale,
+          totalCreditAtSale,
+          totalReceivableCollectionsViaCash,
           totalDeferredSales,
           totalCancelled,
           totalDiscounts,
@@ -862,6 +914,9 @@ export class CashController {
         acc.itemsCount += s.itemsCount;
         acc.totalCompleted += s.totalCompleted;
         acc.totalReceivedAtSale += s.totalReceivedAtSale;
+        acc.totalRequisitionAtSale += s.totalRequisitionAtSale;
+        acc.totalCreditAtSale += s.totalCreditAtSale;
+        acc.totalReceivableCollectionsViaCash += s.totalReceivableCollectionsViaCash;
         acc.totalDeferredSales += s.totalDeferredSales;
         acc.totalCancelled += s.totalCancelled;
         acc.totalDiscounts += s.totalDiscounts;
@@ -892,6 +947,9 @@ export class CashController {
         itemsCount: 0,
         totalCompleted: 0,
         totalReceivedAtSale: 0,
+        totalRequisitionAtSale: 0,
+        totalCreditAtSale: 0,
+        totalReceivableCollectionsViaCash: 0,
         totalDeferredSales: 0,
         totalCancelled: 0,
         totalDiscounts: 0,
@@ -912,6 +970,9 @@ export class CashController {
     totals.movementBreakdown.despesas = roundMoney(totals.movementBreakdown.despesas);
     totals.presentedTotal = roundMoney(totals.presentedTotal);
     totals.totalReceivedAtSale = roundMoney(totals.totalReceivedAtSale);
+    totals.totalRequisitionAtSale = roundMoney(totals.totalRequisitionAtSale);
+    totals.totalCreditAtSale = roundMoney(totals.totalCreditAtSale);
+    totals.totalReceivableCollectionsViaCash = roundMoney(totals.totalReceivableCollectionsViaCash);
     totals.totalDeferredSales = roundMoney(totals.totalDeferredSales);
     totals.totalCompleted = roundMoney(totals.totalCompleted);
 
@@ -1385,6 +1446,11 @@ export class CashController {
     };
 
     const sessionPaymentTotals = aggregateCompletedSalesTotals(sales);
+    const totalReceivableCollectionsViaCash = await sumReceivableSettlementsViaCash(db, {
+      from: session.openedAt,
+      to: session.closedAt ?? new Date(),
+      sessionId: session.id,
+    });
 
     return {
       session: sessionResponse,
@@ -1394,6 +1460,9 @@ export class CashController {
         cancelledCount: sales.filter((s) => s.status === SaleStatus.CANCELLED).length,
         totalCompleted,
         totalReceivedAtSale: sessionPaymentTotals.totalReceivedAtSale,
+        totalRequisitionAtSale: sessionPaymentTotals.totalRequisitionAtSale,
+        totalCreditAtSale: sessionPaymentTotals.totalCreditAtSale,
+        totalReceivableCollectionsViaCash,
         totalDeferredSales: sessionPaymentTotals.totalDeferred,
         totalCancelled,
         itemsCount,
@@ -1578,7 +1647,17 @@ export class CashController {
 
   @Post('open')
   @Roles('admin', 'manager', 'seller')
-  async open(@CurrentUser() user: JwtPayload, @Body() body: { openingBalance?: number }) {
+  async open(
+    @CurrentUser() user: JwtPayload,
+    @Headers('x-pdv-terminal-number') pdvTerminalNumber: string | undefined,
+    @Body() body: { openingBalance?: number },
+  ) {
+    await assertCashAllowedForTerminalHeader(
+      this.tenantPrisma,
+      user.tenantSlug,
+      pdvTerminalNumber,
+      'open',
+    );
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     await assertLastSaleAllowsPdvEntry(db, user.sub);
     const existing = await db.cashRegisterSession.findFirst({
@@ -1610,6 +1689,7 @@ export class CashController {
   @Roles('admin', 'manager', 'seller')
   async close(
     @CurrentUser() user: JwtPayload,
+    @Headers('x-pdv-terminal-number') pdvTerminalNumber: string | undefined,
     @Body()
     body: {
       closingBalance: number;
@@ -1625,6 +1705,12 @@ export class CashController {
       sessionId?: string | null;
     },
   ) {
+    await assertCashAllowedForTerminalHeader(
+      this.tenantPrisma,
+      user.tenantSlug,
+      pdvTerminalNumber,
+      'close',
+    );
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const isManager = user.roles.includes('admin') || user.roles.includes('manager');
     const targetSessionId =

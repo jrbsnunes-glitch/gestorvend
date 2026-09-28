@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { CrudToolbar } from '../../components/CrudToolbar';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
 import { ProductSearchModal, type ProductSearchRow } from '../../components/ProductSearchModal';
+import { RecordViewModal, type RecordViewSection } from '../../components/RecordViewModal';
 import { api } from '../../lib/api';
 
 type Location = { id: string; code: string; name: string };
@@ -39,6 +40,78 @@ function variantKey(v: MovementRow['variant']) {
 function parseQty(raw: string): number {
   const n = parseFloat(raw.replace(',', '.'));
   return Number.isFinite(n) ? n : 0;
+}
+
+type TransferDetail = {
+  refKey: string;
+  createdAt: string;
+  from: { code: string; name: string };
+  to: { code: string; name: string };
+  reference: string;
+  notes: string | null;
+  items: Array<{ sku: string; productName: string; quantity: string }>;
+};
+
+function parseNotesFromReference(reference: string | null): string | null {
+  if (!reference) return null;
+  const pipe = reference.indexOf(' | ');
+  if (pipe < 0) return null;
+  const tail = reference.slice(pipe + 3);
+  const dash = tail.indexOf(' — ');
+  if (dash < 0) return null;
+  const notes = tail.slice(dash + 3).trim();
+  return notes || null;
+}
+
+/** Detalhe completo por referência TRF (todos os produtos da mesma operação). */
+function buildTransferDetails(rows: MovementRow[]): Map<string, TransferDetail> {
+  const map = new Map<string, MovementRow[]>();
+  for (const m of rows) {
+    const refKey = transferRefKey(m.reference);
+    if (!refKey) continue;
+    if (!map.has(refKey)) map.set(refKey, []);
+    map.get(refKey)!.push(m);
+  }
+
+  const out = new Map<string, TransferDetail>();
+  for (const [refKey, ms] of map) {
+    const outs = ms.filter((x) => x.type === 'OUT');
+    const ins = ms.filter((x) => x.type === 'IN');
+    const createdAt = ms.reduce(
+      (best, m) => (new Date(m.createdAt) > new Date(best) ? m.createdAt : best),
+      ms[0]!.createdAt,
+    );
+    const from = outs[0]?.location ?? ins[0]?.location ?? { code: '—', name: '—' };
+    const to =
+      ins.find((i) => i.location.code !== from.code)?.location ??
+      ins[0]?.location ??
+      { code: '—', name: '—' };
+    const reference = (ms.find((m) => m.reference)?.reference ?? refKey).trim();
+    const items = outs.map((o) => ({
+      sku: o.variant.sku,
+      productName: o.variant.product.name,
+      quantity: o.quantity,
+    }));
+    if (items.length === 0) {
+      for (const inM of ins) {
+        items.push({
+          sku: inM.variant.sku,
+          productName: inM.variant.product.name,
+          quantity: inM.quantity,
+        });
+      }
+    }
+    out.set(refKey, {
+      refKey,
+      createdAt,
+      from,
+      to,
+      reference,
+      notes: parseNotesFromReference(reference),
+      items,
+    });
+  }
+  return out;
 }
 
 /** Uma linha por produto; vários produtos podem compartilhar o mesmo TRF. */
@@ -113,6 +186,7 @@ export function StockTransferenciasPage() {
   const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [notes, setNotes] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [viewingRefKey, setViewingRefKey] = useState<string | null>(null);
 
   const locations = useQuery({
     queryKey: ['stock-locations'],
@@ -126,6 +200,37 @@ export function StockTransferenciasPage() {
   });
 
   const grouped = useMemo(() => parseTransferGroups(transferRows.data ?? []), [transferRows.data]);
+  const transferDetails = useMemo(
+    () => buildTransferDetails(transferRows.data ?? []),
+    [transferRows.data],
+  );
+  const viewing = viewingRefKey ? transferDetails.get(viewingRefKey) ?? null : null;
+
+  const viewSections: RecordViewSection[] = viewing
+    ? [
+        {
+          title: 'Dados da transferência',
+          fields: [
+            { label: 'Data', value: new Date(viewing.createdAt).toLocaleString('pt-BR') },
+            {
+              label: 'Origem',
+              value: `${viewing.from.code} — ${viewing.from.name}`,
+            },
+            {
+              label: 'Destino',
+              value: `${viewing.to.code} — ${viewing.to.name}`,
+            },
+            { label: 'Referência interna', value: viewing.refKey },
+            { label: 'Observação', value: viewing.notes },
+          ],
+        },
+        {
+          title: `Produtos (${viewing.items.length})`,
+          columns: ['SKU', 'Produto', { label: 'Quantidade', num: true }],
+          rows: viewing.items.map((it) => [it.sku, it.productName, it.quantity]),
+        },
+      ]
+    : [];
 
   const hasMultipleLocations = (locations.data?.length ?? 0) >= 2;
 
@@ -378,13 +483,14 @@ export function StockTransferenciasPage() {
                   <th>Destino</th>
                   <th>Produto</th>
                   <th>Qtd</th>
+                  <th className="no-print">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {grouped.map((g, idx) => (
                   <tr key={g.rowKey}>
                     <td className="num">{idx + 1}</td>
-                    <td>{new Date(g.createdAt).toLocaleString()}</td>
+                    <td>{new Date(g.createdAt).toLocaleString('pt-BR')}</td>
                     <td>
                       {g.from.code} — {g.from.name}
                     </td>
@@ -395,6 +501,15 @@ export function StockTransferenciasPage() {
                       {g.variant.sku} — {g.variant.product.name}
                     </td>
                     <td>{g.quantity}</td>
+                    <td className="no-print">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-compact"
+                        onClick={() => setViewingRefKey(g.key)}
+                      >
+                        Visualizar
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -408,6 +523,18 @@ export function StockTransferenciasPage() {
         title="Pesquisar produto para transferência"
         onClose={() => setProductSearchOpen(false)}
         onPick={pickProduct}
+      />
+
+      <RecordViewModal
+        open={viewing != null}
+        title={
+          viewing
+            ? `Transferência ${viewing.from.code} → ${viewing.to.code}`
+            : 'Transferência'
+        }
+        wide
+        sections={viewSections}
+        onClose={() => setViewingRefKey(null)}
       />
     </div>
   );

@@ -10,10 +10,15 @@ import { randomBytes, randomUUID } from 'crypto';
 import {
   CashSessionStatus,
   PdvTerminalMode,
+  PdvTerminalRole,
   Prisma,
   SaleSource,
   SaleStatus,
 } from '../generated/tenant-client';
+import {
+  capabilitiesFromRole,
+  type PdvTerminalCapabilities,
+} from './pdv-terminal-capabilities.util';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { SalesService } from '../sales/sales.service';
 import { PaymentCredentialsService } from '../payments/payment-credentials.service';
@@ -27,6 +32,7 @@ export type PdvTerminalPublic = {
   number: number;
   name: string;
   mode: PdvTerminalMode;
+  role: PdvTerminalRole;
   isActive: boolean;
   allowedMethods: string[];
   operatorUserId: string | null;
@@ -34,6 +40,10 @@ export type PdvTerminalPublic = {
   lastSeenAt: string | null;
   createdAt: string;
   pairingUrl: string;
+};
+
+export type PdvTerminalProfile = PdvTerminalPublic & {
+  capabilities: PdvTerminalCapabilities;
 };
 
 export type KioskBootstrap = {
@@ -63,11 +73,19 @@ export class PdvTerminalsService {
     return raw.filter((x): x is string => typeof x === 'string' && x.trim().length > 0);
   }
 
+  pairingUrlFor(row: { number: number; mode: PdvTerminalMode }): string {
+    if (row.mode === PdvTerminalMode.OPERATOR) {
+      return `/vendas?terminal=${row.number}`;
+    }
+    return `/auto-atendimento?terminal=${row.number}`;
+  }
+
   private toPublic(row: {
     id: string;
     number: number;
     name: string;
     mode: PdvTerminalMode;
+    role: PdvTerminalRole;
     isActive: boolean;
     allowedMethods: unknown;
     operatorUserId: string | null;
@@ -80,14 +98,28 @@ export class PdvTerminalsService {
       number: row.number,
       name: row.name,
       mode: row.mode,
+      role: row.role,
       isActive: row.isActive,
       allowedMethods: this.parseAllowedMethods(row.allowedMethods),
       operatorUserId: row.operatorUserId,
       mpPointTerminalId: row.mpPointTerminalId ?? null,
       lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
-      pairingUrl: `/auto-atendimento?terminal=${row.number}`,
+      pairingUrl: this.pairingUrlFor(row),
     };
+  }
+
+  async getByNumber(tenantSlug: string, number: number): Promise<PdvTerminalProfile> {
+    const n = Math.floor(number);
+    if (!Number.isFinite(n) || n < 1) {
+      throw new BadRequestException('Número de PDV inválido.');
+    }
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const row = await db.pdvTerminal.findFirst({ where: { number: n, isActive: true } });
+    if (!row) throw new NotFoundException(`PDV nº ${n} não encontrado ou inativo.`);
+    await this.touch(tenantSlug, row.id);
+    const pub = this.toPublic(row);
+    return { ...pub, capabilities: capabilitiesFromRole(row.role) };
   }
 
   async list(tenantSlug: string) {
@@ -102,6 +134,7 @@ export class PdvTerminalsService {
       number?: number;
       name: string;
       mode?: PdvTerminalMode;
+      role?: PdvTerminalRole;
       allowedMethods?: string[];
       operatorUserId?: string | null;
     },
@@ -127,12 +160,17 @@ export class PdvTerminalsService {
       ? body.allowedMethods
       : ['PIX', 'CARD_CREDIT', 'CARD_DEBIT'];
 
+    const role =
+      body.role ??
+      (number === 1 ? PdvTerminalRole.PRIMARY : PdvTerminalRole.SATELLITE);
+
     const row = await db.pdvTerminal.create({
       data: {
         id,
         number,
         name,
         mode: body.mode ?? PdvTerminalMode.SELF_SERVICE,
+        role,
         secretHash,
         allowedMethods: allowedMethods as Prisma.InputJsonValue,
         operatorUserId: body.operatorUserId?.trim() || null,
@@ -151,6 +189,7 @@ export class PdvTerminalsService {
     body: {
       name?: string;
       mode?: PdvTerminalMode;
+      role?: PdvTerminalRole;
       isActive?: boolean;
       allowedMethods?: string[];
       operatorUserId?: string | null;
@@ -168,6 +207,7 @@ export class PdvTerminalsService {
       data.name = n;
     }
     if (body.mode !== undefined) data.mode = body.mode;
+    if (body.role !== undefined) data.role = body.role;
     if (body.isActive !== undefined) data.isActive = body.isActive;
     if (body.allowedMethods !== undefined) {
       data.allowedMethods = body.allowedMethods as Prisma.InputJsonValue;

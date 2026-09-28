@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { CompanyLogo } from './CompanyLogo';
 import { ApiOutdatedBanner } from './ApiOutdatedBanner';
 import { ConnectionStatusBanner } from './ConnectionStatusBanner';
@@ -111,7 +111,14 @@ function initials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+function refreshDashboardOnNav(qc: QueryClient, path: string) {
+  if (path === '/' || path === '') {
+    void qc.invalidateQueries({ queryKey: ['dashboard'] });
+  }
+}
+
 export function AppLayout({ onLogout }: { onLogout: () => void }) {
+  const qc = useQueryClient();
   const identity = useMemo(() => getIdentity(), []);
   const localProfile = identity ? profileFromRoles(identity.roles) : 'cashier';
   const isManager = localProfile === 'manager';
@@ -420,7 +427,10 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
                   end={item.end ?? false}
                   title={item.label}
                   aria-label={item.label}
-                  onClick={closeMobileNav}
+                  onClick={() => {
+                    refreshDashboardOnNav(qc, item.to);
+                    closeMobileNav();
+                  }}
                   className={({ isActive }) =>
                     'sidebar-link' + (isActive ? ' sidebar-link-active' : '')
                   }
@@ -483,6 +493,7 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
                 key={tab.to}
                 to={tab.to}
                 end={tab.end ?? false}
+                onClick={() => refreshDashboardOnNav(qc, tab.to)}
                 className={({ isActive }) =>
                   'mobile-tabbar-item' + (isActive ? ' mobile-tabbar-item--active' : '')
                 }

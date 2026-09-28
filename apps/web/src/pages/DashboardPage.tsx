@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { BillPaymentsButton } from '../components/BillSettlementsModal';
@@ -8,7 +8,9 @@ import { SalesMonthChart } from '../components/SalesMonthChart';
 import { ApiHttpError, api } from '../lib/api';
 import { companyDisplayName, useCompanyBranding } from '../lib/company-branding';
 import { isManager } from '../lib/auth';
-import { formatBRL, formatDate } from '../lib/format';
+import { calendarDayFromInstant, getActiveBusinessTimezone } from '../lib/business-timezone';
+import { formatBRL, formatCalendarDate, formatDate } from '../lib/format';
+import { todayISODate } from '../lib/local-date';
 import {
   buildCurrentMonthAxisThroughToday,
   currentMonthKey,
@@ -25,10 +27,14 @@ type Overview = {
   revenue: {
     today: number;
     month: number;
-    receivedToday: number;
-    deferredToday: number;
-    receivedMonth: number;
-    deferredMonth: number;
+    receivedAtSaleToday: number;
+    receivedAtSaleMonth: number;
+    requisitionToday: number;
+    requisitionMonth: number;
+    creditAtSaleToday: number;
+    creditAtSaleMonth: number;
+    receivableCashToday: number;
+    receivableCashMonth: number;
   };
   sales: { today: number; month: number; avgTicketMonth: number };
   salesTrendMonth: Array<{ date: string; revenue: number; count: number }>;
@@ -73,12 +79,14 @@ type Overview = {
   }>;
 };
 
+/** Dias até o vencimento (0 = hoje), no fuso da empresa — evita “vencido” por deslocamento UTC. */
 function daysUntilDue(dueDate: string): number {
-  const d = new Date(dueDate);
-  const today = new Date();
-  d.setHours(0, 0, 0, 0);
-  today.setHours(0, 0, 0, 0);
-  return Math.round((d.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+  const tz = getActiveBusinessTimezone();
+  const dueIso = calendarDayFromInstant(new Date(dueDate), tz);
+  const todayIso = todayISODate();
+  const due = new Date(`${dueIso}T12:00:00`);
+  const today = new Date(`${todayIso}T12:00:00`);
+  return Math.round((due.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
 }
 
 function isDueDatePast(dueDate: string): boolean {
@@ -122,10 +130,11 @@ function dueDaysBadge(status: string, dueDate: string): ReactNode {
 }
 
 function dueLabelShort(status: string, dueDate: string): string {
+  const when = formatCalendarDate(dueDate);
   if (status === 'OVERDUE' || isDueDatePast(dueDate)) {
-    return `venceu em ${formatDate(dueDate)}`;
+    return `venceu em ${when}`;
   }
-  return `vence em ${formatDate(dueDate)}`;
+  return `vence em ${when}`;
 }
 
 function previewItems<T>(items: T[]): T[] {
@@ -298,11 +307,13 @@ export function DashboardPage() {
   const overview = useQuery({
     queryKey: ['dashboard', 'overview'],
     queryFn: () => api<Overview>('/dashboard/overview'),
-    staleTime: 60_000,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
     refetchInterval: () =>
       typeof document !== 'undefined' && document.visibilityState === 'hidden'
         ? false
-        : 120_000,
+        : 60_000,
   });
 
   const data = overview.data;
@@ -316,12 +327,24 @@ export function DashboardPage() {
       const res = await api<{ points: Overview['salesTrendMonth'] }>('/dashboard/sales-trend-month');
       return res.points;
     },
-    staleTime: 60_000,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
     refetchInterval: () =>
       typeof document !== 'undefined' && document.visibilityState === 'hidden'
         ? false
-        : 120_000,
+        : 60_000,
   });
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void overview.refetch();
+      void salesTrendMonth.refetch();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [overview, salesTrendMonth]);
 
   const salesTrendPoints = useMemo(
     () => mergeTrendIntoMonthAxis(monthAxis, salesTrendMonth.data ?? data?.salesTrendMonth),
@@ -388,7 +411,21 @@ export function DashboardPage() {
         <CompanyLogo className="company-page-head__logo" company={company.data ?? null} />
         <div className="company-page-head__text">
           <h1 className="page-title">Início</h1>
-          <p className="page-desc">Resumo do dia e da operação.</p>
+          <p className="page-desc">
+            Resumo do dia e da operação.
+            {overview.dataUpdatedAt ? (
+              <>
+                {' '}
+                <span className="dash-updated-at" title="Última atualização dos totais">
+                  Atualizado às{' '}
+                  {new Date(overview.dataUpdatedAt).toLocaleTimeString('pt-BR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </span>
+              </>
+            ) : null}
+          </p>
           {company.data ? (
             <p className="company-page-head__store">{companyDisplayName(company.data)}</p>
           ) : null}
@@ -412,12 +449,18 @@ export function DashboardPage() {
           </span>
           {!overview.isLoading ? (
             <span className="dash-hero-split">
-              Recebido no caixa: <strong>{formatBRL(data?.revenue.receivedToday ?? 0)}</strong>
-              {(data?.revenue.deferredToday ?? 0) > 0 ? (
+              Recebido no ato: <strong>{formatBRL(data?.revenue.receivedAtSaleToday ?? 0)}</strong>
+              {(data?.revenue.requisitionToday ?? 0) > 0 ? (
                 <>
                   {' '}
-                  · A prazo (crediário/requisição):{' '}
-                  <strong>{formatBRL(data?.revenue.deferredToday ?? 0)}</strong>
+                  · Em requisição: <strong>{formatBRL(data?.revenue.requisitionToday ?? 0)}</strong>
+                </>
+              ) : null}
+              {(data?.revenue.receivableCashToday ?? 0) > 0 ? (
+                <>
+                  <br />
+                  Títulos recebidos no caixa:{' '}
+                  <strong>{formatBRL(data?.revenue.receivableCashToday ?? 0)}</strong>
                 </>
               ) : null}
             </span>
@@ -435,11 +478,18 @@ export function DashboardPage() {
             </span>
             {!overview.isLoading ? (
               <span className="dash-hero-split">
-                Recebido no caixa: <strong>{formatBRL(data?.revenue.receivedMonth ?? 0)}</strong>
-                {(data?.revenue.deferredMonth ?? 0) > 0 ? (
+                Recebido no ato: <strong>{formatBRL(data?.revenue.receivedAtSaleMonth ?? 0)}</strong>
+                {(data?.revenue.requisitionMonth ?? 0) > 0 ? (
                   <>
                     {' '}
-                    · A prazo: <strong>{formatBRL(data?.revenue.deferredMonth ?? 0)}</strong>
+                    · Em requisição: <strong>{formatBRL(data?.revenue.requisitionMonth ?? 0)}</strong>
+                  </>
+                ) : null}
+                {(data?.revenue.receivableCashMonth ?? 0) > 0 ? (
+                  <>
+                    <br />
+                    Títulos recebidos no caixa:{' '}
+                    <strong>{formatBRL(data?.revenue.receivableCashMonth ?? 0)}</strong>
                   </>
                 ) : null}
               </span>

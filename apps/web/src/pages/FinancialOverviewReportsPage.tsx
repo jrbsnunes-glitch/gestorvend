@@ -55,7 +55,13 @@ type Summary = {
       operatorName: string | null;
     }>;
   };
-  sales: { count: number; revenueTotal: number };
+  sales: {
+    count: number;
+    revenueTotal: number;
+    receivedAtSale?: number;
+    requisitionAtSale?: number;
+    receivableSettledViaCash?: number;
+  };
   payables: {
     newTitlesCount: number;
     newTitlesAmount: number;
@@ -550,6 +556,23 @@ export function FinancialOverviewReportsPage() {
               <li>
                 Faturamento vendas (concluídas): <strong>{formatBRL(data.sales.revenueTotal)}</strong> (
                 {data.sales.count} venda(s))
+              </li>
+              <li>
+                Recebido no ato (vendas):{' '}
+                <strong>{formatBRL(data.sales.receivedAtSale ?? data.sales.revenueTotal)}</strong>
+                {(data.sales.requisitionAtSale ?? 0) > 0 ? (
+                  <>
+                    {' '}
+                    · Em requisição: <strong>{formatBRL(data.sales.requisitionAtSale ?? 0)}</strong>
+                  </>
+                ) : null}
+                {(data.sales.receivableSettledViaCash ?? 0) > 0 ? (
+                  <>
+                    {' '}
+                    · Títulos no caixa:{' '}
+                    <strong>{formatBRL(data.sales.receivableSettledViaCash ?? 0)}</strong>
+                  </>
+                ) : null}
               </li>
               <li>
                 Contas a pagar — liquidado total no período:{' '}

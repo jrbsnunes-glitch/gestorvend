@@ -2,7 +2,8 @@ export const PAYMENT_LABELS: Record<string, string> = {
   CASH: 'Dinheiro',
   CARD: 'Cartão',
   PIX: 'Pix',
-  CREDIT: 'Crediário',
+  CREDIT: 'Saldo crediário',
+  REQUISITION: 'Requisição',
   OTHER: 'Outro',
   EXPENSE: 'Despesa',
 };

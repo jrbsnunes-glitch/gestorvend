@@ -1,8 +1,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { timezoneFromBrazilUf } from '../common/br-uf-timezone.util';
 import { validateCnpj14 } from '../common/cnpj.util';
+import { normalizeIanaTimezone } from '../common/iana-timezone.util';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { TenantService } from '../tenant/tenant.service';
 import { CompanyLogoStorage } from './company-logo.storage';
+import { CompanyTimezoneService } from './company-timezone.service';
 
 type CompanyInput = {
   legalName?: string;
@@ -58,6 +61,8 @@ type CompanyInput = {
   factoryWhatsappWelcomeText?: string | null;
   factoryWhatsappMenuText?: string | null;
   factoryWhatsappHandoffText?: string | null;
+  /** Fuso IANA (ex.: America/Sao_Paulo). Se omitido ao mudar UF, recalcula pela sigla. */
+  timezone?: string | null;
 };
 
 /**
@@ -72,6 +77,7 @@ export class CompanyService {
     private readonly tenantPrisma: TenantPrismaService,
     private readonly tenants: TenantService,
     private readonly logos: CompanyLogoStorage,
+    private readonly companyTimezone: CompanyTimezoneService,
   ) {}
 
   async getOrCreate(tenantSlug: string) {
@@ -132,7 +138,6 @@ export class CompanyService {
       'addressNumber',
       'district',
       'city',
-      'state',
       'zip',
       'logoUrl',
       'saleReceiptPrinterHint',
@@ -144,6 +149,23 @@ export class CompanyService {
     for (const k of optional) {
       const v = trimOrNull(body[k]);
       if (v !== undefined) data[k] = v;
+    }
+
+    if (body.state !== undefined) {
+      const st = trimOrNull(body.state);
+      if (st !== undefined) {
+        data.state = st;
+        if (body.timezone === undefined) {
+          data.timezone = timezoneFromBrazilUf(st);
+        }
+      }
+    }
+
+    if (body.timezone !== undefined) {
+      const tzRaw = trimOrNull(body.timezone);
+      if (tzRaw !== undefined) {
+        data.timezone = normalizeIanaTimezone(tzRaw);
+      }
     }
 
     if (body.saleReceiptAutoPrint !== undefined) {
@@ -322,6 +344,7 @@ export class CompanyService {
     if (waiterTipValue !== undefined) data.waiterTipValue = String(waiterTipValue);
 
     const updated = await db.company.update({ where: { id: current.id }, data });
+    this.companyTimezone.invalidate(tenantSlug);
     if (body.factoryWhatsappPhoneNumberId !== undefined) {
       await this.tenants.setFactoryWhatsappPhoneNumberId(
         tenantSlug,

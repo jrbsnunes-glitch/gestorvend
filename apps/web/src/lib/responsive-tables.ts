@@ -67,7 +67,7 @@ export function startDataTableCardLabelsObserver(): () => void {
     timer = setTimeout(() => {
       timer = null;
       // Só sincroniza em viewport estreita (cards mobile); evita trabalho no desktop.
-      if (window.matchMedia('(max-width: 900px)').matches) {
+      if (window.matchMedia('(max-width: 720px)').matches) {
         syncDataTableCardLabels(document);
       }
     }, 200);

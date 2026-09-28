@@ -158,6 +158,7 @@ export async function buildProfitabilityReport(
   const [
     salesAgg,
     salePaymentsAgg,
+    requisitionPaymentsAgg,
     salesWithFiscal,
     closedSessions,
     periodSales,
@@ -174,6 +175,13 @@ export async function buildProfitabilityReport(
     db.salePayment.aggregate({
       where: {
         method: { notIn: [PaymentMethod.CREDIT, PaymentMethod.REQUISITION] },
+        sale: { status: SaleStatus.COMPLETED, createdAt: { gte: from, lte: to } },
+      },
+      _sum: { amount: true },
+    }),
+    db.salePayment.aggregate({
+      where: {
+        method: PaymentMethod.REQUISITION,
         sale: { status: SaleStatus.COMPLETED, createdAt: { gte: from, lte: to } },
       },
       _sum: { amount: true },
@@ -238,6 +246,7 @@ export async function buildProfitabilityReport(
   const grossRevenue = round2(num(salesAgg._sum.total));
   const salesCount = salesAgg._count._all;
   const paymentsExcludingCredit = round2(num(salePaymentsAgg._sum.amount));
+  const requisitionAtSale = round2(num(requisitionPaymentsAgg._sum.amount));
   const cogs = await computeCogsInPeriod(db, from, to);
   const grossProfit = round2(grossRevenue - cogs);
 
@@ -348,8 +357,15 @@ export async function buildProfitabilityReport(
     },
     {
       id: 'revenue-cash',
-      label: 'Recebimentos no caixa/PDV (exc. crediário)',
+      label: 'Recebimentos no caixa/PDV (exc. crediário e requisição)',
       amount: paymentsExcludingCredit,
+      level: 1,
+      kind: 'INFO',
+    },
+    {
+      id: 'revenue-requisition',
+      label: 'Vendas em requisição (a receber depois)',
+      amount: requisitionAtSale,
       level: 1,
       kind: 'INFO',
     },

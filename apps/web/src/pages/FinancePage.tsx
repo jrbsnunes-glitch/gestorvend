@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
@@ -10,8 +10,9 @@ import { matchesListSearch } from '../lib/list-search';
 import { CostCenterSelect } from '../components/CostCenterSelect';
 import { BillPaymentsButton } from '../components/BillSettlementsModal';
 import { api } from '../lib/api';
+import { syncDataTableCardLabels } from '../lib/responsive-tables';
 import { hasInformedPayment, PAYMENT_LABELS, saldoAbertoBill } from '../lib/finance-bills';
-import { formatBRL, formatCpfCnpj, formatDate } from '../lib/format';
+import { formatBRL, formatCalendarDate, formatCpfCnpj } from '../lib/format';
 
 type CustomerSearchRow = {
   id: string;
@@ -262,6 +263,10 @@ function appendFinanceFilterToParams(p: URLSearchParams, f: FinanceListFilter, t
     p.delete('supplierId');
     p.delete('partyName');
   }
+}
+
+function invalidateHomeDashboard(qc: QueryClient) {
+  void qc.invalidateQueries({ queryKey: ['dashboard'] });
 }
 
 function sumFinanceListTotals(rows: Array<Payable | Receivable>) {
@@ -581,6 +586,10 @@ export function FinancePage() {
     return (openCashSessions.data ?? []).filter((s) => isSameLocalDay(new Date(s.openedAt), t0));
   }, [openCashSessions.data]);
 
+  useEffect(() => {
+    syncDataTableCardLabels(document);
+  }, [tab, payables.data, receivables.data, filteredPayables.length, filteredReceivables.length]);
+
   const segmentOptions = useMemo(() => {
     const set = new Set<string>();
     for (const c of customers.data ?? []) {
@@ -607,6 +616,7 @@ export function FinancePage() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['payables'] });
+      invalidateHomeDashboard(qc);
       closeModal();
     },
     onError: (e: Error) => setErr(e.message),
@@ -638,6 +648,7 @@ export function FinancePage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['receivables'] });
+      invalidateHomeDashboard(qc);
       closeModal();
     },
     onError: (e: Error) => setErr(e.message),
@@ -656,6 +667,7 @@ export function FinancePage() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['payables'] });
+      invalidateHomeDashboard(qc);
       closeModal();
     },
     onError: (e: Error) => setErr(e.message),
@@ -679,6 +691,7 @@ export function FinancePage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['receivables'] });
+      invalidateHomeDashboard(qc);
       closeModal();
     },
     onError: (e: Error) => setErr(e.message),
@@ -712,6 +725,7 @@ export function FinancePage() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['payables'] });
+      invalidateHomeDashboard(qc);
       closeSettle();
     },
     onError: (e: Error) => setSettleErr(e.message),
@@ -745,6 +759,7 @@ export function FinancePage() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['receivables'] });
+      invalidateHomeDashboard(qc);
       closeSettle();
     },
     onError: (e: Error) => setSettleErr(e.message),
@@ -981,7 +996,7 @@ export function FinancePage() {
             <div className="alert alert-error">{(payables.error as Error).message}</div>
           )}
           <div className="table-wrap">
-            <table className="data-table">
+            <table className="data-table finance-bills-table">
               <thead>
                 <tr>
                   <th className="num" style={{ width: '3.2rem' }}>
@@ -990,11 +1005,11 @@ export function FinancePage() {
                   <th>Vencimento</th>
                   <th>Descrição</th>
                   <th>Fornecedor</th>
-                  <th>Valor (face)</th>
-                  <th>Saldo</th>
+                  <th className="num">Valor (face)</th>
+                  <th className="num">Saldo</th>
                   <th>Status</th>
                   <th>Forma / caixa</th>
-                  <th></th>
+                  <th className="col-actions">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -1017,16 +1032,16 @@ export function FinancePage() {
                 {filteredPayables.map((p, idx) => (
                   <tr key={p.id}>
                     <td className="num">{idx + 1}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{formatDate(p.dueDate)}</td>
-                    <td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{formatCalendarDate(p.dueDate)}</td>
+                    <td className="finance-bills-desc">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                         <span>{p.description}</span>
                         {recurrenceBadge(p.recurrence, p.recurrenceIndex, p.recurrenceCount)}
                       </div>
                     </td>
-                    <td>{p.supplier?.legalName ?? '—'}</td>
-                    <td>{formatBRL(p.amount)}</td>
-                    <td>{formatBRL(saldoAberto(p))}</td>
+                    <td className="finance-bills-party">{p.supplier?.legalName ?? '—'}</td>
+                    <td className="num">{formatBRL(p.amount)}</td>
+                    <td className="num">{formatBRL(saldoAberto(p))}</td>
                     <td>
                       <span
                         className={
@@ -1065,8 +1080,8 @@ export function FinancePage() {
                         '—'
                       )}
                     </td>
-                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                    <td className="col-actions finance-bills-actions">
+                      <div className="row-record-actions">
                         {hasInformedPayment(p) && (
                           <BillPaymentsButton
                             kind="pagar"
@@ -1077,8 +1092,7 @@ export function FinancePage() {
                         {(p.status === 'OPEN' || p.status === 'OVERDUE') && (
                           <button
                             type="button"
-                            className="btn btn-ghost"
-                            style={{ fontSize: '0.82rem' }}
+                            className="btn btn-secondary btn-compact"
                             disabled={payOne.isPending}
                             onClick={() => openSettle(p)}
                           >
@@ -1088,8 +1102,7 @@ export function FinancePage() {
                         {canEditBill(p) && (
                           <button
                             type="button"
-                            className="btn btn-secondary"
-                            style={{ fontSize: '0.82rem' }}
+                            className="btn btn-secondary btn-compact"
                             disabled={updatePayable.isPending}
                             onClick={() => openEditPayable(p)}
                           >
@@ -1125,7 +1138,7 @@ export function FinancePage() {
             <div className="alert alert-error">{(receivables.error as Error).message}</div>
           )}
           <div className="table-wrap">
-            <table className="data-table">
+            <table className="data-table finance-bills-table">
               <thead>
                 <tr>
                   <th className="num" style={{ width: '3.2rem' }}>
@@ -1134,11 +1147,11 @@ export function FinancePage() {
                   <th>Vencimento</th>
                   <th>Descrição</th>
                   <th>Cliente</th>
-                  <th>Valor (face)</th>
-                  <th>Saldo</th>
+                  <th className="num">Valor (face)</th>
+                  <th className="num">Saldo</th>
                   <th>Status</th>
                   <th>Forma / caixa</th>
-                  <th></th>
+                  <th className="col-actions">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -1161,8 +1174,8 @@ export function FinancePage() {
                 {filteredReceivables.map((r, idx) => (
                   <tr key={r.id}>
                     <td className="num">{idx + 1}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{formatDate(r.dueDate)}</td>
-                    <td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{formatCalendarDate(r.dueDate)}</td>
+                    <td className="finance-bills-desc">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                         <span>{r.description}</span>
                         {recurrenceBadge(r.recurrence, r.recurrenceIndex, r.recurrenceCount)}
@@ -1185,9 +1198,9 @@ export function FinancePage() {
                         </div>
                       )}
                     </td>
-                    <td>{r.customer?.name ?? '—'}</td>
-                    <td>{formatBRL(r.amount)}</td>
-                    <td>{formatBRL(saldoAberto(r))}</td>
+                    <td className="finance-bills-party">{r.customer?.name ?? '—'}</td>
+                    <td className="num">{formatBRL(r.amount)}</td>
+                    <td className="num">{formatBRL(saldoAberto(r))}</td>
                     <td>
                       <span
                         className={
@@ -1224,8 +1237,8 @@ export function FinancePage() {
                         '—'
                       )}
                     </td>
-                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                    <td className="col-actions finance-bills-actions">
+                      <div className="row-record-actions">
                         {hasInformedPayment(r) && (
                           <BillPaymentsButton
                             kind="receber"
@@ -1236,8 +1249,7 @@ export function FinancePage() {
                         {(r.status === 'OPEN' || r.status === 'OVERDUE') && (
                           <button
                             type="button"
-                            className="btn btn-ghost"
-                            style={{ fontSize: '0.82rem' }}
+                            className="btn btn-secondary btn-compact"
                             disabled={receiveOne.isPending}
                             onClick={() => openSettle(r)}
                           >
@@ -1247,8 +1259,7 @@ export function FinancePage() {
                         {canEditBill(r) && (
                           <button
                             type="button"
-                            className="btn btn-secondary"
-                            style={{ fontSize: '0.82rem' }}
+                            className="btn btn-secondary btn-compact"
                             disabled={updateReceivable.isPending}
                             onClick={() => openEditReceivable(r)}
                           >
@@ -1774,7 +1785,7 @@ export function FinancePage() {
               {'supplier' in settleBill ? 'Baixar conta a pagar' : 'Registrar recebimento'}
             </h2>
             <p style={{ color: 'var(--color-text-muted)', fontSize: '0.88rem', marginTop: 0 }}>
-              {settleBill.description} · venc. {formatDate(settleBill.dueDate)}
+              {settleBill.description} · venc. {formatCalendarDate(settleBill.dueDate)}
             </p>
             <p style={{ fontSize: '0.88rem', marginTop: '0.25rem' }}>
               Valor do título: <strong>{formatBRL(settleBill.amount)}</strong>
@@ -1937,13 +1948,13 @@ export function FinancePage() {
                   {tab === 'pagar'
                     ? payables.data?.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {formatDate(p.dueDate)} · saldo {formatBRL(saldoAberto(p))} ·{' '}
+                          {formatCalendarDate(p.dueDate)} · saldo {formatBRL(saldoAberto(p))} ·{' '}
                           {p.description.slice(0, 60)}
                         </option>
                       ))
                     : receivables.data?.map((r) => (
                         <option key={r.id} value={r.id}>
-                          {formatDate(r.dueDate)} · saldo {formatBRL(saldoAberto(r))} ·{' '}
+                          {formatCalendarDate(r.dueDate)} · saldo {formatBRL(saldoAberto(r))} ·{' '}
                           {r.description.slice(0, 60)}
                         </option>
                       ))}

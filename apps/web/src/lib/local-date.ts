@@ -1,11 +1,9 @@
-/** Datas locais em ISO YYYY-MM-DD (meio-dia evita deslocamento de fuso). */
+import { calendarDayFromInstant, calendarDayNow, getActiveBusinessTimezone } from './business-timezone';
+
+/** Datas locais em ISO YYYY-MM-DD (fuso da empresa). */
 
 export function todayISODate(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return calendarDayNow(getActiveBusinessTimezone());
 }
 
 export function addCalendarDays(iso: string, days: number): string {
@@ -62,13 +60,9 @@ export function monthTitle(iso: string): string {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
-/** Converte ISO datetime da API para data local YYYY-MM-DD. */
+/** Converte ISO datetime da API para dia civil YYYY-MM-DD (fuso da empresa). */
 export function toLocalISODate(isoDateTime: string): string {
-  const d = new Date(isoDateTime);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return calendarDayFromInstant(new Date(isoDateTime), getActiveBusinessTimezone());
 }
 
 export function parseRangeEndUtc(toIso: string): Date {

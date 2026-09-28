@@ -124,15 +124,20 @@
         <div class="hint">Mesmo endereço do sistema (onde você faz login). Não use o site institucional gestorvend.com. Em desenvolvimento local: http://127.0.0.1:5173</div>
         <label for="tenantSlug">Abreviatura da empresa</label>
         <input id="tenantSlug" type="text" required minlength="2" maxlength="64" placeholder="ex.: demo" autocomplete="organization" />
-        <div class="hint" style="margin-top: -0.5rem">Opcional — modo kiosk (autoatendimento):</div>
+        <div class="hint" style="margin-top: -0.5rem">
+          Opcional — pareie um terminal PDV (mesmo número e token de Terminais PDV no admin):
+        </div>
         <label for="pdvNumber">Número do PDV</label>
-        <input id="pdvNumber" type="number" min="1" placeholder="Ex.: 1" />
+        <input id="pdvNumber" type="number" min="1" placeholder="Ex.: 1 (mestre) ou 2 (secundário)" />
         <label for="pdvToken">Token do terminal</label>
         <textarea id="pdvToken" rows="2" placeholder="uuid.segredo (de Terminais PDV no admin)"></textarea>
         <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;font-size:0.88rem;">
           <input id="pdvKiosk" type="checkbox" />
           Abrir em modo kiosk (tela cheia, autoatendimento)
         </label>
+        <p class="hint" style="margin-top: -0.75rem">
+          Sem kiosk: abre o PDV operador em <code>/vendas?terminal=N</code> (mestre ou secundário conforme cadastro).
+        </p>
         <button type="submit" id="submit">Salvar e entrar</button>
       </form>
     </div>

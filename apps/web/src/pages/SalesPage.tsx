@@ -45,8 +45,14 @@ import {
   type PosAutoPrintMode,
 } from '../lib/sale-receipt-print';
 import { isGestorVendDesktop } from '../lib/desktop-bridge';
+import { usePdvTerminal } from '../hooks/usePdvTerminal';
+import type { PdvTerminalCapabilities } from '../lib/pdv-terminal-context';
 import { parseBarcodeWeight, type ScaleMode } from '../lib/pos-scale';
 import { usePosScale } from '../lib/use-pos-scale';
+import {
+  buildPaymentTileShortcuts,
+  findTileByShortcutKey,
+} from '../lib/payment-tile-shortcuts';
 import {
   calcAdminFee,
   cardBrandLabel,
@@ -366,6 +372,7 @@ export function SalesPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [searchParams] = useSearchParams();
+  const pdvTerminal = usePdvTerminal();
 
   const [localFailBump, setLocalFailBump] = useState(0);
 
@@ -463,6 +470,7 @@ export function SalesPage() {
   ].filter(Boolean) as string[];
 
   function exitToDashboard() {
+    void qc.invalidateQueries({ queryKey: ['dashboard'] });
     navigate('/');
   }
 
@@ -546,6 +554,9 @@ export function SalesPage() {
         currentUserId={operator?.id ?? null}
         gatewayBlocked={gatewayBlocked}
         gatewayBlockMessages={gatewayBlockMessages}
+        pdvCapabilities={pdvTerminal.capabilities}
+        pdvTerminalNumber={pdvTerminal.number}
+        pdvTerminalName={pdvTerminal.profile?.name ?? null}
         onDismissCheckoutFailure={() => {
           sessionStorage.removeItem(GV_POS_CHECKOUT_FAILURE_KEY);
           setLocalFailBump((n) => n + 1);
@@ -577,6 +588,10 @@ export function SalesPage() {
     <PosScreen
       session={activeSession}
       operator={operator}
+      pdvTerminalId={pdvTerminal.profile?.id ?? null}
+      pdvTerminalNumber={pdvTerminal.number}
+      pdvTerminalName={pdvTerminal.profile?.name ?? null}
+      pdvCapabilities={pdvTerminal.capabilities}
       onExit={() => {
         setOperatingSessionId(null);
         setEntered(false);
@@ -691,6 +706,9 @@ function PosGateway({
   onEnterSession,
   onSelectOtherSession,
   onAfterOpen,
+  pdvCapabilities,
+  pdvTerminalNumber,
+  pdvTerminalName,
 }: {
   session: CashSession | null;
   operator: Operator | null;
@@ -709,6 +727,9 @@ function PosGateway({
   onEnterSession: (sessionId: string) => void;
   onSelectOtherSession: () => void;
   onAfterOpen: (session: CashSession) => void;
+  pdvCapabilities: PdvTerminalCapabilities;
+  pdvTerminalNumber: number | null;
+  pdvTerminalName: string | null;
 }) {
   const [opening, setOpening] = useState('0,00');
   const [err, setErr] = useState<string | null>(null);
@@ -744,9 +765,28 @@ function PosGateway({
             Olá{operator ? `, ${operator.name.split(' ')[0]}` : ''}
           </h1>
           <p className="pos-gateway-subtitle">
-            Para começar a registrar vendas, abra um novo caixa ou continue o
-            atendimento em um caixa já aberto.
+            {pdvCapabilities.isSatellite
+              ? 'PDV secundário: continue o caixa já aberto para registrar vendas. Abertura e fechamento ficam no PDV mestre.'
+              : 'Para começar a registrar vendas, abra um novo caixa ou continue o atendimento em um caixa já aberto.'}
           </p>
+
+          {pdvTerminalNumber != null && (
+            <p
+              className="pos-gateway-subtitle"
+              style={{ marginTop: '-0.5rem', fontSize: '0.88rem', opacity: 0.9 }}
+            >
+              Estação: PDV <strong>{pdvTerminalNumber}</strong>
+              {pdvTerminalName ? ` · ${pdvTerminalName}` : ''}
+              {pdvCapabilities.isSatellite ? ' · secundário' : ' · mestre'}
+            </p>
+          )}
+
+          {pdvCapabilities.isSatellite && !hasOpen && (
+            <div className="pos-gateway-notice" role="alert" style={{ cursor: 'default' }}>
+              Não há caixa aberto. Abra o caixa no <strong>PDV mestre</strong> e volte aqui para
+              continuar vendendo.
+            </div>
+          )}
 
           {pendingComanda && (
             <div
@@ -873,58 +913,59 @@ function PosGateway({
               </div>
             </article>
 
-            {/* ----- Abrir novo caixa ----- */}
-            <article
-              className="pos-gateway-card"
-              data-disabled={hasOpen ? 'true' : 'false'}
-            >
-              <div className="pos-gateway-card-icon is-open" aria-hidden>
-                +
-              </div>
-              <h3>Abrir novo caixa</h3>
-              <p className="pos-gateway-card-desc">
-                Iniciar uma nova sessão informando o saldo de troco (fundo de caixa).
-              </p>
+            {pdvCapabilities.canOpenCash ? (
+              <article
+                className="pos-gateway-card"
+                data-disabled={hasOpen ? 'true' : 'false'}
+              >
+                <div className="pos-gateway-card-icon is-open" aria-hidden>
+                  +
+                </div>
+                <h3>Abrir novo caixa</h3>
+                <p className="pos-gateway-card-desc">
+                  Iniciar uma nova sessão informando o saldo de troco (fundo de caixa).
+                </p>
 
-              {operator && (
-                <dl className="pos-gateway-card-info">
-                  <dt>Operador</dt>
-                  <dd>{operator.name}</dd>
-                  <dt>Perfil</dt>
-                  <dd>{profileLabel(operator.profile)}</dd>
-                </dl>
-              )}
+                {operator && (
+                  <dl className="pos-gateway-card-info">
+                    <dt>Operador</dt>
+                    <dd>{operator.name}</dd>
+                    <dt>Perfil</dt>
+                    <dd>{profileLabel(operator.profile)}</dd>
+                  </dl>
+                )}
 
-              <div className="pos-gateway-card-input">
-                <label htmlFor="opening">Saldo inicial (R$)</label>
-                <input
-                  id="opening"
-                  inputMode="decimal"
-                  value={opening}
-                  disabled={hasOpen}
-                  onChange={(e) => setOpening(e.target.value)}
-                  onFocus={(e) => e.currentTarget.select()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !hasOpen && !gatewayBlocked) openMut.mutate();
-                  }}
-                  placeholder="0,00"
-                />
-              </div>
+                <div className="pos-gateway-card-input">
+                  <label htmlFor="opening">Saldo inicial (R$)</label>
+                  <input
+                    id="opening"
+                    inputMode="decimal"
+                    value={opening}
+                    disabled={hasOpen}
+                    onChange={(e) => setOpening(e.target.value)}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !hasOpen && !gatewayBlocked) openMut.mutate();
+                    }}
+                    placeholder="0,00"
+                  />
+                </div>
 
-              <div className="pos-gateway-card-cta">
-                <button
-                  type="button"
-                  className="pos-gateway-btn pos-gateway-btn-secondary"
-                  disabled={hasOpen || openMut.isPending || gatewayBlocked}
-                  onClick={() => openMut.mutate()}
-                >
-                  {openMut.isPending ? 'Abrindo…' : 'Abrir caixa'}
-                </button>
-              </div>
-            </article>
+                <div className="pos-gateway-card-cta">
+                  <button
+                    type="button"
+                    className="pos-gateway-btn pos-gateway-btn-secondary"
+                    disabled={hasOpen || openMut.isPending || gatewayBlocked}
+                    onClick={() => openMut.mutate()}
+                  >
+                    {openMut.isPending ? 'Abrindo…' : 'Abrir caixa'}
+                  </button>
+                </div>
+              </article>
+            ) : null}
           </div>
 
-          {hasOpen && (
+          {hasOpen && pdvCapabilities.canOpenCash && (
             <p
               style={{
                 marginTop: '1.5rem',
@@ -939,7 +980,7 @@ function PosGateway({
           )}
 
           {/* === Bloco exclusivo do gerente: outros caixas abertos === */}
-          {isManagerView && (
+          {isManagerView && !pdvCapabilities.isSatellite && (
             <ManagerOpenSessions
               sessions={openSessions}
               currentUserId={currentUserId}
@@ -1106,17 +1147,26 @@ function ManagerOpenSessions({
 function PosScreen({
   session,
   operator,
+  pdvTerminalId,
+  pdvTerminalNumber,
+  pdvTerminalName,
+  pdvCapabilities,
   onExit,
   onCashClosed,
 }: {
   session: CashSession;
   operator: Operator | null;
+  pdvTerminalId: string | null;
+  pdvTerminalNumber: number | null;
+  pdvTerminalName: string | null;
+  pdvCapabilities: PdvTerminalCapabilities;
   onExit: () => void;
   onCashClosed: () => void;
 }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
+  const productSearchStaleMs = isGestorVendDesktop() ? 120_000 : 0;
 
   /* --- estado do carrinho atual --- */
   const [lines, setLines] = useState<CartLine[]>([]);
@@ -1169,6 +1219,8 @@ function PosScreen({
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [suggestIdx, setSuggestIdx] = useState(0);
   const [customerOpen, setCustomerOpen] = useState(false);
+  /** Modal aberto por crediário/requisição: não permitir voltar a “Balcão”. */
+  const [customerPickRequiresIdentity, setCustomerPickRequiresIdentity] = useState(false);
   const [customerSearch, setCustomerSearch] = useState('');
   const [customerSearchIdx, setCustomerSearchIdx] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -1214,7 +1266,7 @@ function PosScreen({
     sale: SaleSummary;
     selectedItemId: string;
   } | null>(null);
-  const canManagePastSales = isManager();
+  const canManagePastSales = isManager() && pdvCapabilities.canManagePastSales;
   const [permModal, setPermModal] = useState<
     | null
     | { kind: 'discount_finish' }
@@ -1263,7 +1315,7 @@ function PosScreen({
           kind: 'err',
           text: 'Informe o cliente para finalizar com crediário ou requisição.',
         });
-        setCustomerOpen(true);
+        openCustomerDialog({ requiresIdentity: true });
         return;
       }
       let cust = customer;
@@ -1380,7 +1432,7 @@ function PosScreen({
     queryKey: ['products', 'search', scannerValue],
     queryFn: () => api<ProductSearchRow[]>(`/products/search?q=${encodeURIComponent(scannerValue.trim())}`),
     enabled: suggestOpen && scannerValue.trim().length >= 1,
-    staleTime: 0,
+    staleTime: productSearchStaleMs,
   });
 
   /**
@@ -1756,6 +1808,7 @@ function PosScreen({
           guestCount: serviceTabRef.current?.guestCount,
           permissionPassword: permissionPassword || undefined,
           cashSessionId: session.id,
+          terminalId: pdvTerminalId,
           source: serviceTabRef.current
             ? 'RESTAURANT'
             : serviceOrderRef.current
@@ -1879,6 +1932,7 @@ function PosScreen({
       }
       qc.invalidateQueries({ queryKey: ['cash', 'pdv-readiness'] });
       qc.invalidateQueries({ queryKey: ['sales'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
       qc.invalidateQueries({ queryKey: ['reports', 'sales-summary'] });
       qc.invalidateQueries({ queryKey: ['card-transactions'] });
       const concluded = total;
@@ -2408,11 +2462,13 @@ function PosScreen({
     setCustomerOpen(false);
     setCustomerSearch('');
     setCustomerSearchIdx(0);
+    setCustomerPickRequiresIdentity(false);
   }
 
-  function openCustomerDialog() {
+  function openCustomerDialog(opts?: { requiresIdentity?: boolean }) {
     setCustomerSearch('');
     setCustomerSearchIdx(0);
+    setCustomerPickRequiresIdentity(Boolean(opts?.requiresIdentity));
     setCustomerOpen(true);
   }
 
@@ -2449,7 +2505,7 @@ function PosScreen({
     if (isCustomerCreditKind(p.method)) {
       if (!customer?.id) {
         setPendingCreditPayment(p);
-        setCustomerOpen(true);
+        openCustomerDialog({ requiresIdentity: true });
         setToast({
           kind: 'err',
           text: 'Selecione o cliente para usar crediário ou requisição.',
@@ -2569,6 +2625,7 @@ function PosScreen({
           void openPaymentMenu();
         }
       } else if (ev.key === 'F3') {
+        if (!pdvCapabilities.canPdvProcedures) return;
         ev.preventDefault();
         setProceduresOpen(true);
       } else if (ev.key === 'F4') {
@@ -2606,6 +2663,7 @@ function PosScreen({
     itemDiscountDraft,
     serviceTab,
     openPaymentMenu,
+    pdvCapabilities.canPdvProcedures,
   ]);
 
   function tryExit() {
@@ -2626,11 +2684,15 @@ function PosScreen({
         operator={operator}
         salesToday={salesTodayQ.data?.filter((s) => s.status === 'COMPLETED').length ?? 0}
         receiptAutoSummary={receiptAutoSummary}
+        pdvTerminalNumber={pdvTerminalNumber}
+        pdvTerminalName={pdvTerminalName}
+        pdvCapabilities={pdvCapabilities}
         onOpenPrintPrefs={() => setPrintPrefsOpen(true)}
         onOpenHistory={() => setHistoryOpen(true)}
         onOpenProcedures={() => setProceduresOpen(true)}
         onExit={tryExit}
         onCloseCash={() => {
+          if (!pdvCapabilities.canCloseCash) return;
           setCloseOpen(true);
           setClosingByMethod({
             CASH: '',
@@ -3278,7 +3340,7 @@ function PosScreen({
               <button
                 type="button"
                 className="pos-customer-btn"
-                onClick={openCustomerDialog}
+                onClick={() => openCustomerDialog()}
                 title="Selecionar cliente (F4)"
                 tabIndex={serviceTab && !paymentMenuOpen ? -1 : undefined}
               >
@@ -3376,14 +3438,20 @@ function PosScreen({
               consultados na hora.
             </p>
 
-            <button
-              type="button"
-              className="pos-customer-item pos-customer-item--balcao"
-              onClick={() => selectCustomer(null)}
-            >
-              <strong>Balcão (sem cliente)</strong>
-              <span className="pos-customer-item-meta">venda anônima</span>
-            </button>
+            {!customerPickRequiresIdentity ? (
+              <button
+                type="button"
+                className="pos-customer-item pos-customer-item--balcao"
+                onClick={() => selectCustomer(null)}
+              >
+                <strong>Balcão (sem cliente)</strong>
+                <span className="pos-customer-item-meta">venda anônima</span>
+              </button>
+            ) : (
+              <p className="pos-customer-modal-hint" style={{ marginBottom: '0.65rem' }}>
+                Requisição e crediário exigem um cliente cadastrado — pesquise e selecione abaixo.
+              </p>
+            )}
 
             <div className="pos-customer-search-wrap">
               <span className="pos-customer-search-icon" aria-hidden>
@@ -4052,7 +4120,7 @@ function PosScreen({
           onAddPayment={handleAddPayment}
           onRemovePayment={(id) => setPayments((prev) => prev.filter((x) => x.id !== id))}
           onRequireCustomer={() => {
-            setCustomerOpen(true);
+            openCustomerDialog({ requiresIdentity: true });
             setToast({
               kind: 'err',
               text: 'Selecione o cliente para crediário ou requisição.',
@@ -4361,6 +4429,9 @@ function PosTopbar({
   operator,
   salesToday,
   receiptAutoSummary,
+  pdvTerminalNumber,
+  pdvTerminalName,
+  pdvCapabilities,
   onOpenPrintPrefs,
   onOpenHistory,
   onOpenProcedures,
@@ -4371,6 +4442,9 @@ function PosTopbar({
   operator: Operator | null;
   salesToday: number;
   receiptAutoSummary: string;
+  pdvTerminalNumber: number | null;
+  pdvTerminalName: string | null;
+  pdvCapabilities: PdvTerminalCapabilities;
   onOpenPrintPrefs: () => void;
   onOpenHistory: () => void;
   onOpenProcedures: () => void;
@@ -4399,6 +4473,9 @@ function PosTopbar({
       <div className="pos-topbar-info">
         <span>
           <strong>PDV</strong>
+          {pdvTerminalNumber != null ? ` ${pdvTerminalNumber}` : ''}
+          {pdvCapabilities.isSatellite ? ' · secundário' : pdvTerminalNumber != null ? ' · mestre' : ''}
+          {pdvTerminalName ? ` (${pdvTerminalName})` : ''}
         </span>
         {operator && (
           <span className="pos-topbar-operator" title={operator.email}>
@@ -4434,7 +4511,11 @@ function PosTopbar({
         </span>
         <span style={{ fontSize: '0.75rem', color: 'var(--pos-text-muted)' }}>
           <span className="pos-shortcut-key">F2</span> finalizar ·{' '}
-          <span className="pos-shortcut-key">F3</span> procedimentos ·{' '}
+          {pdvCapabilities.canPdvProcedures ? (
+            <>
+              <span className="pos-shortcut-key">F3</span> procedimentos ·{' '}
+            </>
+          ) : null}
           <span className="pos-shortcut-key">F4</span> cliente ·{' '}
           <span className="pos-shortcut-key">F8</span> desconto ·{' '}
           <span className="pos-shortcut-key">F9</span> acréscimo ·{' '}
@@ -4456,20 +4537,26 @@ function PosTopbar({
         >
           Impressão
         </button>
-        <button
-          type="button"
-          className="pos-btn pos-btn-ghost"
-          onClick={onOpenProcedures}
-          title="Sangria, despesas e suprimentos (F3)"
-        >
-          Procedimentos <span className="pos-shortcut-key">F3</span>
-        </button>
-        <button type="button" className="pos-btn pos-btn-ghost" onClick={onOpenHistory}>
-          Vendas recentes
-        </button>
-        <button type="button" className="pos-btn pos-btn-ghost" onClick={onCloseCash}>
-          Fechar caixa
-        </button>
+        {pdvCapabilities.canPdvProcedures ? (
+          <button
+            type="button"
+            className="pos-btn pos-btn-ghost"
+            onClick={onOpenProcedures}
+            title="Sangria, despesas e suprimentos (F3)"
+          >
+            Procedimentos <span className="pos-shortcut-key">F3</span>
+          </button>
+        ) : null}
+        {pdvCapabilities.canManagePastSales ? (
+          <button type="button" className="pos-btn pos-btn-ghost" onClick={onOpenHistory}>
+            Vendas recentes
+          </button>
+        ) : null}
+        {pdvCapabilities.canCloseCash ? (
+          <button type="button" className="pos-btn pos-btn-ghost" onClick={onCloseCash}>
+            Fechar caixa
+          </button>
+        ) : null}
         <button type="button" className="pos-topbar-exit" onClick={onExit}>
           ← Sair
         </button>
@@ -4578,6 +4665,13 @@ function PaymentOverlay({
     }));
   }, [formsQ.data]);
 
+  const tileShortcuts = useMemo(() => buildPaymentTileShortcuts(tiles), [tiles]);
+  const shortcutByTileId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of tileShortcuts) m.set(s.id, s.key);
+    return m;
+  }, [tileShortcuts]);
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = tiles.find((t) => t.id === (selectedId ?? tiles[0]?.id)) ?? tiles[0];
   const method = selected?.kind ?? 'CASH';
@@ -4588,6 +4682,21 @@ function PaymentOverlay({
   useEffect(() => {
     if (!selectedId && tiles[0]) setSelectedId(tiles[0].id);
   }, [tiles, selectedId]);
+
+  function focusAmountField() {
+    window.setTimeout(() => {
+      amountInputRef.current?.focus();
+      amountInputRef.current?.select();
+    }, 0);
+  }
+
+  function pickPaymentTile(tile: (typeof tiles)[number]) {
+    if (tile.kind === 'REQUISITION' && !customerId) {
+      onRequireCustomer();
+    }
+    setSelectedId(tile.id);
+    focusAmountField();
+  }
 
   const fullyPaid = Math.abs(remaining) <= 0.005;
   const canFinish = total > 0 && fullyPaid;
@@ -4640,18 +4749,28 @@ function PaymentOverlay({
       }
       const target = ev.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
-      const isInputFocused = tag === 'input' || tag === 'select' || tag === 'textarea';
-      if (!isInputFocused) {
-        const idx = Number(ev.key) - 1;
-        if (idx >= 0 && idx < tiles.length && idx < 9) {
+      const isAmountInput = target?.id === 'pay-overlay-amount';
+      const isOtherInput =
+        (tag === 'input' || tag === 'select' || tag === 'textarea') && !isAmountInput;
+      if (isOtherInput) return;
+      // No campo valor: dígitos e vírgula/ponto digitam o recebimento; só letras trocam a forma.
+      if (isAmountInput) {
+        const k = ev.key.length === 1 ? ev.key.toUpperCase() : '';
+        if (!/[A-Z]/.test(k)) return;
+      }
+
+      const hit = findTileByShortcutKey(tileShortcuts, ev.key);
+      if (hit) {
+        const tile = tiles.find((t) => t.id === hit.id);
+        if (tile) {
           ev.preventDefault();
-          setSelectedId(tiles[idx]!.id);
+          pickPaymentTile(tile);
         }
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [canFinish, isFinishing, onCancel, onConfirm, tiles]);
+  }, [canFinish, isFinishing, onCancel, onConfirm, tileShortcuts, tiles]);
 
   const feePreview =
     selected?.form?.kind === 'CARD' && remaining > 0
@@ -4739,16 +4858,25 @@ function PaymentOverlay({
           ) : null}
         </div>
 
+        <p className="pos-payment-total-detail" style={{ margin: '0 0 0.65rem', padding: '0 0.25rem' }}>
+          <span className="pos-shortcut-key">A–Z</span> forma · <span className="pos-shortcut-key">Enter</span>{' '}
+          adiciona ·{' '}
+          <span className="pos-shortcut-key">F2</span> confirma · <span className="pos-shortcut-key">Esc</span>{' '}
+          volta
+        </p>
+
         <div className="pos-payment-body">
           <div className="pos-payment-methods-grid">
-            {tiles.map((m, i) => (
+            {tiles.map((m) => (
               <button
                 key={m.id}
                 type="button"
                 className={`pos-payment-tile ${selected?.id === m.id ? 'is-active' : ''}`}
-                onClick={() => setSelectedId(m.id)}
+                onClick={() => pickPaymentTile(m)}
               >
-                {i < 9 ? <span className="pos-payment-tile-shortcut">{i + 1}</span> : null}
+                {shortcutByTileId.get(m.id) ? (
+                  <span className="pos-payment-tile-shortcut">{shortcutByTileId.get(m.id)}</span>
+                ) : null}
                 <span className="pos-payment-tile-icon" aria-hidden>
                   {m.icon}
                 </span>
@@ -4914,7 +5042,7 @@ function PaymentOverlay({
 
         <div className="pos-payment-footer">
           <span className="pos-payment-tip">
-            Atalhos: teclas numéricas escolhem a forma ·{' '}
+            Atalhos: letras <span className="pos-shortcut-key">A–Z</span> escolhem a forma ·{' '}
             <span className="pos-shortcut-key">Enter</span> adicionar ·{' '}
             <span className="pos-shortcut-key">F2</span> confirmar ·{' '}
             <span className="pos-shortcut-key">Esc</span> voltar

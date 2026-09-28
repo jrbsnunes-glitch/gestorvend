@@ -21,7 +21,7 @@ import { CustomerCreditService } from '../catalog/customer-credit.service';
 import { CompanyService } from '../company/company.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { UserPermissionsService } from '../users/user-permissions.service';
-import { parseQueryDate } from '../common/date-range.util';
+import { calendarDateAtLocalNoon, parseQueryDate } from '../common/date-range.util';
 import { resolveSaleStockQuantity } from '../common/product-conversion.util';
 import { PaymentsService } from '../payments/payments.service';
 import { calcRestaurantFees } from '../restaurant/restaurant-fees';
@@ -169,26 +169,22 @@ function splitInstallmentAmounts(total: number, installments: number): number[] 
   return amounts;
 }
 
-/** Primeiro vencimento da requisição: YYYY-MM-DD em horário local (sem deslocar UTC). */
+/** Primeiro vencimento da requisição: dia civil local (meio-dia ao persistir). */
 function resolveRequisitionFirstDue(raw: string | Date | null | undefined): Date {
   if (raw == null || raw === '') {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return today;
+    return calendarDateAtLocalNoon(new Date());
   }
   if (raw instanceof Date) {
     if (Number.isNaN(raw.getTime())) {
       throw new BadRequestException('Vencimento inválido.');
     }
-    const d = new Date(raw);
-    d.setHours(0, 0, 0, 0);
-    return d;
+    return calendarDateAtLocalNoon(raw);
   }
   const parsed = parseQueryDate(String(raw).trim(), 'start');
   if (Number.isNaN(parsed.getTime())) {
     throw new BadRequestException('Vencimento inválido.');
   }
-  return parsed;
+  return calendarDateAtLocalNoon(parsed);
 }
 
 function isCustomerCreditMethod(method: PaymentMethod): boolean {

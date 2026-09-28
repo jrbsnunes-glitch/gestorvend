@@ -15,6 +15,7 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { endOfDay, parseQueryDate, startOfDay } from '../common/date-range.util';
 import { rowMatchesSelectedCostCenter } from '../common/referential-account-flow';
 import { buildProfitabilityReport } from './profitability.report';
+import { sumReceivableSettlementsViaCash } from '../sales/sales-payment-breakdown.util';
 
 /** Piso de período acumulado quando não há datas na query (visão balanço principal). */
 const ACCUMULATED_FLOOR_YEAR = 2026;
@@ -605,6 +606,31 @@ export class FinancialOverviewController {
     const payOpen = num(openPayables._sum.amountRemaining);
     const recOpen = num(openReceivables._sum.amountRemaining);
 
+    const [salePayAtSaleAgg, salePayRequisitionAgg, receivableSettledViaCash] =
+      await Promise.all([
+        db.salePayment.aggregate({
+          where: {
+            method: { not: PaymentMethod.REQUISITION },
+            sale: {
+              status: SaleStatus.COMPLETED,
+              createdAt: { gte: from, lte: to },
+            },
+          },
+          _sum: { amount: true },
+        }),
+        db.salePayment.aggregate({
+          where: {
+            method: PaymentMethod.REQUISITION,
+            sale: {
+              status: SaleStatus.COMPLETED,
+              createdAt: { gte: from, lte: to },
+            },
+          },
+          _sum: { amount: true },
+        }),
+        sumReceivableSettlementsViaCash(db, { from, to }),
+      ]);
+
     const [
       ledgerSalePay,
       ledgerPayCreated,
@@ -972,6 +998,9 @@ export class FinancialOverviewController {
       sales: {
         count: salesAgg._count._all,
         revenueTotal: num(salesAgg._sum.total),
+        receivedAtSale: num(salePayAtSaleAgg._sum.amount),
+        requisitionAtSale: num(salePayRequisitionAgg._sum.amount),
+        receivableSettledViaCash,
       },
       payables: {
         newTitlesCount: payablesNewAgg._count._all,

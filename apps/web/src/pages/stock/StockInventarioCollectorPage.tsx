@@ -1,16 +1,20 @@
 /**
  * Coletor mobile de inventário: bip → pede quantidade → grava → próximo.
- * Câmera: BarcodeDetector (Chrome/Android) ou ZXing (Safari/iPhone). Requer HTTPS ou localhost.
+ * Câmera: BarcodeDetector (Chrome/Android) ou ZXing decodeFromConstraints (Safari/iPhone). HTTPS obrigatório no iPhone.
  * POST /stock-inventories/:id/items com barcode/sku e onDuplicate.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  canUseInventoryCamera,
-  openInventoryCamera,
-  startInventoryBarcodeScan,
-  stopMediaStream,
+  beginInventoryCameraFromUserGesture,
+  inventoryCameraBlockedMessage,
+  iosCameraPermissionHint,
+  isLikelyIos,
+  openInventoryCameraWithTimeout,
+  startInventoryCameraSession,
+  type BarcodeScanEngine,
   type InventoryBarcodeSession,
 } from '../../lib/barcode-scanner';
 import { api } from '../../lib/api';
@@ -75,6 +79,7 @@ export function StockInventarioCollectorPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanSessionRef = useRef<InventoryBarcodeSession | null>(null);
+  const cameraStreamPromiseRef = useRef<Promise<MediaStream> | null>(null);
   const lastScanRef = useRef<{ code: string; at: number }>({ code: '', at: 0 });
   const pendingRef = useRef(false);
   const submitCodeRef = useRef<(raw: string) => void>(() => {});
@@ -86,6 +91,8 @@ export function StockInventarioCollectorPage() {
   const [qtyInput, setQtyInput] = useState('');
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraHint, setCameraHint] = useState<string | null>(null);
+  const [scanEngine, setScanEngine] = useState<BarcodeScanEngine | null>(null);
+  const [cameraBusy, setCameraBusy] = useState(false);
 
   const detail = useQuery({
     queryKey: ['stock-inventories', id],
@@ -120,36 +127,9 @@ export function StockInventarioCollectorPage() {
     return () => {
       scanSessionRef.current?.stop();
       scanSessionRef.current = null;
-      stopMediaStream(streamRef.current);
       streamRef.current = null;
     };
   }, []);
-
-  /** Liga o stream ao <video> depois que o elemento monta (senão a área fica preta). */
-  useEffect(() => {
-    if (!cameraOn) return;
-    const video = videoRef.current;
-    const stream = streamRef.current;
-    if (!video || !stream) return;
-
-    video.muted = true;
-    video.setAttribute('playsinline', 'true');
-    video.setAttribute('webkit-playsinline', 'true');
-    video.srcObject = stream;
-
-    const tryPlay = () => {
-      void video.play().catch(() => {
-        setCameraHint('Toque na área da câmera para iniciar o vídeo.');
-      });
-    };
-
-    if (video.readyState >= 2) tryPlay();
-    else video.addEventListener('loadedmetadata', tryPlay, { once: true });
-
-    return () => {
-      video.removeEventListener('loadedmetadata', tryPlay);
-    };
-  }, [cameraOn]);
 
   const saveQtyMut = useMutation({
     mutationFn: (args: { variantId: string; code: string; countedQty: string }) =>
@@ -263,72 +243,101 @@ export function StockInventarioCollectorPage() {
     });
   }
 
-  async function toggleCamera() {
-    if (cameraOn) {
-      scanSessionRef.current?.stop();
-      scanSessionRef.current = null;
-      stopMediaStream(streamRef.current);
-      streamRef.current = null;
-      if (videoRef.current) videoRef.current.srcObject = null;
-      setCameraOn(false);
-      setCameraHint(null);
-      if (!pending) focusScan();
-      return;
-    }
-    if (!canUseInventoryCamera()) {
-      setCameraHint(
-        'Câmera indisponível neste navegador. Use o campo de código ou um leitor Bluetooth.',
-      );
-      return;
-    }
-    try {
-      const stream = await openInventoryCamera();
-      streamRef.current = stream;
-      setCameraHint(null);
-      setCameraOn(true);
-    } catch {
-      setCameraHint('Não foi possível acessar a câmera. Verifique a permissão do navegador.');
-      setCameraOn(false);
+  function formatCameraError(e: unknown): string {
+    const dom = e instanceof DOMException ? e.name : '';
+    const detail =
+      dom === 'NotAllowedError'
+        ? 'Permissão da câmera negada ou bloqueada.'
+        : dom === 'NotFoundError'
+          ? 'Nenhuma câmera encontrada.'
+          : dom === 'TimeoutError'
+            ? 'O sistema não respondeu (sem popup de permissão).'
+            : e instanceof Error && e.message === 'NO_GET_USER_MEDIA'
+              ? 'Este navegador não expõe câmera (use HTTPS).'
+              : '';
+    const secure = typeof window !== 'undefined' && window.isSecureContext ? 'HTTPS ok' : 'sem HTTPS';
+    return isLikelyIos()
+      ? `Câmera indisponível${detail ? `: ${detail}` : ''}. ${secure}. ${iosCameraPermissionHint()}. Toque e segure «Câmera» ou use o campo de código.`
+      : `Não foi possível acessar a câmera${detail ? ` (${detail})` : ''}. ${secure}. Verifique a permissão do navegador.`;
+  }
+
+  function onCameraButtonPointerDown() {
+    if (cameraOn || cameraBusy) return;
+    if (inventoryCameraBlockedMessage()) return;
+    if (!cameraStreamPromiseRef.current) {
+      cameraStreamPromiseRef.current = beginInventoryCameraFromUserGesture();
     }
   }
 
-  useEffect(() => {
-    if (!cameraOn) return;
-    let cancelled = false;
+  function closeCamera() {
+    scanSessionRef.current?.stop();
+    scanSessionRef.current = null;
+    streamRef.current = null;
+    cameraStreamPromiseRef.current = null;
+    setCameraOn(false);
+    setCameraHint(null);
+    setScanEngine(null);
+    setCameraBusy(false);
+    if (!pending) focusScan();
+  }
+
+  async function openCameraFromClick() {
+    const blocked = inventoryCameraBlockedMessage();
+    if (blocked) {
+      setCameraHint(blocked);
+      return;
+    }
 
     const video = videoRef.current;
-    if (!video) return;
+    if (!video) {
+      setCameraHint('Não foi possível iniciar a câmera. Recarregue a página e tente de novo.');
+      return;
+    }
 
-    const armScanner = async () => {
+    const streamPromise =
+      cameraStreamPromiseRef.current ?? openInventoryCameraWithTimeout();
+    cameraStreamPromiseRef.current = null;
+
+    flushSync(() => {
+      setCameraHint(null);
+      setCameraOn(true);
+      setCameraBusy(true);
+    });
+
+    scanSessionRef.current?.stop();
+    scanSessionRef.current = null;
+
+    try {
+      const session = await startInventoryCameraSession(
+        video,
+        (raw) => submitCodeRef.current(raw),
+        () => pendingRef.current,
+        { streamPromise },
+      );
+      scanSessionRef.current = session;
+      streamRef.current = session.stream;
+      setScanEngine(session.engine);
+      setCameraHint(null);
+    } catch (e) {
+      cameraStreamPromiseRef.current = null;
+      setCameraHint(formatCameraError(e));
       scanSessionRef.current?.stop();
       scanSessionRef.current = null;
-      try {
-        const session = await startInventoryBarcodeScan(
-          video,
-          (raw) => submitCodeRef.current(raw),
-          () => pendingRef.current || cancelled,
-        );
-        if (cancelled) {
-          session.stop();
-          return;
-        }
-        scanSessionRef.current = session;
-      } catch {
-        if (!cancelled) {
-          setCameraHint('Não foi possível iniciar a leitura automática. Use o campo de código.');
-        }
-      }
-    };
+      streamRef.current = null;
+      setCameraOn(false);
+      setScanEngine(null);
+    } finally {
+      setCameraBusy(false);
+    }
+  }
 
-    if (video.readyState >= 2) void armScanner();
-    else video.addEventListener('loadedmetadata', () => void armScanner(), { once: true });
-
-    return () => {
-      cancelled = true;
-      scanSessionRef.current?.stop();
-      scanSessionRef.current = null;
-    };
-  }, [cameraOn, id, inv?.status]);
+  function toggleCamera() {
+    if (cameraOn) {
+      closeCamera();
+      return;
+    }
+    void openCameraFromClick();
+  }
 
   const recent = (inv?.items ?? [])
     .slice()
@@ -470,25 +479,53 @@ export function StockInventarioCollectorPage() {
             >
               {resolveAfterScan.isPending ? 'Buscando…' : 'Confirmar código'}
             </button>
-            <button type="button" className="btn btn-secondary" onClick={() => void toggleCamera()}>
-              {cameraOn ? 'Fechar câmera' : 'Câmera'}
+            <button
+              type="button"
+              className="btn btn-secondary inv-collector__camera-btn"
+              disabled={cameraBusy}
+              onPointerDown={onCameraButtonPointerDown}
+              onTouchStart={onCameraButtonPointerDown}
+              onClick={() => toggleCamera()}
+            >
+              {cameraBusy ? 'Abrindo…' : cameraOn ? 'Fechar câmera' : 'Câmera'}
             </button>
           </div>
         </div>
       )}
 
-      {cameraOn && (
-        <div
-          className="inv-collector__camera"
-          hidden={Boolean(pending)}
-          onClick={() => {
-            const v = videoRef.current;
-            if (v?.paused) void v.play().catch(() => undefined);
-          }}
-        >
-          <video ref={videoRef} playsInline muted autoPlay />
-        </div>
-      )}
+      <div
+        className={`inv-collector__camera${!cameraOn && !cameraBusy ? ' inv-collector__camera--off' : ''}${pending ? ' inv-collector__camera--off' : ''}`}
+        onClick={() => {
+          if (!cameraOn && !cameraBusy) return;
+          const v = videoRef.current;
+          if (!v) return;
+          void v.play().catch(() => {
+            setCameraHint('Toque na imagem se o vídeo estiver preto.');
+          });
+        }}
+      >
+        <video ref={videoRef} playsInline muted autoPlay />
+        {(cameraOn || cameraBusy) && !pending && (
+          <>
+            {cameraBusy && (
+              <p className="inv-collector__camera-status" role="status">
+                Aguardando permissão da câmera…
+              </p>
+            )}
+            <span className="inv-collector__camera-badge" aria-hidden>
+              {scanEngine === 'native'
+                ? 'Leitor nativo'
+                : scanEngine === 'zxing'
+                  ? isLikelyIos()
+                    ? 'iOS · ZXing'
+                    : 'ZXing'
+                  : cameraBusy
+                    ? 'Abrindo…'
+                    : '…'}
+            </span>
+          </>
+        )}
+      </div>
 
       <section className="inv-collector__recent">
         <h3>

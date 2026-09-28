@@ -23,6 +23,7 @@ import {
 } from '../generated/tenant-client';
 
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { sumReceivableSettlementsViaCash } from '../sales/sales-payment-breakdown.util';
 
 import {
 
@@ -114,13 +115,21 @@ export class DashboardController {
 
       salesMonthAgg,
 
-      receivedTodayAgg,
+      receivedAtSaleTodayAgg,
 
-      deferredTodayAgg,
+      requisitionTodayAgg,
 
-      receivedMonthAgg,
+      creditAtSaleTodayAgg,
 
-      deferredMonthAgg,
+      receivedAtSaleMonthAgg,
+
+      requisitionMonthAgg,
+
+      creditAtSaleMonthAgg,
+
+      receivableCashTodayAgg,
+
+      receivableCashMonthAgg,
 
       topItems,
 
@@ -170,7 +179,7 @@ export class DashboardController {
 
         where: {
 
-          method: { notIn: [PaymentMethod.CREDIT, PaymentMethod.REQUISITION] },
+          method: { not: PaymentMethod.REQUISITION },
 
           sale: {
 
@@ -190,7 +199,7 @@ export class DashboardController {
 
         where: {
 
-          method: { in: [PaymentMethod.CREDIT, PaymentMethod.REQUISITION] },
+          method: PaymentMethod.REQUISITION,
 
           sale: {
 
@@ -210,7 +219,27 @@ export class DashboardController {
 
         where: {
 
-          method: { notIn: [PaymentMethod.CREDIT, PaymentMethod.REQUISITION] },
+          method: PaymentMethod.CREDIT,
+
+          sale: {
+
+            status: SaleStatus.COMPLETED,
+
+            createdAt: { gte: todayStart, lte: todayEnd },
+
+          },
+
+        },
+
+        _sum: { amount: true },
+
+      }),
+
+      db.salePayment.aggregate({
+
+        where: {
+
+          method: { not: PaymentMethod.REQUISITION },
 
           sale: {
 
@@ -230,7 +259,7 @@ export class DashboardController {
 
         where: {
 
-          method: { in: [PaymentMethod.CREDIT, PaymentMethod.REQUISITION] },
+          method: PaymentMethod.REQUISITION,
 
           sale: {
 
@@ -245,6 +274,30 @@ export class DashboardController {
         _sum: { amount: true },
 
       }),
+
+      db.salePayment.aggregate({
+
+        where: {
+
+          method: PaymentMethod.CREDIT,
+
+          sale: {
+
+            status: SaleStatus.COMPLETED,
+
+            createdAt: { gte: monthStart, lte: todayEnd },
+
+          },
+
+        },
+
+        _sum: { amount: true },
+
+      }),
+
+      sumReceivableSettlementsViaCash(db, { from: todayStart, to: todayEnd }),
+
+      sumReceivableSettlementsViaCash(db, { from: monthStart, to: todayEnd }),
 
       db.saleItem.groupBy({
 
@@ -326,13 +379,21 @@ export class DashboardController {
 
     const revenueMonth = Number(salesMonthAgg._sum.total ?? 0);
 
-    const receivedToday = Number(receivedTodayAgg._sum.amount ?? 0);
+    const receivedAtSaleToday = Number(receivedAtSaleTodayAgg._sum.amount ?? 0);
 
-    const deferredToday = Number(deferredTodayAgg._sum.amount ?? 0);
+    const requisitionToday = Number(requisitionTodayAgg._sum.amount ?? 0);
 
-    const receivedMonth = Number(receivedMonthAgg._sum.amount ?? 0);
+    const creditAtSaleToday = Number(creditAtSaleTodayAgg._sum.amount ?? 0);
 
-    const deferredMonth = Number(deferredMonthAgg._sum.amount ?? 0);
+    const receivedAtSaleMonth = Number(receivedAtSaleMonthAgg._sum.amount ?? 0);
+
+    const requisitionMonth = Number(requisitionMonthAgg._sum.amount ?? 0);
+
+    const creditAtSaleMonth = Number(creditAtSaleMonthAgg._sum.amount ?? 0);
+
+    const receivableCashToday = receivableCashTodayAgg;
+
+    const receivableCashMonth = receivableCashMonthAgg;
 
     const countToday = salesTodayAgg._count._all;
 
@@ -458,13 +519,21 @@ export class DashboardController {
 
         month: revenueMonth,
 
-        receivedToday,
+        receivedAtSaleToday,
 
-        deferredToday,
+        receivedAtSaleMonth,
 
-        receivedMonth,
+        requisitionToday,
 
-        deferredMonth,
+        requisitionMonth,
+
+        creditAtSaleToday,
+
+        creditAtSaleMonth,
+
+        receivableCashToday,
+
+        receivableCashMonth,
 
       },
 

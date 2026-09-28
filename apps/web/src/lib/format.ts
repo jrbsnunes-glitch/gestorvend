@@ -1,4 +1,4 @@
-import { toLocalISODate } from './local-date';
+import { calendarDayFromInstant, getActiveBusinessTimezone } from './business-timezone';
 
 export function digitsOnly(value: string | undefined | null, max?: number): string {
   const d = String(value ?? '').replace(/\D/g, '');
@@ -49,22 +49,30 @@ export function formatBRL(value: number | string | undefined | null): string {
 /** Data civil (sem hora) para prazos, vencimentos e inputs type=date. */
 export function formatCalendarDate(iso: string | Date | undefined | null): string {
   if (!iso) return '—';
+  const tz = getActiveBusinessTimezone();
   const key =
     typeof iso === 'string'
       ? /^\d{4}-\d{2}-\d{2}$/.test(iso.slice(0, 10))
         ? iso.slice(0, 10)
-        : toLocalISODate(iso)
-      : toLocalISODate(iso.toISOString());
+        : calendarDayFromInstant(new Date(iso), tz)
+      : calendarDayFromInstant(iso, tz);
   if (!key) return '—';
-  return new Date(`${key}T12:00:00`).toLocaleDateString('pt-BR');
+  const [y, m, d] = key.split('-').map(Number);
+  if (!y || !m || !d) return '—';
+  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeZone: tz }).format(
+    new Date(Date.UTC(y, m - 1, d, 12, 0, 0)),
+  );
 }
 
 export function formatDate(iso: string | Date | undefined | null): string {
   if (!iso) return '—';
+  const tz = getActiveBusinessTimezone();
   if (typeof iso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(iso.trim())) {
     const [y, m, d] = iso.trim().split('-').map(Number);
     if (y && m && d) {
-      return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(new Date(y, m - 1, d));
+      return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeZone: tz }).format(
+        new Date(Date.UTC(y, m - 1, d, 12, 0, 0)),
+      );
     }
   }
   const d = typeof iso === 'string' ? new Date(iso) : iso;
@@ -72,6 +80,7 @@ export function formatDate(iso: string | Date | undefined | null): string {
   return new Intl.DateTimeFormat('pt-BR', {
     dateStyle: 'short',
     timeStyle: 'short',
+    timeZone: tz,
   }).format(d);
 }
 

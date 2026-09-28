@@ -5,7 +5,7 @@ import { StandardReportHeader } from '../components/StandardReportHeader';
 import { BillPaymentsButton } from '../components/BillSettlementsModal';
 import { api } from '../lib/api';
 import { hasInformedPayment, PAYMENT_LABELS, saldoAbertoBill } from '../lib/finance-bills';
-import { formatBRL, formatDate } from '../lib/format';
+import { formatBRL, formatCalendarDate, formatDate } from '../lib/format';
 import './cash-print.css';
 
 type CashSess = {
@@ -634,7 +634,7 @@ export function FinancePrintPage() {
           <dt>Descrição</dt>
           <dd>{p.description}</dd>
           <dt>Vencimento</dt>
-          <dd>{formatDate(p.dueDate)}</dd>
+          <dd>{formatCalendarDate(p.dueDate)}</dd>
           <dt>Valor (face)</dt>
           <dd>{formatBRL(p.amount)}</dd>
           <dt>Saldo em aberto</dt>
@@ -696,7 +696,7 @@ export function FinancePrintPage() {
           <dt>Descrição</dt>
           <dd>{r.description}</dd>
           <dt>Vencimento</dt>
-          <dd>{formatDate(r.dueDate)}</dd>
+          <dd>{formatCalendarDate(r.dueDate)}</dd>
           <dt>Valor (face)</dt>
           <dd>{formatBRL(r.amount)}</dd>
           <dt>Saldo em aberto</dt>
@@ -841,7 +841,7 @@ export function FinancePrintPage() {
                 return (
                 <tr key={p.id}>
                   <td className="num">{idx + 1}</td>
-                  <td>{formatDate(p.dueDate)}</td>
+                  <td>{formatCalendarDate(p.dueDate)}</td>
                   <td>{p.description}</td>
                   <td>
                     <PartyCell row={p} />
@@ -911,7 +911,7 @@ export function FinancePrintPage() {
                 return (
                 <tr key={r.id}>
                   <td className="num">{idx + 1}</td>
-                  <td>{formatDate(r.dueDate)}</td>
+                  <td>{formatCalendarDate(r.dueDate)}</td>
                   <td>{r.description}</td>
                   <td>
                     <PartyCell row={r} />

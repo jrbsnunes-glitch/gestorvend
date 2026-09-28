@@ -1,13 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { api } from '../lib/api';
+
+type PdvTerminalRole = 'PRIMARY' | 'SATELLITE';
 
 type Terminal = {
   id: string;
   number: number;
   name: string;
   mode: 'SELF_SERVICE' | 'OPERATOR';
+  role: PdvTerminalRole;
   isActive: boolean;
   allowedMethods: string[];
   operatorUserId: string | null;
@@ -16,6 +19,15 @@ type Terminal = {
   createdAt: string;
   pairingUrl: string;
 };
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 type MpPointTerminal = {
   id: string;
@@ -120,8 +132,10 @@ export function PdvTerminalsPage() {
   const qc = useQueryClient();
   const [name, setName] = useState('');
   const [number, setNumber] = useState('');
-  const [mode, setMode] = useState<'SELF_SERVICE' | 'OPERATOR'>('SELF_SERVICE');
+  const [mode, setMode] = useState<'SELF_SERVICE' | 'OPERATOR'>('OPERATOR');
+  const [role, setRole] = useState<PdvTerminalRole>('SATELLITE');
   const [err, setErr] = useState<string | null>(null);
+  const [copyHint, setCopyHint] = useState<string | null>(null);
   const [tokenModal, setTokenModal] = useState<{ name: string; token: string; number: number } | null>(
     null,
   );
@@ -141,6 +155,7 @@ export function PdvTerminalsPage() {
         json: {
           name: name.trim(),
           mode,
+          role,
           ...(number.trim() ? { number: Math.floor(Number(number)) } : {}),
         },
       }),
@@ -159,6 +174,7 @@ export function PdvTerminalsPage() {
       id: string;
       isActive?: boolean;
       name?: string;
+      role?: PdvTerminalRole;
       mpPointTerminalId?: string | null;
     }) =>
       api(`/pdv-terminals/${encodeURIComponent(body.id)}`, {
@@ -166,6 +182,7 @@ export function PdvTerminalsPage() {
         json: {
           isActive: body.isActive,
           name: body.name,
+          role: body.role,
           mpPointTerminalId: body.mpPointTerminalId,
         },
       }),
@@ -206,10 +223,14 @@ export function PdvTerminalsPage() {
     onError: (e: Error) => setErr(e.message),
   });
 
-  const pairingBase = useMemo(() => {
-    if (typeof window === 'undefined') return '';
-    return `${window.location.origin}/auto-atendimento`;
-  }, []);
+  useEffect(() => {
+    if (!number.trim()) {
+      setRole('SATELLITE');
+      return;
+    }
+    const n = Math.floor(Number(number));
+    if (n === 1) setRole('PRIMARY');
+  }, [number]);
 
   return (
     <div className="page">
@@ -224,6 +245,11 @@ export function PdvTerminalsPage() {
       </header>
 
       {err ? <div className="alert alert-error">{err}</div> : null}
+      {copyHint ? (
+        <div className="alert alert-success" style={{ marginBottom: '1rem' }}>
+          {copyHint}
+        </div>
+      ) : null}
 
       <section className="card" style={{ marginBottom: '1.5rem' }}>
         <h2 style={{ marginTop: 0 }}>Novo terminal</h2>
@@ -252,9 +278,22 @@ export function PdvTerminalsPage() {
             <label htmlFor="pdv-mode">Modo</label>
             <select id="pdv-mode" value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
               <option value="SELF_SERVICE">Autoatendimento (kiosk)</option>
-              <option value="OPERATOR">Operador</option>
+              <option value="OPERATOR">Operador (balcão / Desktop)</option>
             </select>
           </div>
+          {mode === 'OPERATOR' ? (
+            <div className="field">
+              <label htmlFor="pdv-role">Papel</label>
+              <select
+                id="pdv-role"
+                value={role}
+                onChange={(e) => setRole(e.target.value as PdvTerminalRole)}
+              >
+                <option value="PRIMARY">Mestre (abre/fecha caixa)</option>
+                <option value="SATELLITE">Secundário (só vendas)</option>
+              </select>
+            </div>
+          ) : null}
         </div>
         <button
           type="button"
@@ -277,6 +316,7 @@ export function PdvTerminalsPage() {
                 <th>PDV</th>
                 <th>Nome</th>
                 <th>Modo</th>
+                <th>Papel</th>
                 <th>Status</th>
                 <th>Point MP</th>
                 <th>Último contato</th>
@@ -292,6 +332,23 @@ export function PdvTerminalsPage() {
                   </td>
                   <td>{t.name}</td>
                   <td>{t.mode === 'SELF_SERVICE' ? 'Autoatendimento' : 'Operador'}</td>
+                  <td>
+                    {t.mode === 'OPERATOR' ? (
+                      <select
+                        value={t.role}
+                        disabled={patch.isPending}
+                        onChange={(e) =>
+                          patch.mutate({ id: t.id, role: e.target.value as PdvTerminalRole })
+                        }
+                        style={{ fontSize: '0.85rem' }}
+                      >
+                        <option value="PRIMARY">Mestre</option>
+                        <option value="SATELLITE">Secundário</option>
+                      </select>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                   <td>{t.isActive ? 'Ativo' : 'Inativo'}</td>
                   <td>
                     <MpPointCell
@@ -305,9 +362,20 @@ export function PdvTerminalsPage() {
                   </td>
                   <td>{formatSeen(t.lastSeenAt)}</td>
                   <td>
-                    <code style={{ fontSize: '0.8rem' }}>
-                      {pairingBase}?terminal={t.number}
-                    </code>
+                    <code style={{ fontSize: '0.8rem', wordBreak: 'break-all' }}>{t.pairingUrl}</code>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ marginTop: '0.35rem', display: 'block' }}
+                      onClick={() => {
+                        void copyText(t.pairingUrl).then((ok) => {
+                          setCopyHint(ok ? 'Link copiado.' : 'Não foi possível copiar.');
+                          window.setTimeout(() => setCopyHint(null), 2500);
+                        });
+                      }}
+                    >
+                      Copiar link
+                    </button>
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
@@ -375,9 +443,11 @@ export function PdvTerminalsPage() {
               onFocus={(e) => e.target.select()}
             />
             <p style={{ fontSize: '0.85rem' }}>
-              URL:{' '}
+              Link PDV:{' '}
               <code>
-                {pairingBase}?terminal={tokenModal.number}
+                {typeof window !== 'undefined'
+                  ? `${window.location.origin}/vendas?terminal=${tokenModal.number}`
+                  : `/vendas?terminal=${tokenModal.number}`}
               </code>
             </p>
             <button type="button" className="btn btn-primary" onClick={() => setTokenModal(null)}>

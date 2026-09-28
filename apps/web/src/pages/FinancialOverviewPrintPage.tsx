@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
+import { SalesRevenueBreakdown } from '../components/SalesRevenueBreakdown';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
@@ -39,7 +40,13 @@ type PrintSummary = {
       operatorName: string | null;
     }>;
   };
-  sales: { count: number; revenueTotal: number };
+  sales: {
+    count: number;
+    revenueTotal: number;
+    receivedAtSale?: number;
+    requisitionAtSale?: number;
+    receivableSettledViaCash?: number;
+  };
   payables: {
     settledFullyInPeriodAmount: number;
     settledOffCashInPeriodAmount: number;
@@ -214,6 +221,15 @@ export function FinancialOverviewPrintPage() {
                 <dd>
                   {formatBRL(d.sales.revenueTotal)} — {d.sales.count} venda(s)
                 </dd>
+              </dl>
+              <SalesRevenueBreakdown
+                compact
+                revenueTotal={d.sales.revenueTotal}
+                receivedAtSale={d.sales.receivedAtSale ?? d.sales.revenueTotal}
+                requisitionAtSale={d.sales.requisitionAtSale ?? 0}
+                receivableSettledViaCash={d.sales.receivableSettledViaCash ?? 0}
+              />
+              <dl className="gv-finance-dl">
                 <dt>Pago — títulos quitados no período (total)</dt>
                 <dd>{formatBRL(d.payables.settledFullyInPeriodAmount)}</dd>
                 <dt>Pago — fora do caixa no período</dt>

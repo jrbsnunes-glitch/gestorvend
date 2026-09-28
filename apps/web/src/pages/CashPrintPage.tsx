@@ -3,6 +3,8 @@ import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
+import { SalesRevenueBreakdown } from '../components/SalesRevenueBreakdown';
+import { PAYMENT_LABELS } from '../lib/finance-bills';
 import { formatBRL } from '../lib/format';
 import {
   analyzeCashExpenseDiff,
@@ -51,6 +53,9 @@ type ReportSession = {
   cancelledCount: number;
   itemsCount: number;
   totalCompleted: number;
+  totalReceivedAtSale?: number;
+  totalRequisitionAtSale?: number;
+  totalReceivableCollectionsViaCash?: number;
   totalCancelled: number;
   totalDiscounts: number;
   totalSurcharges: number;
@@ -71,6 +76,9 @@ type ReportData = {
     cancelledCount: number;
     itemsCount: number;
     totalCompleted: number;
+    totalReceivedAtSale?: number;
+    totalRequisitionAtSale?: number;
+    totalReceivableCollectionsViaCash?: number;
     totalCancelled: number;
     totalDiscounts: number;
     totalSurcharges: number;
@@ -101,15 +109,6 @@ type SoldItemRow = {
 };
 
 type ItemsReport = { items: SoldItemRow[] };
-
-const PAYMENT_LABELS: Record<string, string> = {
-  CASH: 'Dinheiro',
-  CARD: 'Cartão',
-  PIX: 'Pix',
-  CREDIT: 'Crediário',
-  OTHER: 'Outro',
-  EXPENSE: 'Despesa',
-};
 
 function fmtDateTime(iso: string | null): string {
   if (!iso) return '—';
@@ -405,6 +404,17 @@ export function CashPrintPage() {
                   </tfoot>
                 </table>
               )}
+              <section className="print-section">
+                <h2>Composição das vendas</h2>
+                <SalesRevenueBreakdown
+                  compact
+                  revenueTotal={data.totals.totalCompleted}
+                  receivedAtSale={data.totals.totalReceivedAtSale ?? data.totals.totalCompleted}
+                  requisitionAtSale={data.totals.totalRequisitionAtSale ?? 0}
+                  receivableSettledViaCash={data.totals.totalReceivableCollectionsViaCash ?? 0}
+                />
+              </section>
+
               {(data.totals.totalDiscounts > 0 || (data.totals.totalSurcharges ?? 0) > 0) && (
                 <p className="print-summary-line">
                   {data.totals.totalDiscounts > 0

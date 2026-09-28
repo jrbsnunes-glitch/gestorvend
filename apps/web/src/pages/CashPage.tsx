@@ -76,6 +76,9 @@ type CashSessionRow = {
   /** Total de vendas COMPLETED na janela do caixa (mesmo critério do detalhe). */
   totalCompletedSales: number;
   totalReceivedAtSale?: number;
+  totalRequisitionAtSale?: number;
+  totalCreditAtSale?: number;
+  totalReceivableCollectionsViaCash?: number;
   totalDeferredSales?: number;
   /** Declarado total − esperado total (Conciliação); null se não há fechamento/rubrica declarada. */
   reconciliationDifference: number | null;
@@ -148,6 +151,9 @@ type SessionDetail = {
     cancelledCount: number;
     totalCompleted: number;
     totalReceivedAtSale?: number;
+    totalRequisitionAtSale?: number;
+    totalCreditAtSale?: number;
+    totalReceivableCollectionsViaCash?: number;
     totalDeferredSales?: number;
     totalCancelled: number;
     itemsCount: number;
@@ -2260,14 +2266,21 @@ function SessionDetailDrawer({
                 <KpiCard label="Vendas concluídas" value={String(sum.completedCount)} />
                 <KpiCard label="Total faturado" value={formatBRL(sum.totalCompleted)} />
                 <KpiCard
-                  label="Recebido no caixa"
+                  label="Recebido no ato"
                   value={formatBRL(sum.totalReceivedAtSale ?? sum.totalCompleted)}
                   highlight
                 />
-                {(sum.totalDeferredSales ?? 0) > 0 ? (
+                {(sum.totalRequisitionAtSale ?? 0) > 0 ? (
                   <KpiCard
-                    label="A prazo (crediário/requisição)"
-                    value={formatBRL(sum.totalDeferredSales ?? 0)}
+                    label="Em requisição"
+                    value={formatBRL(sum.totalRequisitionAtSale ?? 0)}
+                    small
+                  />
+                ) : null}
+                {(sum.totalReceivableCollectionsViaCash ?? 0) > 0 ? (
+                  <KpiCard
+                    label="Títulos recebidos no caixa"
+                    value={formatBRL(sum.totalReceivableCollectionsViaCash ?? 0)}
                     small
                   />
                 ) : null}

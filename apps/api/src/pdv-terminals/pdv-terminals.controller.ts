@@ -17,7 +17,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
-import { PaymentMethod, PdvTerminalMode } from '../generated/tenant-client';
+import { PaymentMethod, PdvTerminalMode, PdvTerminalRole } from '../generated/tenant-client';
 import { TenantService } from '../tenant/tenant.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { PdvTerminalsService } from './pdv-terminals.service';
@@ -114,6 +114,13 @@ export class PdvTerminalsController {
     return this.terminals.list(user.tenantSlug);
   }
 
+  @Get('by-number/:number')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'manager', 'seller', 'finance', 'waiter')
+  byNumber(@CurrentUser() user: JwtPayload, @Param('number') numberParam: string) {
+    return this.terminals.getByNumber(user.tenantSlug, Math.floor(Number(numberParam)));
+  }
+
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin', 'manager')
@@ -124,6 +131,7 @@ export class PdvTerminalsController {
       number?: number;
       name: string;
       mode?: PdvTerminalMode;
+      role?: PdvTerminalRole;
       allowedMethods?: string[];
       operatorUserId?: string | null;
     },
@@ -141,6 +149,7 @@ export class PdvTerminalsController {
     body: {
       name?: string;
       mode?: PdvTerminalMode;
+      role?: PdvTerminalRole;
       isActive?: boolean;
       allowedMethods?: string[];
       operatorUserId?: string | null;

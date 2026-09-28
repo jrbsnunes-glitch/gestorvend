@@ -14,6 +14,7 @@ import {
 } from '../components/ListFilterFields';
 import { ListFilterCustomerField } from '../components/ListFilterCustomerField';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
+import { SalesRevenueBreakdown } from '../components/SalesRevenueBreakdown';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
 import { ledgerDirectionLabel, ledgerKindLabel } from '../lib/financial-overview-ledger-labels';
@@ -37,6 +38,13 @@ type Summary = {
   cash: {
     periodInflows: number;
     periodOutflows: number;
+  };
+  sales?: {
+    count: number;
+    revenueTotal: number;
+    receivedAtSale?: number;
+    requisitionAtSale?: number;
+    receivableSettledViaCash?: number;
   };
 };
 
@@ -355,6 +363,15 @@ export function FinancialOverviewPage() {
               minute: '2-digit',
             })}
           </p>
+
+          {data.sales ? (
+            <SalesRevenueBreakdown
+              revenueTotal={data.sales.revenueTotal}
+              receivedAtSale={data.sales.receivedAtSale ?? data.sales.revenueTotal}
+              requisitionAtSale={data.sales.requisitionAtSale ?? 0}
+              receivableSettledViaCash={data.sales.receivableSettledViaCash ?? 0}
+            />
+          ) : null}
 
           <div
             className="dash-hero"

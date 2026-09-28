@@ -28,6 +28,8 @@ model Company {
   district    String? @db.VarChar(80)
   city        String?
   state       String?
+  /// Fuso IANA da operação (ex.: America/Sao_Paulo). Padrão inicial pela UF no cadastro.
+  timezone    String   @default("America/Sao_Paulo") @db.VarChar(64)
   zip         String?
   logoUrl     String?
   /// Comprovante térmico interno (não transmite SEFAZ) x planejamento para documento fiscal eletrônico.
@@ -1625,6 +1627,12 @@ enum PdvTerminalMode {
   OPERATOR
 }
 
+/// Mestre (gerência + venda) vs secundário (só venda/impressão).
+enum PdvTerminalRole {
+  PRIMARY
+  SATELLITE
+}
+
 /// Terminal PDV numerado (autoatendimento ou operador).
 model PdvTerminal {
   id               String          @id @default(uuid())
@@ -1632,6 +1640,7 @@ model PdvTerminal {
   number           Int             @unique
   name             String          @db.VarChar(120)
   mode             PdvTerminalMode @default(SELF_SERVICE)
+  role             PdvTerminalRole @default(SATELLITE)
   isActive         Boolean         @default(true)
   /// Hash bcrypt do token de pareamento (token = id.secret).
   secretHash       String          @db.VarChar(120)

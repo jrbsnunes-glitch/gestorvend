@@ -6,6 +6,7 @@ import { api, apiUpload } from '../lib/api';
 import { hasFactoryModule } from '../lib/auth';
 import { resolveCompanyAssetUrl } from '../lib/company-branding';
 import { useMenuAccess } from '../hooks/useMenuAccess';
+import { timezoneFromBrazilUf } from '../lib/business-timezone';
 import { digitsOnly, formatCep, formatCnpj } from '../lib/format';
 import { lookupCep } from '../lib/lookups';
 import '../components/crud-toolbar.css';
@@ -37,6 +38,7 @@ type Company = {
   district?: string | null;
   city: string | null;
   state: string | null;
+  timezone?: string | null;
   zip: string | null;
   logoUrl: string | null;
   /** Comprovante interno × planejamento documento fiscal (NF-e futura). */
@@ -98,6 +100,7 @@ const EMPTY_FORM: FormState = {
   district: '',
   city: '',
   state: '',
+  timezone: 'America/Sao_Paulo',
   zip: '',
   logoUrl: '',
   pdvDocumentMode: 'NON_FISCAL_RECEIPT',
@@ -155,6 +158,7 @@ function toForm(c: Company): FormState {
     district: c.district ?? '',
     city: c.city ?? '',
     state: c.state ?? '',
+    timezone: c.timezone ?? 'America/Sao_Paulo',
     zip: c.zip ? formatCep(c.zip) : '',
     logoUrl: c.logoUrl ?? '',
     pdvDocumentMode: c.pdvDocumentMode ?? 'NON_FISCAL_RECEIPT',
@@ -712,6 +716,7 @@ export function CompanyPage() {
         district: data.district || f.district,
         city: data.city || f.city,
         state: data.state || f.state,
+        timezone: data.state ? timezoneFromBrazilUf(data.state) : f.timezone,
       }));
     } catch (e) {
       setFeedback({
@@ -879,9 +884,36 @@ export function CompanyPage() {
                 <input
                   id="c-state"
                   value={form.state ?? ''}
-                  onChange={(e) => update('state', e.target.value.toUpperCase())}
+                  onChange={(e) => {
+                    const uf = e.target.value.toUpperCase();
+                    update('state', uf);
+                    if (uf.length === 2) update('timezone', timezoneFromBrazilUf(uf));
+                  }}
                   maxLength={2}
                 />
+              </div>
+              <div className="field">
+                <label htmlFor="c-timezone">Fuso horário (região)</label>
+                <input
+                  id="c-timezone"
+                  value={form.timezone ?? ''}
+                  onChange={(e) => update('timezone', e.target.value.trim())}
+                  list="company-iana-timezones"
+                  placeholder="America/Sao_Paulo"
+                />
+                <datalist id="company-iana-timezones">
+                  <option value="America/Sao_Paulo" />
+                  <option value="America/Manaus" />
+                  <option value="America/Cuiaba" />
+                  <option value="America/Rio_Branco" />
+                  <option value="America/Porto_Velho" />
+                  <option value="America/Boa_Vista" />
+                  <option value="America/Noronha" />
+                </datalist>
+                <small style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: 4 }}>
+                  Definido automaticamente pela UF no primeiro cadastro; usado em PDV, caixa, financeiro e
+                  relatórios.
+                </small>
               </div>
               <div className="field">
                 <label htmlFor="c-zip">CEP</label>

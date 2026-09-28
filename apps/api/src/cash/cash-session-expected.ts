@@ -3,6 +3,7 @@ import {
   PaymentMethod,
   SaleStatus,
 } from '../generated/tenant-client';
+import { roundMoney, splitSalePayments } from '../sales/sales-payment-breakdown.util';
 
 /** Chaves analíticas — não entram no saldo apresentado (soma dos meios de recebimento). */
 export const CASH_RECON_EXCLUDE_FROM_CLOSING_TOTAL = ['EXPENSE'] as const;
@@ -39,9 +40,13 @@ export function isDeferredSalePaymentMethod(method: string): boolean {
 export type CompletedSalesTotals = {
   /** Soma dos totais das vendas concluídas (faturamento). */
   totalInvoiced: number;
-  /** Pagamentos recebidos na hora (dinheiro, cartão, pix…). */
+  /** Pagamentos na venda exceto requisição (inclui saldo crediário). */
   totalReceivedAtSale: number;
-  /** Crediário + requisição (contas a receber). */
+  /** Só requisição (título a receber). */
+  totalRequisitionAtSale: number;
+  /** Saldo crediário consumido na venda. */
+  totalCreditAtSale: number;
+  /** Crediário + requisição (legado / conferência de caixa). */
   totalDeferred: number;
 };
 
@@ -50,21 +55,23 @@ export function aggregateCompletedSalesTotals(
 ): CompletedSalesTotals {
   let totalInvoiced = 0;
   let totalReceivedAtSale = 0;
-  let totalDeferred = 0;
+  let totalRequisitionAtSale = 0;
+  let totalCreditAtSale = 0;
   for (const sale of sales) {
     if (sale.status !== SaleStatus.COMPLETED) continue;
     totalInvoiced += Number(sale.total ?? 0);
-    for (const p of sale.payments) {
-      const amt = Number(p.amount);
-      if (!Number.isFinite(amt) || amt <= 0) continue;
-      if (isDeferredSalePaymentMethod(p.method)) totalDeferred += amt;
-      else totalReceivedAtSale += amt;
-    }
+    const split = splitSalePayments(sale.payments);
+    totalReceivedAtSale += split.receivedAtSale;
+    totalRequisitionAtSale += split.requisitionAtSale;
+    totalCreditAtSale += split.creditFromBalance;
   }
+  const totalDeferred = roundMoney(totalRequisitionAtSale + totalCreditAtSale);
   return {
     totalInvoiced: roundMoney(totalInvoiced),
     totalReceivedAtSale: roundMoney(totalReceivedAtSale),
-    totalDeferred: roundMoney(totalDeferred),
+    totalRequisitionAtSale: roundMoney(totalRequisitionAtSale),
+    totalCreditAtSale: roundMoney(totalCreditAtSale),
+    totalDeferred,
   };
 }
 
@@ -73,10 +80,6 @@ export type CashMovementBreakdown = {
   sangrias: number;
   despesas: number;
 };
-
-function roundMoney(n: number): number {
-  return Math.round(n * 100) / 100;
-}
 
 /** Soma pagamentos de vendas concluídas por forma. */
 export function aggregateCompletedSalePayments(

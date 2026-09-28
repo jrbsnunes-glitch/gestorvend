@@ -61,6 +61,32 @@
   margin-bottom: 0.65rem;
 }
 
+.inv-collector__hint {
+  background: #fff3cd;
+  border: 1px solid #e6c200;
+  color: #5c4a00;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.inv-collector__camera-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 1rem;
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e8f5f0;
+  background: rgba(0, 0, 0, 0.72);
+  z-index: 2;
+}
+
 .inv-collector__hint-flow {
   margin: 0 0 0.75rem;
   font-size: 0.85rem;
@@ -121,8 +147,23 @@
   position: relative;
 }
 
-.inv-collector__camera[hidden] {
-  display: none !important;
+.inv-collector__camera-badge {
+  position: absolute;
+  left: 0.5rem;
+  bottom: 0.5rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #e8f5f0;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.inv-collector__camera--off {
+  display: none;
 }
 
 .inv-collector__camera video {

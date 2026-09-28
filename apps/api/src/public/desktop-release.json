@@ -1,5 +1,5 @@
 {
-  "version": "1.0.42",
+  "version": "1.0.43",
   "downloadUrl": "",
-  "notes": "Shell kiosk/MP Point: modo autoatendimento e integração maquininha."
+  "notes": "PDV operador: sessão persistente, /vendas?terminal=N, allowlist e setup mestre/secundário."
 }

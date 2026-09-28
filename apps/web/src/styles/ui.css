@@ -2729,6 +2729,12 @@
 }
 
 /* --- Dashboard (Início) --- */
+.dash-updated-at {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
 .dash-hero {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -2807,6 +2813,34 @@
 .dash-hero-topproducts-hint {
   color: rgba(255, 255, 255, 0.9) !important;
   font-weight: 600;
+}
+
+.sales-rev-breakdown {
+  margin: 0.75rem 0 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted, #f8fafc);
+  font-size: 0.88rem;
+}
+
+.sales-rev-breakdown--compact {
+  margin: 0.5rem 0;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+.sales-rev-breakdown__line {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 0.35rem;
+}
+
+.sales-rev-breakdown__hint {
+  margin: 0.45rem 0 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
 }
 
 .dash-top-hero-table {
@@ -4331,4 +4365,81 @@
 
 .finance-list-total-row .num {
   text-align: right;
+}
+
+@media screen and (max-width: 720px) {
+  .finance-page-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .finance-page-head .stock-subnav {
+    display: flex;
+    width: 100%;
+  }
+
+  .finance-page-head .stock-subnav button {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+  }
+
+  .page.print-area .crud-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page.print-area .crud-toolbar-group {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .page.print-area .crud-toolbar-primary-slot {
+    width: 100%;
+  }
+
+  .page.print-area .crud-toolbar-primary-slot .btn,
+  .page.print-area .crud-toolbar-group .btn {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  table.data-table.finance-bills-table tbody tr.data-table-card-row > td.finance-bills-desc,
+  table.data-table.finance-bills-table tbody tr.data-table-card-row > td.finance-bills-party {
+    grid-column: 1 / -1;
+  }
+
+  table.data-table.finance-bills-table tbody tr.data-table-card-row > td.finance-bills-actions .row-record-actions {
+    justify-content: flex-start;
+  }
+
+  table.data-table.finance-bills-table tbody tr.data-table-card-row > td.finance-bills-actions .btn-compact {
+    flex: 1 1 calc(50% - 0.2rem);
+    min-height: 2.35rem;
+  }
+
+  table.data-table.finance-bills-table tfoot {
+    display: block;
+    padding: 0 0.65rem 0.65rem;
+  }
+
+  table.data-table.finance-bills-table tfoot tr {
+    display: block;
+    padding: 0.85rem;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 10px;
+    background: var(--color-surface-muted, #f8fafc);
+  }
+
+  table.data-table.finance-bills-table tfoot td {
+    display: block !important;
+    padding: 0 !important;
+    border: none !important;
+    text-align: left !important;
+  }
+
+  table.data-table.finance-bills-table tfoot .finance-list-total-row td.num {
+    display: inline !important;
+    margin-left: 0.35rem;
+  }
 }

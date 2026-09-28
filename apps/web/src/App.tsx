@@ -12,6 +12,7 @@ import {
   scheduleAccessTokenRefresh,
 } from './lib/api';
 import { hasFactoryModule, hasRestaurantPlan, hasServiceOrderModule, isAdmin, isTechnician, isWaiter } from './lib/auth';
+import { BusinessTimezoneProvider } from './context/BusinessTimezoneProvider';
 import { Login } from './pages/Login';
 import './index.css';
 import './styles/ui.css';
@@ -387,6 +388,19 @@ function AppInner() {
     return (
       <Login
         onLoggedIn={() => {
+          const fromUrl = new URLSearchParams(window.location.search).get('terminal');
+          let stored: string | null = null;
+          try {
+            stored = sessionStorage.getItem('gv-pdv-terminal-number');
+          } catch {
+            /* ignore */
+          }
+          const terminal = fromUrl?.trim() || stored;
+          const onVendas = window.location.pathname.replace(/\/$/, '') === '/vendas';
+          if (terminal && !onVendas) {
+            window.location.assign(`/vendas?terminal=${encodeURIComponent(terminal)}`);
+            return;
+          }
           window.location.reload();
         }}
       />
@@ -395,6 +409,7 @@ function AppInner() {
 
   return (
     <BrowserRouter>
+      <BusinessTimezoneProvider>
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route
@@ -571,6 +586,7 @@ function AppInner() {
           </Route>
         </Routes>
       </Suspense>
+      </BusinessTimezoneProvider>
     </BrowserRouter>
   );
 }

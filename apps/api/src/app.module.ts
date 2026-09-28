@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import * as path from 'path';
@@ -6,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { CashModule } from './cash/cash.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { CompanyModule } from './company/company.module';
+import { TenantTimezoneInterceptor } from './company/tenant-timezone.interceptor';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { FinanceModule } from './finance/finance.module';
 import { FinancialOverviewModule } from './financial-overview/financial-overview.module';
@@ -65,5 +67,11 @@ import { PrintingModule } from './printing/printing.module';
     PdvTerminalsModule,
   ],
   controllers: [HealthController, PublicReleaseController],
+  providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TenantTimezoneInterceptor,
+    },
+  ],
 })
 export class AppModule {}

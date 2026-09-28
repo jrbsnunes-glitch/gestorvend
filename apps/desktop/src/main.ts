@@ -5,6 +5,7 @@ import {
   ipcMain,
   Menu,
   shell,
+  type WebContents,
   type WebContentsPrintOptions,
 } from 'electron';
 import * as path from 'path';
@@ -33,13 +34,68 @@ import {
 } from './thermal-print';
 
 let mainWindow: BrowserWindow | null = null;
+let mainWindowPartition: string | undefined;
 let revalidateTimer: NodeJS.Timeout | null = null;
 
 function rendererPath(file: string): string {
   return path.join(__dirname, '..', 'renderer', file);
 }
 
-function createWindow(): BrowserWindow {
+function sessionPartitionFor(tenantSlug: string): string {
+  const safe =
+    tenantSlug
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '_')
+      .slice(0, 48) || 'default';
+  return `persist:gestorvend-${safe}`;
+}
+
+type WebContentsWithNavGuard = WebContents & { __gvNavGuard?: boolean };
+
+function attachPdvNavGuard(win: BrowserWindow, allowPath: (pathname: string) => boolean) {
+  const wc = win.webContents as WebContentsWithNavGuard;
+  if (wc.__gvNavGuard) return;
+  wc.__gvNavGuard = true;
+
+  win.webContents.on('will-navigate', (ev, url) => {
+    try {
+      const u = new URL(url);
+      if (!allowPath(u.pathname)) ev.preventDefault();
+    } catch {
+      ev.preventDefault();
+    }
+  });
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const current = win.webContents.getURL();
+      const base = current && current !== 'about:blank' ? current : url;
+      const u = new URL(url, base);
+      if (allowPath(u.pathname)) {
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            autoHideMenuBar: true,
+            webPreferences: {
+              preload: path.join(__dirname, 'preload.js'),
+              contextIsolation: true,
+              nodeIntegration: false,
+              sandbox: false,
+              backgroundThrottling: false,
+            },
+          },
+        };
+      }
+    } catch {
+      /* deny */
+    }
+    return { action: 'deny' };
+  });
+}
+
+function createWindow(partition?: string): BrowserWindow {
+  mainWindowPartition = partition;
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -49,10 +105,12 @@ function createWindow(): BrowserWindow {
     autoHideMenuBar: false,
     title: 'GestorVend',
     webPreferences: {
+      ...(partition ? { partition } : {}),
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      backgroundThrottling: false,
     },
   });
 
@@ -109,7 +167,21 @@ function showStation(win: BrowserWindow) {
   void win.loadFile(rendererPath('station.html'));
 }
 
-async function openApp(win: BrowserWindow, cfg: DesktopConfig) {
+function ensureMainWindowForTenant(cfg: DesktopConfig): BrowserWindow {
+  const part = sessionPartitionFor(cfg.tenantSlug);
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindowPartition === part) {
+    return mainWindow;
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.destroy();
+  }
+  mainWindow = createWindow(part);
+  return mainWindow;
+}
+
+async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
+  const win = ensureMainWindowForTenant(cfg);
+
   const result = await checkLicense(cfg);
   if (!result.ok) {
     showBlocked(win, result.message);
@@ -117,36 +189,46 @@ async function openApp(win: BrowserWindow, cfg: DesktopConfig) {
   }
 
   const isKiosk = cfg.pdvTerminal?.mode === 'self_service';
+  const isOperatorPdv =
+    cfg.pdvTerminal?.mode === 'operator' &&
+    cfg.pdvTerminal.number != null &&
+    cfg.pdvTerminal.number >= 1;
+
   if (isKiosk) {
     Menu.setApplicationMenu(null);
     win.setMenuBarVisibility(false);
     win.setKiosk(true);
     win.setFullScreen(true);
+    win.setTitle('GestorVend — Autoatendimento');
   } else {
+    win.setKiosk(false);
+    win.setFullScreen(false);
     buildMenu();
+    if (isOperatorPdv) {
+      win.setTitle(`GestorVend — PDV ${cfg.pdvTerminal!.number}`);
+    } else {
+      win.setTitle('GestorVend');
+    }
   }
 
   const base = cfg.serverUrl.replace(/\/$/, '');
   const target = isKiosk
     ? `${base}/auto-atendimento?terminal=${cfg.pdvTerminal!.number}`
-    : `${base}/`;
+    : isOperatorPdv
+      ? `${base}/vendas?terminal=${cfg.pdvTerminal!.number}`
+      : `${base}/`;
 
   if (isKiosk) {
-    const allowPath = (pathname: string) =>
-      pathname.startsWith('/auto-atendimento') || pathname.startsWith('/vendas/impressao');
-
-    win.webContents.on('will-navigate', (ev, url) => {
-      try {
-        const u = new URL(url);
-        if (!allowPath(u.pathname)) ev.preventDefault();
-      } catch {
-        ev.preventDefault();
-      }
-    });
-
+    attachPdvNavGuard(
+      win,
+      (pathname) =>
+        pathname.startsWith('/auto-atendimento') || pathname.startsWith('/vendas/impressao'),
+    );
     win.webContents.setWindowOpenHandler(({ url }) => {
       try {
         const u = new URL(url, target);
+        const allowPath = (pathname: string) =>
+          pathname.startsWith('/auto-atendimento') || pathname.startsWith('/vendas/impressao');
         if (allowPath(u.pathname)) {
           return {
             action: 'allow',
@@ -159,6 +241,7 @@ async function openApp(win: BrowserWindow, cfg: DesktopConfig) {
                 contextIsolation: true,
                 nodeIntegration: false,
                 sandbox: false,
+                backgroundThrottling: false,
               },
             },
           };
@@ -168,6 +251,14 @@ async function openApp(win: BrowserWindow, cfg: DesktopConfig) {
       }
       return { action: 'deny' };
     });
+  } else if (isOperatorPdv) {
+    attachPdvNavGuard(
+      win,
+      (pathname) =>
+        pathname === '/' ||
+        pathname.startsWith('/vendas') ||
+        pathname.startsWith('/vendas/impressao'),
+    );
   }
 
   void win.loadURL(target);

@@ -1,6 +1,6 @@
 {
   "name": "@gestorvend/desktop",
-  "version": "1.0.42",
+  "version": "1.0.43",
   "private": true,
   "description": "Cliente desktop GestorVend (Electron) — janela própria apontando para o servidor do cliente",
   "author": "GestorVend",
@@ -33,6 +33,7 @@
     ],
     "win": {
       "icon": "resources/icon.ico",
+      "signAndEditExecutable": false,
       "target": [
         {
           "target": "nsis",

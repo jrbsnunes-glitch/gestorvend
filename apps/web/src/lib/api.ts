@@ -1,4 +1,5 @@
 import { getKioskToken } from './kiosk-auth';
+import { getPdvTerminalNumber } from './pdv-terminal-context';
 
 const TOKEN_KEY = 'gv_access_token';
 const REFRESH_KEY = 'gv_refresh_token';
@@ -438,6 +439,10 @@ async function sendApiRequest(
       // Header só aceita ASCII — codifica para preservar acentos/símbolos.
       (headers as Record<string, string>)[MANAGER_PASSWORD_HEADER] =
         encodeURIComponent(managerPassword);
+    }
+    const pdvNum = getPdvTerminalNumber();
+    if (pdvNum != null) {
+      (headers as Record<string, string>)['X-Pdv-Terminal-Number'] = String(pdvNum);
     }
     return headers;
   };
