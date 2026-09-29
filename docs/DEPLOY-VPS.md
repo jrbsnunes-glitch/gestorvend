@@ -136,7 +136,7 @@ bash deploy/update.sh
 
 Opções: `--no-migrate` (só build/restart), `--skip-nginx`, `--no-chown` (se já estiver logado como `deploy`).
 
-O script localiza o Node/npm do **nvm** do usuário `deploy` (ex.: `~/.nvm/versions/node/v20/bin`) — necessário porque `sudo -u deploy` não carrega `.bashrc`. Se falhar: `NODE_BIN=/home/deploy/.nvm/versions/node/v20.20.2/bin bash deploy/update.sh`.
+O script localiza o Node/npm do **nvm** do usuário `deploy` (ex.: `~/.nvm/versions/node/v20/bin`) — necessário porque `sudo -u deploy` não carrega `.bashrc`. Após `git reset --hard`, o script **reinicia a si mesmo** (`exec`) para não continuar com a versão antiga em memória. Se falhar: `NODE_BIN=/home/deploy/.nvm/versions/node/v20.20.2/bin bash deploy/update.sh`.
 
 Atualização parcial (só build + restart + validação da API; use `--pull` para git + npm ci):
 

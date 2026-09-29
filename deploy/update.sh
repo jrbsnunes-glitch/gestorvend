@@ -31,6 +31,7 @@ GIT_REMOTE="${GIT_REMOTE:-origin}"
 do_chown=1
 do_nginx=1
 do_migrate=1
+do_git=1
 inner=0
 
 for arg in "$@"; do
@@ -38,6 +39,7 @@ for arg in "$@"; do
     --no-chown) do_chown=0 ;;
     --skip-nginx) do_nginx=0 ;;
     --no-migrate) do_migrate=0 ;;
+    --skip-git) do_git=0 ;;
     --deploy-user) inner=1 ;;
     -h|--help)
       sed -n '3,22p' "${BASH_SOURCE[0]}"
@@ -105,25 +107,44 @@ verify_web_dist_version() {
   [ "$found" -eq 1 ] || fail "apps/web/dist não contém a versão $ver — build do front falhou ou dist antigo."
 }
 
+reexec_deploy_after_git() {
+  local -a extra=(--deploy-user --no-chown --skip-git)
+  [ "$do_migrate" -eq 0 ] && extra+=(--no-migrate)
+  exec env \
+    APP_DIR="$APP_DIR" \
+    DEPLOY_USER="$DEPLOY_USER" \
+    GIT_BRANCH="$GIT_BRANCH" \
+    GIT_REMOTE="$GIT_REMOTE" \
+    NODE_BIN="$NODE_BIN" \
+    PATH="$PATH" \
+    PM2_USER="${PM2_USER:-}" \
+    PM2_APP="${PM2_APP:-}" \
+    API_PORT="${API_PORT:-}" \
+    bash "$APP_DIR/deploy/update.sh" "${extra[@]}"
+}
+
 deploy_as_user() {
   ensure_node_toolchain "${DEPLOY_USER:-$(id -un)}"
   log "Diretório: $APP_DIR | branch: $GIT_REMOTE/$GIT_BRANCH | usuário: $(id -un)"
 
   cd "$APP_DIR"
 
-  log "Atualizando código (origin/$GIT_BRANCH)"
-  git fetch "$GIT_REMOTE" "$GIT_BRANCH"
-  # Descarta lock local do servidor (npm ci regenera a partir do repo).
-  git checkout -- package-lock.json 2>/dev/null || true
-  git reset --hard "$GIT_REMOTE/$GIT_BRANCH"
-  echo "Commit: $(git log -1 --oneline)"
+  if [ "$do_git" -eq 1 ]; then
+    log "Atualizando código (origin/$GIT_BRANCH)"
+    git fetch "$GIT_REMOTE" "$GIT_BRANCH"
+    git checkout -- package-lock.json 2>/dev/null || true
+    git reset --hard "$GIT_REMOTE/$GIT_BRANCH"
+    echo "Commit: $(git log -1 --oneline)"
+    # reset --hard troca deploy/update.sh no disco; recarrega o script antes do npm ci.
+    reexec_deploy_after_git
+  fi
 
   local ver
   ver="$(read_app_version)"
   echo "Versão esperada (version.ts): v$ver"
 
   log "Instalando dependências (npm ci)"
-  npm ci
+  "$NODE_BIN/npm" ci
 
   log "Build, migrations e restart (restart-api.sh)"
   local migrate_flag=()
