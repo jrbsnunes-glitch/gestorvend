@@ -114,6 +114,7 @@ cd "$APP_DIR"
 
 if [ "$do_pull" = 1 ]; then
   log "Atualizando código"
+  git checkout -- package-lock.json 2>/dev/null || true
   git pull origin main
   npm ci
 fi

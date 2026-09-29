@@ -127,12 +127,23 @@ Configure **backup** periódico do PostgreSQL.
 
 ## Atualização
 
-Caminho recomendado (descobre o usuário do PM2, reinicia e valida):
+**Deploy completo na VPS** (como **root** — corrige dono `deploy`, atualiza `main`, `npm ci`, migrations em todos os tenants, build API+web, PM2, valida versão no `dist` e recarrega Nginx):
+
+```bash
+cd /var/www/gestorvend
+bash deploy/update.sh
+```
+
+Opções: `--no-migrate` (só build/restart), `--skip-nginx`, `--no-chown` (se já estiver logado como `deploy`).
+
+Atualização parcial (só build + restart + validação da API; use `--pull` para git + npm ci):
 
 ```bash
 cd /var/www/gestorvend
 bash deploy/restart-api.sh --pull --migrate
 ```
+
+O `restart-api.sh` descarta alterações locais em `package-lock.json` antes do `git pull`. O `update.sh` faz `git reset --hard origin/main` (padrão em servidor de produção).
 
 O script falha com mensagem clara se a API no ar continuar servindo o `dist` antigo e avisa quando
 encontra processos duplicados da API. Sem argumentos, só faz build + restart + validação.
