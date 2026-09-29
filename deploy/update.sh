@@ -53,6 +53,38 @@ done
 log() { printf '\n== %s\n' "$*"; }
 fail() { printf '\nERRO: %s\n' "$*" >&2; exit 1; }
 
+home_of_user() {
+  getent passwd "$1" | cut -d: -f6
+}
+
+# Node/npm do nvm do usuário deploy (sudo não carrega .bashrc — caminho explícito).
+detect_node_bin() {
+  local user="$1" home cand
+  home="$(home_of_user "$user")"
+  if [ -n "$home" ]; then
+    cand="$(ls -d "$home"/.nvm/versions/node/*/bin 2>/dev/null | sort -V | tail -1 || true)"
+    if [ -n "$cand" ] && [ -x "$cand/npm" ] && [ -x "$cand/node" ]; then
+      echo "$cand"
+      return
+    fi
+  fi
+  if command -v npm >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
+    dirname "$(command -v npm)"
+  fi
+}
+
+ensure_node_toolchain() {
+  local detect_as="${1:-$(id -un)}"
+  if [ -z "${NODE_BIN:-}" ]; then
+    NODE_BIN="$(detect_node_bin "$detect_as" || true)"
+  fi
+  [ -n "${NODE_BIN:-}" ] || fail "Node/npm não encontrado (usuário $detect_as). Informe NODE_BIN=/home/deploy/.nvm/versions/node/vXX/bin"
+  export NODE_BIN
+  export PATH="$NODE_BIN:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+  command -v npm >/dev/null 2>&1 || fail "npm indisponível (NODE_BIN=$NODE_BIN). Verifique nvm do usuário $detect_as."
+  log "Node $( "$NODE_BIN/node" -v ) | npm $( "$NODE_BIN/npm" -v ) | PATH=$NODE_BIN"
+}
+
 read_app_version() {
   local f="$APP_DIR/apps/web/src/version.ts"
   [ -f "$f" ] || fail "Arquivo ausente: $f"
@@ -74,6 +106,7 @@ verify_web_dist_version() {
 }
 
 deploy_as_user() {
+  ensure_node_toolchain "${DEPLOY_USER:-$(id -un)}"
   log "Diretório: $APP_DIR | branch: $GIT_REMOTE/$GIT_BRANCH | usuário: $(id -un)"
 
   cd "$APP_DIR"
@@ -137,6 +170,7 @@ fi
 
 if [ "$current_user" = "$DEPLOY_USER" ]; then
   [ "$do_chown" -eq 1 ] && echo "Nota: rodando como $DEPLOY_USER (--no-chown implícito)." >&2
+  NODE_BIN="${NODE_BIN:-$(detect_node_bin "$DEPLOY_USER" || true)}"
   deploy_as_user
   exit 0
 fi
@@ -152,7 +186,10 @@ if [ "$do_chown" -eq 1 ]; then
   fix_permissions_root
 fi
 
-log "Executando deploy como $DEPLOY_USER"
+NODE_BIN="${NODE_BIN:-$(detect_node_bin "$DEPLOY_USER" || true)}"
+[ -n "${NODE_BIN:-}" ] || fail "Node/npm do usuário $DEPLOY_USER não encontrado (nvm?). Ex.: NODE_BIN=/home/deploy/.nvm/versions/node/v20.20.2/bin"
+
+log "Executando deploy como $DEPLOY_USER (NODE_BIN=$NODE_BIN)"
 inner_args=(--deploy-user --no-chown)
 [ "$do_migrate" -eq 0 ] && inner_args+=(--no-migrate)
 sudo -u "$DEPLOY_USER" env \
@@ -163,7 +200,9 @@ sudo -u "$DEPLOY_USER" env \
   PM2_USER="${PM2_USER:-}" \
   PM2_APP="${PM2_APP:-}" \
   API_PORT="${API_PORT:-}" \
-  NODE_BIN="${NODE_BIN:-}" \
+  NODE_BIN="$NODE_BIN" \
+  PATH="$NODE_BIN:/usr/local/bin:/usr/bin:/bin" \
+  HOME="$(home_of_user "$DEPLOY_USER")" \
   bash "$APP_DIR/deploy/update.sh" "${inner_args[@]}"
 
 if [ "$do_nginx" -eq 1 ]; then
