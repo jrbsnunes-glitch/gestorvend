@@ -4698,8 +4698,14 @@ function PaymentOverlay({
     focusAmountField();
   }
 
+  const paidSum = useMemo(
+    () => payments.reduce((s, p) => s + p.amount, 0),
+    [payments],
+  );
   const fullyPaid = Math.abs(remaining) <= 0.005;
   const canFinish = total > 0 && fullyPaid;
+  const summaryLabel = fullyPaid ? (change > 0 ? 'Troco' : 'Pago') : 'Faltam';
+  const summaryAmount = fullyPaid ? (change > 0 ? change : paidSum) : remaining;
 
   useEffect(() => {
     amountInputRef.current?.focus();
@@ -5034,8 +5040,8 @@ function PaymentOverlay({
 
           <div className="pos-payment-summary">
             <div className={fullyPaid ? 'is-paid' : 'is-missing'}>
-              <span>{fullyPaid ? (change > 0 ? 'Troco' : 'Pago') : 'Faltam'}</span>
-              <strong>{formatBRL(fullyPaid ? change : remaining)}</strong>
+              <span>{summaryLabel}</span>
+              <strong>{formatBRL(summaryAmount)}</strong>
             </div>
           </div>
         </div>
