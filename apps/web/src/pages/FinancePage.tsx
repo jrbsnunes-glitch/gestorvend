@@ -106,7 +106,7 @@ type SettlementState = {
   referentialAccountId: string;
 };
 
-type PrintModo = 'conta' | 'abertas' | 'pagas';
+type PrintModo = 'conta' | 'abertas' | 'pagas' | 'aging';
 
 const EMPTY_FORM: FormState = {
   description: '',
@@ -855,6 +855,9 @@ export function FinancePage() {
         return;
       }
       p.set('id', printId.trim());
+    } else if (printModo === 'aging') {
+      if (printSegment.trim()) p.set('segment', printSegment.trim());
+      if (printPartyId) p.set('partyId', printPartyId);
     } else {
       if (printFrom) p.set('from', printFrom);
       if (printTo) p.set('to', printTo);
@@ -1934,9 +1937,44 @@ export function FinancePage() {
                 <option value="conta">Uma conta (detalhe)</option>
                 <option value="abertas">Listagem em aberto (filtros)</option>
                 <option value="pagas">Listagem liquidada (filtros)</option>
+                {tab === 'receber' ? (
+                  <option value="aging">Aging — devedores por faixa de vencimento</option>
+                ) : null}
               </select>
             </div>
-            {printModo === 'conta' ? (
+            {printModo === 'aging' && tab === 'receber' ? (
+              <>
+                <p style={{ margin: '0 0 0.75rem', fontSize: '0.88rem', color: 'var(--color-text-muted)' }}>
+                  Visão consolidada por cliente: saldo a vencer e em atraso (1–30, 31–60, 61–90 e mais de 90
+                  dias). Referência: data de hoje.
+                </p>
+                <div className="field">
+                  <label htmlFor="pr-seg-aging">Grupo (segmento do cliente)</label>
+                  <input
+                    id="pr-seg-aging"
+                    list="seg-list-finance"
+                    value={printSegment}
+                    onChange={(e) => setPrintSegment(e.target.value)}
+                    placeholder="Opcional"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="pr-party-aging">Cliente específico</label>
+                  <select
+                    id="pr-party-aging"
+                    value={printPartyId}
+                    onChange={(e) => setPrintPartyId(e.target.value)}
+                  >
+                    <option value="">— Todos —</option>
+                    {customers.data?.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            ) : printModo === 'conta' ? (
               <div className="field">
                 <label htmlFor="pr-id">Título</label>
                 <select

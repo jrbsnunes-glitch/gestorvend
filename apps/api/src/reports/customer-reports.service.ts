@@ -209,6 +209,144 @@ export class CustomerReportsService {
     };
   }
 
+  /** Aging por cliente — saldo em aberto classificado por faixa de vencimento. */
+  async receivablesAging(
+    tenantSlug: string,
+    customerId?: string,
+    segment?: string,
+  ) {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const today = startOfDay(new Date());
+    const cid = (customerId ?? '').trim();
+    const seg = (segment ?? '').trim();
+
+    const receivables = await db.accountReceivable.findMany({
+      where: {
+        status: { in: [BillStatus.OPEN, BillStatus.OVERDUE] },
+        AND: [
+          {
+            OR: [{ creditKind: null }, { creditKind: CreditKind.REQUISITION }],
+          },
+          ...(cid ? [{ customerId: cid }] : []),
+          ...(seg ? [{ customer: { segment: seg } }] : []),
+        ],
+      },
+      include: {
+        customer: { select: { id: true, name: true, document: true, segment: true } },
+      },
+      orderBy: [{ dueDate: 'asc' }],
+      take: 20000,
+    });
+
+    type BucketNums = {
+      current: number;
+      overdue1_30: number;
+      overdue31_60: number;
+      overdue61_90: number;
+      overdue91_plus: number;
+      total: number;
+      openTitles: number;
+    };
+
+    const emptyBuckets = (): BucketNums => ({
+      current: 0,
+      overdue1_30: 0,
+      overdue31_60: 0,
+      overdue61_90: 0,
+      overdue91_plus: 0,
+      total: 0,
+      openTitles: 0,
+    });
+
+    function addToBucket(b: BucketNums, daysPastDue: number, amount: number) {
+      if (daysPastDue <= 0) b.current += amount;
+      else if (daysPastDue <= 30) b.overdue1_30 += amount;
+      else if (daysPastDue <= 60) b.overdue31_60 += amount;
+      else if (daysPastDue <= 90) b.overdue61_90 += amount;
+      else b.overdue91_plus += amount;
+      b.total += amount;
+      b.openTitles += 1;
+    }
+
+    const byCustomer = new Map<
+      string,
+      {
+        customerId: string | null;
+        name: string;
+        document: string | null;
+        segment: string | null;
+        buckets: BucketNums;
+      }
+    >();
+
+    let titleCount = 0;
+    for (const r of receivables) {
+      const amount = Number(r.amountRemaining);
+      if (!Number.isFinite(amount) || amount <= 0) continue;
+      titleCount += 1;
+      const due = startOfDay(r.dueDate);
+      const daysPastDue = Math.floor((today.getTime() - due.getTime()) / 86400000);
+      const key = r.customer?.id ?? '__none__';
+      const cur = byCustomer.get(key) ?? {
+        customerId: r.customer?.id ?? null,
+        name: r.customer?.name ?? 'Sem cliente vinculado',
+        document: r.customer?.document ?? null,
+        segment: r.customer?.segment ?? null,
+        buckets: emptyBuckets(),
+      };
+      addToBucket(cur.buckets, daysPastDue, amount);
+      byCustomer.set(key, cur);
+    }
+
+    const sumBuckets = emptyBuckets();
+    const lines = [...byCustomer.values()]
+      .map((c) => {
+        const b = c.buckets;
+        sumBuckets.current += b.current;
+        sumBuckets.overdue1_30 += b.overdue1_30;
+        sumBuckets.overdue31_60 += b.overdue31_60;
+        sumBuckets.overdue61_90 += b.overdue61_90;
+        sumBuckets.overdue91_plus += b.overdue91_plus;
+        sumBuckets.total += b.total;
+        sumBuckets.openTitles += b.openTitles;
+        return {
+          customerId: c.customerId,
+          name: c.name,
+          document: c.document,
+          segment: c.segment,
+          openTitles: b.openTitles,
+          current: moneyStr(b.current),
+          overdue1_30: moneyStr(b.overdue1_30),
+          overdue31_60: moneyStr(b.overdue31_60),
+          overdue61_90: moneyStr(b.overdue61_90),
+          overdue91_plus: moneyStr(b.overdue91_plus),
+          total: moneyStr(b.total),
+        };
+      })
+      .sort((a, b) => Number(b.total) - Number(a.total) || a.name.localeCompare(b.name));
+
+    return {
+      title: 'Aging — contas a receber',
+      asOf: today.toISOString().slice(0, 10),
+      filters: { customerId: cid || null, segment: seg || null },
+      note:
+        'Saldo em aberto (OPEN/OVERDUE) por faixa em relação ao vencimento. ' +
+        'Coluna “A vencer”: vencimento na data de referência ou futuro. Demais colunas: dias de atraso. ' +
+        'Exclui crédito pré-pago à vista (crediário).',
+      lines,
+      totals: {
+        customers: lines.length,
+        titles: titleCount,
+        current: moneyStr(sumBuckets.current),
+        overdue1_30: moneyStr(sumBuckets.overdue1_30),
+        overdue31_60: moneyStr(sumBuckets.overdue31_60),
+        overdue61_90: moneyStr(sumBuckets.overdue61_90),
+        overdue91_plus: moneyStr(sumBuckets.overdue91_plus),
+        total: moneyStr(sumBuckets.total),
+      },
+    };
+  }
+
   async salesHistory(
     tenantSlug: string,
     customerId: string,

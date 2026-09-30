@@ -38,6 +38,11 @@ type Summary = {
   cash: {
     periodInflows: number;
     periodOutflows: number;
+    periodInflowsCompleted?: number;
+    periodInflowsRequisitionFuture?: number;
+    periodOutflowsExpenses?: number;
+    periodOutflowsPayables?: number;
+    periodOutflowsOther?: number;
   };
   sales?: {
     count: number;
@@ -377,7 +382,7 @@ export function FinancialOverviewPage() {
             className="dash-hero"
             style={{
               marginTop: '0.75rem',
-              gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))',
+              gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))',
             }}
           >
             <article className="dash-hero-card">
@@ -385,18 +390,47 @@ export function FinancialOverviewPage() {
               <strong className="dash-hero-value" style={{ color: '#15803d' }}>
                 {formatBRL(data.cash.periodInflows)}
               </strong>
+              <span className="dash-hero-split">
+                Concluídas:{' '}
+                <strong>{formatBRL(data.cash.periodInflowsCompleted ?? data.cash.periodInflows)}</strong>
+                {(data.cash.periodInflowsRequisitionFuture ?? 0) > 0 ? (
+                  <>
+                    <br />
+                    Futuras (requisições em aberto):{' '}
+                    <strong>{formatBRL(data.cash.periodInflowsRequisitionFuture ?? 0)}</strong>
+                  </>
+                ) : null}
+              </span>
+              <span className="dash-hero-foot">
+                Concluídas = caixa, PDV e recebimentos de títulos. Futuras = saldo a receber de vendas em
+                requisição no período.
+              </span>
             </article>
             <article className="dash-hero-card">
               <span className="dash-hero-label">Total saídas (período)</span>
               <strong className="dash-hero-value" style={{ color: '#b91c1c' }}>
                 {formatBRL(data.cash.periodOutflows)}
               </strong>
+              <span className="dash-hero-split">
+                Despesas de caixa:{' '}
+                <strong>{formatBRL(data.cash.periodOutflowsExpenses ?? 0)}</strong>
+                <br />
+                Contas a pagar:{' '}
+                <strong>{formatBRL(data.cash.periodOutflowsPayables ?? 0)}</strong>
+                {(data.cash.periodOutflowsOther ?? 0) > 0 ? (
+                  <>
+                    <br />
+                    Outras saídas: <strong>{formatBRL(data.cash.periodOutflowsOther ?? 0)}</strong>
+                  </>
+                ) : null}
+              </span>
             </article>
             <article className="dash-hero-card">
               <span className="dash-hero-label">Líquido (entradas − saídas)</span>
               <strong className="dash-hero-value">
                 {formatBRL(data.cash.periodInflows - data.cash.periodOutflows)}
               </strong>
+              <span className="dash-hero-foot">Considera apenas entradas concluídas (não inclui requisição futura).</span>
             </article>
           </div>
 

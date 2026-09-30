@@ -5,7 +5,37 @@ import { StandardReportHeader } from '../components/StandardReportHeader';
 import { BillPaymentsButton } from '../components/BillSettlementsModal';
 import { api } from '../lib/api';
 import { hasInformedPayment, PAYMENT_LABELS, saldoAbertoBill } from '../lib/finance-bills';
-import { formatBRL, formatCalendarDate, formatDate } from '../lib/format';
+import { formatBRL, formatCalendarDate, formatCpfCnpj, formatDate } from '../lib/format';
+
+type ReceivablesAgingReport = {
+  title: string;
+  asOf: string;
+  note: string;
+  filters: { customerId: string | null; segment: string | null };
+  lines: Array<{
+    customerId: string | null;
+    name: string;
+    document: string | null;
+    segment: string | null;
+    openTitles: number;
+    current: string;
+    overdue1_30: string;
+    overdue31_60: string;
+    overdue61_90: string;
+    overdue91_plus: string;
+    total: string;
+  }>;
+  totals: {
+    customers: number;
+    titles: number;
+    current: string;
+    overdue1_30: string;
+    overdue31_60: string;
+    overdue61_90: string;
+    overdue91_plus: string;
+    total: string;
+  };
+};
 import './cash-print.css';
 
 type CashSess = {
@@ -293,7 +323,12 @@ export function FinancePrintPage() {
   const tipo = sp.get('tipo') === 'receber' ? 'receber' : 'pagar';
   const modoRaw = sp.get('modo');
   const modo =
-    modoRaw === 'conta' || modoRaw === 'abertas' || modoRaw === 'pagas' ? modoRaw : 'abertas';
+    modoRaw === 'conta' ||
+    modoRaw === 'abertas' ||
+    modoRaw === 'pagas' ||
+    modoRaw === 'aging'
+      ? modoRaw
+      : 'abertas';
   const id = sp.get('id') ?? '';
   const from = sp.get('from') ?? '';
   const to = sp.get('to') ?? '';
@@ -340,7 +375,21 @@ export function FinancePrintPage() {
   const listReceivables = useQuery({
     queryKey: ['finance', 'receivables', listQs],
     queryFn: () => api<Receivable[]>(`/finance/receivables?${listQs}`),
-    enabled: tipo === 'receber' && modo !== 'conta',
+    enabled: tipo === 'receber' && modo !== 'conta' && modo !== 'aging',
+    staleTime: 0,
+  });
+
+  const agingQs = useMemo(() => {
+    const p = new URLSearchParams();
+    if (segment) p.set('segment', segment);
+    if (partyId) p.set('customerId', partyId);
+    return p.toString();
+  }, [segment, partyId]);
+
+  const agingReport = useQuery({
+    queryKey: ['finance', 'receivables-aging', agingQs],
+    queryFn: () => api<ReceivablesAgingReport>(`/reports/receivables/aging?${agingQs}`),
+    enabled: tipo === 'receber' && modo === 'aging',
     staleTime: 0,
   });
 
@@ -384,9 +433,11 @@ export function FinancePrintPage() {
   const modeLabel =
     modo === 'conta'
       ? 'Detalhe do título'
-      : modo === 'abertas'
-        ? 'Títulos em aberto (vencidos e parciais)'
-        : 'Títulos liquidados';
+      : modo === 'aging'
+        ? 'Aging — devedores'
+        : modo === 'abertas'
+          ? 'Títulos em aberto (vencidos e parciais)'
+          : 'Títulos liquidados';
 
   const subtitle = useMemo(() => {
     const parts: string[] = [];
@@ -403,13 +454,18 @@ export function FinancePrintPage() {
     (tipo === 'pagar' && modo === 'conta' && singlePayable.isLoading) ||
     (tipo === 'receber' && modo === 'conta' && singleReceivable.isLoading) ||
     (tipo === 'pagar' && modo !== 'conta' && listPayables.isLoading) ||
-    (tipo === 'receber' && modo !== 'conta' && (listReceivables.isLoading || salesItemsLoading));
+    (tipo === 'receber' && modo === 'aging' && agingReport.isLoading) ||
+    (tipo === 'receber' &&
+      modo !== 'conta' &&
+      modo !== 'aging' &&
+      (listReceivables.isLoading || salesItemsLoading));
 
   const err =
     (tipo === 'pagar' && modo === 'conta' && singlePayable.error) ||
     (tipo === 'receber' && modo === 'conta' && singleReceivable.error) ||
     (tipo === 'pagar' && modo !== 'conta' && listPayables.error) ||
-    (tipo === 'receber' && modo !== 'conta' && listReceivables.error);
+    (tipo === 'receber' && modo === 'aging' && agingReport.error) ||
+    (tipo === 'receber' && modo !== 'conta' && modo !== 'aging' && listReceivables.error);
 
   const errMessage = err
     ? err instanceof Error
@@ -419,7 +475,8 @@ export function FinancePrintPage() {
 
   const listReady =
     (tipo === 'pagar' && modo !== 'conta' && listPayables.isFetched) ||
-    (tipo === 'receber' && modo !== 'conta' && listReceivables.isFetched);
+    (tipo === 'receber' && modo === 'aging' && agingReport.isFetched) ||
+    (tipo === 'receber' && modo !== 'conta' && modo !== 'aging' && listReceivables.isFetched);
 
   const financeBackTo = useMemo(() => {
     const raw = sp.get('return');
@@ -433,7 +490,7 @@ export function FinancePrintPage() {
   }, [sp, tipo]);
 
   const periodSummary = useMemo(() => {
-    if (modo === 'conta') return null;
+    if (modo === 'conta' || modo === 'aging') return null;
     const rows =
       tipo === 'pagar' ? listPayables.data : tipo === 'receber' ? listReceivables.data : null;
     if (!rows) return null;
@@ -804,7 +861,7 @@ export function FinancePrintPage() {
         renderReceivableDetail(singleReceivable.data)
       )}
 
-      {!loading && !err && modo !== 'conta' && tipo === 'pagar' && listPayables.data &&
+      {!loading && !err && modo !== 'conta' && modo !== 'aging' && tipo === 'pagar' && listPayables.data &&
         (detalhar
           ? renderPayablesDetailed(listPayables.data)
           : (
@@ -874,7 +931,82 @@ export function FinancePrintPage() {
         </table>
           ))}
 
-      {!loading && !err && modo !== 'conta' && tipo === 'receber' && listReceivables.data &&
+      {!loading && !err && modo === 'aging' && tipo === 'receber' && agingReport.data && (
+        <section className="gv-finance-print-detail">
+          <p className="page-desc" style={{ marginTop: 0 }}>
+            {agingReport.data.note} Referência: {formatDate(agingReport.data.asOf)}.
+          </p>
+          <p style={{ marginBottom: '0.75rem' }}>
+            {agingReport.data.totals.customers} devedor(es) · {agingReport.data.totals.titles}{' '}
+            título(s) · Total em aberto {formatBRL(agingReport.data.totals.total)}
+          </p>
+          <table className="data-table gv-finance-print-table" style={{ width: '100%' }}>
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Grupo</th>
+                <th className="num">Títulos</th>
+                <th className="num">A vencer</th>
+                <th className="num">1–30 dias</th>
+                <th className="num">31–60 dias</th>
+                <th className="num">61–90 dias</th>
+                <th className="num">91+ dias</th>
+                <th className="num">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {!agingReport.data.lines.length ? (
+                <tr>
+                  <td colSpan={9} className="empty">
+                    Nenhum saldo em aberto no filtro.
+                  </td>
+                </tr>
+              ) : (
+                agingReport.data.lines.map((line) => (
+                  <tr key={line.customerId ?? line.name}>
+                    <td>
+                      {line.name}
+                      {line.document ? (
+                        <div style={{ fontSize: '0.82rem', opacity: 0.85 }}>
+                          {formatCpfCnpj(line.document)}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td>{line.segment ?? '—'}</td>
+                    <td className="num">{line.openTitles}</td>
+                    <td className="num">{formatBRL(line.current)}</td>
+                    <td className="num">{formatBRL(line.overdue1_30)}</td>
+                    <td className="num">{formatBRL(line.overdue31_60)}</td>
+                    <td className="num">{formatBRL(line.overdue61_90)}</td>
+                    <td className="num">{formatBRL(line.overdue91_plus)}</td>
+                    <td className="num">
+                      <strong>{formatBRL(line.total)}</strong>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {agingReport.data.lines.length > 0 ? (
+              <tfoot>
+                <tr>
+                  <th colSpan={2}>Total geral</th>
+                  <th className="num">{agingReport.data.totals.titles}</th>
+                  <th className="num">{formatBRL(agingReport.data.totals.current)}</th>
+                  <th className="num">{formatBRL(agingReport.data.totals.overdue1_30)}</th>
+                  <th className="num">{formatBRL(agingReport.data.totals.overdue31_60)}</th>
+                  <th className="num">{formatBRL(agingReport.data.totals.overdue61_90)}</th>
+                  <th className="num">{formatBRL(agingReport.data.totals.overdue91_plus)}</th>
+                  <th className="num">
+                    <strong>{formatBRL(agingReport.data.totals.total)}</strong>
+                  </th>
+                </tr>
+              </tfoot>
+            ) : null}
+          </table>
+        </section>
+      )}
+
+      {!loading && !err && modo !== 'conta' && modo !== 'aging' && tipo === 'receber' && listReceivables.data &&
         (detalhar
           ? renderReceivablesDetailed(listReceivables.data)
           : (
@@ -946,7 +1078,11 @@ export function FinancePrintPage() {
 
       {modo === 'conta' && !id && <p className="alert alert-error">Informe o id do título.</p>}
 
-      {listReady && !errMessage && tipo === 'receber' && listReceivables.data == null && (
+      {listReady &&
+        !errMessage &&
+        tipo === 'receber' &&
+        modo !== 'aging' &&
+        listReceivables.data == null && (
         <p className="alert alert-error">Não foi possível carregar os títulos a receber.</p>
       )}
       {listReady && !errMessage && tipo === 'pagar' && listPayables.data == null && (

@@ -172,6 +172,16 @@ export class ReportsController {
     return this.customerReports.delinquency(user.tenantSlug, segment);
   }
 
+  @Get('receivables/aging')
+  @Roles('admin', 'manager', 'finance')
+  receivablesAging(
+    @CurrentUser() user: JwtPayload,
+    @Query('customerId') customerId?: string,
+    @Query('segment') segment?: string,
+  ) {
+    return this.customerReports.receivablesAging(user.tenantSlug, customerId, segment);
+  }
+
   @Get('customers/sales-history')
   @Roles('admin', 'manager', 'seller', 'finance')
   customerSalesHistory(

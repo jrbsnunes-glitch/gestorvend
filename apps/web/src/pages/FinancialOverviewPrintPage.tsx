@@ -26,6 +26,11 @@ type PrintSummary = {
     openingBalanceInferred: number;
     periodInflows: number;
     periodOutflows: number;
+    periodInflowsCompleted?: number;
+    periodInflowsRequisitionFuture?: number;
+    periodOutflowsExpenses?: number;
+    periodOutflowsPayables?: number;
+    periodOutflowsOther?: number;
     closingBalanceInferred: number;
     movements: Array<{
       id: string;
@@ -212,9 +217,26 @@ export function FinancialOverviewPrintPage() {
                 <dt>Saldo inicial caixa (inferido)</dt>
                 <dd>{formatBRL(d.cash.openingBalanceInferred)}</dd>
                 <dt>Entradas no período (caixa, loja inteira)</dt>
-                <dd>{formatBRL(d.cash.periodInflows)}</dd>
+                <dd>
+                  {formatBRL(d.cash.periodInflows)}
+                  <div style={{ fontSize: '0.88rem', marginTop: '0.25rem', opacity: 0.92 }}>
+                    Concluídas: {formatBRL(d.cash.periodInflowsCompleted ?? d.cash.periodInflows)}
+                    {(d.cash.periodInflowsRequisitionFuture ?? 0) > 0
+                      ? ` · Futuras (requisições): ${formatBRL(d.cash.periodInflowsRequisitionFuture ?? 0)}`
+                      : ''}
+                  </div>
+                </dd>
                 <dt>Saídas no período (caixa, loja inteira)</dt>
-                <dd>{formatBRL(d.cash.periodOutflows)}</dd>
+                <dd>
+                  {formatBRL(d.cash.periodOutflows)}
+                  <div style={{ fontSize: '0.88rem', marginTop: '0.25rem', opacity: 0.92 }}>
+                    Despesas: {formatBRL(d.cash.periodOutflowsExpenses ?? 0)} · Contas a pagar:{' '}
+                    {formatBRL(d.cash.periodOutflowsPayables ?? 0)}
+                    {(d.cash.periodOutflowsOther ?? 0) > 0
+                      ? ` · Outras: ${formatBRL(d.cash.periodOutflowsOther ?? 0)}`
+                      : ''}
+                  </div>
+                </dd>
                 <dt>Saldo final caixa (inferido)</dt>
                 <dd>{formatBRL(d.cash.closingBalanceInferred)}</dd>
                 <dt>Faturamento (vendas concluídas)</dt>

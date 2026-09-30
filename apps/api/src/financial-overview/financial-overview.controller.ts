@@ -8,6 +8,7 @@ import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import {
   BillStatus,
   CashMovementType,
+  CreditKind,
   PaymentMethod,
   SaleStatus,
 } from '../generated/tenant-client';
@@ -606,6 +607,24 @@ export class FinancialOverviewController {
     const payOpen = num(openPayables._sum.amountRemaining);
     const recOpen = num(openReceivables._sum.amountRemaining);
 
+    const requisitionFutureAgg = await db.accountReceivable.aggregate({
+      where: {
+        creditKind: CreditKind.REQUISITION,
+        status: { in: [BillStatus.OPEN, BillStatus.OVERDUE] },
+        sale: { status: SaleStatus.COMPLETED, createdAt: { gte: from, lte: to } },
+      },
+      _sum: { amountRemaining: true },
+    });
+    const periodInflowsRequisitionFuture = num(requisitionFutureAgg._sum.amountRemaining);
+
+    const bucketOutflow = (name: string) => periodByBucket.get(name)?.outflow ?? 0;
+    const periodOutflowsExpenses = bucketOutflow('Despesas de caixa');
+    const periodOutflowsPayables = bucketOutflow('Contas a pagar');
+    const periodOutflowsOther = Math.max(
+      0,
+      periodOutflows - periodOutflowsExpenses - periodOutflowsPayables,
+    );
+
     const [salePayAtSaleAgg, salePayRequisitionAgg, receivableSettledViaCash] =
       await Promise.all([
         db.salePayment.aggregate({
@@ -989,6 +1008,11 @@ export class FinancialOverviewController {
         openingBalanceInferred: openingCashInferred,
         periodInflows,
         periodOutflows,
+        periodInflowsCompleted: periodInflows,
+        periodInflowsRequisitionFuture,
+        periodOutflowsExpenses,
+        periodOutflowsPayables,
+        periodOutflowsOther,
         closingBalanceInferred: closingCashInferred,
         openingByMethod: mapToArr(openingByMethod),
         periodByMethod: mapToArr(periodByMethod),
