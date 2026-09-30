@@ -1,5 +1,5 @@
 /**
- * Evento de cancelamento de NF-e/NFC-e (tpEvento 110111) via NFeRecepcaoEvento4.
+ * Carta de correção eletrônica — CC-e (tpEvento 110110).
  */
 import * as https from 'https';
 import { xmlEscape } from '../utils/xml-escape';
@@ -12,7 +12,7 @@ import {
   type RecepcaoEventoResult,
 } from '../inbound/nfe-recepcao-evento.soap';
 
-export const EVENTO_CANCELAMENTO = '110111';
+export const EVENTO_CCE = '110110';
 
 function padNSeq(n: number): string {
   return String(Math.max(1, Math.min(20, n))).padStart(2, '0');
@@ -33,23 +33,22 @@ function formatSefazDateTime(d: Date): string {
   return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}-03:00`;
 }
 
-export function buildCancelamentoEventXml(params: {
+export function buildCceEventXml(params: {
   tpAmb: 1 | 2;
   cOrgao: string;
   cnpj14: string;
   chNFe: string;
-  nProt: string;
-  xJust: string;
-  nSeqEvento?: number;
+  correction: string;
+  nSeqEvento: number;
   privateKeyPem: string;
   certificatePem: string;
 }): { eventoXml: string; infEventoId: string } {
-  const just = params.xJust.trim();
-  if (just.length < 15) {
-    throw new Error('Justificativa de cancelamento deve ter no mínimo 15 caracteres.');
+  const text = params.correction.trim();
+  if (text.length < 15) {
+    throw new Error('Texto da carta de correção deve ter no mínimo 15 caracteres.');
   }
-  const nSeq = params.nSeqEvento ?? 1;
-  const tpEvento = EVENTO_CANCELAMENTO;
+  const nSeq = params.nSeqEvento;
+  const tpEvento = EVENTO_CCE;
   const infEventoId = `ID${tpEvento}${params.chNFe}${padNSeq(nSeq)}`;
   const dhEvento = formatSefazDateTime(new Date());
 
@@ -65,9 +64,9 @@ export function buildCancelamentoEventXml(params: {
     `<nSeqEvento>${nSeq}</nSeqEvento>` +
     `<verEvento>1.00</verEvento>` +
     `<detEvento versao="1.00">` +
-    `<descEvento>Cancelamento</descEvento>` +
-    `<nProt>${xmlEscape(params.nProt)}</nProt>` +
-    `<xJust>${xmlEscape(just.slice(0, 255))}</xJust>` +
+    `<descEvento>Carta de Correcao</descEvento>` +
+    `<xCorrecao>${xmlEscape(text.slice(0, 1000))}</xCorrecao>` +
+    `<xCondUso>A Carta de Correcao e disciplinada pelo paragrafo 1o-A do art. 7o do Convenio S/N, de 15 de dezembro de 1970 e pode ser utilizada para regularizacao de erro ocorrido na emissao de documento fiscal, desde que o erro nao esteja relacionado com: I - as variaveis que determinam o valor do imposto tais como: base de calculo, aliquota, diferenca de preco, quantidade, valor da operacao ou da prestacao; II - a correcao de dados cadastrais que implique mudanca do remetente ou do destinatario; III - a data de emissao ou de saida.</xCondUso>` +
     `</detEvento>` +
     `</infEvento>` +
     `</evento>`;
@@ -80,26 +79,26 @@ export function buildCancelamentoEventXml(params: {
   return { eventoXml, infEventoId };
 }
 
-export async function postCancelamentoNfe(params: {
+export async function postCceNfe(params: {
   production: boolean;
   tpAmb: 1 | 2;
   cOrgao: string;
   cnpj14: string;
   chNFe: string;
-  nProt: string;
-  xJust: string;
+  correction: string;
+  nSeqEvento: number;
   privateKeyPem: string;
   certificatePem: string;
   agent: https.Agent;
   recepcaoEventoUrl?: string;
 }): Promise<RecepcaoEventoResult> {
-  const { eventoXml } = buildCancelamentoEventXml({
+  const { eventoXml } = buildCceEventXml({
     tpAmb: params.tpAmb,
     cOrgao: params.cOrgao,
     cnpj14: params.cnpj14,
     chNFe: params.chNFe,
-    nProt: params.nProt,
-    xJust: params.xJust,
+    correction: params.correction,
+    nSeqEvento: params.nSeqEvento,
     privateKeyPem: params.privateKeyPem,
     certificatePem: params.certificatePem,
   });

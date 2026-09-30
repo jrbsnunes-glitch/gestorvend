@@ -22,10 +22,13 @@ import {
   appendInfNFeSupl,
   buildNfceInfNFeXml,
   buildNfceQrUrl,
+  buildNfceQrUrlAm,
   paymentMethodToTPag,
   type DestInput,
   type NfceItemInput,
 } from './issuer/nfce-xml.builder';
+import { homologFieldText } from './homolog-labels';
+import { resolveSefazWebservices } from './sefaz/sefaz-endpoints';
 import { extractFirstDigestValueB64, signNfeSignatureSibling } from './issuer/sign-inf-nfe';
 import {
   buildNfeProcXml,
@@ -34,7 +37,6 @@ import {
 } from './sefaz/nfce-autorizacao-soap';
 import {
   buildConsSitNFeXml,
-  defaultConsultaProtocoloEndpoint,
   parseNfeConsultaProtocoloResponse,
   postNfeConsultaProtocolo,
 } from './sefaz/nfe-consulta-protocolo.soap';
@@ -42,16 +44,6 @@ import { withIssuerEmitLock } from './fiscal-issuer-emit-lock';
 import { FiscalIssuerSettingsService } from './fiscal-issuer-settings.service';
 import type * as https from 'https';
 
-const DEFAULT_SEFAZ_NFCE_SOAP_HOM =
-  'https://nfce-homologacao.svrs.rs.gov.br/ws/NfeAutorizacao/NFeAutorizacao4.asmx';
-const DEFAULT_SEFAZ_NFCE_SOAP_PROD =
-  'https://nfce.svrs.rs.gov.br/ws/NfeAutorizacao/NFeAutorizacao4.asmx';
-const DEFAULT_SEFAZ_NFE_SOAP_HOM =
-  'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeAutorizacao/NFeAutorizacao4.asmx';
-const DEFAULT_SEFAZ_NFE_SOAP_PROD =
-  'https://nfe.svrs.rs.gov.br/ws/NfeAutorizacao/NFeAutorizacao4.asmx';
-const DEFAULT_QR_BASE_HOMOLOG =
-  'https://www.homologacao.nfce.fazenda.sp.gov.br/NFCeConsultaPublica/Paginas/ConsultaPublica.aspx';
 
 function allocateMoneyByWeights(total: number, weights: number[]): number[] {
   const n = weights.length;
@@ -139,12 +131,32 @@ export class FiscalEmissionProcessorService {
     return m === 'soap' ? 'soap' : 'dry-run';
   }
 
-  private consultaProtocoloUrl(isNfce: boolean, production: boolean): string {
-    const envKey = isNfce ? 'FISCAL_SEFAZ_NFCE_CONSULTA_URL' : 'FISCAL_SEFAZ_NFE_CONSULTA_URL';
-    return (
-      this.config.get<string>(envKey)?.trim() ||
-      defaultConsultaProtocoloEndpoint(isNfce, production)
-    );
+  /** Emissão imediata (ex.: nota de teste homologação) — fora do ciclo do worker. */
+  async processDocumentNow(tenantSlug: string, docId: string): Promise<void> {
+    await this.processOneDocument(tenantSlug, docId);
+  }
+
+  private sefazWs(
+    uf: string,
+    production: boolean,
+    model: 55 | 65,
+  ) {
+    const isNfce = model === 65;
+    return resolveSefazWebservices({
+      uf,
+      production,
+      model: isNfce ? '65' : '55',
+      overrides: {
+        autorizacao: this.config
+          .get<string>(isNfce ? 'FISCAL_SEFAZ_NFCE_SOAP_URL' : 'FISCAL_SEFAZ_NFE_SOAP_URL')
+          ?.trim(),
+        consulta: this.config
+          .get<string>(
+            isNfce ? 'FISCAL_SEFAZ_NFCE_CONSULTA_URL' : 'FISCAL_SEFAZ_NFE_CONSULTA_URL',
+          )
+          ?.trim(),
+      },
+    });
   }
 
   private shouldAttemptConsultaRecovery(cStat: string | undefined, motive: string): boolean {
@@ -336,24 +348,15 @@ export class FiscalEmissionProcessorService {
       const stored = await this.outboundStorage.readXml(tenantSlug, reuseAccessKey);
       if (stored && !/<nfeProc[\s>]/i.test(stored)) {
         const parsedKey = parseAccessKey44(reuseAccessKey)!;
-        const soapUrl =
-          this.config.get<string>(
-            isNfce ? 'FISCAL_SEFAZ_NFCE_SOAP_URL' : 'FISCAL_SEFAZ_NFE_SOAP_URL',
-          )?.trim() ||
-          (isNfce
-            ? production
-              ? DEFAULT_SEFAZ_NFCE_SOAP_PROD
-              : DEFAULT_SEFAZ_NFCE_SOAP_HOM
-            : production
-              ? DEFAULT_SEFAZ_NFE_SOAP_PROD
-              : DEFAULT_SEFAZ_NFE_SOAP_HOM);
+        const wsCont = this.sefazWs(settings.uf, production, modelo);
+        const soapUrl = wsCont.autorizacao;
         await db.fiscalDocument.update({
           where: { id: doc.id },
           data: { status: FiscalDocumentStatus.SENT },
         });
         const agent = createMutualTlsAgentFromPfx(certPath, certPassword);
         const enviNFe = wrapEnviNFe(stored);
-        const consultUrl = this.consultaProtocoloUrl(isNfce, production);
+        const consultUrl = wsCont.consulta;
         const nfeOnlyStored = stored.match(/<NFe[\s\S]*?<\/NFe>/i)?.[0] ?? stored;
         let respXml: string;
         try {
@@ -593,7 +596,7 @@ export class FiscalEmissionProcessorService {
       return {
         nItem: idx + 1,
         sku: it.variant.sku,
-        description: p.name,
+        description: homologFieldText(p.name, tpAmb, 120),
         ncm,
         cfop,
         uCom: p.taxUnit?.trim() || 'UN',
@@ -655,7 +658,7 @@ export class FiscalEmissionProcessorService {
       }
       dest = {
         document: custDoc || null,
-        xNome: sale.customer.name,
+        xNome: homologFieldText(sale.customer.name, tpAmb, 60),
         email: sale.customer.email,
         indIEDest: '9',
         ender:
@@ -728,19 +731,33 @@ export class FiscalEmissionProcessorService {
     });
     const digest = extractFirstDigestValueB64(signed);
 
+    const wsEmit = this.sefazWs(ufSig, production, modelo);
     if (isNfce && cscId && csc) {
+      const qrOverride = this.config.get<string>('FISCAL_NFCE_QR_BASE_URL')?.trim();
       const qrBase =
-        this.config.get<string>('FISCAL_NFCE_QR_BASE_URL')?.trim() || DEFAULT_QR_BASE_HOMOLOG;
-      const urlChave = this.config.get<string>('FISCAL_NFCE_URL_CHAVE')?.trim();
-      const qrUrl = buildNfceQrUrl({
-        qrBaseUrl: qrBase,
-        chNFe: chave44,
-        tpAmb,
-        versaoQr: '100',
-        cscId,
-        csc,
-        digestValueB64: digest,
-      });
+        qrOverride ||
+        wsEmit.nfceQrConsultaBase ||
+        'https://www.homologacao.nfce.fazenda.sp.gov.br/NFCeConsultaPublica/Paginas/ConsultaPublica.aspx';
+      const urlChave =
+        this.config.get<string>('FISCAL_NFCE_URL_CHAVE')?.trim() || wsEmit.nfceUrlChave;
+      const qrUrl =
+        ufSig === 'AM' && !qrOverride
+          ? buildNfceQrUrlAm({
+              chNFe: chave44,
+              tpEmis,
+              cscId,
+              csc,
+              qrBaseUrl: qrBase,
+            })
+          : buildNfceQrUrl({
+              qrBaseUrl: qrBase,
+              chNFe: chave44,
+              tpAmb,
+              versaoQr: '100',
+              cscId,
+              csc,
+              digestValueB64: digest,
+            });
       signed = appendInfNFeSupl(signed, qrUrl, urlChave);
     }
 
@@ -749,15 +766,7 @@ export class FiscalEmissionProcessorService {
       `<idLote>1</idLote><indSinc>1</indSinc>${signed}</enviNFe>`;
 
     const mode = this.transportMode();
-    const soapUrl =
-      this.config.get<string>(isNfce ? 'FISCAL_SEFAZ_NFCE_SOAP_URL' : 'FISCAL_SEFAZ_NFE_SOAP_URL')?.trim() ||
-      (isNfce
-        ? production
-          ? DEFAULT_SEFAZ_NFCE_SOAP_PROD
-          : DEFAULT_SEFAZ_NFCE_SOAP_HOM
-        : production
-          ? DEFAULT_SEFAZ_NFE_SOAP_PROD
-          : DEFAULT_SEFAZ_NFE_SOAP_HOM);
+    const soapUrl = wsEmit.autorizacao;
 
     const persistAuthorized = async (accessKey: string, protocol: string | null, xmlToSave: string) => {
       const saved = await this.outboundStorage.saveXml(tenantSlug, accessKey, xmlToSave);
@@ -805,7 +814,7 @@ export class FiscalEmissionProcessorService {
     });
 
     const agent = createMutualTlsAgentFromPfx(certPath, certPassword);
-    const consultUrl = this.consultaProtocoloUrl(isNfce, production);
+    const consultUrl = wsEmit.consulta;
     let respXml: string;
     try {
       respXml = await postNfceAutorizacaoLote(soapUrl, enviNFe, agent);

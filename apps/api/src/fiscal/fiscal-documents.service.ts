@@ -20,6 +20,7 @@ import { createMutualTlsAgentFromPfx, loadPfxMaterial } from './issuer/load-pfx'
 import { extractCnpjFromPfx } from './issuer/cert-cnpj';
 import { validateCnpj14, digitsCnpj } from '../common/cnpj.util';
 import { ufToCodIbge } from './utils/uf-ibge';
+import { resolveSefazWebservices } from './sefaz/sefaz-endpoints';
 import { postCancelamentoNfe } from './sefaz/nfe-cancelamento.soap';
 import {
   buildInutilizacaoXml,
@@ -28,6 +29,8 @@ import {
   postInutilizacao,
 } from './sefaz/nfe-inutilizacao.soap';
 import { SalesService } from '../sales/sales.service';
+import { postCceNfe } from './sefaz/nfe-cce.soap';
+import type { ManualNfeInput } from './manual-nfe.types';
 
 export type FiscalDocumentListQuery = {
   kind?: FiscalDocumentKind;
@@ -130,6 +133,7 @@ export class FiscalDocumentsService {
     const doc = await db.fiscalDocument.findUnique({
       where: { id },
       include: {
+        correctionLetters: { orderBy: { sequence: 'asc' } },
         sale: {
           include: {
             customer: { select: { id: true, name: true, document: true, segment: true } },
@@ -157,7 +161,17 @@ export class FiscalDocumentsService {
       },
     });
     if (!doc) throw new NotFoundException('Documento fiscal não encontrado.');
-    return this.mapListItem(doc);
+    const mapped = this.mapListItem(doc);
+    return {
+      ...mapped,
+      correctionLetters: doc.correctionLetters.map((c) => ({
+        id: c.id,
+        sequence: c.sequence,
+        correctionText: c.correctionText,
+        protocol: c.protocol,
+        createdAt: c.createdAt.toISOString(),
+      })),
+    };
   }
 
   async list(tenantSlug: string, q: FiscalDocumentListQuery) {
@@ -465,6 +479,16 @@ export class FiscalDocumentsService {
       if (!cnpjOk.ok) throw new BadRequestException('CNPJ inválido para cancelamento.');
       const tpAmb: 1 | 2 =
         settings.sefazEnvironment === FiscalSefazEnvironment.PRODUCAO ? 1 : 2;
+      const model = doc.kind === FiscalDocumentKind.NF_E ? '55' : '65';
+      const ws = resolveSefazWebservices({
+        uf: settings.uf,
+        production: tpAmb === 1,
+        model,
+        overrides: {
+          recepcaoEvento:
+            this.config.get<string>('FISCAL_SEFAZ_RECEPCAO_EVENTO_URL')?.trim() || undefined,
+        },
+      });
       const result = await postCancelamentoNfe({
         production: tpAmb === 1,
         tpAmb,
@@ -476,6 +500,7 @@ export class FiscalDocumentsService {
         privateKeyPem: material.privateKeyPem,
         certificatePem: material.certificatePem,
         agent,
+        recepcaoEventoUrl: ws.recepcaoEvento,
       });
       if (!result.ok && result.cStat !== '573' && result.cStat !== '596') {
         throw new BadRequestException(result.xMotivo || 'SEFAZ rejeitou o cancelamento.');
@@ -570,6 +595,7 @@ export class FiscalDocumentsService {
     if (!doc) throw new NotFoundException('Documento fiscal não encontrado.');
 
     const deletable: FiscalDocumentStatus[] = [
+      FiscalDocumentStatus.DRAFT,
       FiscalDocumentStatus.QUEUED,
       FiscalDocumentStatus.ERROR,
       FiscalDocumentStatus.REJECTED,
@@ -596,6 +622,9 @@ export class FiscalDocumentsService {
     const doc = await this.getById(tenantSlug, documentId);
     let hint = 'Status conforme cadastro local.';
     switch (doc.status) {
+      case FiscalDocumentStatus.DRAFT:
+        hint = 'Rascunho — revise e use Enviar à SEFAZ quando estiver pronto.';
+        break;
       case FiscalDocumentStatus.AUTHORIZED:
         hint = 'Nota autorizada. Use DANFE / 2ª via para impressão.';
         break;
@@ -735,4 +764,218 @@ export class FiscalDocumentsService {
         : null,
     };
   }
+
+  /** CC-e (110110) para NF-e/NFC-e autorizada. */
+  async correctionLetterById(tenantSlug: string, documentId: string, text: string) {
+    const correction = text.trim();
+    if (correction.length < 15) {
+      throw new BadRequestException('Texto da carta de correção: mínimo 15 caracteres.');
+    }
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const doc = await db.fiscalDocument.findUnique({
+      where: { id: documentId },
+      include: { correctionLetters: true },
+    });
+    if (!doc) throw new NotFoundException('Documento fiscal não encontrado.');
+    if (doc.status !== FiscalDocumentStatus.AUTHORIZED || !doc.accessKey?.trim()) {
+      throw new BadRequestException('Somente nota autorizada pode receber CC-e.');
+    }
+    const seq = doc.correctionLetters.length + 1;
+    if (seq > 20) throw new BadRequestException('Limite de 20 cartas de correção por NF-e.');
+
+    const canSefaz =
+      doc.protocol &&
+      doc.protocol !== 'DRY-RUN' &&
+      (this.config.get<string>('FISCAL_EMIT_TRANSPORT') ?? 'dry-run').toLowerCase() === 'soap';
+
+    let protocol: string | null = null;
+    if (canSefaz) {
+      const ensured = await this.issuerSvc.ensureForTenant(tenantSlug);
+      if (!ensured) throw new BadRequestException('Emissor fiscal não configurado.');
+      const { company, settings } = ensured;
+      const certPath =
+        (settings.certificatePath?.trim() ||
+          this.config.get<string>('FISCAL_ISSUER_CERT_PATH')?.trim()) ??
+        '';
+      const certPassword =
+        settings.certificatePassword?.trim() ||
+        this.config.get<string>('FISCAL_ISSUER_CERT_PASSWORD')?.trim() ||
+        '';
+      if (!certPath || !certPassword) {
+        throw new BadRequestException('Certificado A1 necessário para CC-e na SEFAZ.');
+      }
+      const material = loadPfxMaterial(certPath, certPassword);
+      const agent = createMutualTlsAgentFromPfx(certPath, certPassword);
+      const certCnpj = extractCnpjFromPfx(certPath, certPassword);
+      const cnpjOk = certCnpj
+        ? validateCnpj14(certCnpj)
+        : validateCnpj14(digitsCnpj(company.cnpj));
+      if (!cnpjOk.ok) throw new BadRequestException('CNPJ inválido.');
+      const tpAmb: 1 | 2 =
+        settings.sefazEnvironment === FiscalSefazEnvironment.PRODUCAO ? 1 : 2;
+      const model = doc.kind === FiscalDocumentKind.NF_E ? '55' : '65';
+      const ws = resolveSefazWebservices({
+        uf: settings.uf,
+        production: tpAmb === 1,
+        model,
+        overrides: {
+          recepcaoEvento:
+            this.config.get<string>('FISCAL_SEFAZ_RECEPCAO_EVENTO_URL')?.trim() || undefined,
+        },
+      });
+      const result = await postCceNfe({
+        production: tpAmb === 1,
+        tpAmb,
+        cOrgao: ufToCodIbge(settings.uf),
+        cnpj14: cnpjOk.cnpj,
+        chNFe: doc.accessKey.replace(/\D/g, '').slice(0, 44),
+        correction,
+        nSeqEvento: seq,
+        privateKeyPem: material.privateKeyPem,
+        certificatePem: material.certificatePem,
+        agent,
+        recepcaoEventoUrl: ws.recepcaoEvento,
+      });
+      if (!result.ok && result.cStat !== '573' && result.cStat !== '596') {
+        throw new BadRequestException(result.xMotivo || 'SEFAZ rejeitou a CC-e.');
+      }
+      if (result.ok) {
+        protocol = result.nProt ?? null;
+      }
+    } else {
+      protocol = 'LOCAL-PREVIEW';
+    }
+
+    return db.fiscalCorrectionLetter.create({
+      data: {
+        fiscalDocumentId: documentId,
+        sequence: seq,
+        correctionText: correction.slice(0, 1000),
+        protocol,
+      },
+    });
+  }
+
+  /** Pré-visualização DANFE (sem gravar rascunho). */
+  async buildManualNfePreviewPayload(
+    tenantSlug: string,
+    input: ManualNfeInput,
+    total: number,
+  ) {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const customer = await db.customer.findUnique({ where: { id: input.customerId } });
+    if (!customer) throw new BadRequestException('Cliente não encontrado.');
+    const nature = await db.operationNature.findUnique({
+      where: { id: input.operationNatureId },
+    });
+    const variants = await db.productVariant.findMany({
+      where: { id: { in: input.items.map((i) => i.variantId) } },
+      include: {
+        product: {
+          include: {
+            fiscalSituation: {
+              select: {
+                code: true,
+                name: true,
+                aliqIcms: true,
+                aliqIpi: true,
+                aliqPis: true,
+                aliqCofins: true,
+                cfopInternal: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    const byVariant = new Map(variants.map((v) => [v.id, v]));
+    const company = await db.company.findFirst({ orderBy: { createdAt: 'asc' } });
+    const items = input.items.map((it, idx) => {
+      const v = byVariant.get(it.variantId);
+      const qty = Number(it.quantity);
+      const unit = Number(it.unitPrice);
+      const disc = Number(it.discount ?? 0);
+      const totalLine = Math.max(0, qty * unit - disc);
+      return {
+        quantity: String(qty),
+        unitPrice: String(unit),
+        totalLine: String(roundMoney2(totalLine)),
+        variant: v
+          ? {
+              sku: v.sku,
+              product: { name: v.product.name },
+            }
+          : { sku: `ITEM-${idx + 1}`, product: { name: 'Produto' } },
+      };
+    });
+
+    const aliqMap = new Map<string, Record<string, string>>();
+    for (const v of variants) {
+      const fs = v.product.fiscalSituation;
+      if (!fs || aliqMap.has(fs.code)) continue;
+      aliqMap.set(fs.code, {
+        code: fs.code,
+        name: fs.name,
+        aliqIcms: String(fs.aliqIcms),
+        aliqIpi: String(fs.aliqIpi),
+        aliqPis: String(fs.aliqPis),
+        aliqCofins: String(fs.aliqCofins),
+      });
+    }
+
+    return {
+      preview: true,
+      document: {
+        id: 'preview',
+        status: 'DRAFT',
+        accessKey: null,
+        protocol: null,
+        kind: FiscalDocumentKind.NF_E,
+        lastError: null,
+        sale: {
+          number: 0,
+          total: String(total),
+          discount: String(input.discount ?? 0),
+          surcharge: String(input.surcharge ?? 0),
+          freightAmount: String(input.freightAmount ?? 0),
+          freightMod: input.freightMod ?? 9,
+          deliveryVehiclePlate: input.deliveryVehiclePlate ?? null,
+          deliveryDriverName: input.deliveryDriverName ?? null,
+          notes: input.notes ?? null,
+          createdAt: new Date().toISOString(),
+          customer: {
+            name: customer.name,
+            document: customer.document,
+          },
+          operationNature: nature
+            ? {
+                id: nature.id,
+                code: nature.code,
+                description: nature.description,
+                cfop: nature.cfop,
+              }
+            : null,
+          items,
+        },
+      },
+      aliquots: [...aliqMap.values()],
+      company: company
+        ? {
+            legalName: company.legalName,
+            tradeName: company.tradeName,
+            cnpj: company.cnpj,
+            ie: company.ie,
+            address: company.address,
+            city: company.city,
+            state: company.state,
+            zip: company.zip,
+            phone: company.phone,
+          }
+        : null,
+    };
+  }
+}
+
+function roundMoney2(n: number): number {
+  return Math.round(n * 100) / 100;
 }

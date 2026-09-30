@@ -195,6 +195,8 @@ enum FiscalDocumentKind {
 
 /// Ciclo local do documento (worker SEFAZ / contingência).
 enum FiscalDocumentStatus {
+  /// Rascunho NF-e manual — não entra no worker até envio explícito.
+  DRAFT
   QUEUED
   BUILDING_XML
   SENT
@@ -1074,6 +1076,20 @@ model FiscalDocument {
   xmlSha256        String?              @db.VarChar(64)
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
+  correctionLetters FiscalCorrectionLetter[]
+}
+
+model FiscalCorrectionLetter {
+  id               String         @id @default(uuid())
+  fiscalDocumentId String
+  fiscalDocument   FiscalDocument @relation(fields: [fiscalDocumentId], references: [id], onDelete: Cascade)
+  sequence         Int
+  correctionText   String         @db.VarChar(1000)
+  protocol         String?        @db.VarChar(32)
+  createdAt        DateTime       @default(now())
+
+  @@unique([fiscalDocumentId, sequence])
+  @@index([fiscalDocumentId])
 }
 
 model SaleItem {

@@ -6,6 +6,8 @@ import { SalesModule } from '../sales/sales.module';
 import { FiscalDocumentsController } from './fiscal-documents.controller';
 import { FiscalDocumentsService } from './fiscal-documents.service';
 import { FiscalEmissionProcessorService } from './fiscal-emission.processor';
+import { FiscalSefazOpsService } from './fiscal-sefaz-ops.service';
+import { FiscalManualNfeService } from './fiscal-manual-nfe.service';
 import { FiscalIssuerSettingsController } from './fiscal-issuer-settings.controller';
 import { FiscalIssuerSettingsService } from './fiscal-issuer-settings.service';
 import { FiscalController } from './fiscal.controller';
@@ -28,6 +30,8 @@ import { OutboundNfeStorage } from './issuer/outbound-nfe.storage';
     FiscalDocumentsService,
     FiscalIssuerSettingsService,
     FiscalEmissionProcessorService,
+    FiscalSefazOpsService,
+    FiscalManualNfeService,
     InboundNfeService,
     InboundNfeStorage,
     InboundDistribuicaoProcessorService,

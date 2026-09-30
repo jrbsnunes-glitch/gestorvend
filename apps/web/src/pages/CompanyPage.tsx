@@ -313,6 +313,37 @@ function IssuerEmissorCard() {
     onError: (e: Error) => setIssuerFeedback({ kind: 'err', msg: e.message }),
   });
 
+  const testSefaz = useMutation({
+    mutationFn: (model: '65' | '55') =>
+      api<{ ok: boolean; message: string; cStat?: string }>(
+        `/fiscal/test-sefaz?model=${model}`,
+        { method: 'POST' },
+      ),
+    onSuccess: (data) =>
+      setIssuerFeedback({
+        kind: data.ok ? 'ok' : 'err',
+        msg: data.message || (data.ok ? 'SEFAZ em operação.' : 'SEFAZ indisponível.'),
+      }),
+    onError: (e: Error) => setIssuerFeedback({ kind: 'err', msg: e.message }),
+  });
+
+  const homologTestEmit = useMutation({
+    mutationFn: (type: 'NFCE' | 'NFE') =>
+      api<{ ok: boolean; message: string; saleNumber?: number; document?: { accessKey?: string } }>(
+        `/fiscal/homolog-test-emit?type=${type}`,
+        { method: 'POST' },
+      ),
+    onSuccess: (data) =>
+      setIssuerFeedback({
+        kind: 'ok',
+        msg:
+          data.message +
+          (data.saleNumber != null ? ` Venda #${data.saleNumber}.` : '') +
+          (data.document?.accessKey ? ` Chave ${data.document.accessKey.slice(0, 12)}…` : ''),
+      }),
+    onError: (e: Error) => setIssuerFeedback({ kind: 'err', msg: e.message }),
+  });
+
   const uploadCert = useMutation({
     mutationFn: (file: File) => {
       const fields: Record<string, string> = {};
@@ -437,6 +468,49 @@ function IssuerEmissorCard() {
               Produção
             </label>
           </div>
+          {sefazEnvironment === 'HOMOLOGACAO' && (
+            <div
+              className="form-row"
+              style={{ gap: '0.5rem', marginBottom: '0.65rem', flexWrap: 'wrap' }}
+            >
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={testSefaz.isPending || homologTestEmit.isPending}
+                onClick={() => {
+                  setIssuerFeedback(null);
+                  testSefaz.mutate('65');
+                }}
+              >
+                {testSefaz.isPending ? 'Consultando…' : 'Testar SEFAZ (NFC-e)'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={testSefaz.isPending || homologTestEmit.isPending}
+                onClick={() => {
+                  setIssuerFeedback(null);
+                  homologTestEmit.mutate('NFCE');
+                }}
+              >
+                {homologTestEmit.isPending ? 'Emitindo…' : 'Emitir NFC-e de teste'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={testSefaz.isPending || homologTestEmit.isPending}
+                onClick={() => {
+                  setIssuerFeedback(null);
+                  homologTestEmit.mutate('NFE');
+                }}
+              >
+                {homologTestEmit.isPending ? 'Emitindo…' : 'Emitir NF-e de teste'}
+              </button>
+              <span className="muted" style={{ fontSize: '0.72rem', alignSelf: 'center' }}>
+                Requer certificado, CSC (NFC-e) e <code>FISCAL_EMIT_TRANSPORT=soap</code> na API.
+              </span>
+            </div>
+          )}
           <details className="submenu-details" style={{ marginBottom: '0.65rem' }}>
             <summary className="submenu-summary">NF-e de entrada (Distribuição DF-e)</summary>
             <div className="submenu-body">

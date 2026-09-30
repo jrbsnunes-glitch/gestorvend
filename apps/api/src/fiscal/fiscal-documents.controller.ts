@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -15,11 +16,16 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { FiscalDocumentKind } from '../generated/tenant-client';
 import { FiscalDocumentsService } from './fiscal-documents.service';
+import { FiscalManualNfeService } from './fiscal-manual-nfe.service';
+import type { ManualNfeInput } from './manual-nfe.types';
 
 @Controller('fiscal/documents')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class FiscalDocumentsController {
-  constructor(private readonly docs: FiscalDocumentsService) {}
+  constructor(
+    private readonly docs: FiscalDocumentsService,
+    private readonly manualNfe: FiscalManualNfeService,
+  ) {}
 
   /**
    * Listagem / filtro do módulo Notas Fiscais.
@@ -103,6 +109,34 @@ export class FiscalDocumentsController {
     return this.docs.findBySaleId(user.tenantSlug, saleId);
   }
 
+  @Post('manual-nfe/preview')
+  @Roles('admin', 'manager')
+  previewManualNfe(@CurrentUser() user: JwtPayload, @Body() body: ManualNfeInput) {
+    return this.manualNfe.previewManualNfe(user.tenantSlug, body);
+  }
+
+  @Post('manual-nfe')
+  @Roles('admin', 'manager')
+  createManualNfe(@CurrentUser() user: JwtPayload, @Body() body: ManualNfeInput) {
+    return this.manualNfe.createManualNfe(user, body);
+  }
+
+  @Get(':id/manual-nfe')
+  @Roles('admin', 'manager')
+  getManualNfeDraft(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.manualNfe.getManualNfeDraft(user.tenantSlug, id);
+  }
+
+  @Patch(':id/manual-nfe')
+  @Roles('admin', 'manager')
+  updateManualNfe(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: ManualNfeInput,
+  ) {
+    return this.manualNfe.updateManualNfe(user, id, body);
+  }
+
   @Get(':id/danfe')
   @Roles('admin', 'manager', 'seller', 'finance')
   danfe(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
@@ -164,6 +198,22 @@ export class FiscalDocumentsController {
       xJust: body.xJust,
       ano: body.ano,
     });
+  }
+
+  @Post(':id/send')
+  @Roles('admin', 'manager')
+  sendDraft(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.manualNfe.sendDraftDocument(user.tenantSlug, id);
+  }
+
+  @Post(':id/cce')
+  @Roles('admin', 'manager')
+  cce(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: { text?: string },
+  ) {
+    return this.docs.correctionLetterById(user.tenantSlug, id, body.text ?? '');
   }
 
   @Post(':id/mark-contingency')

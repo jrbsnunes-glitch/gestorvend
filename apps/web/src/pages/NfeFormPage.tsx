@@ -66,7 +66,7 @@ type FiscalDetail = {
   };
 };
 
-const DELETABLE = new Set(['QUEUED', 'ERROR', 'REJECTED', 'BUILDING_XML']);
+const DELETABLE = new Set(['DRAFT', 'QUEUED', 'ERROR', 'REJECTED', 'BUILDING_XML']);
 
 export function NfeFormPage() {
   const { documentId } = useParams<{ documentId?: string }>();
@@ -243,6 +243,47 @@ export function NfeFormPage() {
     onError: (e: Error) => setErr(e.message),
   });
 
+  function buildManualPayload(emitNow: boolean) {
+    return {
+      customerId,
+      operationNatureId: natureId,
+      notes: notes || null,
+      discount: disc,
+      surcharge: sur,
+      freightAmount: freight,
+      freightMod,
+      deliveryVehiclePlate: plate || null,
+      deliveryDriverName: driver || null,
+      deductStock,
+      emitNow,
+      items: lines.map((l) => ({
+        variantId: l.variantId,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+      })),
+      payments: [{ method: payMethod, amount: total }],
+    };
+  }
+
+  const previewMut = useMutation({
+    mutationFn: async () => {
+      if (!customerId) throw new Error('Selecione o destinatário (cliente com CPF/CNPJ).');
+      if (!natureId) throw new Error('Selecione a natureza da operação.');
+      if (!lines.length) throw new Error('Inclua ao menos um item.');
+      if (total <= 0) throw new Error('Total da nota deve ser maior que zero.');
+      return api<Record<string, unknown>>('/fiscal/documents/manual-nfe/preview', {
+        method: 'POST',
+        json: buildManualPayload(false),
+      });
+    },
+    onSuccess: (payload) => {
+      sessionStorage.setItem('gv-danfe-preview', JSON.stringify(payload));
+      window.open('/notas-fiscais/danfe/preview', '_blank', 'noopener');
+      setInfo('Pré-visualização aberta — ainda não foi gravada na SEFAZ.');
+    },
+    onError: (e: Error) => setErr(e.message),
+  });
+
   const saveMut = useMutation({
     mutationFn: async (andEmit: boolean) => {
       if (!customerId) throw new Error('Selecione o destinatário (cliente com CPF/CNPJ).');
@@ -255,44 +296,28 @@ export function NfeFormPage() {
       if (!lines.length) throw new Error('Inclua ao menos um item.');
       if (total <= 0) throw new Error('Total da nota deve ser maior que zero.');
 
-      if (isEdit && documentId && existing.data && DELETABLE.has(existing.data.status)) {
-        await api(`/fiscal/documents/${documentId}/delete-unsent`, {
-          method: 'POST',
-          json: {},
-        });
-      } else if (isEdit && existing.data && !DELETABLE.has(existing.data.status)) {
+      if (isEdit && documentId && existing.data && !DELETABLE.has(existing.data.status)) {
         throw new Error('Não é possível alterar nota já enviada/autorizada.');
       }
 
-      const sale = await api<{ id: string }>('/sales', {
-        method: 'POST',
-        json: {
-          customerId,
-          notes: notes || null,
-          discount: disc,
-          surcharge: sur,
-          freightAmount: freight,
-          freightMod,
-          operationNatureId: natureId,
-          deliveryVehiclePlate: plate || null,
-          deliveryDriverName: driver || null,
-          deductStock,
-          source: 'NFE_FORM',
-          items: lines.map((l) => ({
-            variantId: l.variantId,
-            quantity: l.quantity,
-            unitPrice: l.unitPrice,
-          })),
-          payments: [{ method: payMethod, amount: total }],
-        },
-      });
+      const payload = buildManualPayload(andEmit);
 
-      const doc = await api<{ id: string }>('/fiscal/documents/queue', {
-        method: 'POST',
-        json: { saleId: sale.id, kind: 'NF_E' },
-      });
+      if (isEdit && documentId) {
+        await api(`/fiscal/documents/${documentId}/manual-nfe`, {
+          method: 'PATCH',
+          json: payload,
+        });
+        if (andEmit) {
+          await api(`/fiscal/documents/${documentId}/send`, { method: 'POST', json: {} });
+        }
+        return { docId: documentId!, andEmit };
+      }
 
-      return { docId: doc.id, andEmit };
+      const created = await api<{ document: { id: string } }>('/fiscal/documents/manual-nfe', {
+        method: 'POST',
+        json: payload,
+      });
+      return { docId: created.document.id, andEmit };
     },
     onSuccess: ({ docId, andEmit }) => {
       qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
@@ -768,6 +793,18 @@ export function NfeFormPage() {
         </button>
         <button
           type="button"
+          className="btn btn-secondary"
+          disabled={previewMut.isPending || saveMut.isPending}
+          onClick={() => {
+            setErr(null);
+            setInfo(null);
+            previewMut.mutate();
+          }}
+        >
+          {previewMut.isPending ? 'Gerando…' : 'Pré-visualizar DANFE'}
+        </button>
+        <button
+          type="button"
           className="btn btn-primary"
           disabled={saveMut.isPending}
           onClick={() => {
@@ -776,7 +813,7 @@ export function NfeFormPage() {
             saveMut.mutate(false);
           }}
         >
-          {saveMut.isPending ? 'Salvando…' : 'Salvar (fila)'}
+          {saveMut.isPending ? 'Salvando…' : 'Salvar rascunho'}
         </button>
         <button
           type="button"
@@ -784,11 +821,11 @@ export function NfeFormPage() {
           disabled={saveMut.isPending}
           onClick={() => {
             setErr(null);
-            setInfo('Abrindo DANFE em nova aba…');
+            setInfo('Enviando à SEFAZ…');
             saveMut.mutate(true);
           }}
         >
-          Salvar e emitir (DANFE)
+          Salvar e transmitir SEFAZ
         </button>
       </div>
     </div>

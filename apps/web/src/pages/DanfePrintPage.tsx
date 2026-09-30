@@ -10,6 +10,7 @@ import { formatBRL, formatCnpj, formatCpfCnpj, formatDate } from '../lib/format'
 import './danfe-thermal-print.css';
 
 type DanfePayload = {
+  preview?: boolean;
   document: {
     id: string;
     status: string;
@@ -76,12 +77,21 @@ function freightLabel(mod?: number): string {
 
 export function DanfePrintPage() {
   const { id } = useParams<{ id: string }>();
+  const isPreview = id === 'preview';
 
   const q = useQuery({
     queryKey: ['fiscal', 'danfe', id],
-    queryFn: () => api<DanfePayload>(`/fiscal/documents/${id}/danfe`),
+    queryFn: () => {
+      if (isPreview) {
+        const raw = sessionStorage.getItem('gv-danfe-preview');
+        if (!raw) throw new Error('Pré-visualização expirada — gere de novo no formulário NF-e.');
+        return JSON.parse(raw) as DanfePayload;
+      }
+      return api<DanfePayload>(`/fiscal/documents/${id}/danfe`);
+    },
     enabled: !!id,
     refetchInterval: (query) => {
+      if (isPreview) return false;
       const st = query.state.data?.document.status;
       if (st === 'AUTHORIZED' || st === 'REJECTED' || st === 'ERROR' || st === 'CANCELLED') {
         return false;
@@ -120,6 +130,11 @@ export function DanfePrintPage() {
       {pending && (
         <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
           Aguardando autorização SEFAZ ({doc?.status})…
+        </span>
+      )}
+      {(isPreview || q.data?.preview) && (
+        <span className="alert alert-error" style={{ margin: 0, padding: '0.35rem 0.65rem' }}>
+          Pré-visualização — sem valor fiscal / não transmitida
         </span>
       )}
     </div>

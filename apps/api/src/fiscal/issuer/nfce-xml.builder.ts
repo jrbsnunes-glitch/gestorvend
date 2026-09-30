@@ -568,6 +568,22 @@ export function buildNfceInfNFeXml(opts: {
   return { xmlNfeEnvelope, infNFeId };
 }
 
+/** Layout QR NFC-e SEFAZ/AM (parâmetro `p=` — versão 2). */
+export function buildNfceQrUrlAm(params: {
+  chNFe: string;
+  tpEmis: number;
+  cscId: string;
+  csc: string;
+  qrBaseUrl: string;
+}): string {
+  const ch = onlyDigits(params.chNFe, 44);
+  const cscId = params.cscId.replace(/\D/g, '');
+  const digestInput = `${ch}|2|${params.tpEmis}|${cscId}${params.csc}`;
+  const hash = crypto.createHash('sha1').update(digestInput, 'utf8').digest('hex').toUpperCase();
+  const base = params.qrBaseUrl.replace(/\?.*$/, '');
+  return `${base}?p=${ch}|2|${params.tpEmis}|${cscId}|${hash}`;
+}
+
 export function buildNfceQrUrl(input: {
   qrBaseUrl: string;
   chNFe: string;

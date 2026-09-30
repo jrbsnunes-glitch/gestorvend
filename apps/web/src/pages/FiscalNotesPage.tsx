@@ -87,6 +87,8 @@ function statusLabel(s: string): string {
       return 'Na fila';
     case 'BUILDING_XML':
       return 'Gerando XML';
+    case 'DRAFT':
+      return 'Rascunho';
     case 'SENT':
       return 'Enviada';
     case 'REJECTED':
@@ -212,6 +214,12 @@ export function FiscalNotesPage() {
   const emitDoc = useMutation({
     mutationFn: async (row: FiscalDocRow) => {
       if (row.status === 'AUTHORIZED') return row;
+      if (row.status === 'DRAFT' || row.status === 'REJECTED' || row.status === 'ERROR') {
+        return api<FiscalDocRow>(`/fiscal/documents/${row.id}/send`, {
+          method: 'POST',
+          json: {},
+        });
+      }
       return api<FiscalDocRow>('/fiscal/documents/queue', {
         method: 'POST',
         json: { saleId: row.saleId, kind: row.kind },
@@ -229,6 +237,15 @@ export function FiscalNotesPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
       setSelectedId(null);
+    },
+  });
+
+  const cceDoc = useMutation({
+    mutationFn: ({ id, text }: { id: string; text: string }) =>
+      api(`/fiscal/documents/${id}/cce`, { method: 'POST', json: { text } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
+      window.alert('Carta de correção registrada.');
     },
   });
 
@@ -647,7 +664,9 @@ export function FiscalNotesPage() {
                         >
                           Emitir
                         </button>
-                        {['QUEUED', 'ERROR', 'REJECTED', 'BUILDING_XML'].includes(r.status) && (
+                        {['DRAFT', 'QUEUED', 'ERROR', 'REJECTED', 'BUILDING_XML'].includes(
+                          r.status,
+                        ) && (
                           <button
                             type="button"
                             className="btn btn-secondary btn-compact"
@@ -657,6 +676,23 @@ export function FiscalNotesPage() {
                             }}
                           >
                             Editar
+                          </button>
+                        )}
+                        {r.status === 'AUTHORIZED' && tab === 'NF_E' && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-compact"
+                            disabled={cceDoc.isPending}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const text = window.prompt(
+                                'Texto da carta de correção (CC-e, mín. 15 caracteres):',
+                              );
+                              if (!text?.trim()) return;
+                              cceDoc.mutate({ id: r.id, text: text.trim() });
+                            }}
+                          >
+                            CC-e
                           </button>
                         )}
                         <button
@@ -694,7 +730,9 @@ export function FiscalNotesPage() {
                         >
                           2ª via
                         </button>
-                        {['QUEUED', 'ERROR', 'REJECTED', 'BUILDING_XML'].includes(r.status) && (
+                        {['DRAFT', 'QUEUED', 'ERROR', 'REJECTED', 'BUILDING_XML'].includes(
+                          r.status,
+                        ) && (
                           <button
                             type="button"
                             className="btn btn-danger btn-compact"

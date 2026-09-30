@@ -18,7 +18,13 @@ import {
   companyUsesCustomLogo,
   useCompanyBranding,
 } from '../lib/company-branding';
-import { hasRestaurantPlan, isManager, profileLabel, type UserProfile } from '../lib/auth';
+import {
+  hasRestaurantPlan,
+  hasServiceOrderModule,
+  isManager,
+  profileLabel,
+  type UserProfile,
+} from '../lib/auth';
 import { calcRestaurantFees, type RestaurantFeesCompany } from '../lib/restaurant-fees';
 import { formatServiceTabLabel } from '../lib/service-tab';
 import {
@@ -1386,6 +1392,7 @@ function PosScreen({
           scaleAutoConfirmMs?: number;
           barcodeWeightPattern?: string | null;
           restaurantModuleEnabled?: boolean;
+          serviceOrderModuleEnabled?: boolean;
           cashExpenseInPresentedTotal?: boolean;
         }
       >('/company'),
@@ -1394,6 +1401,9 @@ function PosScreen({
 
   const restaurantPdv =
     Boolean(companyQ.data?.restaurantModuleEnabled) || hasRestaurantPlan();
+
+  const serviceOrderPdv =
+    hasServiceOrderModule() && companyQ.data?.serviceOrderModuleEnabled === true;
 
   const scaleMode = (companyQ.data?.scaleMode ?? 'MANUAL') as ScaleMode;
   const scale = usePosScale({
@@ -2412,11 +2422,18 @@ function PosScreen({
   }
 
   useEffect(() => {
+    if (!serviceOrderPdv) return;
     const osNum = searchParams.get('os')?.trim();
     if (!osNum) return;
     void loadServiceOrderByNumber(osNum);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, [searchParams, serviceOrderPdv]);
+
+  useEffect(() => {
+    if (serviceOrderPdv) return;
+    setServiceOrder(null);
+    setOsLookup('');
+  }, [serviceOrderPdv]);
 
   useEffect(() => {
     const cid = searchParams.get('mfgCustomer')?.trim();
@@ -2866,7 +2883,7 @@ function PosScreen({
               )}
             </div>
 
-            {serviceOrder && (
+            {serviceOrderPdv && serviceOrder && (
               <div className="pos-card" style={{ marginBottom: '0.65rem', borderColor: 'var(--color-primary)' }}>
                 <div className="pos-card-body" style={{ padding: '0.55rem 0.75rem' }}>
                   <strong>OS #{serviceOrder.number}</strong>
@@ -2914,34 +2931,36 @@ function PosScreen({
               </div>
             )}
 
-            <div className="pos-card" style={{ marginBottom: '0.65rem' }}>
-              <div className="pos-card-header">
-                <h3 className="pos-card-title">Ordem de Serviço</h3>
-              </div>
-              <div className="pos-card-body" style={{ paddingTop: '0.55rem' }}>
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <input
-                    value={osLookup}
-                    onChange={(e) => setOsLookup(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        void loadServiceOrderByNumber(osLookup);
-                      }
-                    }}
-                    placeholder="Nº da OS"
-                    style={{ width: '8rem' }}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => void loadServiceOrderByNumber(osLookup)}
-                  >
-                    Carregar OS
-                  </button>
+            {serviceOrderPdv && (
+              <div className="pos-card" style={{ marginBottom: '0.65rem' }}>
+                <div className="pos-card-header">
+                  <h3 className="pos-card-title">Ordem de Serviço</h3>
+                </div>
+                <div className="pos-card-body" style={{ paddingTop: '0.55rem' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <input
+                      value={osLookup}
+                      onChange={(e) => setOsLookup(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void loadServiceOrderByNumber(osLookup);
+                        }
+                      }}
+                      placeholder="Nº da OS"
+                      style={{ width: '8rem' }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => void loadServiceOrderByNumber(osLookup)}
+                    >
+                      Carregar OS
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {restaurantPdv && (
               <div className="pos-card" style={{ marginBottom: '0.65rem' }}>

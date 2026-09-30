@@ -1,6 +1,9 @@
 import {
+  Body,
   Controller,
   Get,
+  Post,
+  Query,
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
@@ -8,6 +11,9 @@ import { ConfigService } from '@nestjs/config';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { FiscalSefazOpsService } from './fiscal-sefaz-ops.service';
 
 /**
  * Roadmap NF-e / NFC-e / SPED e reforma tributária (IBS/CBS).
@@ -18,7 +24,33 @@ import { Roles } from '../auth/roles.decorator';
 @Controller('fiscal')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class FiscalController {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly sefazOps: FiscalSefazOpsService,
+  ) {}
+
+  /** Consulta NfeStatusServico4 (certificado + UF emissor). */
+  @Post('test-sefaz')
+  @Roles('admin', 'manager')
+  testSefaz(
+    @CurrentUser() user: JwtPayload,
+    @Query('model') model?: string,
+  ) {
+    const m = model === '55' || model === 'NFE' ? '55' : '65';
+    return this.sefazOps.testSefazStatus(user.tenantSlug, m);
+  }
+
+  /** Venda mínima + transmissão imediata (somente ambiente homologação). */
+  @Post('homolog-test-emit')
+  @Roles('admin', 'manager')
+  homologTestEmit(
+    @CurrentUser() user: JwtPayload,
+    @Query('type') type?: string,
+    @Body() _body?: Record<string, unknown>,
+  ) {
+    const docType = type === 'NFE' || type === 'NF_E' ? 'NFE' : 'NFCE';
+    return this.sefazOps.emitHomologationTest(user, docType);
+  }
 
   @Get('status')
   @Roles('admin', 'manager')
