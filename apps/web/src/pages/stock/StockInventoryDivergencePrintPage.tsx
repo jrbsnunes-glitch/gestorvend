@@ -55,19 +55,6 @@ type Filters = {
   onlyDiffs: boolean;
 };
 
-function monthStartISO(): string {
-  const d = new Date();
-  const m = `${d.getMonth() + 1}`.padStart(2, '0');
-  return `${d.getFullYear()}-${m}-01`;
-}
-
-function todayISO(): string {
-  const d = new Date();
-  const m = `${d.getMonth() + 1}`.padStart(2, '0');
-  const day = `${d.getDate()}`.padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
-}
-
 function draftFromSearchParams(sp: URLSearchParams): Filters {
   return {
     from: sp.get('from') ?? '',
