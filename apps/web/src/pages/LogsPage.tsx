@@ -5,12 +5,12 @@ import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
 import { formatDate } from '../lib/format';
-
-function daysAgoISO(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
-}
+import {
+  daysAgoLocalDateInput,
+  todayLocalDateInput,
+  trimFilterPeriod,
+  validateFilterPeriodRange,
+} from '../lib/list-filters';
 
 type UserOpt = { id: string; name: string; email: string };
 type ActionOpt = { key: string; label: string };
@@ -53,16 +53,17 @@ export function LogsPage() {
   const [reportsOpen, setReportsOpen] = useState(false);
   const [draftUserId, setDraftUserId] = useState('');
   const [draftAction, setDraftAction] = useState('');
-  const [draftFrom, setDraftFrom] = useState(() => daysAgoISO(7));
-  const [draftTo, setDraftTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [draftFrom, setDraftFrom] = useState(() => daysAgoLocalDateInput(7));
+  const [draftTo, setDraftTo] = useState(() => todayLocalDateInput());
+  const [searchErr, setSearchErr] = useState<string | null>(null);
   const [draftQ, setDraftQ] = useState('');
   const [draftTake, setDraftTake] = useState('200');
 
   const [applied, setApplied] = useState(() => ({
     userId: '',
     action: '',
-    from: daysAgoISO(7),
-    to: new Date().toISOString().slice(0, 10),
+    from: daysAgoLocalDateInput(7),
+    to: todayLocalDateInput(),
     q: '',
     take: '200',
   }));
@@ -85,14 +86,34 @@ export function LogsPage() {
   });
 
   function runSearch() {
+    const periodErr = validateFilterPeriodRange(draftFrom, draftTo);
+    if (periodErr) {
+      setSearchErr(periodErr);
+      return;
+    }
+    setSearchErr(null);
+    const { from, to } = trimFilterPeriod(draftFrom, draftTo);
     setApplied({
       userId: draftUserId,
       action: draftAction,
-      from: draftFrom,
-      to: draftTo,
-      q: draftQ,
-      take: draftTake,
+      from,
+      to,
+      q: draftQ.trim(),
+      take: draftTake.trim() || '200',
     });
+  }
+
+  function clearSearch() {
+    const from = daysAgoLocalDateInput(7);
+    const to = todayLocalDateInput();
+    setDraftUserId('');
+    setDraftAction('');
+    setDraftFrom(from);
+    setDraftTo(to);
+    setDraftQ('');
+    setDraftTake('200');
+    setSearchErr(null);
+    setApplied({ userId: '', action: '', from, to, q: '', take: '200' });
   }
 
   const printExtras = (
@@ -127,6 +148,7 @@ export function LogsPage() {
 
       <div className="card no-print" style={{ marginBottom: '1rem', padding: '1rem' }}>
         <strong style={{ fontSize: '0.9rem' }}>Pesquisa</strong>
+        {searchErr ? <div className="alert alert-error" style={{ marginTop: '0.5rem' }}>{searchErr}</div> : null}
         <div className="form-row" style={{ flexWrap: 'wrap', gap: '0.75rem', marginTop: '0.65rem', alignItems: 'flex-end' }}>
           <div className="field">
             <label htmlFor="log-user">Usuário</label>
@@ -173,6 +195,9 @@ export function LogsPage() {
           </div>
           <button type="button" className="btn btn-primary" onClick={() => runSearch()}>
             Pesquisar
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={clearSearch}>
+            Limpar
           </button>
         </div>
       </div>

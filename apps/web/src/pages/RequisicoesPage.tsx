@@ -22,6 +22,8 @@ import { ListFilterCustomerField } from '../components/ListFilterCustomerField';
 import {
   controlRangeActive,
   matchesControlValue,
+  trimFilterPeriod,
+  validateFilterPeriodRange,
 } from '../lib/list-filters';
 import { matchesListSearch } from '../lib/list-search';
 
@@ -189,6 +191,7 @@ export function RequisicoesPage() {
   const [appliedFilters, setAppliedFilters] = useState<ReqFilters>(DEFAULT_REQ_FILTERS);
   const [draftFilters, setDraftFilters] = useState<ReqFilters>(DEFAULT_REQ_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterErr, setFilterErr] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [draftSearch, setDraftSearch] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
@@ -613,6 +616,7 @@ export function RequisicoesPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2>Filtros da listagem</h2>
+            {filterErr ? <div className="alert alert-error">{filterErr}</div> : null}
             <FilterControlRangeFields
               idPrefix="req"
               controlMin={draftFilters.controlMin}
@@ -668,11 +672,19 @@ export function RequisicoesPage() {
               onClear={() => {
                 setDraftFilters(DEFAULT_REQ_FILTERS);
                 setAppliedFilters(DEFAULT_REQ_FILTERS);
+                setFilterErr(null);
                 setFiltersOpen(false);
               }}
               onCancel={() => setFiltersOpen(false)}
               onApply={() => {
-                setAppliedFilters({ ...draftFilters });
+                const periodErr = validateFilterPeriodRange(draftFilters.from, draftFilters.to);
+                if (periodErr) {
+                  setFilterErr(periodErr);
+                  return;
+                }
+                setFilterErr(null);
+                const { from, to } = trimFilterPeriod(draftFilters.from, draftFilters.to);
+                setAppliedFilters({ ...draftFilters, from, to });
                 setFiltersOpen(false);
               }}
             />

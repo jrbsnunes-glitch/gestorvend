@@ -6,6 +6,7 @@ import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { CrudToolbar } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import '../components/crud-toolbar.css';
+import { monthRangeLocal, validateFilterPeriodRange } from '../lib/list-filters';
 import { matchesListSearch } from '../lib/list-search';
 import { CostCenterSelect } from '../components/CostCenterSelect';
 import { BillPaymentsButton } from '../components/BillSettlementsModal';
@@ -183,13 +184,7 @@ function isRequisitionReceivable(row: Receivable): boolean {
 }
 
 function monthRangeDefaults(): { from: string; to: string } {
-  const n = new Date();
-  const start = new Date(n.getFullYear(), n.getMonth(), 1);
-  const end = new Date(n.getFullYear(), n.getMonth() + 1, 0);
-  return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10),
-  };
+  return monthRangeLocal();
 }
 
 type FinanceListFilter = {
@@ -230,15 +225,31 @@ function buildFinanceListQuery(f: FinanceListFilter, tab: Tab): string {
 
 function financeFilterFromSearchParams(sp: URLSearchParams): FinanceListFilter | null {
   if (sp.get('filtered') !== '1') return null;
-  const { from: defFrom, to: defTo } = monthRangeDefaults();
   const partyId = sp.get('customerId')?.trim() || sp.get('supplierId')?.trim() || '';
   return {
-    from: sp.get('from')?.trim() || defFrom,
-    to: sp.get('to')?.trim() || defTo,
+    from: sp.get('from')?.trim() ?? '',
+    to: sp.get('to')?.trim() ?? '',
     partyId,
     showOpen: sp.get('open') !== '0',
     showClosed: sp.get('closed') === '1',
   };
+}
+
+function financeListFilterForTab(
+  f: FinanceListFilter,
+  tab: Tab,
+  customerId: string,
+  supplierId: string,
+): FinanceListFilter {
+  let partyId = f.partyId.trim();
+  if (tab === 'pagar') {
+    if (partyId && partyId === customerId) partyId = '';
+    if (!partyId && supplierId) partyId = supplierId;
+  } else {
+    if (partyId && partyId === supplierId) partyId = '';
+    if (!partyId && customerId) partyId = customerId;
+  }
+  return { ...f, partyId };
 }
 
 function appendFinanceFilterToParams(p: URLSearchParams, f: FinanceListFilter, tab: Tab) {
@@ -331,39 +342,29 @@ export function FinancePage() {
   const [printPartyId, setPrintPartyId] = useState('');
   const [printDetalharOrigem, setPrintDetalharOrigem] = useState(false);
 
+  const payablesFilter = useMemo(
+    () => financeListFilterForTab(appliedFilter, 'pagar', filterCustomerId, filterSupplierId),
+    [appliedFilter, filterCustomerId, filterSupplierId],
+  );
+
+  const receivablesFilter = useMemo(
+    () => financeListFilterForTab(appliedFilter, 'receber', filterCustomerId, filterSupplierId),
+    [appliedFilter, filterCustomerId, filterSupplierId],
+  );
+
   const payables = useQuery({
-    queryKey: ['payables', appliedFilter, filterSupplierId],
+    queryKey: ['payables', payablesFilter, tab],
     queryFn: () => {
-      const base = appliedFilter
-        ? buildFinanceListQuery(
-            {
-              ...appliedFilter,
-              partyId: appliedFilter.partyId || filterSupplierId,
-            },
-            'pagar',
-          )
-        : filterSupplierId
-          ? `?supplierId=${encodeURIComponent(filterSupplierId)}`
-          : '';
+      const base = buildFinanceListQuery(payablesFilter, 'pagar');
       return api<Payable[]>(`/finance/payables${base}`);
     },
     enabled: tab === 'pagar',
   });
 
   const receivables = useQuery({
-    queryKey: ['receivables', appliedFilter, filterCustomerId],
+    queryKey: ['receivables', receivablesFilter, tab],
     queryFn: () => {
-      const base = appliedFilter
-        ? buildFinanceListQuery(
-            {
-              ...appliedFilter,
-              partyId: appliedFilter.partyId || filterCustomerId,
-            },
-            'receber',
-          )
-        : filterCustomerId
-          ? `?customerId=${encodeURIComponent(filterCustomerId)}`
-          : '';
+      const base = buildFinanceListQuery(receivablesFilter, 'receber');
       return api<Receivable[]>(`/finance/receivables${base}`);
     },
     enabled: tab === 'receber',
@@ -376,8 +377,14 @@ export function FinancePage() {
     if (fromUrl) {
       setFilterDraft(fromUrl);
       setAppliedFilter(fromUrl);
+      return;
     }
-  }, [searchParams]);
+    if (searchParams.get('filtered') === '1') return;
+    const partyId = filterCustomerId || filterSupplierId || '';
+    const next = partyId ? defaultFinanceListFilter(partyId) : allAccountsListFilter();
+    setFilterDraft(next);
+    setAppliedFilter(next);
+  }, [searchParams, filterCustomerId, filterSupplierId]);
 
   useEffect(() => {
     if (searchParams.get('filtered') === '1') return;
@@ -396,9 +403,15 @@ export function FinancePage() {
 
   function changeTab(next: Tab, syncUrl = true) {
     setTab(next);
+    setAppliedFilter((prev) => (prev.partyId ? { ...prev, partyId: '' } : prev));
+    setFilterDraft((prev) => (prev.partyId ? { ...prev, partyId: '' } : prev));
+    setFilterPartyLabel('');
     if (!syncUrl) return;
     const p = new URLSearchParams(searchParams);
     p.set('tab', next);
+    p.delete('customerId');
+    p.delete('supplierId');
+    p.delete('partyName');
     setSearchParams(p, { replace: true });
   }
 
@@ -439,8 +452,17 @@ export function FinancePage() {
       setFilterErr('Marque Abertos e/ou Fechados para filtrar.');
       return;
     }
+    const periodErr = validateFilterPeriodRange(filterDraft.from, filterDraft.to);
+    if (periodErr) {
+      setFilterErr(periodErr);
+      return;
+    }
     setFilterErr(null);
-    const next = { ...filterDraft };
+    const next = {
+      ...filterDraft,
+      from: filterDraft.from.trim(),
+      to: filterDraft.to.trim(),
+    };
     setAppliedFilter(next);
     const p = new URLSearchParams(searchParams);
     p.set('tab', tab);
@@ -464,11 +486,10 @@ export function FinancePage() {
   }
 
   function clearListFilter() {
-    const partyId = filterCustomerId || filterSupplierId || '';
-    const next = allAccountsListFilter(partyId);
+    const next = allAccountsListFilter('');
     setFilterDraft(next);
     setAppliedFilter(next);
-    setFilterPartyLabel(resolveFilterPartyLabel(partyId));
+    setFilterPartyLabel('');
     setFilterPartySearch('');
     setFilterPartyOpen(false);
     setFilterErr(null);
@@ -479,11 +500,9 @@ export function FinancePage() {
     p.delete('to');
     p.delete('open');
     p.delete('closed');
-    if (!partyId) {
-      p.delete('customerId');
-      p.delete('supplierId');
-      p.delete('partyName');
-    }
+    p.delete('customerId');
+    p.delete('supplierId');
+    p.delete('partyName');
     setSearchParams(p, { replace: true });
     setFilterModalOpen(false);
   }

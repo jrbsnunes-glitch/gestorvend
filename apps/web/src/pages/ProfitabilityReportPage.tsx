@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
+import { monthRangeLocal } from '../lib/list-filters';
 import './cash-print.css';
 
 type DreLine = {
@@ -59,13 +60,7 @@ type ProfitabilityReport = {
 };
 
 function monthRangeDefaults(): { from: string; to: string } {
-  const n = new Date();
-  const start = new Date(n.getFullYear(), n.getMonth(), 1);
-  const end = new Date(n.getFullYear(), n.getMonth() + 1, 0);
-  return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10),
-  };
+  return monthRangeLocal();
 }
 
 function formatPct(value: number | null | undefined): string {

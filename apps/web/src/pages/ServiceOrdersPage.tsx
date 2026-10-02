@@ -23,6 +23,8 @@ import { useMenuAccess } from '../hooks/useMenuAccess';
 import {
   controlRangeActive,
   matchesControlValue,
+  trimFilterPeriod,
+  validateFilterPeriodRange,
 } from '../lib/list-filters';
 import { matchesListSearch } from '../lib/list-search';
 
@@ -175,6 +177,7 @@ export function ServiceOrdersPage() {
   const [appliedFilterCustomerLabel, setAppliedFilterCustomerLabel] = useState('');
   const [appliedFilterGroup, setAppliedFilterGroup] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterErr, setFilterErr] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
 
@@ -757,6 +760,7 @@ export function ServiceOrdersPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2>Filtros da listagem</h2>
+            {filterErr ? <div className="alert alert-error">{filterErr}</div> : null}
             <FilterControlRangeFields
               idPrefix="os"
               controlMin={draftControlMin}
@@ -822,13 +826,21 @@ export function ServiceOrdersPage() {
                 setAppliedFilterCustomerId('');
                 setAppliedFilterCustomerLabel('');
                 setAppliedFilterGroup('');
+                setFilterErr(null);
                 setFiltersOpen(false);
               }}
               onCancel={() => setFiltersOpen(false)}
               onApply={() => {
+                const periodErr = validateFilterPeriodRange(draftFrom, draftTo);
+                if (periodErr) {
+                  setFilterErr(periodErr);
+                  return;
+                }
+                setFilterErr(null);
+                const { from, to } = trimFilterPeriod(draftFrom, draftTo);
                 setAppliedStatus(draftStatus);
-                setAppliedFrom(draftFrom);
-                setAppliedTo(draftTo);
+                setAppliedFrom(from);
+                setAppliedTo(to);
                 setAppliedControlMin(draftControlMin.trim());
                 setAppliedControlMax(draftControlMax.trim());
                 setAppliedFilterCustomerId(draftFilterCustomerId);

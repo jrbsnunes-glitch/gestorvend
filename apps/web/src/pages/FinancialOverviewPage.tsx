@@ -18,7 +18,12 @@ import { SalesRevenueBreakdown } from '../components/SalesRevenueBreakdown';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
 import { ledgerDirectionLabel, ledgerKindLabel } from '../lib/financial-overview-ledger-labels';
-import { dateInInclusiveRange } from '../lib/list-filters';
+import {
+  dateInInclusiveRange,
+  monthRangeLocal,
+  trimFilterPeriod,
+  validateFilterPeriodRange,
+} from '../lib/list-filters';
 import { matchesListSearch } from '../lib/list-search';
 
 type LedgerRow = {
@@ -54,13 +59,7 @@ type Summary = {
 };
 
 function monthRangeDefaults(): { from: string; to: string } {
-  const n = new Date();
-  const start = new Date(n.getFullYear(), n.getMonth(), 1);
-  const end = new Date(n.getFullYear(), n.getMonth() + 1, 0);
-  return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10),
-  };
+  return monthRangeLocal();
 }
 
 export function FinancialOverviewPage() {
@@ -69,6 +68,7 @@ export function FinancialOverviewPage() {
   const [printInitial, setPrintInitial] = useState(() => monthRangeDefaults());
   const [searchOpen, setSearchOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterErr, setFilterErr] = useState<string | null>(null);
   const [draftSearch, setDraftSearch] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [draftDirection, setDraftDirection] = useState<'ALL' | 'IN' | 'OUT'>('ALL');
@@ -269,6 +269,7 @@ export function FinancialOverviewPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2>Filtros da listagem</h2>
+            {filterErr ? <div className="alert alert-error">{filterErr}</div> : null}
             <FilterPeriodRangeFields
               idPrefix="bal"
               from={draftPeriodFrom}
@@ -325,13 +326,21 @@ export function FinancialOverviewPage() {
                 setAppliedCustomerId('');
                 setAppliedCustomerLabel('');
                 setAppliedGroup('');
+                setFilterErr(null);
                 setFiltersOpen(false);
               }}
               onCancel={() => setFiltersOpen(false)}
               onApply={() => {
+                const periodErr = validateFilterPeriodRange(draftPeriodFrom, draftPeriodTo);
+                if (periodErr) {
+                  setFilterErr(periodErr);
+                  return;
+                }
+                setFilterErr(null);
+                const { from, to } = trimFilterPeriod(draftPeriodFrom, draftPeriodTo);
                 setAppliedDirection(draftDirection);
-                setAppliedPeriodFrom(draftPeriodFrom.trim());
-                setAppliedPeriodTo(draftPeriodTo.trim());
+                setAppliedPeriodFrom(from);
+                setAppliedPeriodTo(to);
                 setAppliedCostCenterId(draftCostCenterId.trim());
                 setAppliedCustomerId(draftCustomerId);
                 setAppliedCustomerLabel(draftCustomerLabel);

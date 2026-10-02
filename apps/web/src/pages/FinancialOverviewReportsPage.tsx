@@ -6,6 +6,7 @@ import { ReportPrintSticker } from '../components/ReportPrintSticker';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
 import { ledgerDirectionLabel, ledgerKindLabel } from '../lib/financial-overview-ledger-labels';
+import { monthRangeLocal, validateFilterPeriodRange } from '../lib/list-filters';
 
 /** Tipagem alinhada ao GET /financial-overview/summary (período explícito). */
 type Summary = {
@@ -82,19 +83,9 @@ type Summary = {
   };
 };
 
-function monthRangeDefaults(): { from: string; to: string } {
-  const n = new Date();
-  const start = new Date(n.getFullYear(), n.getMonth(), 1);
-  const end = new Date(n.getFullYear(), n.getMonth() + 1, 0);
-  return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10),
-  };
-}
-
 export function FinancialOverviewReportsPage() {
   const [searchParams] = useSearchParams();
-  const def = useMemo(() => monthRangeDefaults(), []);
+  const def = useMemo(() => monthRangeLocal(), []);
   const qpFrom = searchParams.get('from');
   const qpTo = searchParams.get('to');
   const initialFrom =
@@ -118,10 +109,12 @@ export function FinancialOverviewReportsPage() {
     staleTime: 60_000,
   });
 
+  const periodErr = useMemo(() => validateFilterPeriodRange(from, to), [from, to]);
+
   const qs = useMemo(() => {
     const p = new URLSearchParams();
-    if (from) p.set('from', from);
-    if (to) p.set('to', to);
+    if (from.trim()) p.set('from', from.trim());
+    if (to.trim()) p.set('to', to.trim());
     if (costCenterId.trim()) p.set('costCenterId', costCenterId.trim());
     return p.toString();
   }, [from, to, costCenterId]);
@@ -129,6 +122,7 @@ export function FinancialOverviewReportsPage() {
   const summary = useQuery({
     queryKey: ['financial-overview', 'summary-relatorio', qs],
     queryFn: () => api<Summary>(`/financial-overview/summary?${qs}`),
+    enabled: !periodErr && Boolean(from.trim() && to.trim()),
   });
 
   const data = summary.data;
@@ -255,6 +249,10 @@ export function FinancialOverviewReportsPage() {
         </div>
       </div>
 
+      {periodErr ? <div className="alert alert-error">{periodErr}</div> : null}
+      {!periodErr && !from.trim() && !to.trim() ? (
+        <div className="alert alert-error">Informe o período (de e até) para gerar o relatório.</div>
+      ) : null}
       {summary.isError && (
         <div className="alert alert-error">{(summary.error as Error).message}</div>
       )}

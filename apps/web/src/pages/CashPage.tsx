@@ -34,6 +34,8 @@ import {
   controlRangeActive,
   dateInInclusiveRange,
   matchesControlValue,
+  trimFilterPeriod,
+  validateFilterPeriodRange,
 } from '../lib/list-filters';
 import {
   cardBrandLabel,
@@ -431,6 +433,7 @@ export function CashPage() {
   const [draftSearch, setDraftSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterErr, setFilterErr] = useState<string | null>(null);
   const [draftStatusFilter, setDraftStatusFilter] = useState<StatusFilter>('');
   const [draftControlMin, setDraftControlMin] = useState('');
   const [draftControlMax, setDraftControlMax] = useState('');
@@ -730,6 +733,7 @@ export function CashPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2>Filtros da listagem</h2>
+            {filterErr ? <div className="alert alert-error">{filterErr}</div> : null}
             <FilterControlRangeFields
               idPrefix="cash"
               controlMin={draftControlMin}
@@ -770,15 +774,23 @@ export function CashPage() {
                 setAppliedControlMax('');
                 setAppliedPeriodFrom('');
                 setAppliedPeriodTo('');
+                setFilterErr(null);
                 setFiltersOpen(false);
               }}
               onCancel={() => setFiltersOpen(false)}
               onApply={() => {
+                const periodErr = validateFilterPeriodRange(draftPeriodFrom, draftPeriodTo);
+                if (periodErr) {
+                  setFilterErr(periodErr);
+                  return;
+                }
+                setFilterErr(null);
+                const { from, to } = trimFilterPeriod(draftPeriodFrom, draftPeriodTo);
                 setStatusFilter(draftStatusFilter);
                 setAppliedControlMin(draftControlMin.trim());
                 setAppliedControlMax(draftControlMax.trim());
-                setAppliedPeriodFrom(draftPeriodFrom.trim());
-                setAppliedPeriodTo(draftPeriodTo.trim());
+                setAppliedPeriodFrom(from);
+                setAppliedPeriodTo(to);
                 setFiltersOpen(false);
               }}
             />

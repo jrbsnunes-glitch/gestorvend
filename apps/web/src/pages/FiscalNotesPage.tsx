@@ -17,6 +17,7 @@ import {
 } from '../components/RecordViewModal';
 import { api } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
+import { trimFilterPeriod, validateFilterPeriodRange } from '../lib/list-filters';
 import { matchesListSearch } from '../lib/list-search';
 
 type TabKind = 'NFC_E' | 'NF_E';
@@ -145,6 +146,7 @@ export function FiscalNotesPage() {
   const [page, setPage] = useState(1);
   const [reportsOpen, setReportsOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterErr, setFilterErr] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [draftSearch, setDraftSearch] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
@@ -289,7 +291,14 @@ export function FiscalNotesPage() {
   }
 
   function applyFilters() {
-    setApplied({ ...filters });
+    const periodErr = validateFilterPeriodRange(filters.dateFrom, filters.dateTo);
+    if (periodErr) {
+      setFilterErr(periodErr);
+      return;
+    }
+    setFilterErr(null);
+    const { from, to } = trimFilterPeriod(filters.dateFrom, filters.dateTo);
+    setApplied({ ...filters, dateFrom: from, dateTo: to });
     setPage(1);
     setFiltersOpen(false);
   }
@@ -297,6 +306,7 @@ export function FiscalNotesPage() {
   function clearFilters() {
     setFilters(EMPTY_FILTERS);
     setApplied(EMPTY_FILTERS);
+    setFilterErr(null);
     setPage(1);
     setFiltersOpen(false);
   }
@@ -457,6 +467,7 @@ export function FiscalNotesPage() {
             style={{ maxWidth: 560 }}
           >
             <h2>Filtros da listagem</h2>
+            {filterErr ? <div className="alert alert-error">{filterErr}</div> : null}
             <div className="form-row form-row--4">
               <div className="field">
                 <label htmlFor="fn-df">Data mín.</label>

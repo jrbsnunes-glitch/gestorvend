@@ -9,6 +9,7 @@ import {
   INVENTORY_STATUS_LABEL,
   resolveInventoryControlRange,
 } from '../../lib/inventory-report-format';
+import { validateFilterPeriodRange } from '../../lib/list-filters';
 import '../cash-print.css';
 
 type SummaryItem = {
@@ -86,8 +87,8 @@ function todayISO(): string {
 
 function draftFromSearchParams(sp: URLSearchParams): Filters {
   return {
-    from: sp.get('from') ?? monthStartISO(),
-    to: sp.get('to') ?? todayISO(),
+    from: sp.get('from') ?? '',
+    to: sp.get('to') ?? '',
     locationId: sp.get('locationId') ?? '',
     status: sp.get('status') ?? 'POSTED',
     controlMin: sp.get('controlMin') ?? '',
@@ -153,9 +154,16 @@ export function StockInventorySummaryPrintPage() {
       return;
     }
     const hasControl = Boolean(ctrl.min && ctrl.max);
-    if (!hasControl && (!draft.from.trim() || !draft.to.trim())) {
-      setApplyErr('Informe o período e/ou o nº de controle.');
-      return;
+    if (!hasControl) {
+      const periodErr = validateFilterPeriodRange(draft.from, draft.to);
+      if (periodErr) {
+        setApplyErr(periodErr);
+        return;
+      }
+      if (!draft.from.trim() || !draft.to.trim()) {
+        setApplyErr('Informe o período completo (de e até) ou use o nº de controle.');
+        return;
+      }
     }
     setSearchParams(
       new URLSearchParams(
