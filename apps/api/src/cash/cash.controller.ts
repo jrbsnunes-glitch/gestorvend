@@ -462,7 +462,7 @@ export class CashController {
 
     const sessions = await db.cashRegisterSession.findMany({
       where,
-      orderBy: { controlNumber: 'asc' },
+      orderBy: { controlNumber: 'desc' },
       include: {
         user: { select: { id: true, name: true, email: true } },
         reconciledBy: { select: { id: true, name: true, email: true } },

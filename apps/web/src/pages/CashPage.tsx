@@ -7,6 +7,7 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
+import { ListPagination } from '../components/ListPagination';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import '../components/crud-toolbar.css';
 import { api } from '../lib/api';
@@ -24,6 +25,7 @@ import {
   sumReconciliationTotals,
   type CashMovementBreakdown,
 } from '../lib/cash-reconciliation';
+import { useListPagination } from '../hooks/useListPagination';
 import {
   FilterControlRangeFields,
   FilterModalActions,
@@ -178,6 +180,17 @@ const STATUS_FILTERS = [
 ] as const;
 
 type StatusFilter = (typeof STATUS_FILTERS)[number]['value'];
+
+const CASH_SESSIONS_PAGE_SIZE = 20;
+
+/** Caixa aberto primeiro; demais por número de controle decrescente (mais recente no topo). */
+function compareCashSessionsForList(a: CashSessionRow, b: CashSessionRow): number {
+  const aOpen = a.status === 'OPEN' ? 1 : 0;
+  const bOpen = b.status === 'OPEN' ? 1 : 0;
+  if (aOpen !== bOpen) return bOpen - aOpen;
+  if (a.controlNumber !== b.controlNumber) return b.controlNumber - a.controlNumber;
+  return new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime();
+}
 
 /** Acima disso, as vendas do caixa aparecem em lista suspensa minimizada. */
 const SALES_COLLAPSE_THRESHOLD = 5;
@@ -561,8 +574,16 @@ export function CashPage() {
         dateInInclusiveRange(s.openedAt, appliedPeriodFrom, appliedPeriodTo),
       );
     }
-    return [...data].sort((a, b) => a.controlNumber - b.controlNumber);
+    return [...data].sort(compareCashSessionsForList);
   }, [list.data, appliedSearch, appliedControlMin, appliedControlMax, appliedPeriodFrom, appliedPeriodTo]);
+
+  const {
+    page: sessionsPage,
+    setPage: setSessionsPage,
+    pageItems: sessionsPageItems,
+    totalPages: sessionsTotalPages,
+    totalItems: sessionsTotalItems,
+  } = useListPagination(filtered, CASH_SESSIONS_PAGE_SIZE);
 
   /**
    * Caixa alvo do lançamento. O gerente pode movimentar o caixa aberto de
@@ -876,14 +897,14 @@ export function CashPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 && (
+                {sessionsTotalItems === 0 && (
                   <tr>
                     <td colSpan={12} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                       Nenhum caixa encontrado para este filtro.
                     </td>
                   </tr>
                 )}
-                {filtered.map((s) => (
+                {sessionsPageItems.map((s) => (
                   <tr key={s.id} className="cash-ss-row">
                     <td className="cash-ss-num" data-label="Nº">
                       <span
@@ -1045,6 +1066,14 @@ export function CashPage() {
                 ))}
               </tbody>
             </table>
+            <ListPagination
+              page={sessionsPage}
+              totalPages={sessionsTotalPages}
+              totalItems={sessionsTotalItems}
+              pageSize={CASH_SESSIONS_PAGE_SIZE}
+              onPageChange={setSessionsPage}
+              itemLabel="caixa(s)"
+            />
           </div>
         )}
       </div>
