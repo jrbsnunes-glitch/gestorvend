@@ -31,6 +31,7 @@
     "tenant:set-tax-unit": "ts-node -r tsconfig-paths/register scripts/set-product-tax-unit.ts",
     "tenant:reset-operacional": "ts-node -r tsconfig-paths/register scripts/reset-operacional-tenant.ts",
     "tenant:transfer-cash-sales": "ts-node -r tsconfig-paths/register scripts/transfer-cash-session-sales.ts",
+    "tenant:reassign-cash-sales": "ts-node -r tsconfig-paths/register scripts/reassign-cash-session-by-sale-numbers.ts",
     "sync-generated": "node scripts/sync-generated-to-dist.cjs",
     "seed": "ts-node -r tsconfig-paths/register scripts/seed.ts",
     "seed:tenant-minimal": "ts-node -r tsconfig-paths/register scripts/seed-tenant-minimal.ts",
