@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
@@ -24,7 +24,6 @@ import { StockLocationBalancesPopover } from '../components/StockLocationBalance
 import { api, apiUpload } from '../lib/api';
 import { getIdentity, hasFactoryModule } from '../lib/auth';
 import { formatBRL, formatDate } from '../lib/format';
-import { useListPagination } from '../hooks/useListPagination';
 import {
   parseProductConversion,
   normalizeProductConversion,
@@ -34,6 +33,7 @@ import {
 
 /** Unidade tributária padrão em produtos novos (código em TaxUnitCode). */
 const DEFAULT_PRODUCT_TAX_UNIT = 'UN';
+const PRODUCTS_PAGE_SIZE = 20;
 
 function isServiceTaxUnit(taxUnit: string | null | undefined): boolean {
   const u = (taxUnit ?? '').trim().toUpperCase();
@@ -245,6 +245,13 @@ type Product = {
   variants: Variant[];
 };
 
+type ProductListPage = {
+  items: Product[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
 type PriceHistoryRow = {
   id: string;
   variantId: string;
@@ -399,6 +406,7 @@ export function ProductsPage() {
   const [appliedFilterStatus, setAppliedFilterStatus] = useState<'active' | 'inactive' | 'all'>('active');
   const [appliedFilterCategoryId, setAppliedFilterCategoryId] = useState('');
   const [appliedFilterCategoryName, setAppliedFilterCategoryName] = useState('');
+  const [page, setPage] = useState(1);
   const [imagePreviewKey, setImagePreviewKey] = useState(0);
   const imageFileRef = useRef<HTMLInputElement>(null);
   const tenantSlug = getIdentity()?.tenantSlug ?? '';
@@ -444,8 +452,30 @@ export function ProductsPage() {
   const [showInPublicCatalog, setShowInPublicCatalog] = useState(false);
 
   const list = useQuery({
-    queryKey: ['products', 'includeInactive'],
-    queryFn: () => api<Product[]>('/products?includeInactive=1'),
+    queryKey: [
+      'products',
+      'page',
+      page,
+      appliedFilterStatus,
+      appliedFilterDesc,
+      appliedFilterCodeMin,
+      appliedFilterCodeMax,
+      appliedFilterCategoryId,
+    ],
+    queryFn: () => {
+      const sp = new URLSearchParams({
+        page: String(page),
+        pageSize: String(PRODUCTS_PAGE_SIZE),
+        status: appliedFilterStatus,
+      });
+      const q = appliedFilterDesc.trim();
+      if (q) sp.set('q', q);
+      if (appliedFilterCodeMin != null) sp.set('codeFrom', String(appliedFilterCodeMin));
+      if (appliedFilterCodeMax != null) sp.set('codeTo', String(appliedFilterCodeMax));
+      if (appliedFilterCategoryId) sp.set('categoryId', appliedFilterCategoryId);
+      return api<ProductListPage>(`/products?${sp}`);
+    },
+    placeholderData: keepPreviousData,
   });
 
   const fiscalSituationsQ = useQuery({
@@ -482,7 +512,7 @@ export function ProductsPage() {
     }
   }, [editOpen, editSupplierLinksQ.data]);
 
-  const viewRow = list.data?.find((p) => p.id === viewProductId) ?? null;
+  const viewRow = list.data?.items.find((p) => p.id === viewProductId) ?? null;
 
   const detail = useQuery({
     queryKey: ['products', viewProductId, 'view'],
@@ -497,29 +527,7 @@ export function ProductsPage() {
   });
 
   const rows = useMemo(() => {
-    const sortedProducts = [...(list.data ?? [])].sort((a, b) => {
-      const codeA = a.controlNumber ?? 0;
-      const codeB = b.controlNumber ?? 0;
-      if (codeA !== codeB) return codeA - codeB;
-      return a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' });
-    });
-
-    const desc = appliedFilterDesc.trim().toLowerCase();
-    const filteredProducts = sortedProducts.filter((p) => {
-      if (appliedFilterStatus === 'active' && !p.isActive) return false;
-      if (appliedFilterStatus === 'inactive' && p.isActive) return false;
-      if (desc) {
-        const hay = `${p.name} ${p.description ?? ''}`.toLowerCase();
-        if (!hay.includes(desc)) return false;
-      }
-      const code = p.controlNumber ?? 0;
-      if (appliedFilterCodeMin != null && code < appliedFilterCodeMin) return false;
-      if (appliedFilterCodeMax != null && code > appliedFilterCodeMax) return false;
-      if (appliedFilterCategoryId && p.category?.id !== appliedFilterCategoryId) return false;
-      return true;
-    });
-
-    return filteredProducts.flatMap((p) => {
+    return (list.data?.items ?? []).flatMap((p) => {
       const variants = [...p.variants].sort((a, b) =>
         a.sku.localeCompare(b.sku, 'pt-BR', { sensitivity: 'base' }),
       );
@@ -527,14 +535,7 @@ export function ProductsPage() {
         ? variants.map((v) => ({ product: p, variant: v }))
         : [{ product: p, variant: null as Variant | null }];
     });
-  }, [
-    list.data,
-    appliedFilterDesc,
-    appliedFilterCodeMin,
-    appliedFilterCodeMax,
-    appliedFilterStatus,
-    appliedFilterCategoryId,
-  ]);
+  }, [list.data]);
 
   const filtersActive =
     appliedFilterDesc.trim() !== '' ||
@@ -564,6 +565,7 @@ export function ProductsPage() {
     setAppliedFilterStatus(filterStatusDraft);
     setAppliedFilterCategoryId(filterCategoryIdDraft);
     setAppliedFilterCategoryName(filterCategoryNameDraft);
+    setPage(1);
     setFiltersOpen(false);
   }
 
@@ -580,10 +582,9 @@ export function ProductsPage() {
     setAppliedFilterStatus('active');
     setAppliedFilterCategoryId('');
     setAppliedFilterCategoryName('');
+    setPage(1);
     setFiltersOpen(false);
   }
-
-  const pagination = useListPagination(rows, 20);
 
   type ListRow = { product: Product; variant: Variant | null };
 
@@ -1009,7 +1010,7 @@ export function ProductsPage() {
   async function openEditFromSearch(productId: string) {
     setSearchActionErr(null);
     try {
-      const cached = list.data?.find((p) => p.id === productId);
+      const cached = list.data?.items.find((p) => p.id === productId);
       const product = cached ?? (await api<Product>(`/products/${productId}`));
       setSearchOpen(false);
       setSearchInput('');
@@ -1341,11 +1342,7 @@ export function ProductsPage() {
 
       <div className="toolbar no-print">
         <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-          {list.data?.length ?? 0} produto(s)
-          {filtersActive ? ` · filtrado: ${pagination.totalItems} linha(s)` : ''}
-          {!filtersActive && pagination.totalItems > pagination.pageSize
-            ? ` · ${pagination.totalItems} linha(s) na grade`
-            : ''}
+          {list.data?.total ?? 0} produto(s)
         </span>
         {filtersActive && (
           <button type="button" className="btn btn-ghost btn-compact" onClick={() => clearFilters()}>
@@ -1398,7 +1395,7 @@ export function ProductsPage() {
                 </td>
               </tr>
             )}
-            {pagination.pageItems.map((row) => renderProductListRow(row, 'screen'))}
+            {rows.map((row) => renderProductListRow(row, 'screen'))}
           </tbody>
           <tbody className="print-only">
             {rows.map((row) => renderProductListRow(row, 'print'))}
@@ -1407,12 +1404,12 @@ export function ProductsPage() {
       </div>
 
       <ListPagination
-        page={pagination.page}
-        totalPages={pagination.totalPages}
-        totalItems={pagination.totalItems}
-        pageSize={pagination.pageSize}
-        onPageChange={pagination.setPage}
-        itemLabel="linha(s)"
+        page={list.data?.page ?? page}
+        totalPages={Math.max(1, Math.ceil((list.data?.total ?? 0) / PRODUCTS_PAGE_SIZE))}
+        totalItems={list.data?.total ?? 0}
+        pageSize={PRODUCTS_PAGE_SIZE}
+        onPageChange={setPage}
+        itemLabel="produto(s)"
       />
 
       {createOpen && (

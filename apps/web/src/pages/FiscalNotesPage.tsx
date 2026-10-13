@@ -172,8 +172,8 @@ export function FiscalNotesPage() {
   });
 
   const products = useQuery({
-    queryKey: ['products', 'brief'],
-    queryFn: () => api<Array<{ id: string; name: string }>>('/products'),
+    queryKey: ['products', 'names'],
+    queryFn: () => api<Array<{ id: string; name: string }>>('/products?view=names'),
   });
 
   const detail = useQuery({

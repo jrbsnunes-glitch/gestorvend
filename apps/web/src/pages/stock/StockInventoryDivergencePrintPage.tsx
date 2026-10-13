@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { A4ReportPages, type A4Item } from '../../components/A4ReportPages';
 import { StandardReportHeader } from '../../components/StandardReportHeader';
 import { api } from '../../lib/api';
 import { formatDate } from '../../lib/format';
@@ -180,6 +181,108 @@ export function StockInventoryDivergencePrintPage() {
     );
   }
 
+  const reportItems = useMemo((): A4Item[] => {
+    if (report.isError) {
+      return [{ kind: 'block', key: 'error', node: <p>Não foi possível montar o relatório.</p> }];
+    }
+    if (!data) return [{ kind: 'block', key: 'loading', node: <p>Carregando…</p> }];
+    return [
+      {
+        kind: 'block',
+        key: 'kpis',
+        node: (
+          <section className="print-section">
+            <div className="print-kpis">
+              <div className="print-kpi">
+                <span>Linhas</span>
+                <strong>{data.totals.linesCount}</strong>
+              </div>
+              <div className="print-kpi">
+                <span>Divergentes</span>
+                <strong>{data.totals.divergentLines}</strong>
+              </div>
+              <div className="print-kpi">
+                <span>Inventários</span>
+                <strong>{data.totals.inventories}</strong>
+              </div>
+              <div className="print-kpi">
+                <span>Sobra</span>
+                <strong>{fmtQty(data.totals.surplusQty)}</strong>
+              </div>
+              <div className="print-kpi">
+                <span>Falta</span>
+                <strong>{fmtQty(data.totals.shortageQty)}</strong>
+              </div>
+            </div>
+          </section>
+        ),
+      },
+      {
+        kind: 'table',
+        key: 'lines',
+        title: <h2 className="print-section-title">Itens</h2>,
+        tableClassName: 'print-table print-table-compact',
+        head: (
+          <tr>
+            <th style={{ width: 56 }}>Inv.</th>
+            <th>Produto</th>
+            <th style={{ width: 90 }}>SKU</th>
+            <th>Local</th>
+            <th style={{ width: 80, textAlign: 'right' }}>Sistema</th>
+            <th style={{ width: 80, textAlign: 'right' }}>Contado</th>
+            <th style={{ width: 80, textAlign: 'right' }}>Diff</th>
+          </tr>
+        ),
+        rows: data.lines.map((l) => (
+          <tr key={`${l.inventoryId}-${l.variantId}`}>
+            <td>
+              <strong>#{l.inventoryControlNumber}</strong>
+            </td>
+            <td>
+              {l.productName}
+              <div style={{ fontSize: '0.75rem', opacity: 0.75 }}>
+                Cód. {l.productControlNumber}
+                {l.barcode ? ` · EAN ${l.barcode}` : ''}
+              </div>
+            </td>
+            <td>{l.sku}</td>
+            <td>
+              {l.locationCode}
+              {l.postedAt ? (
+                <div style={{ fontSize: '0.72rem', opacity: 0.75 }}>
+                  {new Date(l.postedAt).toLocaleString('pt-BR')}
+                </div>
+              ) : null}
+            </td>
+            <td style={{ textAlign: 'right' }}>{fmtQty(l.systemQty)}</td>
+            <td style={{ textAlign: 'right' }}>{l.countedQty == null ? '—' : fmtQty(l.countedQty)}</td>
+            <td
+              style={{
+                textAlign: 'right',
+                fontWeight: 600,
+                color:
+                  l.diff == null || Math.abs(l.diff) <= 1e-9
+                    ? undefined
+                    : l.diff > 0
+                      ? '#166534'
+                      : '#b91c1c',
+              }}
+            >
+              {l.diff == null ? '—' : `${l.diff > 0 ? '+' : ''}${fmtQty(l.diff)}`}
+            </td>
+          </tr>
+        )),
+        empty: (
+          <tr>
+            <td colSpan={7} className="empty">
+              Nenhuma linha no filtro.
+            </td>
+          </tr>
+        ),
+      },
+    ];
+  }, [data, report.isError]);
+
   return (
     <div className="print-page">
       <div className="print-toolbar no-print">
@@ -306,7 +409,14 @@ export function StockInventoryDivergencePrintPage() {
         </div>
       </div>
 
-      <div className="print-doc">
+      {report.isError && (
+        <div className="alert alert-error no-print" style={{ width: '210mm', maxWidth: '100%', margin: '0 auto 0.75rem' }}>
+          {(report.error as Error)?.message ?? 'Erro ao gerar relatório.'}
+        </div>
+      )}
+
+      <A4ReportPages
+        header={
         <StandardReportHeader
           documentTitle={data?.title ?? 'Inventário — divergências'}
           documentExtras={
@@ -352,113 +462,10 @@ export function StockInventoryDivergencePrintPage() {
             </>
           }
         />
-
-        {report.isLoading && <p>Carregando…</p>}
-        {report.isError && (
-          <div className="alert alert-error">
-            {(report.error as Error)?.message ?? 'Erro ao gerar relatório.'}
-          </div>
-        )}
-
-        {data && (
-          <>
-            <section className="print-section">
-              <div className="print-kpis">
-                <div className="print-kpi">
-                  <span>Linhas</span>
-                  <strong>{data.totals.linesCount}</strong>
-                </div>
-                <div className="print-kpi">
-                  <span>Divergentes</span>
-                  <strong>{data.totals.divergentLines}</strong>
-                </div>
-                <div className="print-kpi">
-                  <span>Inventários</span>
-                  <strong>{data.totals.inventories}</strong>
-                </div>
-                <div className="print-kpi">
-                  <span>Sobra</span>
-                  <strong>{fmtQty(data.totals.surplusQty)}</strong>
-                </div>
-                <div className="print-kpi">
-                  <span>Falta</span>
-                  <strong>{fmtQty(data.totals.shortageQty)}</strong>
-                </div>
-              </div>
-            </section>
-
-            <section className="print-section">
-              <h2 className="print-section-title">Itens</h2>
-              <table className="print-table print-table-compact">
-                <thead>
-                  <tr>
-                    <th style={{ width: 56 }}>Inv.</th>
-                    <th>Produto</th>
-                    <th style={{ width: 90 }}>SKU</th>
-                    <th>Local</th>
-                    <th style={{ width: 80, textAlign: 'right' }}>Sistema</th>
-                    <th style={{ width: 80, textAlign: 'right' }}>Contado</th>
-                    <th style={{ width: 80, textAlign: 'right' }}>Diff</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.lines.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="empty">
-                        Nenhuma linha no filtro.
-                      </td>
-                    </tr>
-                  ) : (
-                    data.lines.map((l) => (
-                      <tr key={`${l.inventoryId}-${l.variantId}`}>
-                        <td>
-                          <strong>#{l.inventoryControlNumber}</strong>
-                        </td>
-                        <td>
-                          {l.productName}
-                          <div style={{ fontSize: '0.75rem', opacity: 0.75 }}>
-                            Cód. {l.productControlNumber}
-                            {l.barcode ? ` · EAN ${l.barcode}` : ''}
-                          </div>
-                        </td>
-                        <td>{l.sku}</td>
-                        <td>
-                          {l.locationCode}
-                          {l.postedAt ? (
-                            <div style={{ fontSize: '0.72rem', opacity: 0.75 }}>
-                              {new Date(l.postedAt).toLocaleString('pt-BR')}
-                            </div>
-                          ) : null}
-                        </td>
-                        <td style={{ textAlign: 'right' }}>{fmtQty(l.systemQty)}</td>
-                        <td style={{ textAlign: 'right' }}>
-                          {l.countedQty == null ? '—' : fmtQty(l.countedQty)}
-                        </td>
-                        <td
-                          style={{
-                            textAlign: 'right',
-                            fontWeight: 600,
-                            color:
-                              l.diff == null || Math.abs(l.diff) <= 1e-9
-                                ? undefined
-                                : l.diff > 0
-                                  ? '#166534'
-                                  : '#b91c1c',
-                          }}
-                        >
-                          {l.diff == null
-                            ? '—'
-                            : `${l.diff > 0 ? '+' : ''}${fmtQty(l.diff)}`}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </section>
-          </>
-        )}
-      </div>
+        }
+        items={reportItems}
+        layoutKey={`inv-div:${report.status}:${data?.lines.length ?? 0}`}
+      />
     </div>
   );
 }

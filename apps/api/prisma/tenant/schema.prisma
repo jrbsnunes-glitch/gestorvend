@@ -553,6 +553,8 @@ model Product {
   @@index([stockComponentVariantId])
   @@index([isManufacturedFinishedGood])
   @@index([showInPublicCatalog])
+  @@index([isActive, controlNumber])
+  @@index([categoryId])
 }
 
 /// Ficha técnica (BOM): 1 produto acabado → N insumos. Fase 2 do módulo restaurante.
@@ -611,6 +613,9 @@ model ProductVariant {
   manufacturingIssues ManufacturingMaterialIssue[] @relation("ManufacturingIssueIngredient")
   priceHistory       ProductVariantPriceHistory[]
   supplierLinks      SupplierProductLink[]
+
+  @@index([productId])
+  @@index([barcode])
 }
 
 /// Vínculo código do produto no fornecedor (cProd NF-e) → variação interna.

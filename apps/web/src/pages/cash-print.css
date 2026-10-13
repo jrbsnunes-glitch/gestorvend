@@ -81,6 +81,10 @@
   gap: 0.4rem;
 }
 
+.print-kpis--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .print-doc .print-kpi {
   border: 1px solid #94a3b8;
   border-radius: 4px;

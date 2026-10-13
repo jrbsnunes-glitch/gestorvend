@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { A4ReportPages, type A4Item } from '../components/A4ReportPages';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatDate } from '../lib/format';
@@ -170,7 +171,99 @@ export function ProductReportMovementPrintPage() {
     <p className="print-sub">Carregando…</p>
   ) : null;
 
-  const sectionGate = !!data?.sections.length;
+  const reportItems = useMemo((): A4Item[] => {
+    if (report.isError) {
+      return [{ kind: 'block', key: 'error', node: <p>Não foi possível montar o relatório.</p> }];
+    }
+    if (!data) return [{ kind: 'block', key: 'loading', node: <p>Carregando…</p> }];
+    const items: A4Item[] = [];
+    if (data.note) {
+      items.push({
+        kind: 'block',
+        key: 'note',
+        node: (
+          <p className="print-sub" style={{ marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+            {data.note}
+          </p>
+        ),
+      });
+    }
+    if (!data.sections.length) {
+      items.push({
+        kind: 'block',
+        key: 'empty',
+        node: (
+          <p className="print-empty">
+            Nenhum resultado neste relatório — ajuste o intervalo ou ative{' '}
+            <strong>Variantes sem lançamentos</strong> quando buscar vários produtos.
+          </p>
+        ),
+      });
+    }
+    const colSpan = 7 + (data.options.useMinControl ? 1 : 0) + (data.options.useMaxControl ? 1 : 0);
+    for (const sec of data.sections) {
+      items.push({
+        kind: 'table',
+        key: sec.variant.id,
+        tableClassName: 'print-table',
+        title: (
+          <h2 className="print-sub" style={{ fontSize: '1rem', margin: '0 0 0.45rem', fontWeight: 700 }}>
+            {sec.variant.productName} <span style={{ fontWeight: 600 }}>({sec.variant.sku})</span>
+            {' — '}
+            <span style={{ fontWeight: 500, fontSize: '0.9rem', color: '#475569' }}>
+              Mín. SKUs esta variante {sec.variant.minStock} · código produto {sec.variant.productControlNumber}
+            </span>
+          </h2>
+        ),
+        head: (
+          <tr>
+            <th>Data</th>
+            <th>Local</th>
+            <th>Movimento</th>
+            <th className="num">Qtd*</th>
+            <th className="num">Antes</th>
+            <th className="num">Depois</th>
+            {data.options.useMinControl ? <th>&lt; mín</th> : null}
+            {data.options.useMaxControl ? <th>&gt; teto</th> : null}
+            <th>Ref.</th>
+          </tr>
+        ),
+        rows: sec.rows.map((r, i) => (
+          <tr key={`${sec.variant.id}-${r.controlNumber}-${i}`}>
+            <td style={{ whiteSpace: 'nowrap' }}>{formatDate(r.createdAt)}</td>
+            <td>
+              <span>{r.locationCode}</span>
+              <div style={{ fontSize: '0.78rem', color: '#475569' }}>{r.locationName}</div>
+            </td>
+            <td>{movementLabel(r.type, r.source)}</td>
+            <td className="num">{r.quantityInMove}</td>
+            <td className="num">{r.balanceBefore}</td>
+            <td className="num">{r.balanceAfter}</td>
+            {data.options.useMinControl ? <td>{r.belowMinStock ? 'Sim' : '—'}</td> : null}
+            {data.options.useMaxControl ? <td>{r.aboveMaxStock ? 'Sim' : '—'}</td> : null}
+            <td style={{ wordBreak: 'break-word', fontSize: '0.84rem' }}>
+              {[r.reference, r.outboundReason].filter(Boolean).join(' · ') || '—'}
+            </td>
+          </tr>
+        )),
+        empty: (
+          <tr>
+            <td colSpan={colSpan}>{movementSectionEmptyText(sec, data.options)}</td>
+          </tr>
+        ),
+      });
+    }
+    items.push({
+      kind: 'block',
+      key: 'legend',
+      node: (
+        <p className="print-foot" style={{ marginTop: '0.35rem' }}>
+          * Em ajustes (inventário), o valor gravado reproduz a movimentação conforme modelo de dados.
+        </p>
+      ),
+    });
+    return items;
+  }, [data, report.isError]);
 
   if (!enabled) {
     return (
@@ -198,90 +291,17 @@ export function ProductReportMovementPrintPage() {
         </button>
       </div>
 
-      <div className="print-doc">
-        <StandardReportHeader documentTitle="Movimentação de produtos" documentExtras={headerSubtitle} />
+      {report.isError && (
+        <div className="alert alert-error no-print" style={{ width: '210mm', maxWidth: '100%', margin: '0 auto 0.75rem' }}>
+          {(report.error as Error)?.message ?? 'Erro ao carregar relatório.'}
+        </div>
+      )}
 
-        {enabled && report.isLoading && <p>Carregando…</p>}
-        {enabled && report.isError && (
-          <div className="alert alert-error no-print">
-            {(report.error as Error)?.message ?? 'Erro ao carregar relatório.'}
-          </div>
-        )}
-
-        {!!data?.note && (
-          <p className="print-sub" style={{ marginBottom: '1rem', fontSize: '0.85rem' }}>
-            {data.note}
-          </p>
-        )}
-
-        {!sectionGate && data && enabled && (
-          <p className="print-empty">
-            Nenhum resultado neste relatório — ajuste o intervalo ou ative{' '}
-            <strong>Variantes sem lançamentos</strong> quando buscar vários produtos.
-          </p>
-        )}
-
-        {sectionGate &&
-          data!.sections.map((sec) => (
-            <div
-              key={sec.variant.id}
-              style={{ marginBottom: '1.85rem', pageBreakInside: 'avoid' }}
-              className="print-movement-variant-block"
-            >
-              <h2 className="print-sub" style={{ fontSize: '1rem', margin: '0 0 0.65rem', fontWeight: 700 }}>
-                {sec.variant.productName} <span style={{ fontWeight: 600 }}>({sec.variant.sku})</span>
-                {' — '}
-                <span style={{ fontWeight: 500, fontSize: '0.9rem', color: '#475569' }}>
-                  Mín. SKUs esta variante {sec.variant.minStock} · código produto {sec.variant.productControlNumber}
-                </span>
-              </h2>
-              {!sec.rows.length ? (
-                <p className="print-empty" style={{ fontSize: '0.85rem' }}>
-                  {movementSectionEmptyText(sec, data!.options)}
-                </p>
-              ) : (
-                <table className="print-table">
-                  <thead>
-                    <tr>
-                      <th>Data</th>
-                      <th>Local</th>
-                      <th>Movimento</th>
-                      <th className="num">Qtd*</th>
-                      <th className="num">Antes</th>
-                      <th className="num">Depois</th>
-                      {data!.options.useMinControl ? <th>&lt; mín</th> : null}
-                      {data!.options.useMaxControl ? <th>&gt; teto</th> : null}
-                      <th>Ref.</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sec.rows.map((r, i) => (
-                      <tr key={`${sec.variant.id}-${r.controlNumber}-${i}`}>
-                        <td style={{ whiteSpace: 'nowrap' }}>{formatDate(r.createdAt)}</td>
-                        <td>
-                          <span>{r.locationCode}</span>
-                          <div style={{ fontSize: '0.78rem', color: '#475569' }}>{r.locationName}</div>
-                        </td>
-                        <td>{movementLabel(r.type, r.source)}</td>
-                        <td className="num">{r.quantityInMove}</td>
-                        <td className="num">{r.balanceBefore}</td>
-                        <td className="num">{r.balanceAfter}</td>
-                        {data!.options.useMinControl ? <td>{r.belowMinStock ? 'Sim' : '—'}</td> : null}
-                        {data!.options.useMaxControl ? <td>{r.aboveMaxStock ? 'Sim' : '—'}</td> : null}
-                        <td style={{ maxWidth: '180px', wordBreak: 'break-word', fontSize: '0.84rem' }}>
-                          {[r.reference, r.outboundReason].filter(Boolean).join(' · ') || '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          ))}
-        <p className="print-foot" style={{ marginTop: '1rem' }}>
-          * Em ajustes (inventário), o valor gravado reproduz a movimentação conforme modelo de dados.
-        </p>
-      </div>
+      <A4ReportPages
+        header={<StandardReportHeader documentTitle="Movimentação de produtos" documentExtras={headerSubtitle} />}
+        items={reportItems}
+        layoutKey={`move:${report.status}:${data?.sections.length ?? 0}:${data?.sections.reduce((n, s) => n + s.rows.length, 0) ?? 0}`}
+      />
     </div>
   );
 }

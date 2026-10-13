@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { A4ReportPages, type A4Item } from '../components/A4ReportPages';
 import { StandardReportHeader } from '../components/StandardReportHeader';
+import './cash-print.css';
 import { api } from '../lib/api';
 import { PAYMENT_LABELS } from '../lib/finance-bills';
 import { formatBRL, formatCpfCnpj, formatDate } from '../lib/format';
@@ -94,11 +96,11 @@ export function CustomerReportsPrintPage() {
         : true,
   });
 
-  useEffect(() => {
-    if (query.isSuccess) {
-      const t = window.setTimeout(() => window.print(), 400);
-      return () => window.clearTimeout(t);
-    }
+  const printed = useRef(false);
+  const onReady = useCallback((count: number) => {
+    if (printed.current || count < 1 || !query.isSuccess) return;
+    printed.current = true;
+    window.setTimeout(() => window.print(), 400);
   }, [query.isSuccess]);
 
   const err =
@@ -110,186 +112,220 @@ export function CustomerReportsPrintPage() {
           ? (query.error as Error).message
           : null;
 
+  const documentTitle =
+    report === 'delinquency'
+      ? 'Clientes — inadimplência'
+      : report === 'sales-history'
+        ? 'Clientes — histórico de vendas'
+        : 'Clientes — limites crédito / requisição';
+
+  const reportItems = useMemo((): A4Item[] => {
+    if (query.isLoading) return [{ kind: 'block', key: 'loading', node: <p>Carregando relatório…</p> }];
+    if (!query.data) return [];
+    if (report === 'credit-limits') return creditLimitItems(query.data as CreditLimitsReport);
+    if (report === 'delinquency') return delinquencyItems(query.data as DelinquencyReport);
+    return salesHistoryItems(query.data as SalesHistoryReport);
+  }, [query.data, query.isLoading, report]);
+
   return (
-    <div className="page print-area gv-report-sheet">
-      <StandardReportHeader
-        documentTitle={
-          report === 'delinquency'
-            ? 'Clientes — inadimplência'
-            : report === 'sales-history'
-              ? 'Clientes — histórico de vendas'
-              : 'Clientes — limites crédito / requisição'
-        }
-        documentExtras={
-          <p className="print-sub page-desc no-print" style={{ marginBottom: 0 }}>
-            <Link to="/clientes">← Voltar aos clientes</Link>
-          </p>
-        }
+    <div className="print-page">
+      <div className="print-toolbar no-print">
+        <Link className="btn btn-secondary" to="/clientes">
+          ← Voltar aos clientes
+        </Link>
+        <div style={{ flex: 1 }} />
+        <button type="button" className="btn btn-primary" onClick={() => window.print()}>
+          Imprimir
+        </button>
+      </div>
+      {err && (
+        <div className="alert alert-error no-print" style={{ width: '210mm', maxWidth: '100%', margin: '0 auto 0.75rem' }}>
+          {err}
+        </div>
+      )}
+      <A4ReportPages
+        header={<StandardReportHeader documentTitle={documentTitle} />}
+        items={reportItems}
+        layoutKey={`customers:${report}:${query.dataUpdatedAt}`}
+        onReady={onReady}
       />
-
-      {query.isLoading && <p>Carregando relatório…</p>}
-      {err && <div className="alert alert-error">{err}</div>}
-
-      {query.data && report === 'credit-limits' && (
-        <CreditLimitsView data={query.data as CreditLimitsReport} />
-      )}
-      {query.data && report === 'delinquency' && (
-        <DelinquencyView data={query.data as DelinquencyReport} />
-      )}
-      {query.data && report === 'sales-history' && (
-        <SalesHistoryView data={query.data as SalesHistoryReport} />
-      )}
     </div>
   );
 }
 
-function CreditLimitsView({ data }: { data: CreditLimitsReport }) {
-  return (
-    <>
-      <p className="page-desc">{data.note}</p>
-      <p>
-        {data.totals.customers} cliente(s) · Saldo crédito total {formatBRL(data.totals.creditBalance)} ·
-        Requisição em aberto {formatBRL(data.totals.requisitionOpen)}
-      </p>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Cliente</th>
-            <th>Documento</th>
-            <th>Grupo</th>
-            <th className="num">Saldo crédito</th>
-            <th className="num">Lim. requisição</th>
-            <th className="num">Req. em aberto</th>
-            <th className="num">Req. disponível</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.lines.length === 0 && (
-            <tr>
-              <td colSpan={7}>Nenhum cliente no filtro.</td>
-            </tr>
-          )}
-          {data.lines.map((r) => (
-            <tr key={`${r.name}-${r.document}`}>
-              <td>{r.name}</td>
-              <td>{r.document ? formatCpfCnpj(r.document) : '—'}</td>
-              <td>{r.segment ?? '—'}</td>
-              <td className="num">{formatBRL(r.creditBalance)}</td>
-              <td className="num">{formatBRL(r.requisitionLimit)}</td>
-              <td className="num">{formatBRL(r.requisitionUsed)}</td>
-              <td className="num">{formatBRL(r.requisitionAvailable)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
-  );
+function creditLimitItems(data: CreditLimitsReport): A4Item[] {
+  return [
+    {
+      kind: 'block',
+      key: 'intro',
+      node: (
+        <>
+          <p className="print-sub">{data.note}</p>
+          <p className="print-sub">
+            {data.totals.customers} cliente(s) · Saldo crédito total {formatBRL(data.totals.creditBalance)} ·
+            Requisição em aberto {formatBRL(data.totals.requisitionOpen)}
+          </p>
+        </>
+      ),
+    },
+    {
+      kind: 'table',
+      key: 'limits',
+      tableClassName: 'data-table',
+      head: (
+        <tr>
+          <th>Cliente</th>
+          <th>Documento</th>
+          <th>Grupo</th>
+          <th className="num">Saldo crédito</th>
+          <th className="num">Lim. requisição</th>
+          <th className="num">Req. em aberto</th>
+          <th className="num">Req. disponível</th>
+        </tr>
+      ),
+      rows: data.lines.map((r) => (
+        <tr key={`${r.name}-${r.document}`}>
+          <td>{r.name}</td>
+          <td>{r.document ? formatCpfCnpj(r.document) : '—'}</td>
+          <td>{r.segment ?? '—'}</td>
+          <td className="num">{formatBRL(r.creditBalance)}</td>
+          <td className="num">{formatBRL(r.requisitionLimit)}</td>
+          <td className="num">{formatBRL(r.requisitionUsed)}</td>
+          <td className="num">{formatBRL(r.requisitionAvailable)}</td>
+        </tr>
+      )),
+      empty: (
+        <tr>
+          <td colSpan={7}>Nenhum cliente no filtro.</td>
+        </tr>
+      ),
+    },
+  ];
 }
 
-function DelinquencyView({ data }: { data: DelinquencyReport }) {
-  return (
-    <>
-      <p className="page-desc">
-        {data.note} Referência: {formatDate(data.asOf)}.
-      </p>
-      <p>
-        {data.totals.customers} cliente(s) · {data.totals.titles} título(s) · Total em atraso{' '}
-        {formatBRL(data.totals.totalOverdue)}
-      </p>
-      {data.lines.length === 0 ? (
-        <p>Nenhum cliente inadimplente no filtro.</p>
-      ) : (
-        data.lines.map((c) => (
-          <section key={c.name} style={{ marginBottom: '1.25rem', breakInside: 'avoid' }}>
-            <h2 style={{ fontSize: '1rem', marginBottom: '0.35rem' }}>
-              {c.name}
-              {c.document ? ` · ${formatCpfCnpj(c.document)}` : ''}
-              {c.segment ? ` · ${c.segment}` : ''}
-            </h2>
-            <p style={{ margin: '0 0 0.5rem', fontSize: '0.9rem' }}>
-              {c.openTitles} título(s) · Total {formatBRL(c.totalOverdue)} · Maior atraso{' '}
-              {c.maxDaysOverdue} dia(s) · Vencimento mais antigo {formatDate(c.oldestDueDate)}
-            </p>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Vencimento</th>
-                  <th>Descrição</th>
-                  <th>Venda</th>
-                  <th className="num">Em aberto</th>
-                  <th className="num">Dias atraso</th>
-                  <th>Situação</th>
-                </tr>
-              </thead>
-              <tbody>
-                {c.titles.map((t) => (
-                  <tr key={t.description + t.dueDate}>
-                    <td>{formatDate(t.dueDate)}</td>
-                    <td>{t.description}</td>
-                    <td>{t.saleNumber != null ? `#${t.saleNumber}` : '—'}</td>
-                    <td className="num">{formatBRL(t.amountRemaining)}</td>
-                    <td className="num">{t.daysOverdue}</td>
-                    <td>{t.status === 'OVERDUE' ? 'Vencido' : 'Em aberto'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-        ))
-      )}
-    </>
-  );
+function delinquencyItems(data: DelinquencyReport): A4Item[] {
+  const items: A4Item[] = [
+    {
+      kind: 'block',
+      key: 'intro',
+      node: (
+        <>
+          <p className="print-sub">
+            {data.note} Referência: {formatDate(data.asOf)}.
+          </p>
+          <p className="print-sub">
+            {data.totals.customers} cliente(s) · {data.totals.titles} título(s) · Total em atraso{' '}
+            {formatBRL(data.totals.totalOverdue)}
+          </p>
+        </>
+      ),
+    },
+  ];
+  if (!data.lines.length) {
+    items.push({ kind: 'block', key: 'empty', node: <p>Nenhum cliente inadimplente no filtro.</p> });
+    return items;
+  }
+  for (const c of data.lines) {
+    items.push({
+      kind: 'table',
+      key: `c-${c.name}-${c.document ?? ''}`,
+      tableClassName: 'data-table',
+      title: (
+        <>
+          <h2 style={{ fontSize: '1rem', margin: '0 0 0.35rem' }}>
+            {c.name}
+            {c.document ? ` · ${formatCpfCnpj(c.document)}` : ''}
+            {c.segment ? ` · ${c.segment}` : ''}
+          </h2>
+          <p style={{ margin: '0 0 0.45rem', fontSize: '0.9rem' }}>
+            {c.openTitles} título(s) · Total {formatBRL(c.totalOverdue)} · Maior atraso {c.maxDaysOverdue}{' '}
+            dia(s) · Vencimento mais antigo {formatDate(c.oldestDueDate)}
+          </p>
+        </>
+      ),
+      head: (
+        <tr>
+          <th>Vencimento</th>
+          <th>Descrição</th>
+          <th>Venda</th>
+          <th className="num">Em aberto</th>
+          <th className="num">Dias atraso</th>
+          <th>Situação</th>
+        </tr>
+      ),
+      rows: c.titles.map((t) => (
+        <tr key={t.description + t.dueDate}>
+          <td>{formatDate(t.dueDate)}</td>
+          <td>{t.description}</td>
+          <td>{t.saleNumber != null ? `#${t.saleNumber}` : '—'}</td>
+          <td className="num">{formatBRL(t.amountRemaining)}</td>
+          <td className="num">{t.daysOverdue}</td>
+          <td>{t.status === 'OVERDUE' ? 'Vencido' : 'Em aberto'}</td>
+        </tr>
+      )),
+    });
+  }
+  return items;
 }
 
-function SalesHistoryView({ data }: { data: SalesHistoryReport }) {
-  return (
-    <>
-      <p className="page-desc">
-        Cliente: <strong>{data.customer.name}</strong>
-        {data.customer.document ? ` · ${formatCpfCnpj(data.customer.document)}` : ''}
-        {data.customer.segment ? ` · ${data.customer.segment}` : ''}
-        <br />
-        Período: {formatDate(data.period.from)} a {formatDate(data.period.to)}
-      </p>
-      <p>
-        {data.totals.sales} venda(s) concluída(s) · Total {formatBRL(data.totals.revenue)}
-      </p>
-      {data.lines.length === 0 ? (
-        <p>Nenhuma venda no período.</p>
-      ) : (
-        data.lines.map((s) => (
-          <section key={s.number} style={{ marginBottom: '1rem', breakInside: 'avoid' }}>
-            <h2 style={{ fontSize: '1rem', marginBottom: '0.25rem' }}>
-              Venda #{s.number} · {formatDate(s.createdAt)} · {formatBRL(s.total)}
-            </h2>
-            <p style={{ margin: '0 0 0.35rem', fontSize: '0.88rem' }}>
-              Pagamentos:{' '}
-              {s.payments.map((p) => `${paymentLabel(p.method)} ${formatBRL(p.amount)}`).join(' · ') ||
-                '—'}
-            </p>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Produto</th>
-                  <th>SKU</th>
-                  <th className="num">Qtd</th>
-                  <th className="num">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {s.items.map((it) => (
-                  <tr key={`${it.sku}-${it.productName}`}>
-                    <td>{it.productName}</td>
-                    <td>{it.sku}</td>
-                    <td className="num">{it.quantity}</td>
-                    <td className="num">{formatBRL(it.totalLine)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-        ))
-      )}
-    </>
-  );
+function salesHistoryItems(data: SalesHistoryReport): A4Item[] {
+  const items: A4Item[] = [
+    {
+      kind: 'block',
+      key: 'intro',
+      node: (
+        <>
+          <p className="print-sub">
+            Cliente: <strong>{data.customer.name}</strong>
+            {data.customer.document ? ` · ${formatCpfCnpj(data.customer.document)}` : ''}
+            {data.customer.segment ? ` · ${data.customer.segment}` : ''}
+            <br />
+            Período: {formatDate(data.period.from)} a {formatDate(data.period.to)}
+          </p>
+          <p className="print-sub">
+            {data.totals.sales} venda(s) concluída(s) · Total {formatBRL(data.totals.revenue)}
+          </p>
+        </>
+      ),
+    },
+  ];
+  if (!data.lines.length) {
+    items.push({ kind: 'block', key: 'empty', node: <p>Nenhuma venda no período.</p> });
+    return items;
+  }
+  for (const s of data.lines) {
+    items.push({
+      kind: 'table',
+      key: `sale-${s.number}`,
+      tableClassName: 'data-table',
+      title: (
+        <>
+          <h2 style={{ fontSize: '1rem', margin: '0 0 0.25rem' }}>
+            Venda #{s.number} · {formatDate(s.createdAt)} · {formatBRL(s.total)}
+          </h2>
+          <p style={{ margin: '0 0 0.35rem', fontSize: '0.88rem' }}>
+            Pagamentos:{' '}
+            {s.payments.map((p) => `${paymentLabel(p.method)} ${formatBRL(p.amount)}`).join(' · ') || '—'}
+          </p>
+        </>
+      ),
+      head: (
+        <tr>
+          <th>Produto</th>
+          <th>SKU</th>
+          <th className="num">Qtd</th>
+          <th className="num">Total</th>
+        </tr>
+      ),
+      rows: s.items.map((it) => (
+        <tr key={`${it.sku}-${it.productName}`}>
+          <td>{it.productName}</td>
+          <td>{it.sku}</td>
+          <td className="num">{it.quantity}</td>
+          <td className="num">{formatBRL(it.totalLine)}</td>
+        </tr>
+      )),
+    });
+  }
+  return items;
 }

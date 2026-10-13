@@ -418,9 +418,43 @@
   .gv-finance-print-detail table tr,
   .print-area table.data-table tr,
   .gv-finance-print-root table.data-table tr,
-  .print-table tr {
+  .print-table tr,
+  .gv-a4-table tr {
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  table.data-table thead,
+  table.print-table thead,
+  table.gv-a4-table thead {
+    display: table-header-group !important;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    clip: auto !important;
+  }
+
+  table.data-table tbody,
+  table.print-table tbody,
+  table.gv-a4-table tbody {
+    display: table-row-group !important;
+  }
+
+  table.data-table tr,
+  table.print-table tr,
+  table.gv-a4-table tr {
+    display: table-row !important;
+  }
+
+  table.data-table th,
+  table.data-table td,
+  table.print-table th,
+  table.print-table td,
+  table.gv-a4-table th,
+  table.gv-a4-table td {
+    display: table-cell !important;
   }
 
   .dash-hero {
@@ -711,4 +745,161 @@
 
 .gv-finance-bill-row--nested td:first-child {
   padding-left: 0.85rem;
+}
+
+/* === Folhas A4 paginadas (preview = impressão) === */
+@page gv-a4 {
+  size: A4 portrait;
+  margin: 0;
+}
+
+.gv-a4-root {
+  width: 100%;
+}
+
+.gv-a4-pagecount {
+  width: var(--gv-a4-width);
+  max-width: 100%;
+  margin: 0 auto 0.45rem;
+  text-align: right;
+  font-size: 13px;
+  color: #475569;
+}
+
+.gv-a4-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.gv-a4-measure {
+  position: fixed;
+  left: -320mm;
+  top: 0;
+  width: var(--gv-a4-width);
+  pointer-events: none;
+}
+
+.gv-a4-sheet.print-doc {
+  display: flex;
+  flex-direction: column;
+  width: var(--gv-a4-width);
+  /* 1 mm abaixo do A4 evita folha em branco no Chrome quando a quebra coincide com o fim da página. */
+  height: 296mm;
+  max-width: var(--gv-a4-width);
+  min-height: 0;
+  margin: 0;
+  box-sizing: border-box;
+  padding:
+    var(--gv-a4-margin-top)
+    var(--gv-a4-margin-right)
+    8mm
+    var(--gv-a4-margin-left);
+  overflow: hidden;
+  background: #ffffff;
+  border: none;
+  border-radius: 0;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  page: gv-a4;
+}
+
+.gv-a4-sheet__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gv-a4-sheet__foot {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+  padding-top: 0.28rem;
+  border-top: 1px solid #94a3b8;
+  font-size: 0.68rem;
+  line-height: 1.2;
+  color: #64748b;
+}
+
+.gv-a4-flow {
+  margin: 0 0 0.45rem;
+}
+
+.gv-a4-sheet .gv-a4-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.gv-a4-sheet .gv-a4-table th,
+.gv-a4-sheet .gv-a4-table td {
+  padding: 0.16rem 0.22rem;
+  border: 1px solid #94a3b8;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.gv-a4-sheet .gv-a4-table thead th {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1.5px solid #0f172a;
+  background: #ffffff;
+}
+
+.gv-a4-sheet .gv-a4-table tfoot th,
+.gv-a4-sheet .gv-a4-table tfoot td {
+  font-weight: 700;
+  background: #ffffff;
+}
+
+.gv-a4-sheet .gv-a4-table .num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+@media print {
+  .gv-a4-measure,
+  .gv-a4-pagecount {
+    display: none !important;
+  }
+
+  .gv-a4-stack {
+    display: block;
+    gap: 0;
+  }
+
+  .gv-a4-sheet.print-doc {
+    width: var(--gv-a4-width) !important;
+    max-width: var(--gv-a4-width) !important;
+    height: 296mm !important;
+    margin: 0 !important;
+    padding:
+      var(--gv-a4-margin-top)
+      var(--gv-a4-margin-right)
+      8mm
+      var(--gv-a4-margin-left) !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+    border: none !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .gv-a4-stack > .gv-a4-sheet {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .gv-a4-stack > .gv-a4-sheet:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
 }

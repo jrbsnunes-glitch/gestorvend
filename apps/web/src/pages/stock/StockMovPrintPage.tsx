@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { A4ReportPages, type A4Item } from '../../components/A4ReportPages';
 import { StandardReportHeader } from '../../components/StandardReportHeader';
 import { api } from '../../lib/api';
 import { formatBRL } from '../../lib/format';
@@ -107,47 +108,27 @@ export function StockMovPrintPage() {
     return 'Sem filtro';
   }, [hasControl, controlFrom, controlTo, from, to]);
 
-  useEffect(() => {
-    if (report.data && !report.isFetching) {
-      const t = setTimeout(() => window.print(), 250);
-      return () => clearTimeout(t);
-    }
-  }, [report.data, report.isFetching]);
+  const printed = useRef(false);
+  const onReady = useCallback((count: number) => {
+    if (printed.current || count < 1 || !report.data) return;
+    printed.current = true;
+    window.setTimeout(() => window.print(), 400);
+  }, [report.data]);
 
   const summary = report.data?.summary;
 
-  return (
-    <div className="print-page">
-      <div className="print-toolbar no-print">
-        <button type="button" className="btn btn-secondary" onClick={() => navigate('/estoque/movimentos')}>
-          ← Voltar
-        </button>
-        <button type="button" className="btn btn-primary" onClick={() => window.print()}>
-          Imprimir
-        </button>
-      </div>
-
-      <div className="print-doc">
-        <StandardReportHeader
-          documentTitle="Movimentações de estoque"
-          documentExtras={
-            <>
-              <p className="print-sub">{subtitle}</p>
-              {type && (
-                <p className="print-sub" style={{ marginTop: '0.15rem' }}>
-                  Tipo: <strong>{TYPE_LABEL[type] ?? type}</strong>
-                </p>
-              )}
-            </>
-          }
-        />
-
-        {report.isLoading && <p>Carregando…</p>}
-        {report.isError && (
-          <div className="alert alert-error">{(report.error as Error)?.message ?? 'Erro ao gerar relatório.'}</div>
-        )}
-
-        {summary && (
+  const reportItems = useMemo((): A4Item[] => {
+    if (report.isError) {
+      return [{ kind: 'block', key: 'error', node: <p>Não foi possível montar o relatório.</p> }];
+    }
+    if (!report.data || !summary) {
+      return [{ kind: 'block', key: 'loading', node: <p>Carregando…</p> }];
+    }
+    return [
+      {
+        kind: 'block',
+        key: 'kpis',
+        node: (
           <section className="print-section">
             <div className="print-kpis">
               <div className="print-kpi">
@@ -172,54 +153,95 @@ export function StockMovPrintPage() {
               </div>
             </div>
           </section>
-        )}
+        ),
+      },
+      {
+        kind: 'table',
+        key: 'movements',
+        title: <h2 className="print-section-title">Detalhamento</h2>,
+        tableClassName: 'print-table',
+        head: (
+          <tr>
+            <th style={{ width: 60 }}>#</th>
+            <th style={{ width: 110 }}>Data</th>
+            <th style={{ width: 80 }}>Tipo</th>
+            <th>Produto</th>
+            <th>Local</th>
+            <th style={{ width: 90, textAlign: 'right' }}>Qtd</th>
+            <th style={{ width: 110, textAlign: 'right' }}>Custo unit.</th>
+            <th>Origem</th>
+          </tr>
+        ),
+        rows: report.data.movements.map((m) => (
+          <tr key={m.id}>
+            <td>
+              <strong>#{m.controlNumber}</strong>
+            </td>
+            <td>{new Date(m.createdAt).toLocaleString('pt-BR')}</td>
+            <td>{TYPE_LABEL[m.type] ?? m.type}</td>
+            <td>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <strong>{m.variant.product.name}</strong>
+                <span style={{ color: '#64748b', fontSize: '0.78rem' }}>
+                  SKU {m.variant.sku}
+                  {m.variant.barcode ? ` · EAN ${m.variant.barcode}` : ''}
+                </span>
+              </div>
+            </td>
+            <td>
+              {m.location.code} — {m.location.name}
+            </td>
+            <td style={{ textAlign: 'right' }}>{m.quantity}</td>
+            <td style={{ textAlign: 'right' }}>{m.unitCost ? formatBRL(m.unitCost) : '—'}</td>
+            <td>{SOURCE_LABEL[m.source] ?? m.source}</td>
+          </tr>
+        )),
+        empty: (
+          <tr>
+            <td colSpan={8}>Nenhuma movimentação no filtro.</td>
+          </tr>
+        ),
+      },
+    ];
+  }, [report.data, report.isError, summary]);
 
-        {report.data && (
-          <section className="print-section">
-            <h2 className="print-section-title">Detalhamento</h2>
-            <table className="print-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 60 }}>#</th>
-                  <th style={{ width: 110 }}>Data</th>
-                  <th style={{ width: 80 }}>Tipo</th>
-                  <th>Produto</th>
-                  <th>Local</th>
-                  <th style={{ width: 90, textAlign: 'right' }}>Qtd</th>
-                  <th style={{ width: 110, textAlign: 'right' }}>Custo unit.</th>
-                  <th>Origem</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.data.movements.map((m) => (
-                  <tr key={m.id}>
-                    <td>
-                      <strong>#{m.controlNumber}</strong>
-                    </td>
-                    <td>{new Date(m.createdAt).toLocaleString('pt-BR')}</td>
-                    <td>{TYPE_LABEL[m.type] ?? m.type}</td>
-                    <td>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <strong>{m.variant.product.name}</strong>
-                        <span style={{ color: '#64748b', fontSize: '0.78rem' }}>
-                          SKU {m.variant.sku}
-                          {m.variant.barcode ? ` · EAN ${m.variant.barcode}` : ''}
-                        </span>
-                      </div>
-                    </td>
-                    <td>
-                      {m.location.code} — {m.location.name}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>{m.quantity}</td>
-                    <td style={{ textAlign: 'right' }}>{m.unitCost ? formatBRL(m.unitCost) : '—'}</td>
-                    <td>{SOURCE_LABEL[m.source] ?? m.source}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-        )}
+  return (
+    <div className="print-page">
+      <div className="print-toolbar no-print">
+        <button type="button" className="btn btn-secondary" onClick={() => navigate('/estoque/movimentos')}>
+          ← Voltar
+        </button>
+        <button type="button" className="btn btn-primary" onClick={() => window.print()}>
+          Imprimir
+        </button>
       </div>
+
+      {report.isError && (
+        <div className="alert alert-error no-print" style={{ width: '210mm', maxWidth: '100%', margin: '0 auto 0.75rem' }}>
+          {(report.error as Error)?.message ?? 'Erro ao gerar relatório.'}
+        </div>
+      )}
+
+      <A4ReportPages
+        header={
+          <StandardReportHeader
+            documentTitle="Movimentações de estoque"
+            documentExtras={
+              <>
+                <p className="print-sub">{subtitle}</p>
+                {type && (
+                  <p className="print-sub" style={{ marginTop: '0.15rem' }}>
+                    Tipo: <strong>{TYPE_LABEL[type] ?? type}</strong>
+                  </p>
+                )}
+              </>
+            }
+          />
+        }
+        items={reportItems}
+        layoutKey={`stock-mov:${report.status}:${report.data?.movements.length ?? 0}`}
+        onReady={onReady}
+      />
     </div>
   );
 }

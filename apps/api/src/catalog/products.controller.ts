@@ -33,6 +33,12 @@ import {
 } from '../common/product-conversion.util';
 import { ProductImageStorage } from './product-image.storage';
 
+function parseOptionalInt(raw?: string): number | undefined {
+  if (raw == null || String(raw).trim() === '') return undefined;
+  const n = Number(raw);
+  return Number.isInteger(n) ? n : undefined;
+}
+
 const productDetailInclude = {
   variants: { orderBy: { sku: 'asc' as const } },
   category: true,
@@ -367,17 +373,128 @@ export class ProductsController {
   async list(
     @CurrentUser() user: JwtPayload,
     @Query('includeInactive') includeInactiveRaw?: string,
+    @Query('page') pageRaw?: string,
+    @Query('pageSize') pageSizeRaw?: string,
+    @Query('status') statusRaw?: string,
+    @Query('q') qRaw?: string,
+    @Query('codeFrom') codeFromRaw?: string,
+    @Query('codeTo') codeToRaw?: string,
+    @Query('categoryId') categoryIdRaw?: string,
+    @Query('view') viewRaw?: string,
+    @Query('manufactured') manufacturedRaw?: string,
   ) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    if (pageRaw != null && String(pageRaw).trim() !== '') {
+      return this.listProductsPage(db, {
+        pageRaw,
+        pageSizeRaw,
+        statusRaw,
+        qRaw,
+        codeFromRaw,
+        codeToRaw,
+        categoryIdRaw,
+      });
+    }
+
+    const view = (viewRaw ?? '').trim();
+    if (view === 'lookup' || view === 'names') {
+      return db.product.findMany({
+        where: { isActive: true },
+        orderBy: [{ controlNumber: 'asc' }],
+        select:
+          view === 'names'
+            ? { id: true, name: true }
+            : {
+                id: true,
+                name: true,
+                ncm: true,
+                conversion: true,
+                packItemQty: true,
+                variants: {
+                  select: { id: true, sku: true },
+                  orderBy: { sku: 'asc' as const },
+                },
+              },
+      });
+    }
+
     const includeInactive =
       includeInactiveRaw === '1' ||
       includeInactiveRaw === 'true' ||
       includeInactiveRaw === 'yes';
+    const manufactured =
+      manufacturedRaw === '1' || manufacturedRaw === 'true' || manufacturedRaw === 'yes';
     return db.product.findMany({
-      where: includeInactive ? undefined : { isActive: true },
+      where: {
+        ...(includeInactive ? {} : { isActive: true }),
+        ...(manufactured ? { isManufacturedFinishedGood: true } : {}),
+      },
       include: productDetailInclude,
       orderBy: [{ controlNumber: 'asc' }],
     });
+  }
+
+  /** Listagem do menu Produtos: uma página, com os filtros que a tela já tinha no cliente. */
+  private async listProductsPage(
+    db: Awaited<ReturnType<TenantPrismaService['getClient']>>,
+    raw: {
+      pageRaw?: string;
+      pageSizeRaw?: string;
+      statusRaw?: string;
+      qRaw?: string;
+      codeFromRaw?: string;
+      codeToRaw?: string;
+      categoryIdRaw?: string;
+    },
+  ) {
+    const pageSize = Math.min(100, Math.max(1, Math.trunc(Number(raw.pageSizeRaw) || 20)));
+    const requestedPage = Math.max(1, Math.trunc(Number(raw.pageRaw) || 1));
+    const where = this.productListWhere(raw);
+    const total = await db.product.count({ where });
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const page = Math.min(requestedPage, totalPages);
+    const items = await db.product.findMany({
+      where,
+      include: productDetailInclude,
+      orderBy: [{ controlNumber: 'asc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+    return { items, total, page, pageSize };
+  }
+
+  private productListWhere(raw: {
+    statusRaw?: string;
+    qRaw?: string;
+    codeFromRaw?: string;
+    codeToRaw?: string;
+    categoryIdRaw?: string;
+  }): Prisma.ProductWhereInput {
+    const status = (raw.statusRaw ?? 'active').trim();
+    const where: Prisma.ProductWhereInput = {};
+    if (status === 'inactive') where.isActive = false;
+    else if (status !== 'all') where.isActive = true;
+
+    const categoryId = (raw.categoryIdRaw ?? '').trim();
+    if (categoryId) where.categoryId = categoryId;
+
+    const codeFrom = parseOptionalInt(raw.codeFromRaw);
+    const codeTo = parseOptionalInt(raw.codeToRaw);
+    if (codeFrom != null || codeTo != null) {
+      where.controlNumber = {
+        ...(codeFrom != null ? { gte: codeFrom } : {}),
+        ...(codeTo != null ? { lte: codeTo } : {}),
+      };
+    }
+
+    const q = (raw.qRaw ?? '').trim();
+    if (q) {
+      where.OR = [
+        { name: { contains: q, mode: 'insensitive' } },
+        { description: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+    return where;
   }
 
   /** Consulta em tempo real por código sequencial, nome, descrição, SKU ou código de barras. */

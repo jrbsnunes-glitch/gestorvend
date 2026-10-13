@@ -21,7 +21,7 @@ const COMPANY_TABS: Array<{ id: CompanyTab; label: string }> = [
   { id: 'fabrica', label: 'Fábrica' },
   { id: 'restaurante', label: 'Restaurante' },
   { id: 'visual', label: 'Identidade visual' },
-  { id: 'nfce', label: 'Emissor NFC-e' },
+  { id: 'nfce', label: 'Emissor fiscal' },
 ];
 
 type Company = {
@@ -238,6 +238,9 @@ function IssuerEmissorCard() {
   const [uf, setUf] = useState('');
   const [municipalityIbge, setMunicipalityIbge] = useState('');
   const [nfceSerie, setNfceSerie] = useState(1);
+  const [nfeSerie, setNfeSerie] = useState(1);
+  const [nfceInitialNumber, setNfceInitialNumber] = useState(1);
+  const [nfeInitialNumber, setNfeInitialNumber] = useState(1);
   const [crt, setCrt] = useState(1);
   const [sefazEnvironment, setSefazEnvironment] = useState<'HOMOLOGACAO' | 'PRODUCAO'>(
     'HOMOLOGACAO',
@@ -266,6 +269,9 @@ function IssuerEmissorCard() {
     setUf(d.uf);
     setMunicipalityIbge(d.municipalityIbge);
     setNfceSerie(d.nfceSerie);
+    setNfeSerie(d.nfeSerie);
+    setNfceInitialNumber(d.nfceLastNumber + 1);
+    setNfeInitialNumber(d.nfeLastNumber + 1);
     setCrt(d.crt);
     setSefazEnvironment(d.sefazEnvironment);
     setInboundAutoReceiptEnabled(Boolean(d.inboundAutoReceiptEnabled));
@@ -285,6 +291,9 @@ function IssuerEmissorCard() {
         uf,
         municipalityIbge,
         nfceSerie,
+        nfeSerie,
+        nfceInitialNumber,
+        nfeInitialNumber,
         crt,
         sefazEnvironment,
         certificatePath: certificatePath.trim() || null,
@@ -389,7 +398,7 @@ function IssuerEmissorCard() {
       {issuer.data && (
         <>
           <p className="company-form__status">
-            CRT&nbsp;1 (Simples) · NFC-e #{issuer.data.nfceLastNumber} · Cert: [
+            CRT&nbsp;1 (Simples) · próxima NFC-e #{issuer.data.nfceLastNumber + 1} · próxima NF-e #{issuer.data.nfeLastNumber + 1} · Cert: [
             {issuer.data.certificatePasswordConfigured ? 'senha OK' : 'sem senha'} |{' '}
             {issuer.data.certificatePath?.trim() || issuer.data.certPathFromEnvFallback
               ? issuer.data.certificateManagedUpload
@@ -426,17 +435,6 @@ function IssuerEmissorCard() {
               />
             </div>
             <div className="field">
-              <label htmlFor="iss-serie">Série NFC-e</label>
-              <input
-                id="iss-serie"
-                type="number"
-                min={1}
-                max={999}
-                value={nfceSerie}
-                onChange={(e) => setNfceSerie(Number(e.target.value) || 1)}
-              />
-            </div>
-            <div className="field">
               <label htmlFor="iss-crt">CRT</label>
               <select id="iss-crt" value={crt} onChange={(e) => setCrt(Number(e.target.value))}>
                 <option value={1}>1 — Simples Nacional</option>
@@ -445,6 +443,55 @@ function IssuerEmissorCard() {
               </select>
             </div>
           </div>
+          <div className="form-row form-row--4">
+            <div className="field">
+              <label htmlFor="iss-serie-nfce">Série NFC-e</label>
+              <input
+                id="iss-serie-nfce"
+                type="number"
+                min={1}
+                max={999}
+                value={nfceSerie}
+                onChange={(e) => setNfceSerie(Number(e.target.value) || 1)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="iss-num-nfce">Número inicial NFC-e</label>
+              <input
+                id="iss-num-nfce"
+                type="number"
+                min={1}
+                max={999999999}
+                value={nfceInitialNumber}
+                onChange={(e) => setNfceInitialNumber(Number(e.target.value) || 1)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="iss-serie-nfe">Série NF-e</label>
+              <input
+                id="iss-serie-nfe"
+                type="number"
+                min={1}
+                max={999}
+                value={nfeSerie}
+                onChange={(e) => setNfeSerie(Number(e.target.value) || 1)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="iss-num-nfe">Número inicial NF-e</label>
+              <input
+                id="iss-num-nfe"
+                type="number"
+                min={1}
+                max={999999999}
+                value={nfeInitialNumber}
+                onChange={(e) => setNfeInitialNumber(Number(e.target.value) || 1)}
+              />
+            </div>
+          </div>
+          <p className="company-form__hint" style={{ marginTop: 0 }}>
+            A próxima nota sai com esse número. Depois disso o sistema continua sozinho.
+          </p>
           <div className="inline-checks" style={{ marginBottom: '0.5rem' }}>
             <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
               Ambiente SEFAZ
@@ -679,7 +726,7 @@ function IssuerEmissorCard() {
               saveIssuer.mutate();
             }}
           >
-            {saveIssuer.isPending ? 'Salvando…' : 'Salvar emissor NFC-e'}
+            {saveIssuer.isPending ? 'Salvando…' : 'Salvar emissor'}
           </button>
           <p className="company-form__hint" style={{ marginTop: '0.45rem' }}>
             <code>FISCAL_EMIT_TRANSPORT=dry-run</code> assina NFC-e fictícia (<code>DRY-RUN</code>). SOAP
@@ -1722,7 +1769,7 @@ export function CompanyPage() {
 
           {tab === 'nfce' && (
           <section className="card">
-            <h2 className="company-form__h">Emissor NFC-e (servidor)</h2>
+            <h2 className="company-form__h">Emissor fiscal (NF-e e NFC-e)</h2>
             <IssuerEmissorCard />
           </section>
           )}

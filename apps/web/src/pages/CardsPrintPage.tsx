@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ReportPrintSticker } from '../components/ReportPrintSticker';
+import { A4ReportPages, type A4Item } from '../components/A4ReportPages';
+import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
+import './cash-print.css';
 import { formatBRL, formatDate } from '../lib/format';
 import { cardBrandLabel, cardOperationLabel } from '../lib/payment-forms';
 
@@ -44,11 +46,11 @@ export function CardsPrintPage() {
     queryFn: () => api<{ items: CardRow[] }>(`/card-transactions?${qs}`),
   });
 
-  useEffect(() => {
-    if (list.isSuccess) {
-      const t = window.setTimeout(() => window.print(), 400);
-      return () => window.clearTimeout(t);
-    }
+  const printed = useRef(false);
+  const onReady = useCallback((count: number) => {
+    if (printed.current || count < 1 || !list.isSuccess) return;
+    printed.current = true;
+    window.setTimeout(() => window.print(), 400);
   }, [list.isSuccess]);
 
   const title =
@@ -76,70 +78,101 @@ export function CardsPrintPage() {
     return [...map.entries()].sort((a, b) => b[1].amount - a[1].amount);
   }, [items]);
 
-  return (
-    <div className="page print-area">
-      <ReportPrintSticker
-        documentTitle={`Cartões — ${title}`}
-        documentExtras={
-          <p className="print-sub page-desc no-print" style={{ marginBottom: 0 }}>
-            <Link to="/cartoes">← Voltar</Link>
-          </p>
-        }
-      />
-      <h1>{title}</h1>
-      <p>
-        {items.length} transação(ões) · Total {formatBRL(total)} · Taxas {formatBRL(fees)}
-      </p>
-
-      {report === 'brand' ? (
-        <table className="data-table">
-          <thead>
+  const reportItems = useMemo((): A4Item[] => {
+    const intro: A4Item = {
+      kind: 'block',
+      key: 'intro',
+      node: (
+        <p className="print-sub">
+          {items.length} transação(ões) · Total {formatBRL(total)} · Taxas {formatBRL(fees)}
+        </p>
+      ),
+    };
+    if (report === 'brand') {
+      return [
+        intro,
+        {
+          kind: 'table',
+          key: 'brands',
+          tableClassName: 'data-table',
+          head: (
             <tr>
               <th>Bandeira</th>
               <th className="num">Qtd</th>
               <th className="num">Total</th>
             </tr>
-          </thead>
-          <tbody>
-            {byBrand.map(([brand, v]) => (
-              <tr key={brand}>
-                <td>{cardBrandLabel(brand)}</td>
-                <td className="num">{v.count}</td>
-                <td className="num">{formatBRL(v.amount)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Venda</th>
-              <th>Cliente</th>
-              <th>Forma</th>
-              <th>Bandeira</th>
-              <th className="num">Valor</th>
-              <th>Situação</th>
+          ),
+          rows: byBrand.map(([brand, v]) => (
+            <tr key={brand}>
+              <td>{cardBrandLabel(brand)}</td>
+              <td className="num">{v.count}</td>
+              <td className="num">{formatBRL(v.amount)}</td>
             </tr>
-          </thead>
-          <tbody>
-            {items.map((r) => (
-              <tr key={r.id}>
-                <td>{formatDate(r.sale.createdAt)}</td>
-                <td>#{r.sale.number}</td>
-                <td>{r.sale.customer?.name ?? 'Consumidor'}</td>
-                <td>{r.paymentForm?.name ?? 'Cartão'}</td>
-                <td>
-                  {cardBrandLabel(r.cardBrand)} · {cardOperationLabel(r.cardOperation)}
-                </td>
-                <td className="num">{formatBRL(Number(r.amount))}</td>
-                <td>{r.settlementStatus === 'SETTLED' ? 'Baixado' : 'Aberto'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+          )),
+          empty: (
+            <tr>
+              <td colSpan={3}>Nenhuma transação.</td>
+            </tr>
+          ),
+        },
+      ];
+    }
+    return [
+      intro,
+      {
+        kind: 'table',
+        key: 'cards',
+        tableClassName: 'data-table',
+        head: (
+          <tr>
+            <th>Data</th>
+            <th>Venda</th>
+            <th>Cliente</th>
+            <th>Forma</th>
+            <th>Bandeira</th>
+            <th className="num">Valor</th>
+            <th>Situação</th>
+          </tr>
+        ),
+        rows: items.map((r) => (
+          <tr key={r.id}>
+            <td>{formatDate(r.sale.createdAt)}</td>
+            <td>#{r.sale.number}</td>
+            <td>{r.sale.customer?.name ?? 'Consumidor'}</td>
+            <td>{r.paymentForm?.name ?? 'Cartão'}</td>
+            <td>
+              {cardBrandLabel(r.cardBrand)} · {cardOperationLabel(r.cardOperation)}
+            </td>
+            <td className="num">{formatBRL(Number(r.amount))}</td>
+            <td>{r.settlementStatus === 'SETTLED' ? 'Baixado' : 'Aberto'}</td>
+          </tr>
+        )),
+        empty: (
+          <tr>
+            <td colSpan={7}>Nenhuma transação.</td>
+          </tr>
+        ),
+      },
+    ];
+  }, [byBrand, fees, items, report, total]);
+
+  return (
+    <div className="print-page">
+      <div className="print-toolbar no-print">
+        <Link className="btn btn-secondary" to="/cartoes">
+          ← Voltar
+        </Link>
+        <div style={{ flex: 1 }} />
+        <button type="button" className="btn btn-primary" onClick={() => window.print()}>
+          Imprimir
+        </button>
+      </div>
+      <A4ReportPages
+        header={<StandardReportHeader documentTitle={`Cartões — ${title}`} />}
+        items={reportItems}
+        layoutKey={`cards:${report}:${items.length}:${list.isSuccess}`}
+        onReady={onReady}
+      />
     </div>
   );
 }

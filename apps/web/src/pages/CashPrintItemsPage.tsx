@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { A4ReportPages, type A4Item } from '../components/A4ReportPages';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
@@ -134,6 +135,82 @@ export function CashPrintItemsPage() {
     return operators.data?.find((u) => u.id === userId)?.name ?? null;
   }, [userId, operators.data]);
 
+  const reportItems = useMemo((): A4Item[] => {
+    const data = report.data;
+    if (report.isError) {
+      return [{ kind: 'block', key: 'error', node: <p>Não foi possível montar o relatório.</p> }];
+    }
+    if (!data) return [{ kind: 'block', key: 'loading', node: <p>Carregando…</p> }];
+    return [
+      {
+        kind: 'block',
+        key: 'summary',
+        node: (
+          <section className="print-section">
+            <h2>Itens</h2>
+            <p className="print-summary-line">
+              {Math.round(data.totals.totalItems * 100) / 100} un. · {data.totals.completedLineCount}{' '}
+              linha(s)
+              {data.totals.cancelledLineCount > 0 ? ` · ${data.totals.cancelledLineCount} cancelada(s)` : ''}
+              {data.totals.totalDiscount > 0 ? ` · Descontos totais ${formatBRL(data.totals.totalDiscount)}` : ''}
+              {(data.totals.totalSurcharges ?? 0) > 0
+                ? ` · Acréscimos totais ${formatBRL(data.totals.totalSurcharges)}`
+                : ''}
+              {' · '}
+              Líquido {formatBRL(data.totals.totalNet)}
+            </p>
+          </section>
+        ),
+      },
+      {
+        kind: 'table',
+        key: 'items',
+        tableClassName: 'print-table print-table-compact',
+        head: (
+          <tr>
+            <th>Data</th>
+            <th className="num">Venda</th>
+            {!userId && <th>Funcionário</th>}
+            <th>Produto</th>
+            <th className="num">Qtd</th>
+            <th className="num">Unit.</th>
+            <th className="num">Total</th>
+          </tr>
+        ),
+        rows: data.items.map((it) => (
+          <tr key={it.itemId} className={it.saleStatus === 'CANCELLED' ? 'is-cancelled' : undefined}>
+            <td>{fmtDateTime(it.saleCreatedAt)}</td>
+            <td className="num">
+              #{it.saleNumber}
+              {it.saleStatus === 'CANCELLED' ? ' ✕' : ''}
+            </td>
+            {!userId && <td>{it.user?.name ?? '—'}</td>}
+            <td>
+              {it.productName}
+              {it.sku ? ` · ${it.sku}` : ''}
+            </td>
+            <td className="num">{Number(it.quantity)}</td>
+            <td className="num">{formatBRL(it.unitPrice)}</td>
+            <td className="num">{formatBRL(it.totalLine)}</td>
+          </tr>
+        )),
+        empty: (
+          <tr>
+            <td colSpan={userId ? 6 : 7}>Nenhum item no filtro selecionado.</td>
+          </tr>
+        ),
+        foot: data.items.length ? (
+          <tr>
+            <th colSpan={userId ? 3 : 4}>Total</th>
+            <th className="num">{Math.round(data.totals.totalItems * 100) / 100}</th>
+            <th />
+            <th className="num">{formatBRL(data.totals.linesSubtotalBeforeOrderDiscount)}</th>
+          </tr>
+        ) : undefined,
+      },
+    ];
+  }, [report.data, report.isError, userId]);
+
   if (!hasDate && !hasControl) {
     return (
       <div className="print-page">
@@ -145,7 +222,6 @@ export function CashPrintItemsPage() {
     );
   }
 
-  const data = report.data;
   const subtitle = filterSubtitle({
     from,
     to,
@@ -167,87 +243,22 @@ export function CashPrintItemsPage() {
         </button>
       </div>
 
-      <div className="print-doc">
-        <StandardReportHeader
-          documentTitle="Itens vendidos"
-          documentExtras={<p className="print-sub">{subtitle}</p>}
-        />
+      {report.isError && (
+        <div className="alert alert-error no-print" style={{ width: '210mm', maxWidth: '100%', margin: '0 auto 0.75rem' }}>
+          {(report.error as Error)?.message ?? 'Erro ao carregar relatório.'}
+        </div>
+      )}
 
-        {report.isLoading && <p>Carregando…</p>}
-        {report.isError && (
-          <div className="alert alert-error">
-            {(report.error as Error)?.message ?? 'Erro ao carregar relatório.'}
-          </div>
-        )}
-
-        {data && (
-          <section className="print-section">
-            <h2>Itens</h2>
-            <p className="print-summary-line">
-              {Math.round(data.totals.totalItems * 100) / 100} un. ·{' '}
-              {data.totals.completedLineCount} linha(s)
-              {data.totals.cancelledLineCount > 0
-                ? ` · ${data.totals.cancelledLineCount} cancelada(s)`
-                : ''}
-              {data.totals.totalDiscount > 0
-                ? ` · Descontos totais ${formatBRL(data.totals.totalDiscount)}`
-                : ''}
-              {(data.totals.totalSurcharges ?? 0) > 0
-                ? ` · Acréscimos totais ${formatBRL(data.totals.totalSurcharges)}`
-                : ''}
-              {' · '}
-              Líquido {formatBRL(data.totals.totalNet)}
-            </p>
-            {data.items.length === 0 ? (
-              <p className="print-empty">Nenhum item no filtro selecionado.</p>
-            ) : (
-              <table className="print-table print-table-compact">
-                <thead>
-                  <tr>
-                    <th>Data</th>
-                    <th className="num">Venda</th>
-                    {!userId && <th>Funcionário</th>}
-                    <th>Produto</th>
-                    <th className="num">Qtd</th>
-                    <th className="num">Unit.</th>
-                    <th className="num">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.items.map((it) => (
-                    <tr
-                      key={it.itemId}
-                      className={it.saleStatus === 'CANCELLED' ? 'is-cancelled' : undefined}
-                    >
-                      <td>{fmtDateTime(it.saleCreatedAt)}</td>
-                      <td className="num">
-                        #{it.saleNumber}
-                        {it.saleStatus === 'CANCELLED' ? ' ✕' : ''}
-                      </td>
-                      {!userId && <td>{it.user?.name ?? '—'}</td>}
-                      <td>
-                        {it.productName}
-                        {it.sku ? ` · ${it.sku}` : ''}
-                      </td>
-                      <td className="num">{Number(it.quantity)}</td>
-                      <td className="num">{formatBRL(it.unitPrice)}</td>
-                      <td className="num">{formatBRL(it.totalLine)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <th colSpan={userId ? 3 : 4}>Total</th>
-                    <th className="num">{Math.round(data.totals.totalItems * 100) / 100}</th>
-                    <th />
-                    <th className="num">{formatBRL(data.totals.linesSubtotalBeforeOrderDiscount)}</th>
-                  </tr>
-                </tfoot>
-              </table>
-            )}
-          </section>
-        )}
-      </div>
+      <A4ReportPages
+        header={
+          <StandardReportHeader
+            documentTitle="Itens vendidos"
+            documentExtras={<p className="print-sub">{subtitle}</p>}
+          />
+        }
+        items={reportItems}
+        layoutKey={`cash-items:${report.status}:${report.data?.items.length ?? 0}:${userId}`}
+      />
     </div>
   );
 }

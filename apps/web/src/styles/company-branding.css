@@ -21,9 +21,9 @@
 
 .sidebar-brand-name {
   display: block;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: #e2e8f0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
   line-height: 1.25;
   margin-top: 0.15rem;
   word-break: break-word;
@@ -39,9 +39,9 @@
 
 .sidebar-app-version {
   display: block;
-  font-size: 0.68rem;
-  font-weight: 500;
-  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #f8fafc;
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
 }

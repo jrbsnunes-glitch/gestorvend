@@ -188,10 +188,8 @@ export function ManufacturingPage() {
 
   const productsQ = useQuery({
     queryKey: ['products', 'manufactured'],
-    queryFn: () => api<ManufacturedProduct[]>('/products?includeInactive=0'),
+    queryFn: () => api<ManufacturedProduct[]>('/products?manufactured=1'),
     enabled: createOpen,
-    select: (rows) =>
-      rows.filter((p: any) => p.isManufacturedFinishedGood && (p.variants?.length ?? 0) > 0),
   });
 
   const manufacturedProducts = productsQ.data ?? [];

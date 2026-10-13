@@ -208,7 +208,7 @@ export function StockEntradaPage() {
   });
 
   const products = useQuery({
-    queryKey: ['products'],
+    queryKey: ['products', 'lookup'],
     queryFn: () =>
       api<
         Array<{
@@ -219,7 +219,7 @@ export function StockEntradaPage() {
           packItemQty?: string | null;
           variants: Array<{ id: string; sku: string }>;
         }>
-      >('/products'),
+      >('/products?view=lookup'),
   });
 
   const conversionByVariant = useMemo(() => {

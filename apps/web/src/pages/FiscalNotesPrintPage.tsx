@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ReportPrintSticker } from '../components/ReportPrintSticker';
+import { A4ReportPages, type A4Item } from '../components/A4ReportPages';
+import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
+import './cash-print.css';
 import { formatBRL, formatDate } from '../lib/format';
 
 type DocRow = {
@@ -110,6 +112,93 @@ export function FiscalNotesPrintPage() {
     }
   }, [report]);
 
+  const reportItems = useMemo((): A4Item[] => {
+    if (report === 'second') {
+      return [{ kind: 'block', key: 'second', node: <p>Abrindo segunda via…</p> }];
+    }
+    if (report === 'customer' || report === 'period') {
+      const items = list.data?.items ?? [];
+      return [
+        {
+          kind: 'table',
+          key: 'docs',
+          tableClassName: 'data-table',
+          head: (
+            <tr>
+              <th className="num">Controle</th>
+              <th>Data</th>
+              <th>Cliente</th>
+              <th>Situação</th>
+              <th>Chave</th>
+              <th className="num">Total</th>
+            </tr>
+          ),
+          rows: items.map((r) => (
+            <tr key={r.id}>
+              <td className="num">{r.sale.number}</td>
+              <td>{formatDate(r.sale.createdAt)}</td>
+              <td>{r.sale.customer?.name ?? 'Consumidor'}</td>
+              <td>{statusLabel(r.status)}</td>
+              <td style={{ fontSize: '0.75rem', wordBreak: 'break-all' }}>{r.accessKey ?? '—'}</td>
+              <td className="num">{formatBRL(Number(r.sale.total))}</td>
+            </tr>
+          )),
+          empty: (
+            <tr>
+              <td colSpan={6} className="empty">
+                {list.isLoading ? 'Carregando…' : 'Nenhum registro.'}
+              </td>
+            </tr>
+          ),
+        },
+      ];
+    }
+    const rows = lines.data?.lines ?? [];
+    return [
+      {
+        kind: 'table',
+        key: 'lines',
+        tableClassName: 'data-table',
+        head: (
+          <tr>
+            <th className="num">NF</th>
+            <th>Data</th>
+            <th>Cliente</th>
+            <th>Produto</th>
+            <th>Categoria</th>
+            <th>CFOP</th>
+            <th className="num">Qtd</th>
+            <th className="num">Total</th>
+          </tr>
+        ),
+        rows: rows.map((r, i) => (
+          <tr key={`${r.documentId}-${i}`}>
+            <td className="num">{r.saleNumber}</td>
+            <td>{formatDate(r.saleDate)}</td>
+            <td>{r.customerName ?? '—'}</td>
+            <td>
+              {r.productName}
+              {r.sku ? (
+                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{r.sku}</div>
+              ) : null}
+            </td>
+            <td>{r.categoryName ?? '—'}</td>
+            <td>{r.cfop ?? '—'}</td>
+            <td className="num">{Number(r.quantity).toLocaleString('pt-BR')}</td>
+            <td className="num">{formatBRL(Number(r.totalLine))}</td>
+          </tr>
+        )),
+        empty: (
+          <tr>
+            <td colSpan={8} className="empty">
+              {lines.isLoading ? 'Carregando…' : 'Nenhum registro.'}
+            </td>
+          </tr>
+        ),
+      },
+    ];
+  }, [report, list.data, list.isLoading, lines.data, lines.isLoading]);
+
   return (
     <div className="page print-page print-area">
       <div className="no-print" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
@@ -121,119 +210,28 @@ export function FiscalNotesPrintPage() {
         </button>
       </div>
 
-      <ReportPrintSticker
-        documentTitle={`${title} — ${kind === 'NFC_E' ? 'NFC-e' : 'NF-e'}`}
-        documentExtras={
-          <p className="print-sub page-desc" style={{ marginBottom: 0 }}>
-            Gerado em {formatDate(new Date().toISOString())}
-          </p>
-        }
-      />
-
       {(list.isError || lines.isError || detail.isError) && (
-        <div className="alert alert-error">
+        <div className="alert alert-error no-print" style={{ width: '210mm', maxWidth: '100%', margin: '0 auto 0.75rem' }}>
           {(list.error as Error)?.message ||
             (lines.error as Error)?.message ||
             (detail.error as Error)?.message}
         </div>
       )}
 
-      {(report === 'customer' || report === 'period') && (
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th className="num">Controle</th>
-                <th>Data</th>
-                <th>Cliente</th>
-                <th>Situação</th>
-                <th>Chave</th>
-                <th className="num">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.isLoading && (
-                <tr>
-                  <td colSpan={6} className="empty">
-                    Carregando…
-                  </td>
-                </tr>
-              )}
-              {(list.data?.items ?? []).map((r) => (
-                <tr key={r.id}>
-                  <td className="num">{r.sale.number}</td>
-                  <td>{formatDate(r.sale.createdAt)}</td>
-                  <td>{r.sale.customer?.name ?? 'Consumidor'}</td>
-                  <td>{statusLabel(r.status)}</td>
-                  <td style={{ fontSize: '0.75rem', wordBreak: 'break-all' }}>{r.accessKey ?? '—'}</td>
-                  <td className="num">{formatBRL(Number(r.sale.total))}</td>
-                </tr>
-              ))}
-              {!list.isLoading && !(list.data?.items.length ?? 0) && (
-                <tr>
-                  <td colSpan={6} className="empty">
-                    Nenhum registro.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {(report === 'product' || report === 'category' || report === 'cfop') && (
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th className="num">NF</th>
-                <th>Data</th>
-                <th>Cliente</th>
-                <th>Produto</th>
-                <th>Categoria</th>
-                <th>CFOP</th>
-                <th className="num">Qtd</th>
-                <th className="num">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lines.isLoading && (
-                <tr>
-                  <td colSpan={8} className="empty">
-                    Carregando…
-                  </td>
-                </tr>
-              )}
-              {(lines.data?.lines ?? []).map((r, i) => (
-                <tr key={`${r.documentId}-${i}`}>
-                  <td className="num">{r.saleNumber}</td>
-                  <td>{formatDate(r.saleDate)}</td>
-                  <td>{r.customerName ?? '—'}</td>
-                  <td>
-                    {r.productName}
-                    {r.sku ? (
-                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{r.sku}</div>
-                    ) : null}
-                  </td>
-                  <td>{r.categoryName ?? '—'}</td>
-                  <td>{r.cfop ?? '—'}</td>
-                  <td className="num">{Number(r.quantity).toLocaleString('pt-BR')}</td>
-                  <td className="num">{formatBRL(Number(r.totalLine))}</td>
-                </tr>
-              ))}
-              {!lines.isLoading && !(lines.data?.lines.length ?? 0) && (
-                <tr>
-                  <td colSpan={8} className="empty">
-                    Nenhum registro.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {report === 'second' && detail.isLoading && <p>Abrindo segunda via…</p>}
+      <A4ReportPages
+        header={
+          <StandardReportHeader
+            documentTitle={`${title} — ${kind === 'NFC_E' ? 'NFC-e' : 'NF-e'}`}
+            documentExtras={
+              <p className="print-sub" style={{ marginBottom: 0 }}>
+                Gerado em {formatDate(new Date().toISOString())}
+              </p>
+            }
+          />
+        }
+        items={reportItems}
+        layoutKey={`fiscal:${report}:${kind}:${list.data?.items.length ?? 0}:${lines.data?.lines.length ?? 0}:${list.isLoading}:${lines.isLoading}`}
+      />
     </div>
   );
 }

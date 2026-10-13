@@ -1,9 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   Company,
+  FiscalDocumentKind,
+  FiscalDocumentStatus,
   FiscalIssuerSettings,
   FiscalSefazEnvironment,
   Prisma,
+  type PrismaClient,
 } from '../generated/tenant-client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { formatPfxLoadError } from './issuer/pfx.errors';
@@ -12,6 +15,16 @@ import { loadPfxMaterialFromBuffer } from './issuer/load-pfx';
 
 function onlyDigits7(s: string): string {
   return s.replace(/\D/g, '').slice(0, 7);
+}
+
+/** Série (3) e número (9) dentro da chave de acesso de 44 dígitos. */
+function accessKeySerieAndNumber(key: string): { serie: number; nNF: number } | null {
+  const k = key.replace(/\D/g, '');
+  if (k.length !== 44) return null;
+  const serie = Number(k.slice(22, 25));
+  const nNF = Number(k.slice(25, 34));
+  if (!Number.isFinite(serie) || !Number.isFinite(nNF)) return null;
+  return { serie, nNF };
 }
 
 /** Fallbacks opcionais vindos do `.env` da API (instância única / legado). */
@@ -253,6 +266,24 @@ export class FiscalIssuerSettingsService {
       }
       data.nfeSerie = Math.trunc(n);
     }
+
+    const nfceSerieNext =
+      typeof data.nfceSerie === 'number' ? data.nfceSerie : settings.nfceSerie;
+    const nfeSerieNext = typeof data.nfeSerie === 'number' ? data.nfeSerie : settings.nfeSerie;
+    await this.applyInitialNumber(db, data, body.nfceInitialNumber, {
+      label: 'NFC-e',
+      lastField: 'nfceLastNumber',
+      currentLast: settings.nfceLastNumber,
+      series: nfceSerieNext,
+      kind: FiscalDocumentKind.NFC_E,
+    });
+    await this.applyInitialNumber(db, data, body.nfeInitialNumber, {
+      label: 'NF-e',
+      lastField: 'nfeLastNumber',
+      currentLast: settings.nfeLastNumber,
+      series: nfeSerieNext,
+      kind: FiscalDocumentKind.NF_E,
+    });
     if (body.certificatePath !== undefined) {
       const p = body.certificatePath === null ? null : String(body.certificatePath).trim();
       if (p && p.length > 500) throw new BadRequestException('Caminho ao certificado longo demais.');
@@ -310,5 +341,68 @@ export class FiscalIssuerSettingsService {
       data,
     });
     return this.toPublic(tenantSlug, updated, env);
+  }
+
+  /**
+   * `initial` é o número da próxima nota. Grava `last = initial - 1`.
+   * Baixar o contador só é permitido se não houver nota já usada nessa série.
+   */
+  private async applyInitialNumber(
+    db: PrismaClient,
+    data: Prisma.FiscalIssuerSettingsUpdateInput,
+    raw: unknown,
+    opts: {
+      label: string;
+      lastField: 'nfceLastNumber' | 'nfeLastNumber';
+      currentLast: number;
+      series: number;
+      kind: FiscalDocumentKind;
+    },
+  ): Promise<void> {
+    if (raw === undefined || raw === null || raw === '') return;
+    const initial = Number(raw);
+    if (!Number.isInteger(initial) || initial < 1 || initial > 999_999_999) {
+      throw new BadRequestException(
+        `${opts.label}: informe o número inicial inteiro de 1 a 999999999.`,
+      );
+    }
+    const newLast = initial - 1;
+    if (newLast < opts.currentLast) {
+      const used = await this.usedNumberAtOrAbove(db, opts.kind, opts.series, initial);
+      if (used != null) {
+        throw new BadRequestException(
+          `${opts.label}: a nota ${used} da série ${opts.series} já foi usada. O número inicial não pode voltar para ${initial}.`,
+        );
+      }
+    }
+    data[opts.lastField] = newLast;
+  }
+
+  private async usedNumberAtOrAbove(
+    db: PrismaClient,
+    kind: FiscalDocumentKind,
+    series: number,
+    initial: number,
+  ): Promise<number | null> {
+    const docs = await db.fiscalDocument.findMany({
+      where: {
+        kind,
+        status: {
+          in: [
+            FiscalDocumentStatus.AUTHORIZED,
+            FiscalDocumentStatus.CANCELLED,
+            FiscalDocumentStatus.CONTINGENCY,
+          ],
+        },
+        accessKey: { not: null },
+      },
+      select: { accessKey: true },
+    });
+    for (const doc of docs) {
+      const parsed = accessKeySerieAndNumber(doc.accessKey ?? '');
+      if (!parsed || parsed.serie !== series) continue;
+      if (parsed.nNF >= initial) return parsed.nNF;
+    }
+    return null;
   }
 }
