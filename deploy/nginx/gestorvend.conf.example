@@ -50,6 +50,12 @@ server {
         proxy_set_header Connection "";
     }
 
+    # Manifest do PWA do portal de licenças
+    location = /portal.webmanifest {
+        default_type application/manifest+json;
+        add_header Cache-Control "public, max-age=3600";
+    }
+
     # SPA (React + /portal-admin)
     location / {
         try_files $uri $uri/ /index.html;

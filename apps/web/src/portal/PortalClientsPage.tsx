@@ -422,7 +422,7 @@ export function PortalClientsPage() {
 
       <div className="card" style={{ padding: 0 }}>
         <div className="table-wrap">
-          <table className="data-table">
+          <table className="data-table portal-clients-table">
             <thead>
               <tr>
                 <th>Razão social</th>
@@ -464,7 +464,7 @@ export function PortalClientsPage() {
                 const pc = provisioningStyle(prov);
                 return (
                   <tr key={c.id}>
-                    <td>
+                    <td data-label="Razão social">
                       <strong>{c.companyName}</strong>
                       <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                         slug: {c.slug} · db: {c.databaseName}
@@ -477,8 +477,8 @@ export function PortalClientsPage() {
                         ) : null}
                       </div>
                     </td>
-                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>{c.cnpj}</td>
-                    <td>
+                    <td data-label="CNPJ" style={{ fontVariantNumeric: 'tabular-nums' }}>{c.cnpj}</td>
+                    <td data-label="Plano">
                       <span className="badge" style={{ background: '#eef2ff', color: '#4338ca' }}>
                         {PLAN_LABEL[c.planCode]}
                       </span>
@@ -501,10 +501,10 @@ export function PortalClientsPage() {
                         </span>
                       ) : null}
                     </td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    <td data-label="Mensalidade" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                       {c.monthlyFee != null ? formatBRL(c.monthlyFee) : '—'}
                     </td>
-                    <td>
+                    <td data-label="Status">
                       <span
                         className="badge"
                         style={{ background: sc.bg, color: sc.fg, fontWeight: 700 }}
@@ -512,17 +512,17 @@ export function PortalClientsPage() {
                         {STATUS_LABEL[c.licenseStatus]}
                       </span>
                     </td>
-                    <td style={{ fontSize: '0.82rem' }}>
+                    <td data-label="Validade" style={{ fontSize: '0.82rem' }}>
                       {formatDate(c.licenseValidFrom)} → {formatDate(c.licenseExpiresAt)}
                     </td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: sc.fg }}>
+                    <td data-label="Restante" style={{ textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: sc.fg }}>
                       {c.remainingDays != null
                         ? c.remainingDays >= 0
                           ? `${c.remainingDays}d`
                           : `–${Math.abs(c.remainingDays)}d`
                         : '—'}
                     </td>
-                    <td style={{ fontSize: '0.82rem', maxWidth: 200 }}>
+                    <td data-label="Provisionamento" style={{ fontSize: '0.82rem', maxWidth: 200 }}>
                       <span
                         className="badge"
                         style={{ background: pc.bg, color: pc.fg, fontWeight: 700 }}
@@ -545,7 +545,7 @@ export function PortalClientsPage() {
                         </div>
                       ) : null}
                     </td>
-                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <td data-label="Ações" className="portal-row-actions col-actions">
                       <button
                         type="button"
                         className="btn btn-ghost"

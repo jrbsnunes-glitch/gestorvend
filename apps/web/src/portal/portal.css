@@ -261,3 +261,79 @@
   font-size: 0.78rem;
   color: #64748b;
 }
+
+.portal-row-actions {
+  text-align: right;
+  white-space: normal;
+}
+
+.portal-row-actions .btn {
+  margin: 0.1rem;
+}
+
+@media (max-width: 760px) {
+  .portal-login-page {
+    padding: max(1.25rem, env(safe-area-inset-top)) 0.85rem max(1.25rem, env(safe-area-inset-bottom));
+  }
+
+  .portal-login-card {
+    padding: 1.15rem 1rem;
+  }
+
+  .portal-shell {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .portal-topbar {
+    flex-wrap: wrap;
+    gap: 0.55rem 0.75rem;
+    padding: 0.7rem 0.85rem;
+    padding-top: calc(0.7rem + env(safe-area-inset-top));
+  }
+
+  .portal-nav {
+    margin-left: 0;
+    order: 3;
+    flex: 1 1 100%;
+  }
+
+  .portal-userbox {
+    margin-left: auto;
+  }
+
+  .portal-userbox-name {
+    max-width: 9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .portal-main {
+    padding: 0.85rem;
+  }
+
+  .portal-page-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .portal-page-head .btn {
+    width: 100%;
+  }
+
+  .portal-clients-search__row .btn {
+    flex: 1 1 auto;
+  }
+
+  table.portal-clients-table tbody tr.data-table-card-row > td.portal-row-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    grid-column: 1 / -1;
+  }
+
+  table.portal-clients-table tbody tr.data-table-card-row > td[data-label='Razão social'] {
+    grid-column: 1 / -1;
+  }
+}

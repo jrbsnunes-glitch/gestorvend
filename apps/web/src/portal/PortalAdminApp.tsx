@@ -1,5 +1,7 @@
+import { useEffect } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { getPortalToken } from './portal-api';
+import { enablePortalPwa } from './portal-pwa';
 import { PortalAdminLayout } from './PortalAdminLayout';
 import { PortalClientsPage } from './PortalClientsPage';
 import { PortalLogin } from './PortalLogin';
@@ -14,6 +16,8 @@ import './portal.css';
  * ausente, redirecionamos para o login.
  */
 export function PortalAdminApp() {
+  useEffect(() => enablePortalPwa(), []);
+
   return (
     <Routes>
       <Route path="login" element={<PortalLogin />} />

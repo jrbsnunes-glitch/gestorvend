@@ -12,7 +12,21 @@ export default defineConfig(({ mode }) => {
   const apiTarget = env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:3000';
 
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+      {
+        name: 'portal-manifest-mime',
+        configureServer(server) {
+          server.middlewares.use((req, res, next) => {
+            const pathOnly = req.url?.split('?')[0];
+            if (pathOnly === '/portal.webmanifest') {
+              res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+            }
+            next();
+          });
+        },
+      },
+    ],
     server: {
       /** IPv4 explícito — no Windows o Vite pode ficar só em [::1] e o proxy para 127.0.0.1:3000 falha intermitentemente. */
       host: true,

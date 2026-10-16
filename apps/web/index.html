@@ -6,6 +6,25 @@
     <link rel="apple-touch-icon" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <script>
+      if (location.pathname.startsWith('/portal-admin')) {
+        var portalManifest = document.createElement('link');
+        portalManifest.rel = 'manifest';
+        portalManifest.href = '/portal.webmanifest';
+        document.head.appendChild(portalManifest);
+        var portalTheme = document.createElement('meta');
+        portalTheme.name = 'theme-color';
+        portalTheme.content = '#142159';
+        document.head.appendChild(portalTheme);
+        var portalAppleTitle = document.createElement('meta');
+        portalAppleTitle.name = 'apple-mobile-web-app-title';
+        portalAppleTitle.content = 'Licenças';
+        document.head.appendChild(portalAppleTitle);
+        var portalAppleIcon = document.querySelector('link[rel="apple-touch-icon"]');
+        if (portalAppleIcon) portalAppleIcon.href = '/portal-icon-192.png';
+      }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
