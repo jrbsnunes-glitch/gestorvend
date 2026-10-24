@@ -1,11 +1,15 @@
 /**
- * Carga de teste dos produtos Náutica Balby (CSV extraído do PDF).
+ * Carga dos produtos Náutica Balby (CSV do registro de inventário).
  *
- * Grava Product + variante (SKU = código do outro ERP), saldo no local MATRIZ
+ * Fonte: python apps/api/scripts/extract-balby-products.py
+ *        → docs/balby/PRODUTOS NAUTICA.pdf
+ *
+ * Grava Product + variante (SKU = código do VR System), saldo no local MATRIZ
  * e um movimento ADJUST quando a quantidade é maior que zero.
- * Idempotente pelo SKU: nova execução atualiza nome, preços e saldo.
+ * Idempotente pelo SKU: atualiza nome, custo e quantidade; só grava preço de
+ * venda quando o CSV traz valor > 0 (o inventário não tem tabela de venda).
  *
- * Uso (na raiz, com o Postgres local no ar):
+ * Uso (na raiz, com o Postgres no ar):
  *   npm run tenant:import-balby-products -w @gestorvend/api
  *
  * O banco padrão é gv_tenant_balby, montado a partir de TENANT_DATABASE_URL.
@@ -179,9 +183,13 @@ async function main() {
             where: { id: existing.productId },
             data: { name: row.nome, taxUnit: row.unidade },
           });
+          const variantData: { costAverage: string; retailPrice?: string } = {
+            costAverage: row.custo,
+          };
+          if (Number(row.preco) > 0) variantData.retailPrice = row.preco;
           await tx.productVariant.update({
             where: { id: variantId },
-            data: { retailPrice: row.preco, costAverage: row.custo },
+            data: variantData,
           });
           updated++;
         }

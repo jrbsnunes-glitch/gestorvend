@@ -1,5 +1,11 @@
 """
-Extrai o relatório VR System (Náutica Balby) para CSV de cadastro.
+Extrai o registro de inventário VR System (Náutica Balby) para CSV.
+
+Fonte: docs/balby/PRODUTOS NAUTICA.pdf
+Saída: docs/balby/produtos-nautica-balby.csv
+
+Preserva preço de venda já extraído (mesmo SKU) quando o inventário
+só traz custo e quantidade.
 
 Uso (na raiz do repo):
   python apps/api/scripts/extract-balby-products.py
@@ -14,17 +20,51 @@ from pathlib import Path
 from pypdf import PdfReader
 
 ROOT = Path(__file__).resolve().parents[3]
-PDF = ROOT / "docs" / "balby" / "PRODUTOS NAUTICA BALBY.pdf"
+PDF = ROOT / "docs" / "balby" / "PRODUTOS NAUTICA.pdf"
 OUT = ROOT / "docs" / "balby" / "produtos-nautica-balby.csv"
 
 NUM = r"-?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d+)?"
-# Unidades vistas no relatório: UNID, KG, M, LITRO, PARES, M2. O PDF às vezes cola a unidade no nome (2TUNID).
-UNIT = r"[A-Za-zÁÉÍÓÚÂÊÔÃÕÇáéíóúâêôãõç][A-Za-zÁÉÍÓÚÂÊÔÃÕÇáéíóúâêôãõç0-9.]{0,11}"
-ROW_RE = re.compile(
-    rf"^(\d+)\s+(.+)\s+({UNIT})\s+({NUM})\s+({NUM})\s+({NUM})(?:\s+({NUM})%)?$"
+# Unidades vistas no inventário (KIT em tinta/primer; o PDF cola UNID no nome).
+KNOWN_UNITS = (
+    "UNIDADE",
+    "UNID",
+    "LITROS",
+    "LITRO",
+    "PARES",
+    "PAR",
+    "GALAO",
+    "GALÃO",
+    "BALDE",
+    "ROLO",
+    "LATA",
+    "FARDO",
+    "SACO",
+    "PCT",
+    "JOGO",
+    "TUBO",
+    "PECA",
+    "PEÇA",
+    "KIT",
+    "CX",
+    "KG",
+    "M2",
+    "ML",
+    "PC",
+    "PÇ",
+    "UN",
+    "M",
+    "GL",
 )
-GLUED_UNIT = re.compile(rf"(?<=\S)(UNID|LITRO|PARES|KG|M2)(?=\s+{NUM}\b)")
-CODE_START = re.compile(r"^\d+\s+\S")
+UNIT_ALT = "|".join(KNOWN_UNITS)
+# Localização (ex.: CX100) é opcional e começa com letra — não come quantidade.
+LOC = r"[A-Za-z][A-Za-z0-9./_-]{0,19}"
+ROW_RE = re.compile(
+    rf"^(\d+)\s+(.+?)\s+({UNIT_ALT})\s+(?:({LOC})\s+)?({NUM})\s+({NUM})\s+({NUM})$",
+    re.IGNORECASE,
+)
+GLUED_UNIT = re.compile(rf"(?<=\S)({UNIT_ALT})(?=\s+{NUM}\b)", re.IGNORECASE)
+CODE_START = re.compile(r"^(\d+)\s+\S")
+EXPECTED_ITEMS_RE = re.compile(r"Itens:\s*([\d.]+)", re.IGNORECASE)
 
 
 def is_noise(line: str) -> bool:
@@ -33,6 +73,7 @@ def is_noise(line: str) -> bool:
     if line.startswith("-- ") and " of " in line:
         return True
     prefixes = (
+        "Registro de invent",
         "Estoque com duas",
         "Filial:",
         "Código Produto",
@@ -41,10 +82,15 @@ def is_noise(line: str) -> bool:
         "Página ",
         "Pagina ",
         "Total geral",
+        "Itens:",
         "Média:",
         "Media:",
     )
-    return line.startswith(prefixes)
+    if line.startswith(prefixes):
+        return True
+    if re.match(r"^\d{1,2} de \w+ de \d{4}\b", line):
+        return True
+    return False
 
 
 def parse_br(raw: str) -> float:
@@ -71,6 +117,8 @@ def map_unit(unit: str) -> str:
     u = unit.strip().upper().rstrip(".")
     if u in ("UNID", "UNIDADE"):
         return "UN"
+    if u == "PÇ":
+        return "PC"
     return u[:10]
 
 
@@ -80,50 +128,53 @@ def try_parse(text: str) -> dict | None:
     m = ROW_RE.match(collapsed)
     if not m:
         return None
-    code, name, unit, qty, cost, price, _pct = m.groups()
+    code, name, unit, _loc, qty, cost, _total = m.groups()
     return {
         "sku": code,
         "nome": name.strip(),
         "unidade": map_unit(unit),
         "quantidade": parse_br(qty),
         "custo": parse_br(cost),
-        "preco_venda": parse_br(price),
     }
 
 
-def extract_lines(pdf_path: Path) -> list[str]:
+def extract_lines(pdf_path: Path) -> tuple[list[str], int | None]:
     reader = PdfReader(str(pdf_path))
     lines: list[str] = []
+    expected: int | None = None
     for page in reader.pages:
         text = page.extract_text() or ""
+        m = EXPECTED_ITEMS_RE.search(text)
+        if m:
+            expected = int(m.group(1).replace(".", ""))
         for raw in text.splitlines():
             line = raw.strip()
             if is_noise(line):
                 continue
             lines.append(line)
-    return lines
-
-
-def leading_code(line: str) -> int | None:
-    m = re.match(r"^(\d+)\s+\S", line)
-    if not m:
-        return None
-    return int(m.group(1))
+    return lines, expected
 
 
 def group_records(lines: list[str]) -> tuple[list[str], list[str]]:
     records: list[str] = []
     skipped: list[str] = []
     buf = ""
-    last_code = 0
     for line in lines:
-        code = leading_code(line)
-        # "15 HP" no meio do nome não é um produto novo; o código do ERP só cresce.
-        if code is not None and code > last_code:
-            if buf:
+        starts_code = CODE_START.match(line) is not None
+        if starts_code:
+            if buf and try_parse(buf):
                 records.append(buf)
-            buf = line
-            last_code = code
+                buf = line
+                continue
+            if not buf:
+                buf = line
+                continue
+            # Nome quebrado começando com número ("15 HP") vs produto novo.
+            if try_parse(line) and not try_parse(f"{buf} {line}".strip()):
+                skipped.append(buf)
+                buf = line
+                continue
+            buf = f"{buf} {line}".strip()
             continue
         if not buf:
             skipped.append(line)
@@ -137,10 +188,25 @@ def group_records(lines: list[str]) -> tuple[list[str], list[str]]:
     return records, skipped
 
 
+def load_previous_prices(csv_path: Path) -> dict[str, str]:
+    if not csv_path.exists():
+        return {}
+    text = csv_path.read_text(encoding="utf-8").replace("\ufeff", "")
+    rows = list(csv.DictReader(text.splitlines(), delimiter=";"))
+    out: dict[str, str] = {}
+    for row in rows:
+        sku = (row.get("sku") or "").strip()
+        price = (row.get("preco_venda") or "").strip()
+        if sku and price and price not in ("0", "0.0"):
+            out[sku] = price
+    return out
+
+
 def main() -> None:
     if not PDF.exists():
         raise SystemExit(f"PDF não encontrado: {PDF}")
-    lines = extract_lines(PDF)
+    prev_prices = load_previous_prices(OUT)
+    lines, expected = extract_lines(PDF)
     records, skipped = group_records(lines)
     rows: list[dict] = []
     failed: list[str] = []
@@ -167,7 +233,7 @@ def main() -> None:
                     "nome": row["nome"],
                     "sku": row["sku"],
                     "codigo_barras": "",
-                    "preco_venda": fmt_num(row["preco_venda"]),
+                    "preco_venda": prev_prices.get(row["sku"], "0"),
                     "custo": fmt_num(row["custo"]),
                     "quantidade": fmt_num(row["quantidade"]),
                     "unidade": row["unidade"],
@@ -175,20 +241,22 @@ def main() -> None:
             )
 
     skus = [int(r["sku"]) for r in rows]
-    missing = [n for n in range(1, (max(skus) if skus else 0) + 1) if n not in set(skus)]
+    unique = len(set(skus))
     neg = sum(1 for r in rows if r["quantidade"] < 0)
-    zero_price = sum(1 for r in rows if r["preco_venda"] == 0)
     zero_cost = sum(1 for r in rows if r["custo"] == 0)
+    priced = sum(1 for r in rows if prev_prices.get(r["sku"]))
     print(f"CSV: {OUT}")
-    print(f"Produtos: {len(rows)}")
+    print(f"Fonte: {PDF.name}")
+    print(f"Produtos: {len(rows)} (SKUs únicos: {unique})")
+    if expected is not None:
+        print(f"Itens no rodapé do PDF: {expected}")
     print(f"Estoque negativo: {neg}")
-    print(f"Preço de venda zero: {zero_price}")
     print(f"Custo zero: {zero_cost}")
+    print(f"Preço de venda herdado do CSV anterior: {priced}")
     print(f"Linhas não lidas: {len(failed)}")
-    print(f"Códigos ausentes no PDF entre 1 e {max(skus) if skus else 0}: {len(missing)}")
     if failed:
         print("--- falhas ---")
-        for item in failed:
+        for item in failed[:30]:
             print(item[:300])
     if skipped:
         print(f"Trechos ignorados após linha já completa: {len(skipped)}")
@@ -196,6 +264,8 @@ def main() -> None:
             print("  ", item[:200])
     if failed:
         sys.exit(1)
+    if expected is not None and len(rows) != expected:
+        print(f"AVISO: extraidos {len(rows)} != {expected} itens do PDF.")
 
 
 if __name__ == "__main__":

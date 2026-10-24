@@ -33,6 +33,7 @@
     "tenant:transfer-cash-sales": "ts-node -r tsconfig-paths/register scripts/transfer-cash-session-sales.ts",
     "tenant:reassign-cash-sales": "ts-node -r tsconfig-paths/register scripts/reassign-cash-session-by-sale-numbers.ts",
     "tenant:import-balby-products": "ts-node -r tsconfig-paths/register scripts/import-balby-products.ts",
+    "tenant:import-balby-customers": "ts-node -r tsconfig-paths/register scripts/import-balby-customers.ts",
     "sync-generated": "node scripts/sync-generated-to-dist.cjs",
     "seed": "ts-node -r tsconfig-paths/register scripts/seed.ts",
     "seed:tenant-minimal": "ts-node -r tsconfig-paths/register scripts/seed-tenant-minimal.ts",
