@@ -127,7 +127,7 @@ Configure **backup** periódico do PostgreSQL.
 
 ## Atualização
 
-**Deploy completo na VPS** (como **root** — corrige dono `deploy`, atualiza `main`, `npm ci`, migrations em todos os tenants, build API+web, PM2, valida versão no `dist` e recarrega Nginx):
+**Deploy completo na VPS** (como **root** — corrige dono `deploy`, atualiza `main`, `npm ci`, migrations em todos os tenants, build API+web, PM2, valida versão no `dist` e recarrega Nginx). O script **não usa `sudo`** (evita pedido de senha): troca para `deploy` com `runuser`/`su` e reinicia o PM2 como root.
 
 ```bash
 cd /var/www/gestorvend

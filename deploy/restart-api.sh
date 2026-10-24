@@ -7,11 +7,12 @@
 # (EADDRINUSE) enquanto a API real segue com o dist antigo — o deploy "passa" sem
 # publicar nada. Este script descobre quem detém a porta e reinicia aquele processo.
 #
-# Uso (como root, na raiz do projeto):
+# Uso (como root, na raiz do projeto — sem sudo/senha):
 #   bash deploy/restart-api.sh              # build + restart + validação
 #   bash deploy/restart-api.sh --pull       # git pull + npm ci antes do build
 #   bash deploy/restart-api.sh --migrate    # migrations (central + tenant + todos) antes do build
 #   bash deploy/restart-api.sh --no-build   # só restart + validação
+#   bash deploy/restart-api.sh --no-restart # só build/migrate (PM2 fica para o root)
 #
 # Variáveis opcionais: APP_DIR, PM2_USER, PM2_APP, API_PORT, NODE_BIN
 
@@ -24,13 +25,15 @@ API_PORT="${API_PORT:-3000}"
 do_pull=0
 do_migrate=0
 do_build=1
+do_restart=1
 
 for arg in "$@"; do
   case "$arg" in
     --pull) do_pull=1 ;;
     --migrate) do_migrate=1 ;;
     --no-build) do_build=0 ;;
-    -h|--help) sed -n '3,20p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    --no-restart) do_restart=0 ;;
+    -h|--help) sed -n '3,22p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "Argumento desconhecido: $arg" >&2; exit 2 ;;
   esac
 done
@@ -88,19 +91,32 @@ NODE_BIN="${NODE_BIN:-$(detect_node_bin "$PM2_USER" || true)}"
 
 PM2_USER_HOME="$(home_of_user "$PM2_USER")"
 
+# Troca de usuário sem sudo (sudo pede senha mesmo como root em várias VPS).
+run_as_user() {
+  local target="$1"
+  shift
+  if [ "$(id -un)" = "$target" ]; then
+    env "$@"
+    return
+  fi
+  if [ "$(id -u)" -ne 0 ]; then
+    fail "a API no PM2 é do usuário $target, mas o script está como $(id -un). Rode como root (sem sudo interativo)."
+  fi
+  if command -v runuser >/dev/null 2>&1; then
+    runuser -u "$target" -- env "$@"
+    return
+  fi
+  su -s /bin/bash "$target" -c "$(printf '%q ' env "$@")"
+}
+
 # O pm2 é chamado pelo node em caminho absoluto (o shebang `env node` falha quando o
 # PATH herdado aponta para um nvm que o usuário não pode ler, ex.: /root/.nvm).
 run_pm2() {
-  if [ "$PM2_USER" = "$(id -un)" ]; then
-    env PM2_HOME="$PM2_USER_HOME/.pm2" PATH="$NODE_BIN:$PATH" \
-      "$NODE_BIN/node" "$NODE_BIN/pm2" "$@"
-  else
-    sudo -u "$PM2_USER" env \
-      HOME="$PM2_USER_HOME" \
-      PM2_HOME="$PM2_USER_HOME/.pm2" \
-      PATH="$NODE_BIN:/usr/local/bin:/usr/bin:/bin" \
-      "$NODE_BIN/node" "$NODE_BIN/pm2" "$@"
-  fi
+  run_as_user "$PM2_USER" \
+    HOME="$PM2_USER_HOME" \
+    PM2_HOME="$PM2_USER_HOME/.pm2" \
+    PATH="$NODE_BIN:/usr/local/bin:/usr/bin:/bin" \
+    "$NODE_BIN/node" "$NODE_BIN/pm2" "$@"
 }
 
 http_code() {
@@ -129,6 +145,11 @@ fi
 if [ "$do_build" = 1 ]; then
   log "Build (API + web)"
   npm run build
+fi
+
+if [ "$do_restart" = 0 ]; then
+  log "Restart do PM2 adiado (rode restart-api.sh --no-build como root)"
+  exit 0
 fi
 
 log "Reiniciando a API"

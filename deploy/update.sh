@@ -5,6 +5,7 @@
 #
 # Uso recomendado (como root, na raiz do repo ou com APP_DIR):
 #   bash deploy/update.sh
+# Como root NÃO usa sudo — troca de usuário via runuser/su (sem senha).
 #
 # Como usuário deploy (sem chown; só se o dono dos arquivos já for deploy):
 #   bash deploy/update.sh --no-chown
@@ -13,6 +14,7 @@
 #   --no-chown     não roda chown (obrigatório quando já é o usuário deploy)
 #   --skip-nginx   não recarrega o Nginx ao final (só root)
 #   --no-migrate   build/restart sem migrations
+#   --skip-restart só build/migrate; o PM2 é reiniciado pelo wrapper root
 #   -h, --help     ajuda
 #
 # Variáveis de ambiente:
@@ -32,6 +34,7 @@ do_chown=1
 do_nginx=1
 do_migrate=1
 do_git=1
+do_restart=1
 inner=0
 
 for arg in "$@"; do
@@ -40,9 +43,10 @@ for arg in "$@"; do
     --skip-nginx) do_nginx=0 ;;
     --no-migrate) do_migrate=0 ;;
     --skip-git) do_git=0 ;;
+    --skip-restart) do_restart=0 ;;
     --deploy-user) inner=1 ;;
     -h|--help)
-      sed -n '3,22p' "${BASH_SOURCE[0]}"
+      sed -n '3,24p' "${BASH_SOURCE[0]}"
       exit 0
       ;;
     *)
@@ -59,7 +63,25 @@ home_of_user() {
   getent passwd "$1" | cut -d: -f6
 }
 
-# Node/npm do nvm do usuário deploy (sudo não carrega .bashrc — caminho explícito).
+# Troca de usuário sem sudo (sudo pede senha mesmo como root em várias VPS).
+run_as_user() {
+  local target="$1"
+  shift
+  if [ "$(id -un)" = "$target" ]; then
+    env "$@"
+    return
+  fi
+  if [ "$(id -u)" -ne 0 ]; then
+    fail "não posso executar como $target sem senha (usuário atual: $(id -un)). Rode como root."
+  fi
+  if command -v runuser >/dev/null 2>&1; then
+    runuser -u "$target" -- env "$@"
+    return
+  fi
+  su -s /bin/bash "$target" -c "$(printf '%q ' env "$@")"
+}
+
+# Node/npm do nvm do usuário deploy (runuser/su não carregam .bashrc — caminho explícito).
 detect_node_bin() {
   local user="$1" home cand
   home="$(home_of_user "$user")"
@@ -110,6 +132,7 @@ verify_web_dist_version() {
 reexec_deploy_after_git() {
   local -a extra=(--deploy-user --no-chown --skip-git)
   [ "$do_migrate" -eq 0 ] && extra+=(--no-migrate)
+  [ "$do_restart" -eq 0 ] && extra+=(--skip-restart)
   exec env \
     APP_DIR="$APP_DIR" \
     DEPLOY_USER="$DEPLOY_USER" \
@@ -149,7 +172,11 @@ deploy_as_user() {
   log "Build, migrations e restart (restart-api.sh)"
   local migrate_flag=()
   [ "$do_migrate" -eq 1 ] && migrate_flag=(--migrate)
-  bash "$APP_DIR/deploy/restart-api.sh" "${migrate_flag[@]}"
+  if [ "$do_restart" -eq 1 ]; then
+    bash "$APP_DIR/deploy/restart-api.sh" "${migrate_flag[@]}"
+  else
+    bash "$APP_DIR/deploy/restart-api.sh" "${migrate_flag[@]}" --no-restart
+  fi
 
   log "Validando front compilado"
   verify_web_dist_version "$ver"
@@ -210,10 +237,10 @@ fi
 NODE_BIN="${NODE_BIN:-$(detect_node_bin "$DEPLOY_USER" || true)}"
 [ -n "${NODE_BIN:-}" ] || fail "Node/npm do usuário $DEPLOY_USER não encontrado (nvm?). Ex.: NODE_BIN=/home/deploy/.nvm/versions/node/v20.20.2/bin"
 
-log "Executando deploy como $DEPLOY_USER (NODE_BIN=$NODE_BIN)"
-inner_args=(--deploy-user --no-chown)
+log "Executando build como $DEPLOY_USER (NODE_BIN=$NODE_BIN, sem sudo)"
+inner_args=(--deploy-user --no-chown --skip-restart)
 [ "$do_migrate" -eq 0 ] && inner_args+=(--no-migrate)
-sudo -u "$DEPLOY_USER" env \
+run_as_user "$DEPLOY_USER" \
   APP_DIR="$APP_DIR" \
   DEPLOY_USER="$DEPLOY_USER" \
   GIT_BRANCH="$GIT_BRANCH" \
@@ -225,6 +252,9 @@ sudo -u "$DEPLOY_USER" env \
   PATH="$NODE_BIN:/usr/local/bin:/usr/bin:/bin" \
   HOME="$(home_of_user "$DEPLOY_USER")" \
   bash "$APP_DIR/deploy/update.sh" "${inner_args[@]}"
+
+log "Reiniciando a API no PM2 (como root, sem sudo)"
+bash "$APP_DIR/deploy/restart-api.sh" --no-build
 
 if [ "$do_nginx" -eq 1 ]; then
   reload_nginx_root
