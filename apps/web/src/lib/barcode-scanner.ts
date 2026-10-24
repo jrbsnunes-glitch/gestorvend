@@ -157,7 +157,7 @@ export async function openInventoryCamera(): Promise<MediaStream> {
 export async function openInventoryCameraWithTimeout(
   timeoutMs = CAMERA_OPEN_TIMEOUT_MS,
 ): Promise<MediaStream> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer: number | undefined;
   const timeout = new Promise<MediaStream>((_, reject) => {
     timer = window.setTimeout(() => {
       reject(new DOMException('Tempo esgotado aguardando a câmera.', 'TimeoutError'));

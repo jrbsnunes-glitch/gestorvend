@@ -61,10 +61,10 @@ export function syncDataTableCardLabels(root: ParentNode = document): void {
 export function startDataTableCardLabelsObserver(): () => void {
   if (typeof document === 'undefined') return () => undefined;
 
-  let timer: ReturnType<typeof setTimeout> | null = null;
+  let timer: number | null = null;
   const run = () => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => {
+    if (timer) window.clearTimeout(timer);
+    timer = window.setTimeout(() => {
       timer = null;
       // Só sincroniza em viewport estreita (cards mobile); evita trabalho no desktop.
       if (window.matchMedia('(max-width: 720px)').matches) {

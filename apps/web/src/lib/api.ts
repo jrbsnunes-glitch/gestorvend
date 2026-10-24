@@ -52,12 +52,12 @@ export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
-let proactiveTimer: ReturnType<typeof setTimeout> | null = null;
+let proactiveTimer: number | null = null;
 let visibilityListenerAttached = false;
 
 function clearProactiveRefresh(): void {
   if (proactiveTimer !== null) {
-    clearTimeout(proactiveTimer);
+    window.clearTimeout(proactiveTimer);
     proactiveTimer = null;
   }
 }
