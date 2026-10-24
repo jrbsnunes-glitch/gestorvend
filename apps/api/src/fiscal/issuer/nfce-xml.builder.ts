@@ -87,6 +87,20 @@ function onlyDigits(s: string, max: number): string {
   return s.replace(/\D/g, '').slice(0, max);
 }
 
+/** TString do XSD da NF-e: Latin-1, sem espaço nas pontas. */
+export function sanitizeTString(raw: string, max: number): string {
+  const latin = [...String(raw ?? '')]
+    .map((ch) => {
+      const c = ch.charCodeAt(0);
+      if (c >= 0x20 && c <= 0xff) return ch;
+      return ' ';
+    })
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return latin.slice(0, max);
+}
+
 /** Método pagamento Gestor → tPag NFC-e/NF-e. */
 export function paymentMethodToTPag(method: string): string {
   const m = method.toUpperCase();
@@ -262,33 +276,144 @@ function buildIpiXml(vBc: number, cst: string | null | undefined, aliq: number, 
   return `<IPI><cEnq>${enq}</cEnq><IPITrib><CST>${c}</CST><vBC>${fmt2(vBc)}</vBC><pIPI>${fmt2(aliq)}</pIPI><vIPI>${fmt2(vIpi)}</vIPI></IPITrib></IPI>`;
 }
 
-/** Grupo UB (NT 2025.002) — CST, cClassTrib e gIBSCBS com bases/alíquotas de teste. */
+/**
+ * CRT 1 (Simples), 2 (excesso de sublimite) e 4 (MEI): a NT 2025.002 v1.52
+ * adia a orientação e a regra UB12-10. A incidência começa em 2027 (art. 348 da LC 214/2025).
+ */
+export function crtDefersIbsCbs(crt: number): boolean {
+  return crt === 1 || crt === 2 || crt === 4;
+}
+
+/**
+ * NT 2026.008 (vUnComLiq, vProdLiq, vProdLiqTot) entra no schema de homologação
+ * em 26/10/2026. Antes disso a SEFAZ responde cStat 215.
+ */
+const VALOR_LIQUIDO_SCHEMA_FROM_MS = Date.parse('2026-10-26T03:00:00.000Z');
+
+export function sefazSchemaIncludesValorLiquido(now = new Date()): boolean {
+  return now.getTime() >= VALOR_LIQUIDO_SCHEMA_FROM_MS;
+}
+
+type IbsCbsBreakdown = {
+  cst: string;
+  cClassTrib: string;
+  vBc: number;
+  pIbsUf: number;
+  pIbsMun: number;
+  pCbs: number;
+  vIbsUf: number;
+  vIbsMun: number;
+  vIbs: number;
+  vCbs: number;
+};
+
+function computeIbsCbsBreakdown(
+  cst: string | null | undefined,
+  cClassTrib: string | null | undefined,
+  vBc: number,
+  ibsRate = 0,
+  cbsRate = 0,
+): IbsCbsBreakdown | null {
+  if (!cst?.trim() || !cClassTrib?.trim()) return null;
+  const pIbsUf = Math.max(0, ibsRate);
+  const pIbsMun = 0;
+  const pCbs = Math.max(0, cbsRate);
+  const vIbsUf = vBc * (pIbsUf / 100);
+  const vIbsMun = 0;
+  return {
+    cst: onlyDigits(cst, 3).padStart(3, '0'),
+    cClassTrib: onlyDigits(cClassTrib, 6).padStart(6, '0'),
+    vBc,
+    pIbsUf,
+    pIbsMun,
+    pCbs,
+    vIbsUf,
+    vIbsMun,
+    vIbs: vIbsUf + vIbsMun,
+    vCbs: vBc * (pCbs / 100),
+  };
+}
+
+/**
+ * Grupo UB (NT 2025.002). A SEFAZ/AM já rejeita NFC-e sem IBSCBS (cStat 1115)
+ * mesmo no Simples. Sem CST/cClassTrib o grupo continua omitido.
+ */
 function buildIbsCbsXml(
+  _crt: number,
   cst: string | null | undefined,
   cClassTrib: string | null | undefined,
   vBc: number,
   ibsRate = 0,
   cbsRate = 0,
 ): string {
-  if (!cst?.trim() || !cClassTrib?.trim()) return '';
-  const c = onlyDigits(cst, 3).padStart(3, '0');
-  const cl = onlyDigits(cClassTrib, 6).padStart(6, '0');
-  const pIbsUf = Math.max(0, ibsRate);
-  const pIbsMun = 0;
-  const pCbs = Math.max(0, cbsRate);
-  const vIbsUf = vBc * (pIbsUf / 100);
-  const vIbsMun = 0;
-  const vIbs = vIbsUf + vIbsMun;
-  const vCbs = vBc * (pCbs / 100);
+  const t = computeIbsCbsBreakdown(cst, cClassTrib, vBc, ibsRate, cbsRate);
+  if (!t) return '';
   return (
-    `<IBSCBS><CST>${c}</CST><cClassTrib>${cl}</cClassTrib>` +
+    `<IBSCBS><CST>${t.cst}</CST><cClassTrib>${t.cClassTrib}</cClassTrib>` +
     `<gIBSCBS>` +
-    `<vBC>${fmt2(vBc)}</vBC>` +
-    `<gIBSUF><pIBSUF>${fmt4(pIbsUf)}</pIBSUF><vIBSUF>${fmt2(vIbsUf)}</vIBSUF></gIBSUF>` +
-    `<gIBSMun><pIBSMun>${fmt4(pIbsMun)}</pIBSMun><vIBSMun>${fmt2(vIbsMun)}</vIBSMun></gIBSMun>` +
-    `<vIBS>${fmt2(vIbs)}</vIBS>` +
-    `<gCBS><pCBS>${fmt4(pCbs)}</pCBS><vCBS>${fmt2(vCbs)}</vCBS></gCBS>` +
+    `<vBC>${fmt2(t.vBc)}</vBC>` +
+    `<gIBSUF><pIBSUF>${fmt4(t.pIbsUf)}</pIBSUF><vIBSUF>${fmt2(t.vIbsUf)}</vIBSUF></gIBSUF>` +
+    `<gIBSMun><pIBSMun>${fmt4(t.pIbsMun)}</pIBSMun><vIBSMun>${fmt2(t.vIbsMun)}</vIBSMun></gIBSMun>` +
+    `<vIBS>${fmt2(t.vIbs)}</vIBS>` +
+    `<gCBS><pCBS>${fmt4(t.pCbs)}</pCBS><vCBS>${fmt2(t.vCbs)}</vCBS></gCBS>` +
     `</gIBSCBS></IBSCBS>`
+  );
+}
+
+function buildIbsCbsTotXml(items: NfceItemInput[], crt: number): string {
+  const rows = items
+    .map((it) =>
+      computeIbsCbsBreakdown(
+        it.cstIbsCbs,
+        it.cClassTrib,
+        itemBaseValue(it),
+        it.ibsRate ?? 0,
+        it.cbsRate ?? 0,
+      ),
+    )
+    .filter((r): r is IbsCbsBreakdown => r != null);
+  if (!rows.length) return '';
+  void crt;
+  const vBc = rows.reduce((s, r) => s + r.vBc, 0);
+  const vIbsUf = rows.reduce((s, r) => s + r.vIbsUf, 0);
+  const vIbsMun = rows.reduce((s, r) => s + r.vIbsMun, 0);
+  const vIbs = rows.reduce((s, r) => s + r.vIbs, 0);
+  const vCbs = rows.reduce((s, r) => s + r.vCbs, 0);
+  return (
+    `<IBSCBSTot>` +
+    `<vBCIBSCBS>${fmt2(vBc)}</vBCIBSCBS>` +
+    `<gIBS>` +
+    `<gIBSUF><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vIBSUF>${fmt2(vIbsUf)}</vIBSUF></gIBSUF>` +
+    `<gIBSMun><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vIBSMun>${fmt2(vIbsMun)}</vIBSMun></gIBSMun>` +
+    `<vIBS>${fmt2(vIbs)}</vIBS>` +
+    `<vCredPres>0.00</vCredPres>` +
+    `<vCredPresCondSus>0.00</vCredPresCondSus>` +
+    `</gIBS>` +
+    `<gCBS>` +
+    `<vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vCBS>${fmt2(vCbs)}</vCBS>` +
+    `<vCredPres>0.00</vCredPres>` +
+    `<vCredPresCondSus>0.00</vCredPresCondSus>` +
+    `</gCBS>` +
+    `</IBSCBSTot>`
+  );
+}
+
+function buildRespTecXml(
+  resp: { cnpj: string; xContato: string; email: string; fone: string } | null | undefined,
+): string {
+  if (!resp) return '';
+  const cnpj = onlyDigits(resp.cnpj, 14);
+  const contato = sanitizeTString(resp.xContato, 60);
+  const email = sanitizeTString(resp.email, 60);
+  const fone = onlyDigits(resp.fone, 14);
+  if (cnpj.length !== 14 || !contato || !email || fone.length < 6) return '';
+  return (
+    `<infRespTec>` +
+    `<CNPJ>${cnpj}</CNPJ>` +
+    `<xContato>${xmlEscape(contato)}</xContato>` +
+    `<email>${xmlEscape(email)}</email>` +
+    `<fone>${fone}</fone>` +
+    `</infRespTec>`
   );
 }
 
@@ -302,20 +427,16 @@ function buildDestXml(dest: DestInput | undefined, modelo: number): string {
   const doc = onlyDigits(dest?.document ?? '', 14);
   const nome = (dest?.xNome ?? '').trim();
   if (!doc || doc.replace(/0/g, '') === '') {
-    // NFC-e permite consumidor não identificado; NF-e exige destinatário.
+    // NFC-e: dest é opcional. CPF zerado falha o schema de várias SEFAZ (cStat 215).
     if (modelo === 55) {
       throw new Error('NF-e modelo 55 exige destinatário com CPF/CNPJ cadastrado na venda.');
     }
-    return (
-      `<dest>` +
-      `<CPF>00000000000</CPF>` +
-      `<xNome>CONSUMIDOR NAO IDENTIFICADO</xNome>` +
-      `<indIEDest>9</indIEDest>` +
-      `</dest>`
-    );
+    return '';
   }
   const isCnpj = doc.length > 11;
-  const xNome = xmlEscape((nome || (isCnpj ? 'DESTINATARIO' : 'CONSUMIDOR')).slice(0, 60));
+  const xNome = xmlEscape(
+    sanitizeTString(nome || (isCnpj ? 'DESTINATARIO' : 'CONSUMIDOR'), 60) || 'CONSUMIDOR',
+  );
   const indIE = dest?.indIEDest ?? (isCnpj ? '9' : '9');
   let body =
     `<dest>` +
@@ -325,11 +446,11 @@ function buildDestXml(dest: DestInput | undefined, modelo: number): string {
     const e = dest.ender;
     body +=
       `<enderDest>` +
-      `<xLgr>${xmlEscape(e.xLgr)}</xLgr>` +
-      `<nro>${xmlEscape(e.nro)}</nro>` +
-      `<xBairro>${xmlEscape(e.xBairro)}</xBairro>` +
+      `<xLgr>${xmlEscape(sanitizeTString(e.xLgr, 60) || 'NAO INFORMADO')}</xLgr>` +
+      `<nro>${xmlEscape(sanitizeTString(e.nro, 60) || 'S/N')}</nro>` +
+      `<xBairro>${xmlEscape(sanitizeTString(e.xBairro, 60) || 'CENTRO')}</xBairro>` +
       `<cMun>${onlyDigits(e.cMun, 7).padStart(7, '0')}</cMun>` +
-      `<xMun>${xmlEscape(e.xMun)}</xMun>` +
+      `<xMun>${xmlEscape(sanitizeTString(e.xMun, 60) || 'MUNICIPIO')}</xMun>` +
       `<UF>${xmlEscape(e.uf)}</UF>` +
       `<CEP>${onlyDigits(e.cep, 8).padStart(8, '0')}</CEP>` +
       `<cPais>1058</cPais><xPais>BRASIL</xPais>` +
@@ -383,6 +504,13 @@ export function buildNfceInfNFeXml(opts: {
   infCplExtra?: string | null;
   /** 1=operação interna; 2=interestadual; 3=exterior. */
   idDest?: number;
+  /** NT 2018.005 — obrigatório na SEFAZ/AM (cStat 972). */
+  respTec?: {
+    cnpj: string;
+    xContato: string;
+    email: string;
+    fone: string;
+  } | null;
 }): { xmlNfeEnvelope: string; infNFeId: string } {
   const ch = onlyDigits(opts.chave44, 44);
   if (ch.length !== 44) {
@@ -393,6 +521,9 @@ export function buildNfceInfNFeXml(opts: {
   const tpEmis = Math.max(1, Math.min(9, opts.tpEmis ?? 1));
   const modelo = opts.modelo;
   const tpImp = modelo === 65 ? 4 : 1;
+
+  const includeValorLiquido = sefazSchemaIncludesValorLiquido();
+  const vProdLiqTot = opts.items.reduce((sum, it) => sum + Math.round(it.vProd * 100), 0) / 100;
 
   const taxTotals = opts.items.reduce(
     (acc, it) => {
@@ -418,14 +549,19 @@ export function buildNfceInfNFeXml(opts: {
       const exTipi = (it.exTipi ?? '').trim();
       const cBenef = (it.codBeneficio ?? '').trim();
       const ean = formatGtin(it.ean);
-      const ipiXml = buildIpiXml(vBc, it.cstIpi, it.aliqIpi ?? 0, it.ipiEnquadramento);
-      const ibsXml = buildIbsCbsXml(it.cstIbsCbs, it.cClassTrib, vBc, it.ibsRate ?? 0, it.cbsRate ?? 0);
+      const ipiXml =
+        modelo === 65
+          ? ''
+          : buildIpiXml(vBc, it.cstIpi?.trim() ? it.cstIpi : '53', it.aliqIpi ?? 0, it.ipiEnquadramento);
+      const ibsXml = buildIbsCbsXml(opts.crt, it.cstIbsCbs, it.cClassTrib, vBc, it.ibsRate ?? 0, it.cbsRate ?? 0);
+      const vUnComLiq = it.vUnCom.toFixed(4);
+      const vProdLiq = fmt2(it.vProd);
       return (
         `<det nItem="${it.nItem}">` +
         `<prod>` +
-        `<cProd>${xmlEscape(onlyDigits(it.sku, 60) || String(it.nItem))}</cProd>` +
+        `<cProd>${xmlEscape(sanitizeTString(it.sku, 60) || String(it.nItem))}</cProd>` +
         `<cEAN>${ean}</cEAN>` +
-        `<xProd>${xmlEscape(it.description.slice(0, 120))}</xProd>` +
+        `<xProd>${xmlEscape(sanitizeTString(it.description, 120))}</xProd>` +
         `<NCM>${onlyDigits(it.ncm, 8).padStart(8, '0')}</NCM>` +
         (exTipi ? `<EXTIPI>${xmlEscape(exTipi.slice(0, 3))}</EXTIPI>` : '') +
         (cest.length === 7 ? `<CEST>${cest}</CEST>` : '') +
@@ -434,6 +570,9 @@ export function buildNfceInfNFeXml(opts: {
         `<qCom>${it.qCom.toFixed(4)}</qCom>` +
         `<vUnCom>${it.vUnCom.toFixed(4)}</vUnCom>` +
         `<vProd>${vprod}</vProd>` +
+        (includeValorLiquido
+          ? `<vUnComLiq>${vUnComLiq}</vUnComLiq><vProdLiq>${vProdLiq}</vProdLiq>`
+          : '') +
         `<cEANTrib>${ean}</cEANTrib>` +
         `<uTrib>${xmlEscape(it.uCom || 'UN')}</uTrib>` +
         `<qTrib>${it.qCom.toFixed(4)}</qTrib>` +
@@ -493,7 +632,7 @@ export function buildNfceInfNFeXml(opts: {
     plate ? `Placa: ${plate}` : '',
     (opts.infCplExtra ?? '').trim(),
   ].filter(Boolean);
-  const infCpl = xmlEscape(cplParts.join(' | ').slice(0, 5000));
+  const infCpl = xmlEscape(sanitizeTString(cplParts.join(' | '), 5000));
 
   const emit = opts.emit;
   const contXml =
@@ -502,11 +641,11 @@ export function buildNfceInfNFeXml(opts: {
       : '';
 
   const infNFe =
-    `<infNFe xmlns="${NS}" Id="${infNFeId}" versao="4.00">` +
+    `<infNFe Id="${infNFeId}" versao="4.00">` +
     `<ide>` +
     `<cUF>${onlyDigits(ch.slice(0, 2), 2)}</cUF>` +
     `<cNF>${cNF8}</cNF>` +
-    `<natOp>${xmlEscape(opts.natOp ?? 'VENDA')}</natOp>` +
+    `<natOp>${xmlEscape(sanitizeTString(opts.natOp ?? 'VENDA', 60) || 'VENDA')}</natOp>` +
     `<mod>${modelo}</mod>` +
     `<serie>${opts.serie}</serie>` +
     `<nNF>${opts.nNF}</nNF>` +
@@ -527,14 +666,16 @@ export function buildNfceInfNFeXml(opts: {
     `</ide>` +
     `<emit>` +
     `<CNPJ>${onlyDigits(emit.cnpj, 14)}</CNPJ>` +
-    `<xNome>${xmlEscape(emit.xNome)}</xNome>` +
-    (emit.xFant ? `<xFant>${xmlEscape(emit.xFant)}</xFant>` : '') +
+    `<xNome>${xmlEscape(sanitizeTString(emit.xNome, 60) || 'EMITENTE')}</xNome>` +
+    (sanitizeTString(emit.xFant ?? '', 60)
+      ? `<xFant>${xmlEscape(sanitizeTString(emit.xFant ?? '', 60))}</xFant>`
+      : '') +
     `<enderEmit>` +
-    `<xLgr>${xmlEscape(emit.xLgr)}</xLgr>` +
-    `<nro>${xmlEscape(emit.nro)}</nro>` +
-    `<xBairro>${xmlEscape(emit.xBairro)}</xBairro>` +
+    `<xLgr>${xmlEscape(sanitizeTString(emit.xLgr, 60) || 'NAO INFORMADO')}</xLgr>` +
+    `<nro>${xmlEscape(sanitizeTString(emit.nro, 60) || 'S/N')}</nro>` +
+    `<xBairro>${xmlEscape(sanitizeTString(emit.xBairro, 60) || 'CENTRO')}</xBairro>` +
     `<cMun>${onlyDigits(emit.cMun, 7).padStart(7, '0')}</cMun>` +
-    `<xMun>${xmlEscape(emit.xMun)}</xMun>` +
+    `<xMun>${xmlEscape(sanitizeTString(emit.xMun, 60) || 'MUNICIPIO')}</xMun>` +
     `<UF>${xmlEscape(emit.uf)}</UF>` +
     `<CEP>${onlyDigits(emit.cep, 8).padStart(8, '0')}</CEP>` +
     `<cPais>1058</cPais>` +
@@ -558,30 +699,44 @@ export function buildNfceInfNFeXml(opts: {
     `<vNF>${fmt2(opts.totals.vNF)}</vNF>` +
     `<vTotTrib>0.00</vTotTrib>` +
     `</ICMSTot>` +
+    buildIbsCbsTotXml(opts.items, opts.crt) +
+    (includeValorLiquido ? `<vProdLiqTot>${fmt2(vProdLiqTot)}</vProdLiqTot>` : '') +
     `</total>` +
     transpXml +
-    `<pag>${pagXml}<vTroco>0.00</vTroco></pag>` +
-    `<infAdic><infCpl>${infCpl}</infCpl></infAdic>` +
+    `<pag>${pagXml}</pag>` +
+    (infCpl ? `<infAdic><infCpl>${infCpl}</infCpl></infAdic>` : '') +
+    buildRespTecXml(opts.respTec) +
     `</infNFe>`;
 
   const xmlNfeEnvelope = `<NFe xmlns="${NS}">` + infNFe + `</NFe>`;
   return { xmlNfeEnvelope, infNFeId };
 }
 
-/** Layout QR NFC-e SEFAZ/AM (parâmetro `p=` — versão 2). */
+/** QR NFC-e v3 on-line (NT 2025.001): `url?p=chave|3|tpAmb`. Não usa CSC. */
+export function buildNfceQrUrlV3(params: {
+  chNFe: string;
+  tpAmb: 1 | 2;
+  qrBaseUrl: string;
+}): string {
+  const ch = onlyDigits(params.chNFe, 44);
+  const base = params.qrBaseUrl.replace(/\?.*$/, '');
+  return `${base}?p=${ch}|3|${params.tpAmb}`;
+}
+
+/** QR NFC-e v2 on-line (parâmetro `p=` + CSC). */
 export function buildNfceQrUrlAm(params: {
   chNFe: string;
-  tpEmis: number;
+  tpAmb: 1 | 2;
   cscId: string;
   csc: string;
   qrBaseUrl: string;
 }): string {
   const ch = onlyDigits(params.chNFe, 44);
-  const cscId = params.cscId.replace(/\D/g, '');
-  const digestInput = `${ch}|2|${params.tpEmis}|${cscId}${params.csc}`;
+  const cscId = String(Number(params.cscId.replace(/\D/g, '') || '0'));
+  const digestInput = `${ch}|2|${params.tpAmb}|${cscId}${params.csc}`;
   const hash = crypto.createHash('sha1').update(digestInput, 'utf8').digest('hex').toUpperCase();
   const base = params.qrBaseUrl.replace(/\?.*$/, '');
-  return `${base}?p=${ch}|2|${params.tpEmis}|${cscId}|${hash}`;
+  return `${base}?p=${ch}|2|${params.tpAmb}|${cscId}|${hash}`;
 }
 
 export function buildNfceQrUrl(input: {
@@ -616,9 +771,12 @@ export function appendInfNFeSupl(nfeSignedXml: string, qrUrl: string, urlChave?:
     urlChave?.trim() ||
     'http://www.fazenda.sp.gov.br/nfce/consulta';
   const supl =
-    `<infNFeSupl xmlns="${NS}">` +
-    `<qrCode><![CDATA[${safe}]]></qrCode>` +
-    `<urlChave>${xmlEscape(chaveUrl)}</urlChave>` +
+    `<infNFeSupl>` +
+    `<qrCode>${xmlEscape(safe)}</qrCode>` +
+    `<urlChave>${xmlEscape(sanitizeTString(chaveUrl, 85) || chaveUrl)}</urlChave>` +
     `</infNFeSupl>`;
+  if (/<Signature[\s>]/.test(nfeSignedXml)) {
+    return nfeSignedXml.replace(/<Signature[\s>]/, `${supl}$&`);
+  }
   return nfeSignedXml.replace(/<\/NFe>\s*$/u, `${supl}</NFe>`);
 }

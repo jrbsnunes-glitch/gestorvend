@@ -10,6 +10,8 @@ export type CrudToolbarProps = {
   onPrint?: () => void;
   onReports: () => void;
   includeLabel?: string;
+  /** Botões extras no grupo da direita (ex.: Exportar XML). */
+  trailingExtra?: ReactNode;
 };
 
 export function CrudToolbar({
@@ -18,6 +20,7 @@ export function CrudToolbar({
   onPrint,
   onReports,
   includeLabel = 'Incluir',
+  trailingExtra,
 }: CrudToolbarProps) {
   return (
     <div className="crud-toolbar no-print">
@@ -37,6 +40,7 @@ export function CrudToolbar({
             Imprimir
           </button>
         ) : null}
+        {trailingExtra}
         <button type="button" className="btn btn-secondary" onClick={onReports}>
           Relatórios
         </button>

@@ -98,6 +98,32 @@ export function calendarDateAtNoonUtcFromInstant(instant: Date, timeZone: string
   return calendarDateAtNoonUtc(iso, timeZone);
 }
 
+/**
+ * Data/hora no fuso da loja no formato TDateTimeUTC da NF-e (AAAA-MM-DDThh:mm:ss±HH:00).
+ * O XSD só admite minutos de offset 00.
+ */
+export function formatSefazDateTime(date: Date, timeZone: string): string {
+  const tz = normalizeIanaTimezone(timeZone);
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const parts = Object.fromEntries(
+    dtf.formatToParts(date).filter((p) => p.type !== 'literal').map((p) => [p.type, p.value]),
+  ) as Record<string, string>;
+  const hour = parts.hour === '24' ? '00' : parts.hour;
+  const offsetMin = Math.round(getTimeZoneOffsetMs(tz, date) / 60_000);
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const absH = String(Math.floor(Math.abs(offsetMin) / 60)).padStart(2, '0');
+  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}:${parts.second}${sign}${absH}:00`;
+}
+
 export function addCalendarDaysIso(iso: string, days: number, timeZone: string): string {
   const start = startOfCalendarDayUtc(iso, timeZone);
   const next = new Date(start.getTime() + days * 86_400_000);

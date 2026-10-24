@@ -5,17 +5,16 @@ import * as https from 'https';
  * Em produção/homologação real a SEFAZ exige mTLS (certificado A1).
  */
 export function buildNfceAutorizacaoEnvelope(enviNFeXml: string): string {
-  const cdata = `<![CDATA[${enviNFeXml.replace(/]]>/g, ']]]]><![CDATA[>')}]]>`;
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
-  xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
-  <soap12:Body>
-    <nfeAutorizacaoLote xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4">
-      <nfeDadosMsg>${cdata}</nfeDadosMsg>
-    </nfeAutorizacaoLote>
-  </soap12:Body>
-</soap12:Envelope>`;
+  const body = enviNFeXml.replace(/^<\?xml[^>]*>\s*/i, '').trim();
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>` +
+    `<soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">` +
+    `<soap12:Body>` +
+    `<nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4">` +
+    `${body}` +
+    `</nfeDadosMsg>` +
+    `</soap12:Body></soap12:Envelope>`
+  );
 }
 
 export type SoapAutorizacaoResult =

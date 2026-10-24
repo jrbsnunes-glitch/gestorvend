@@ -7,8 +7,12 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import { createStoredZip } from '../common/zip-store';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -101,6 +105,48 @@ export class FiscalDocumentsController {
       cfop,
       take: take != null ? Number(take) : 200,
     });
+  }
+
+  @Get('export-xml')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  async exportXml(
+    @CurrentUser() user: JwtPayload,
+    @Res({ passthrough: true }) res: Response,
+    @Query('kind') kind?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('controlMin') controlMin?: string,
+    @Query('controlMax') controlMax?: string,
+    @Query('accessKey') accessKey?: string,
+  ) {
+    const kindEnum =
+      kind === 'NFC_E' || kind === 'NF_E' ? (kind as FiscalDocumentKind) : undefined;
+    const files = await this.docs.exportXml(user.tenantSlug, {
+      kind: kindEnum,
+      dateFrom,
+      dateTo,
+      controlMin: controlMin != null && controlMin !== '' ? Number(controlMin) : null,
+      controlMax: controlMax != null && controlMax !== '' ? Number(controlMax) : null,
+      accessKey,
+    });
+    if (files.length === 1) {
+      const file = files[0]!;
+      res.set({
+        'Content-Type': 'application/xml; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${file.name}"`,
+      });
+      return new StreamableFile(Buffer.from(file.xml, 'utf8'));
+    }
+    const zip = createStoredZip(
+      files.map((f) => ({ name: f.name, data: Buffer.from(f.xml, 'utf8') })),
+    );
+    const stamp = new Date().toISOString().slice(0, 10);
+    const prefix = kindEnum === 'NF_E' ? 'nfe' : kindEnum === 'NFC_E' ? 'nfce' : 'notas';
+    res.set({
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="${prefix}-${stamp}.zip"`,
+    });
+    return new StreamableFile(zip);
   }
 
   @Get('sale/:saleId')

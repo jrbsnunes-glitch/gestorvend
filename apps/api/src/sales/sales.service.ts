@@ -15,6 +15,8 @@ import {
   StockMovementType,
   ActivityLogAction,
   UserPermissionCode,
+  FiscalDocumentKind,
+  FiscalDocumentStatus,
 } from '../generated/tenant-client';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { CustomerCreditService } from '../catalog/customer-credit.service';
@@ -26,6 +28,7 @@ import { resolveSaleStockQuantity } from '../common/product-conversion.util';
 import { PaymentsService } from '../payments/payments.service';
 import { calcRestaurantFees } from '../restaurant/restaurant-fees';
 import { maybeAutoQueueNfce } from '../fiscal/fiscal-document-queue.helper';
+import { readNfceAuthorizedXml, resolveNfceCouponPrint } from '../fiscal/issuer/nfce-print-supl';
 
 type TenantTx = Prisma.TransactionClient;
 
@@ -1032,13 +1035,53 @@ export class SalesService {
     return sale;
   }
 
-  /** Cupom não fiscal: venda + cadastro da empresa num único payload (evita race na impressão). */
+  /** Cupom PDV: venda + empresa + NFC-e (QR/chave) quando a nota estiver na fila ou autorizada. */
   async findReceiptPrintPayload(tenantSlug: string, saleId: string) {
     const [sale, company] = await Promise.all([
       this.findById(tenantSlug, saleId),
       this.company.getOrCreate(tenantSlug),
     ]);
-    return { sale, company };
+    const fiscal = sale.fiscalDocument;
+    if (!fiscal || fiscal.kind !== FiscalDocumentKind.NFC_E) {
+      return { sale, company, nfce: null };
+    }
+
+    const pending =
+      fiscal.status === FiscalDocumentStatus.QUEUED ||
+      fiscal.status === FiscalDocumentStatus.BUILDING_XML ||
+      fiscal.status === FiscalDocumentStatus.SENT ||
+      fiscal.status === FiscalDocumentStatus.CONTINGENCY;
+
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const issuer = await db.fiscalIssuerSettings.findFirst({
+      select: { uf: true, nfceCscId: true, nfceCsc: true, sefazEnvironment: true },
+    });
+    const xml = await readNfceAuthorizedXml(fiscal.xmlPath);
+    const print = resolveNfceCouponPrint({
+      xml,
+      accessKey: fiscal.accessKey,
+      sefazEnvironment: fiscal.sefazEnvironment ?? issuer?.sefazEnvironment,
+      uf: issuer?.uf ?? company.state,
+      cscId: issuer?.nfceCscId,
+      csc: issuer?.nfceCsc,
+    });
+
+    return {
+      sale,
+      company,
+      nfce: {
+        documentId: fiscal.id,
+        status: fiscal.status,
+        accessKey: fiscal.accessKey,
+        protocol: fiscal.protocol,
+        sefazEnvironment: fiscal.sefazEnvironment,
+        qrCode: print.qrCode,
+        urlChave: print.urlChave,
+        serie: print.serie,
+        nNF: print.nNF,
+        pending,
+      },
+    };
   }
 
   async list(tenantSlug: string, from?: string, to?: string, customerId?: string) {

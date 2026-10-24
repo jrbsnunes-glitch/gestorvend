@@ -319,16 +319,16 @@ function FiscalSituationFormFields({
           />
         </div>
         <div className="field">
-          <label htmlFor={`${idPrefix}-ibs`}>IBS % (transição)</label>
+          <label htmlFor={`${idPrefix}-ibs`}>IBS % (cadastro)</label>
           <input id={`${idPrefix}-ibs`} value={draft.ibsTestRate} onChange={(e) => setDraft((d) => ({ ...d, ibsTestRate: e.target.value }))} />
         </div>
         <div className="field">
-          <label htmlFor={`${idPrefix}-cbs`}>CBS % (transição)</label>
+          <label htmlFor={`${idPrefix}-cbs`}>CBS % (cadastro)</label>
           <input id={`${idPrefix}-cbs`} value={draft.cbsTestRate} onChange={(e) => setDraft((d) => ({ ...d, cbsTestRate: e.target.value }))} />
         </div>
       </div>
       <p className="product-form__section-title" style={{ marginTop: '0.5rem' }}>
-        Reforma tributária — IBS/CBS (NT 2025.002)
+        Reforma tributária — IBS/CBS (cadastro; no Simples a transmissão começa em 2027)
       </p>
       <div className="form-row">
         <div className="field">
@@ -674,8 +674,9 @@ export function FiscalSituationsPage() {
         <div className="card no-print" style={{ padding: '1rem', marginBottom: '1.25rem' }}>
           <h2 style={{ marginTop: 0, fontSize: '1rem' }}>Nova situação fiscal</h2>
           <p style={{ margin: '0 0 0.85rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-            Conforme LC 214/2025 e regulamentos CBS / IBS. Aqui ficam CST, CFOP, origem etc. As alíquotas &quot;teste&quot; são percentuais
-            (ex.: 0,9 e 0,1) — confirme valores vigentes nos atos conjuntos RFB/CGIBS.
+            Conforme a LC 214/2025 e a NT 2025.002 v1.52. CST, cClassTrib e percentuais ficam neste cadastro.
+            Para CRT 1, 2 e 4 o XML ainda não envia IBS/CBS: a incidência no Simples começa em 2027 (art. 348).
+            No regime normal, em 2026 as alíquotas de transmissão são 0,1% de IBS da UF e 0,9% de CBS.
           </p>
           <FiscalSituationFormFields draft={draft} setDraft={setDraft} idPrefix="nova" />
           <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.85rem', flexWrap: 'wrap' }}>
@@ -700,7 +701,7 @@ export function FiscalSituationsPage() {
               <th>Nome</th>
               <th>CST ICMS</th>
               <th>CFOP int.</th>
-              <th>% IBS/CBS teste</th>
+              <th>% IBS/CBS (cadastro)</th>
               <th>Status</th>
               <th className="col-actions no-print">Ações</th>
             </tr>
@@ -861,8 +862,7 @@ export function FiscalSituationsPage() {
       )}
 
       <div className="card print-legal-reminder no-print" style={{ marginTop: '1.25rem', padding: '0.95rem', fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
-        <strong>Lembrete jurídico:</strong> estes valores são cadastro mestre para preparar NF-e/NFC-e. A obrigatoriedade de destaque CBS/IBS em DFe segue cronogramas
-        publicados pela Receita Federal e pelo CGIBS; confirme com seu contador e com a{' '}
+        <strong>Lembrete jurídico:</strong> estes valores preparam a NF-e/NFC-e. Em 2026 o Simples Nacional (CRT 1, 2 e 4) não transmite o grupo IBS/CBS; a incidência começa em 2027. Confirme com seu contador e com a{' '}
         <a href="https://www.receitafederal.gov.br" target="_blank" rel="noopener noreferrer">
           RFB
         </a>

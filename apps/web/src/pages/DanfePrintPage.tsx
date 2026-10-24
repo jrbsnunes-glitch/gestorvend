@@ -7,7 +7,10 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { printDocument } from '../lib/desktop-print';
 import { formatBRL, formatCnpj, formatCpfCnpj, formatDate } from '../lib/format';
+import { formatNfceAccessKey, NfceQrImage, useNfceQrDataUrl } from '../lib/nfce-qr';
+import { DanfeNfeDocument, type DanfeNfePayload } from './DanfeNfeDocument';
 import './danfe-thermal-print.css';
+import './danfe-nfe-print.css';
 
 type DanfePayload = {
   preview?: boolean;
@@ -17,6 +20,7 @@ type DanfePayload = {
     accessKey: string | null;
     protocol: string | null;
     kind: string;
+    sefazEnvironment?: string | null;
     lastError: string | null;
     sale: {
       number: number;
@@ -39,10 +43,27 @@ type DanfePayload = {
         quantity: string;
         unitPrice: string;
         totalLine: string;
-        variant?: { sku?: string; product?: { name?: string } };
+        variant?: {
+          sku?: string;
+          product?: {
+            name?: string;
+            fiscalSituation?: { cstIbsCbs?: string | null; cClassTrib?: string | null } | null;
+          };
+        };
+      }>;
+      payments?: Array<{
+        method: string;
+        amount: string;
+        installments: number;
       }>;
     };
   };
+  nfce?: {
+    qrCode: string | null;
+    urlChave: string | null;
+    serie: number | null;
+    nNF: number | null;
+  } | null;
   aliquots?: Array<{
     code: string;
     name: string;
@@ -51,29 +72,38 @@ type DanfePayload = {
     aliqPis: string;
     aliqCofins: string;
   }>;
+  /** NT 2026.010. No Simples/MEI em 2026 os totais saem zerados. */
+  rtc?: {
+    crt: number;
+    totals: { cbs: string; ibsUf: string; ibsMun: string; is: string };
+  };
   company: {
     legalName: string;
     tradeName: string;
     cnpj: string;
     ie: string | null;
+    im?: string | null;
     address: string | null;
+    addressNumber?: string | null;
+    district?: string | null;
     city: string | null;
     state: string | null;
     zip: string | null;
     phone: string | null;
+    email?: string | null;
+    logoUrl?: string | null;
   } | null;
+  nfe?: { serie: number | null; nNF: number | null } | null;
 };
 
-function freightLabel(mod?: number): string {
-  switch (mod) {
-    case 0:
-      return 'Emitente (CIF)';
-    case 1:
-      return 'Destinatário (FOB)';
-    default:
-      return 'Sem frete';
-  }
-}
+const NFCE_PAY_LABEL: Record<string, string> = {
+  CASH: 'Dinheiro',
+  CARD: 'Cartão',
+  PIX: 'Pix',
+  CREDIT: 'Crediário',
+  OTHER: 'Outro',
+  REQUISITION: 'Requisição',
+};
 
 export function DanfePrintPage() {
   const { id } = useParams<{ id: string }>();
@@ -102,8 +132,10 @@ export function DanfePrintPage() {
 
   const doc = q.data?.document;
   const company = q.data?.company;
-  const aliquots = q.data?.aliquots ?? [];
   const isNfce = doc?.kind === 'NFC_E';
+  const nfce = q.data?.nfce;
+  const qrSrc = useNfceQrDataUrl(isNfce ? nfce?.qrCode : null);
+  const homolog = doc?.sefazEnvironment !== 'PRODUCAO';
   const pending =
     doc &&
     (doc.status === 'QUEUED' ||
@@ -119,7 +151,7 @@ export function DanfePrintPage() {
 
   const toolbar = (
     <div className="no-print" style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-      <Link to="/notas-fiscais">← Notas</Link>
+      <Link to={isNfce ? '/notas-fiscais?tab=NFC_E' : '/notas-fiscais?tab=NF_E'}>← Notas</Link>
       <button
         type="button"
         className="btn btn-primary"
@@ -141,6 +173,9 @@ export function DanfePrintPage() {
   );
 
   if (isNfce && doc) {
+    const serie = nfce?.serie;
+    const nNF = nfce?.nNF;
+    const payments = doc.sale.payments ?? [];
     return (
       <div className="danfe-thermal-page">
         {toolbar}
@@ -149,7 +184,6 @@ export function DanfePrintPage() {
           <div className="alert alert-error no-print">{(q.error as Error).message}</div>
         )}
         <article className="danfe-thermal-doc">
-          <div className="muted-line">NFC-e — modelo 65</div>
           <h1>{company?.tradeName || company?.legalName || 'Emitente'}</h1>
           {company && (
             <p className="muted-line">
@@ -163,16 +197,27 @@ export function DanfePrintPage() {
             </p>
           )}
           <hr />
+          <p className="muted-line">
+            <strong>DANFE NFC-e</strong>
+          </p>
+          <p className="muted-line">Documento Auxiliar da Nota Fiscal de Consumidor Eletrônica</p>
+          <p className="muted-line">Não permite aproveitamento de crédito de ICMS</p>
+          {homolog && doc.status === 'AUTHORIZED' && (
+            <p className="muted-line">
+              <strong>EMITIDA EM AMBIENTE DE HOMOLOGAÇÃO — SEM VALOR FISCAL</strong>
+            </p>
+          )}
+          <hr />
           <div>
-            Cupom #{doc.sale.number} · {formatDate(doc.sale.createdAt)}
+            NFC-e
+            {nNF != null ? ` nº ${nNF}` : ''}
+            {serie != null ? ` · Série ${serie}` : ''}
+            {` · Venda #${doc.sale.number}`}
           </div>
-          <div>
-            Situação: <strong>{doc.status}</strong>
-            {doc.protocol ? ` · Prot. ${doc.protocol}` : ''}
-          </div>
+          <div>{formatDate(doc.sale.createdAt)}</div>
           {doc.sale.customer?.name && (
             <div>
-              Cliente: {doc.sale.customer.name}
+              Consumidor: {doc.sale.customer.name}
               {doc.sale.customer.document
                 ? ` · ${formatCpfCnpj(doc.sale.customer.document)}`
                 : ''}
@@ -207,269 +252,58 @@ export function DanfePrintPage() {
             <strong>TOTAL</strong>
             <strong>{formatBRL(doc.sale.total)}</strong>
           </div>
-          {doc.accessKey && (
+          {payments.length > 0 && (
             <>
               <hr />
-              <div className="key">
-                Chave:
-                <br />
-                {doc.accessKey}
-              </div>
+              {payments.map((p, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>
+                    {NFCE_PAY_LABEL[p.method] ?? p.method}
+                    {p.method === 'CREDIT' && p.installments > 1 ? ` · ${p.installments}×` : ''}
+                  </span>
+                  <span>{formatBRL(p.amount)}</span>
+                </div>
+              ))}
+            </>
+          )}
+          {(doc.accessKey || qrSrc) && (
+            <>
+              <hr />
+              <p className="muted-line">Consulte pela Chave de Acesso em</p>
+              {nfce?.urlChave ? <p className="muted-line">{nfce.urlChave}</p> : null}
+              {doc.accessKey ? (
+                <div className="key">{formatNfceAccessKey(doc.accessKey)}</div>
+              ) : null}
+              {doc.protocol ? (
+                <p className="muted-line">Protocolo de Autorização: {doc.protocol}</p>
+              ) : null}
+              {qrSrc ? (
+                <div className="nfce-qr-wrap">
+                  <NfceQrImage src={qrSrc} />
+                </div>
+              ) : null}
             </>
           )}
           {doc.lastError && doc.status !== 'AUTHORIZED' && (
             <div className="alert alert-error no-print">{doc.lastError}</div>
           )}
           <hr />
-          <p className="muted-line">Documento auxiliar NFC-e. Validade jurídica: XML SEFAZ.</p>
+          <p className="muted-line">
+            Documento auxiliar da NFC-e. A validade jurídica é do XML autorizado pela SEFAZ.
+          </p>
         </article>
       </div>
     );
   }
 
   return (
-    <div className="page print-area" style={{ maxWidth: 900, margin: '0 auto' }}>
-      {toolbar}
-      {q.isLoading && <p>Carregando DANFE…</p>}
-      {q.isError && <div className="alert alert-error">{(q.error as Error).message}</div>}
-
-      {doc && (
-        <article
-          style={{
-            border: '1px solid #222',
-            padding: '1rem 1.25rem',
-            background: '#fff',
-            color: '#111',
-            fontFamily: 'Georgia, "Times New Roman", serif',
-          }}
-        >
-          <header style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
-            <div>
-              <div style={{ fontSize: '0.75rem', letterSpacing: '0.06em' }}>DANFE — NF-e modelo 55</div>
-              <h1 style={{ margin: '0.2rem 0', fontSize: '1.35rem' }}>
-                {company?.tradeName || company?.legalName || 'Emitente'}
-              </h1>
-              {company && (
-                <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.45 }}>
-                  {company.legalName}
-                  <br />
-                  CNPJ {formatCnpj(company.cnpj)}
-                  {company.ie ? ` · IE ${company.ie}` : ''}
-                  <br />
-                  {[company.address, company.city, company.state, company.zip]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </p>
-              )}
-            </div>
-            <div style={{ textAlign: 'right', fontSize: '0.9rem' }}>
-              <div>
-                Controle <strong>#{doc.sale.number}</strong>
-              </div>
-              <div>{formatDate(doc.sale.createdAt)}</div>
-              <div style={{ marginTop: '0.35rem' }}>
-                Situação: <strong>{doc.status}</strong>
-              </div>
-              {doc.protocol && <div>Protocolo: {doc.protocol}</div>}
-            </div>
-          </header>
-
-          <hr style={{ margin: '0.85rem 0', border: 0, borderTop: '1px solid #333' }} />
-
-          {doc.sale.operationNature && (
-            <section style={{ fontSize: '0.88rem', marginBottom: '0.55rem' }}>
-              <strong>Natureza da operação</strong>
-              <div>
-                {doc.sale.operationNature.description} · CFOP {doc.sale.operationNature.cfop} (
-                {doc.sale.operationNature.code})
-              </div>
-            </section>
-          )}
-
-          <section style={{ fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-            <strong>Destinatário</strong>
-            <div>
-              {doc.sale.customer?.name ?? '—'}
-              {doc.sale.customer?.document
-                ? ` · ${formatCpfCnpj(doc.sale.customer.document)}`
-                : ''}
-            </div>
-          </section>
-
-          {(doc.sale.deliveryVehiclePlate || doc.sale.deliveryDriverName) && (
-            <section style={{ fontSize: '0.85rem', marginBottom: '0.65rem' }}>
-              <strong>Entrega / transporte</strong>
-              <div>
-                {[
-                  doc.sale.deliveryVehiclePlate
-                    ? `Placa ${doc.sale.deliveryVehiclePlate}`
-                    : null,
-                  doc.sale.deliveryDriverName
-                    ? `Motorista ${doc.sale.deliveryDriverName}`
-                    : null,
-                  `Frete: ${freightLabel(doc.sale.freightMod)}`,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </div>
-            </section>
-          )}
-
-          {doc.accessKey && (
-            <p style={{ fontSize: '0.78rem', wordBreak: 'break-all' }}>
-              Chave de acesso: <strong>{doc.accessKey}</strong>
-            </p>
-          )}
-
-          {doc.lastError && doc.status !== 'AUTHORIZED' && (
-            <div className="alert alert-error no-print">{doc.lastError}</div>
-          )}
-
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', borderBottom: '1px solid #333', padding: '0.35rem' }}>
-                  Produto
-                </th>
-                <th style={{ textAlign: 'right', borderBottom: '1px solid #333', padding: '0.35rem' }}>
-                  Qtd
-                </th>
-                <th style={{ textAlign: 'right', borderBottom: '1px solid #333', padding: '0.35rem' }}>
-                  Unit.
-                </th>
-                <th style={{ textAlign: 'right', borderBottom: '1px solid #333', padding: '0.35rem' }}>
-                  Total
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {(doc.sale.items ?? []).map((it, i) => (
-                <tr key={i}>
-                  <td style={{ padding: '0.3rem', borderBottom: '1px solid #ddd' }}>
-                    {it.variant?.product?.name ?? '—'}
-                    {it.variant?.sku ? (
-                      <span style={{ color: '#555' }}> ({it.variant.sku})</span>
-                    ) : null}
-                  </td>
-                  <td style={{ textAlign: 'right', padding: '0.3rem', borderBottom: '1px solid #ddd' }}>
-                    {Number(it.quantity).toLocaleString('pt-BR')}
-                  </td>
-                  <td style={{ textAlign: 'right', padding: '0.3rem', borderBottom: '1px solid #ddd' }}>
-                    {formatBRL(it.unitPrice)}
-                  </td>
-                  <td style={{ textAlign: 'right', padding: '0.3rem', borderBottom: '1px solid #ddd' }}>
-                    {formatBRL(it.totalLine)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <footer
-            style={{
-              marginTop: '1rem',
-              display: 'flex',
-              justifyContent: 'flex-end',
-              fontSize: '1.05rem',
-            }}
-          >
-            <div>
-              {Number(doc.sale.discount) > 0 && (
-                <div style={{ textAlign: 'right', fontSize: '0.85rem' }}>
-                  Desconto: {formatBRL(doc.sale.discount)}
-                </div>
-              )}
-              {Number(doc.sale.surcharge) > 0 && (
-                <div style={{ textAlign: 'right', fontSize: '0.85rem' }}>
-                  Acréscimo: {formatBRL(doc.sale.surcharge)}
-                </div>
-              )}
-              {Number(doc.sale.freightAmount ?? 0) > 0 && (
-                <div style={{ textAlign: 'right', fontSize: '0.85rem' }}>
-                  Frete ({freightLabel(doc.sale.freightMod)}): {formatBRL(doc.sale.freightAmount)}
-                </div>
-              )}
-              <strong>Total: {formatBRL(doc.sale.total)}</strong>
-            </div>
-          </footer>
-
-          {doc.sale.notes && (
-            <p style={{ marginTop: '0.85rem', fontSize: '0.8rem', whiteSpace: 'pre-wrap' }}>
-              <strong>Observações:</strong> {doc.sale.notes}
-            </p>
-          )}
-
-          <section
-            style={{
-              marginTop: '1.25rem',
-              paddingTop: '0.75rem',
-              borderTop: '1px solid #333',
-              fontSize: '0.78rem',
-            }}
-          >
-            <strong>Alíquotas (Situação Fiscal)</strong>
-            {aliquots.length === 0 ? (
-              <p style={{ margin: '0.35rem 0 0', color: '#555' }}>
-                Sem alíquotas cadastradas nas situações fiscais dos produtos desta nota.
-              </p>
-            ) : (
-              <table
-                style={{
-                  width: '100%',
-                  borderCollapse: 'collapse',
-                  marginTop: '0.4rem',
-                  fontSize: '0.75rem',
-                }}
-              >
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: 'left', borderBottom: '1px solid #999', padding: '0.25rem' }}>
-                      Situação
-                    </th>
-                    <th style={{ textAlign: 'right', borderBottom: '1px solid #999', padding: '0.25rem' }}>
-                      ICMS %
-                    </th>
-                    <th style={{ textAlign: 'right', borderBottom: '1px solid #999', padding: '0.25rem' }}>
-                      IPI %
-                    </th>
-                    <th style={{ textAlign: 'right', borderBottom: '1px solid #999', padding: '0.25rem' }}>
-                      PIS %
-                    </th>
-                    <th style={{ textAlign: 'right', borderBottom: '1px solid #999', padding: '0.25rem' }}>
-                      COFINS %
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {aliquots.map((a) => (
-                    <tr key={a.code}>
-                      <td style={{ padding: '0.25rem', borderBottom: '1px solid #eee' }}>
-                        {a.code} — {a.name}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '0.25rem', borderBottom: '1px solid #eee' }}>
-                        {a.aliqIcms}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '0.25rem', borderBottom: '1px solid #eee' }}>
-                        {a.aliqIpi}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '0.25rem', borderBottom: '1px solid #eee' }}>
-                        {a.aliqPis}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '0.25rem', borderBottom: '1px solid #eee' }}>
-                        {a.aliqCofins}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </section>
-
-          <p style={{ marginTop: '1.25rem', fontSize: '0.72rem', color: '#444' }}>
-            Documento auxiliar de NF-e (DANFE). A validade jurídica é do XML autorizado junto à SEFAZ.
-          </p>
-        </article>
-      )}
+    <div className="danfe-nfe-page">
+      <div className="no-print" style={{ maxWidth: 900, margin: '0 auto 0.75rem', padding: '0 1rem' }}>
+        {toolbar}
+        {q.isLoading && <p>Carregando DANFE…</p>}
+        {q.isError && <div className="alert alert-error">{(q.error as Error).message}</div>}
+      </div>
+      {q.data && doc ? <DanfeNfeDocument data={q.data as DanfeNfePayload} /> : null}
     </div>
   );
 }

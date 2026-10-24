@@ -90,8 +90,17 @@ export function FiscalNotesPrintPage() {
   });
 
   useEffect(() => {
-    if (report === 'second' && detail.data?.saleId) {
-      navigate(`/vendas/impressao?id=${encodeURIComponent(detail.data.saleId)}`, { replace: true });
+    if (report !== 'second' || !detail.data) return;
+    if (detail.data.kind === 'NF_E') {
+      navigate(`/notas-fiscais/danfe/${encodeURIComponent(detail.data.id)}`, { replace: true });
+      return;
+    }
+    if (detail.data.saleId) {
+      const returnTo = encodeURIComponent('/notas-fiscais?tab=NFC_E');
+      navigate(
+        `/vendas/impressao?id=${encodeURIComponent(detail.data.saleId)}&returnTo=${returnTo}`,
+        { replace: true },
+      );
     }
   }, [report, detail.data, navigate]);
 
@@ -202,7 +211,10 @@ export function FiscalNotesPrintPage() {
   return (
     <div className="page print-page print-area">
       <div className="no-print" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-        <Link className="btn btn-secondary" to="/notas-fiscais">
+        <Link
+          className="btn btn-secondary"
+          to={kind === 'NF_E' ? '/notas-fiscais?tab=NF_E' : '/notas-fiscais?tab=NFC_E'}
+        >
           Voltar
         </Link>
         <button type="button" className="btn btn-primary" onClick={() => window.print()}>

@@ -166,21 +166,26 @@ export class FiscalSefazOpsService {
 
     const db = await this.tenantPrisma.getClient(tenantSlug);
 
+    const destAddr = {
+      name: HOMOLOG_FISCAL_LABEL.slice(0, 120),
+      document: HOMOLOG_TEST_CUSTOMER_DOC,
+      state: company.state?.trim() || settings.uf || 'AM',
+      city: company.city?.trim() || 'Manaus',
+      street: company.address?.trim() || 'Rua Homologacao SEFAZ',
+      number: company.addressNumber?.trim() || 'S/N',
+      district: company.district?.trim() || 'Centro',
+      zip: (company.zip ?? '69000000').replace(/\D/g, '').slice(0, 8),
+      cityIbge: settings.municipalityIbge.replace(/\D/g, '').padStart(7, '0').slice(-7),
+    };
     let customer = await db.customer.findFirst({
       where: { document: HOMOLOG_TEST_CUSTOMER_DOC },
     });
     if (!customer) {
-      customer = await db.customer.create({
-        data: {
-          name: HOMOLOG_FISCAL_LABEL.slice(0, 120),
-          document: HOMOLOG_TEST_CUSTOMER_DOC,
-          state: company.state?.trim() || settings.uf || 'AM',
-          city: company.city?.trim() || 'Manaus',
-          street: company.address?.trim() || 'Rua Homologacao SEFAZ',
-          number: company.addressNumber?.trim() || 'S/N',
-          district: company.district?.trim() || 'Centro',
-          zip: (company.zip ?? '69000000').replace(/\D/g, '').slice(0, 8),
-        },
+      customer = await db.customer.create({ data: destAddr });
+    } else if (type === 'NFE') {
+      customer = await db.customer.update({
+        where: { id: customer.id },
+        data: destAddr,
       });
     }
 

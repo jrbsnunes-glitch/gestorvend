@@ -242,6 +242,33 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
       color: '#000',
     },
   },
+  {
+    selector: '.sale-receipt-nfce-key',
+    decls: {
+      'word-break': 'break-word',
+      'text-align': 'center',
+      'font-size': '11px',
+      'font-weight': '800',
+      margin: '0.35rem 0',
+      color: '#000',
+    },
+  },
+  {
+    selector: '.sale-receipt-nfce-qr',
+    decls: {
+      display: 'flex',
+      'justify-content': 'center',
+      margin: '0.45rem 0 0.2rem',
+    },
+  },
+  {
+    selector: '.nfce-qr',
+    decls: {
+      display: 'block',
+      width: '32mm',
+      height: '32mm',
+    },
+  },
 ];
 
 /** Aplica a escala do PDV só na tipografia (a caixa continua com a largura da bobina). */

@@ -383,7 +383,9 @@ function IssuerEmissorCard() {
     <>
       <p className="company-form__hint">
         Worker da API (~60s) com <code>FISCAL_MODULE_ENABLED=true</code>. CSC/senha por cliente;{' '}
-        <code>FISCAL_*</code> no servidor só como fallback.
+        <code>FISCAL_*</code> no servidor só como fallback. O grupo <code>infRespTec</code> da nota
+        é da software house (variáveis <code>FISCAL_RESPTEC_*</code> no servidor), não desta
+        empresa emitente.
       </p>
       {issuer.isLoading && <p className="muted">Carregando emissor…</p>}
       {issuer.isError && <div className="alert alert-error">{(issuer.error as Error).message}</div>}

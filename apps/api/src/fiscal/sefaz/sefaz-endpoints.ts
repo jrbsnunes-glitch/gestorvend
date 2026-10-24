@@ -10,6 +10,8 @@ export type SefazWebservices = {
   inutilizacao: string;
   nfceQrConsultaBase?: string;
   nfceUrlChave?: string;
+  /** `300` = QR NFC-e v3 (NT 2025.001); `200` = QR v2 com CSC. */
+  nfceQrVersion?: '200' | '300';
 };
 
 /** URLs oficiais SEFAZ/AM — paths case-sensitive (Nfe*, RecepcaoEvento4). */
@@ -89,9 +91,10 @@ const SVRS_STATUS_HOM =
   'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeStatusServico/NfeStatusServico4.asmx';
 const SVRS_STATUS_PROD = 'https://nfe.svrs.rs.gov.br/ws/NfeStatusServico/NfeStatusServico4.asmx';
 
-const AN_NFCE_QR_HOM = 'http://homnfce.sefaz.am.gov.br/nfce/consulta';
-const AN_NFCE_QR_PROD = 'http://nfce.sefaz.am.gov.br/nfce/consulta';
-const AN_NFCE_URL_CHAVE = 'http://www.sefaz.am.gov.br/nfce/consulta';
+/** Portal estadual AM — QR v3 em homologação (NT 2025.001 / nfephp wsnfe). */
+const AM_NFCE_QR_HOM = 'https://sistemas.sefaz.am.gov.br/nfceweb-hom/consultarNFCe.jsp';
+const AM_NFCE_QR_PROD = 'https://sistemas.sefaz.am.gov.br/nfceweb/consultarNFCe.jsp';
+const AM_NFCE_URL_CHAVE = 'www.sefaz.am.gov.br/nfce/consulta';
 
 const SP_NFCE_QR_HOM =
   'https://www.homologacao.nfce.fazenda.sp.gov.br/NFCeConsultaPublica/Paginas/ConsultaPublica.aspx';
@@ -133,6 +136,7 @@ function svrsBucket(model: FiscalModel, production: boolean): SefazWebservices {
     inutilizacao: production ? SVRS_INUTIL_PROD : SVRS_INUTIL_HOM,
     nfceQrConsultaBase: isNfce ? (production ? undefined : SP_NFCE_QR_HOM) : undefined,
     nfceUrlChave: isNfce ? SP_NFCE_URL_CHAVE : undefined,
+    nfceQrVersion: isNfce ? '200' : undefined,
   };
 }
 
@@ -156,10 +160,11 @@ export function resolveSefazWebservices(params: {
       nfceQrConsultaBase:
         params.model === '65'
           ? params.production
-            ? AN_NFCE_QR_PROD
-            : AN_NFCE_QR_HOM
+            ? AM_NFCE_QR_PROD
+            : AM_NFCE_QR_HOM
           : undefined,
-      nfceUrlChave: params.model === '65' ? AN_NFCE_URL_CHAVE : undefined,
+      nfceUrlChave: params.model === '65' ? AM_NFCE_URL_CHAVE : undefined,
+      nfceQrVersion: params.model === '65' ? (params.production ? '200' : '300') : undefined,
     };
   } else {
     base = svrsBucket(params.model, params.production);
@@ -174,6 +179,7 @@ export function resolveSefazWebservices(params: {
     inutilizacao: o.inutilizacao?.trim() || base.inutilizacao,
     nfceQrConsultaBase: base.nfceQrConsultaBase,
     nfceUrlChave: base.nfceUrlChave,
+    nfceQrVersion: base.nfceQrVersion,
   };
 }
 

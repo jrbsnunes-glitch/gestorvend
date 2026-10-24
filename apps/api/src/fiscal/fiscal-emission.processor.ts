@@ -16,20 +16,23 @@ import { validateSaleItemsForFiscalEmission } from './fiscal-emission-validation
 import { buildNfceAccessKey } from './utils/nfe-access-key';
 import { lookupIbgeByCep } from './utils/via-cep';
 import { ufToCodIbge } from './utils/uf-ibge';
+import { formatSefazDateTime } from '../common/iana-timezone.util';
+import { timezoneFromBrazilUf } from '../common/br-uf-timezone.util';
 import { createMutualTlsAgentFromPfx, loadPfxMaterial } from './issuer/load-pfx';
 import { OutboundNfeStorage } from './issuer/outbound-nfe.storage';
 import {
   appendInfNFeSupl,
   buildNfceInfNFeXml,
-  buildNfceQrUrl,
   buildNfceQrUrlAm,
+  buildNfceQrUrlV3,
   paymentMethodToTPag,
   type DestInput,
   type NfceItemInput,
 } from './issuer/nfce-xml.builder';
 import { homologFieldText } from './homolog-labels';
+import { resolveSoftwareHouseRespTec } from './issuer/fiscal-resptec';
 import { resolveSefazWebservices } from './sefaz/sefaz-endpoints';
-import { extractFirstDigestValueB64, signNfeSignatureSibling } from './issuer/sign-inf-nfe';
+import { signNfeSignatureSibling } from './issuer/sign-inf-nfe';
 import {
   buildNfeProcXml,
   parseSefazAutorizacaoResponse,
@@ -643,7 +646,10 @@ export class FiscalEmissionProcessorService {
     const munEmit = settings.municipalityIbge.replace(/\D/g, '').padStart(7, '0');
     const xMun = company.city?.trim() || 'MUNICIPIO';
     const ufSig = settings.uf.trim().toUpperCase().slice(0, 2);
-    const dhEmiIso = `${now.toISOString().slice(0, 19)}-03:00`;
+    const dhEmiIso = formatSefazDateTime(
+      now,
+      company.timezone || timezoneFromBrazilUf(ufSig),
+    );
 
     let dest: DestInput | undefined;
     if (sale.customer) {
@@ -661,18 +667,15 @@ export class FiscalEmissionProcessorService {
         xNome: homologFieldText(sale.customer.name, tpAmb, 60),
         email: sale.customer.email,
         indIEDest: '9',
-        ender:
-          sale.customer.city && sale.customer.state
-            ? {
-                xLgr: sale.customer.street?.trim() || 'NAO INFORMADO',
-                nro: sale.customer.number?.trim() || 'S/N',
-                xBairro: sale.customer.district?.trim() || 'CENTRO',
-                cMun: destMunIbge || munEmit,
-                xMun: sale.customer.city.trim(),
-                uf: sale.customer.state.trim().toUpperCase().slice(0, 2),
-                cep: (sale.customer.zip ?? zipDigits).replace(/\D/g, '').padStart(8, '0').slice(-8),
-              }
-            : null,
+        ender: {
+          xLgr: sale.customer.street?.trim() || company.address?.trim() || 'NAO INFORMADO',
+          nro: sale.customer.number?.trim() || company.addressNumber?.trim() || 'S/N',
+          xBairro: sale.customer.district?.trim() || company.district?.trim() || 'CENTRO',
+          cMun: destMunIbge || munEmit,
+          xMun: sale.customer.city?.trim() || xMun,
+          uf: (sale.customer.state?.trim() || ufSig).toUpperCase().slice(0, 2),
+          cep: (sale.customer.zip ?? zipDigits).replace(/\D/g, '').padStart(8, '0').slice(-8),
+        },
       };
     }
 
@@ -707,6 +710,15 @@ export class FiscalEmissionProcessorService {
         cep: zipDigits,
       },
       dest,
+      respTec: (() => {
+        const respTec = resolveSoftwareHouseRespTec(this.config);
+        if (!respTec && this.transportMode() === 'soap') {
+          throw new Error(
+            'infRespTec deve ser da software house (não do emitente). Configure FISCAL_RESPTEC_CNPJ, FISCAL_RESPTEC_CONTATO, FISCAL_RESPTEC_EMAIL e FISCAL_RESPTEC_FONE no servidor. A SEFAZ/AM exige o grupo (cStat 972).',
+          );
+        }
+        return respTec;
+      })(),
       items: itemsXml,
       totals: {
         vNF,
@@ -729,10 +741,12 @@ export class FiscalEmissionProcessorService {
       privateKeyPem,
       certificatePem,
     });
-    const digest = extractFirstDigestValueB64(signed);
-
     const wsEmit = this.sefazWs(ufSig, production, modelo);
-    if (isNfce && cscId && csc) {
+    if (isNfce) {
+      const qrVersion = wsEmit.nfceQrVersion ?? '200';
+      if (qrVersion !== '300' && (!cscId || !csc)) {
+        throw new Error('NFC-e em QR v2 exige CSC (ID e token) no emissor fiscal.');
+      }
       const qrOverride = this.config.get<string>('FISCAL_NFCE_QR_BASE_URL')?.trim();
       const qrBase =
         qrOverride ||
@@ -741,22 +755,14 @@ export class FiscalEmissionProcessorService {
       const urlChave =
         this.config.get<string>('FISCAL_NFCE_URL_CHAVE')?.trim() || wsEmit.nfceUrlChave;
       const qrUrl =
-        ufSig === 'AM' && !qrOverride
-          ? buildNfceQrUrlAm({
-              chNFe: chave44,
-              tpEmis,
-              cscId,
-              csc,
-              qrBaseUrl: qrBase,
-            })
-          : buildNfceQrUrl({
-              qrBaseUrl: qrBase,
+        qrVersion === '300'
+          ? buildNfceQrUrlV3({ chNFe: chave44, tpAmb, qrBaseUrl: qrBase })
+          : buildNfceQrUrlAm({
               chNFe: chave44,
               tpAmb,
-              versaoQr: '100',
               cscId,
               csc,
-              digestValueB64: digest,
+              qrBaseUrl: qrBase,
             });
       signed = appendInfNFeSupl(signed, qrUrl, urlChave);
     }
@@ -873,7 +879,12 @@ export class FiscalEmissionProcessorService {
       return;
     }
 
-    const short = parsed.motive.slice(0, 2000);
+    const rawHint = parsed.rawSnippet?.replace(/\s+/g, ' ').trim().slice(0, 1400) ?? '';
+    const short = (
+      parsed.cStat === '999' || parsed.cStat === '215'
+        ? `${parsed.motive}${rawHint ? ` | ${rawHint}` : ''}`
+        : parsed.motive
+    ).slice(0, 2000);
     if (this.shouldAttemptConsultaRecovery(parsed.cStat, short)) {
       const recovered = await this.tryRecoverAuthorizationViaConsulta({
         consultUrl,

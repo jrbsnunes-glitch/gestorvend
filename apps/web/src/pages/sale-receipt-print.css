@@ -11,19 +11,36 @@
   background: #e8e8e8;
   padding: 1rem;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .sale-receipt-toolbar {
-  max-width: 80mm;
-  margin: 0 auto 1rem;
+  width: min(100%, 42rem);
+  max-width: 42rem;
+  margin: 0 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.sale-receipt-toolbar-actions {
   display: flex;
   gap: 0.5rem;
-  align-items: center;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .sale-receipt-toolbar .btn {
   margin: 0;
+}
+
+.sale-receipt-preview {
+  display: flex;
+  justify-content: center;
+  width: 100%;
 }
 
 .sale-receipt-doc {
@@ -177,6 +194,34 @@
   color: #000;
 }
 
+.sale-receipt-nfce {
+  margin: 0.35rem 0;
+}
+
+.sale-receipt-nfce-key {
+  word-break: break-word;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  margin: 0.35rem 0;
+}
+
+.sale-receipt-nfce-qr,
+.nfce-qr-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 0.45rem 0 0.2rem;
+}
+
+.nfce-qr,
+.sale-receipt-nfce-qr img {
+  width: 32mm;
+  height: 32mm;
+  display: block;
+  image-rendering: pixelated;
+}
+
 .sale-receipt-totals {
   margin-top: 0.5rem;
   font-size: 12px;
@@ -276,6 +321,15 @@
     max-width: none !important;
     margin: 0 !important;
     overflow: visible !important;
+    display: block !important;
+    align-items: stretch !important;
+  }
+
+  .sale-receipt-preview {
+    display: block !important;
+    width: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   .sale-receipt-toolbar,
@@ -364,5 +418,24 @@
   .sale-receipt-foot-muted {
     font-size: 11px !important;
     color: #000 !important;
+  }
+
+  .sale-receipt-nfce-key {
+    font-size: 10px !important;
+    font-weight: 800 !important;
+    text-align: center !important;
+    color: #000 !important;
+  }
+
+  .sale-receipt-nfce-qr,
+  .nfce-qr-wrap {
+    display: flex !important;
+    justify-content: center !important;
+  }
+
+  .nfce-qr,
+  .sale-receipt-nfce-qr img {
+    width: 32mm !important;
+    height: 32mm !important;
   }
 }

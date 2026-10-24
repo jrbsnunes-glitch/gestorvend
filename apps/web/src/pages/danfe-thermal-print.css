@@ -53,8 +53,24 @@
 }
 
 .danfe-thermal-doc .key {
-  word-break: break-all;
+  word-break: break-word;
   font-size: 10px;
+  text-align: center;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.nfce-qr-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 0.5rem 0 0.2rem;
+}
+
+.nfce-qr {
+  width: 32mm;
+  height: 32mm;
+  display: block;
+  image-rendering: pixelated;
 }
 
 @media print {
@@ -73,6 +89,16 @@
     box-shadow: none !important;
     padding: 1mm 1.5mm 3mm !important;
     font-size: 9.5pt !important;
+  }
+
+  .nfce-qr-wrap {
+    display: flex !important;
+    justify-content: center !important;
+  }
+
+  .nfce-qr {
+    width: 32mm !important;
+    height: 32mm !important;
   }
 
   @page {

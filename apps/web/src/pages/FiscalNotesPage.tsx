@@ -2,7 +2,7 @@
  * Módulo Notas Fiscais — listagem NFC-e / NF-e, filtros combináveis, impressões e detalhe.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { CrudToolbar } from '../components/CrudToolbar';
@@ -15,12 +15,23 @@ import {
   RecordViewSections,
   type RecordViewSection,
 } from '../components/RecordViewModal';
-import { api } from '../lib/api';
+import { api, apiDownload } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
 import { trimFilterPeriod, validateFilterPeriodRange } from '../lib/list-filters';
 import { matchesListSearch } from '../lib/list-search';
 
-type TabKind = 'NFC_E' | 'NF_E';
+type FiscalKind = 'NFC_E' | 'NF_E';
+type TabKind = FiscalKind | 'SALES';
+
+type SalePendingRow = {
+  id: string;
+  number: number;
+  status: string;
+  total: string;
+  createdAt: string;
+  customer: { name: string } | null;
+  fiscalDocument: { id: string; kind: string; status: string } | null;
+};
 
 type FiscalDocRow = {
   id: string;
@@ -119,7 +130,19 @@ function statusClass(s: string): string {
   }
 }
 
-function buildQuery(kind: TabKind, f: Filters, page: number): string {
+function tabFromSearch(raw: string | null): TabKind {
+  if (raw === 'NF_E') return 'NF_E';
+  if (raw === 'VENDAS') return 'SALES';
+  return 'NFC_E';
+}
+
+function tabToSearch(tab: TabKind): string {
+  if (tab === 'NF_E') return 'NF_E';
+  if (tab === 'SALES') return 'VENDAS';
+  return 'NFC_E';
+}
+
+function buildQuery(kind: FiscalKind, f: Filters, page: number): string {
   const p = new URLSearchParams();
   p.set('kind', kind);
   p.set('take', String(LIST_PAGE_SIZE));
@@ -139,8 +162,17 @@ export function FiscalNotesPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = (searchParams.get('tab') === 'NF_E' ? 'NF_E' : 'NFC_E') as TabKind;
-  const [tab, setTab] = useState<TabKind>(initialTab);
+  const [tab, setTab] = useState<TabKind>(() => tabFromSearch(searchParams.get('tab')));
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportForm, setExportForm] = useState({
+    controlMin: '',
+    controlMax: '',
+    dateFrom: '',
+    dateTo: '',
+    accessKey: '',
+  });
+  const [exportErr, setExportErr] = useState<string | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
@@ -154,11 +186,36 @@ export function FiscalNotesPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const qs = useMemo(() => buildQuery(tab, applied, page), [tab, applied, page]);
+  const fiscalTab = tab === 'SALES' ? 'NFC_E' : tab;
+  const qs = useMemo(
+    () => buildQuery(fiscalTab, applied, page),
+    [fiscalTab, applied, page],
+  );
+
+  const company = useQuery({
+    queryKey: ['company', 'fiscal-notes'],
+    queryFn: () =>
+      api<{ pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED' }>('/company'),
+  });
+  const showVendasTab = company.data?.pdvDocumentMode === 'NON_FISCAL_RECEIPT';
+
+  const salesQs = useMemo(() => {
+    const p = new URLSearchParams();
+    if (applied.dateFrom) p.set('from', applied.dateFrom);
+    if (applied.dateTo) p.set('to', applied.dateTo);
+    return p.toString();
+  }, [applied.dateFrom, applied.dateTo]);
 
   const list = useQuery({
     queryKey: ['fiscal', 'documents', qs],
     queryFn: () => api<ListResponse>(`/fiscal/documents?${qs}`),
+    enabled: tab !== 'SALES',
+  });
+
+  const salesPending = useQuery({
+    queryKey: ['sales', 'fiscal-pending', salesQs],
+    queryFn: () => api<SalePendingRow[]>(`/sales${salesQs ? `?${salesQs}` : ''}`),
+    enabled: tab === 'SALES' && showVendasTab,
   });
 
   const customers = useQuery({
@@ -205,12 +262,23 @@ export function FiscalNotesPage() {
 
   const inutilizar = useMutation({
     mutationFn: (body: {
-      kind: TabKind;
+      kind: FiscalKind;
       serie: number;
       nNFIni: number;
       nNFFin: number;
       xJust: string;
     }) => api('/fiscal/documents/inutilizar', { method: 'POST', json: body }),
+  });
+
+  const emitFromSale = useMutation({
+    mutationFn: ({ saleId, kind }: { saleId: string; kind: FiscalKind }) =>
+      api('/fiscal/documents/queue', { method: 'POST', json: { saleId, kind } }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['sales'] });
+      qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
+      switchTab(vars.kind);
+    },
+    onError: (err: Error) => window.alert(err.message),
   });
 
   const emitDoc = useMutation({
@@ -282,8 +350,24 @@ export function FiscalNotesPage() {
     setTab(next);
     setPage(1);
     setSelectedId(null);
-    setSearchParams(next === 'NF_E' ? { tab: 'NF_E' } : {}, { replace: true });
+    setSearchParams({ tab: tabToSearch(next) }, { replace: true });
   }
+
+  useEffect(() => {
+    const next = tabFromSearch(searchParams.get('tab'));
+    setTab((cur) => (cur === next ? cur : next));
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!company.data) return;
+    if (!showVendasTab && tab === 'SALES') {
+      switchTab('NFC_E');
+      return;
+    }
+    if (showVendasTab && !searchParams.get('tab')) {
+      switchTab('SALES');
+    }
+  }, [company.data, showVendasTab, tab, searchParams]);
 
   function openFiltersModal() {
     setFilters({ ...applied });
@@ -330,12 +414,22 @@ export function FiscalNotesPage() {
     );
   }, [apiRows, appliedSearch]);
 
+  const pendingSales = useMemo(() => {
+    const items = (salesPending.data ?? []).filter(
+      (s) => s.status === 'COMPLETED' && !s.fiscalDocument,
+    );
+    const q = appliedSearch.trim();
+    if (!q) return items;
+    return items.filter((s) => matchesListSearch([String(s.number), s.customer?.name], q));
+  }, [salesPending.data, appliedSearch]);
+
   return (
     <div className="page print-area">
       <h1 className="page-title">Notas Fiscais</h1>
       <p className="page-desc">
-        NFC-e (modelo 65) e NF-e (modelo 55). NF-e pode ser emitida pelo PDV (Vendas) ou pelo formulário
-        completo (Incluir nesta aba). Use o filtro para período, controle, cliente e situação.
+        NFC-e (modelo 65) e NF-e (modelo 55). NF-e pode ser emitida pelo PDV ou pelo formulário
+        completo (Incluir nesta aba). Em modo comprovante não fiscal, use a aba Vendas para enviar
+        NFC-e ou NF-e. Use o filtro para período, controle, cliente e situação.
       </p>
 
       <nav className="stock-subnav no-print" aria-label="Tipo de documento">
@@ -353,20 +447,50 @@ export function FiscalNotesPage() {
         >
           NF-e
         </button>
+        {showVendasTab && (
+          <button
+            type="button"
+            className={tab === 'SALES' ? 'active' : ''}
+            onClick={() => switchTab('SALES')}
+          >
+            Vendas
+          </button>
+        )}
       </nav>
 
       <CrudToolbar
         onPrint={() => window.print()}
         onReports={() => setReportsOpen(true)}
-        onInclude={() => {
-          if (tab === 'NF_E') {
-            navigate('/notas-fiscais/nfe/nova');
-            return;
-          }
-          setInutMsg(null);
-          setInutOpen(true);
-        }}
+        onInclude={
+          tab === 'SALES'
+            ? undefined
+            : () => {
+                if (tab === 'NF_E') {
+                  navigate('/notas-fiscais/nfe/nova');
+                  return;
+                }
+                setInutMsg(null);
+                setInutOpen(true);
+              }
+        }
         includeLabel={tab === 'NF_E' ? 'Incluir NF-e' : 'Inutilizar numeração'}
+        trailingExtra={
+          tab !== 'SALES' ? (
+            <button type="button" className="btn btn-secondary" onClick={() => {
+              setExportErr(null);
+              setExportForm({
+                controlMin: applied.controlMin,
+                controlMax: applied.controlMax,
+                dateFrom: applied.dateFrom,
+                dateTo: applied.dateTo,
+                accessKey: '',
+              });
+              setExportOpen(true);
+            }}>
+              Exportar XML
+            </button>
+          ) : null
+        }
         leadingPrimary={
           <>
             <CrudSearchFilterLeading
@@ -449,7 +573,7 @@ export function FiscalNotesPage() {
         onClose={() => setReportsOpen(false)}
       >
         <FiscalNotesReportsPanel
-          kind={tab}
+          kind={fiscalTab}
           customers={customers.data ?? []}
           categories={categories.data ?? []}
           products={(products.data ?? []) as ProductOpt[]}
@@ -573,8 +697,128 @@ export function FiscalNotesPage() {
         </FormModalBackdrop>
       )}
 
+      {exportOpen && tab !== 'SALES' && (
+        <FormModalBackdrop className="no-print" onClose={() => setExportOpen(false)}>
+          <div
+            className="modal"
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 520 }}
+          >
+            <h2>Exportar XML — {tab === 'NF_E' ? 'NF-e' : 'NFC-e'}</h2>
+            <p className="page-desc">
+              Informe faixa de numeração (controle), período e/ou chave. Um XML é baixado sozinho;
+              vários arquivos saem em ZIP.
+            </p>
+            {exportErr ? <div className="alert alert-error">{exportErr}</div> : null}
+            <div className="form-row form-row--2">
+              <div className="field">
+                <label htmlFor="ex-nmin">Número inicial</label>
+                <input
+                  id="ex-nmin"
+                  type="number"
+                  min={1}
+                  value={exportForm.controlMin}
+                  onChange={(e) => setExportForm((f) => ({ ...f, controlMin: e.target.value }))}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="ex-nmax">Número final</label>
+                <input
+                  id="ex-nmax"
+                  type="number"
+                  min={1}
+                  value={exportForm.controlMax}
+                  onChange={(e) => setExportForm((f) => ({ ...f, controlMax: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="form-row form-row--2">
+              <div className="field">
+                <label htmlFor="ex-df">Data inicial</label>
+                <input
+                  id="ex-df"
+                  type="date"
+                  value={exportForm.dateFrom}
+                  onChange={(e) => setExportForm((f) => ({ ...f, dateFrom: e.target.value }))}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="ex-dt">Data final</label>
+                <input
+                  id="ex-dt"
+                  type="date"
+                  value={exportForm.dateTo}
+                  onChange={(e) => setExportForm((f) => ({ ...f, dateTo: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="field">
+              <label htmlFor="ex-key">Chave da nota</label>
+              <input
+                id="ex-key"
+                value={exportForm.accessKey}
+                onChange={(e) => setExportForm((f) => ({ ...f, accessKey: e.target.value }))}
+                placeholder="44 dígitos"
+              />
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setExportOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={exportBusy}
+                onClick={() => {
+                  void (async () => {
+                    const key = exportForm.accessKey.replace(/\D/g, '');
+                    if (
+                      !exportForm.controlMin.trim() &&
+                      !exportForm.controlMax.trim() &&
+                      !exportForm.dateFrom &&
+                      !exportForm.dateTo &&
+                      !key
+                    ) {
+                      setExportErr('Informe faixa de numeração, período ou chave da nota.');
+                      return;
+                    }
+                    if (key && key.length !== 44) {
+                      setExportErr('Chave da nota deve ter 44 dígitos.');
+                      return;
+                    }
+                    const p = new URLSearchParams();
+                    p.set('kind', fiscalTab);
+                    if (exportForm.controlMin.trim()) p.set('controlMin', exportForm.controlMin.trim());
+                    if (exportForm.controlMax.trim()) p.set('controlMax', exportForm.controlMax.trim());
+                    if (exportForm.dateFrom) p.set('dateFrom', exportForm.dateFrom);
+                    if (exportForm.dateTo) p.set('dateTo', exportForm.dateTo);
+                    if (key) p.set('accessKey', key);
+                    setExportBusy(true);
+                    setExportErr(null);
+                    try {
+                      await apiDownload(
+                        `/fiscal/documents/export-xml?${p.toString()}`,
+                        `${fiscalTab === 'NF_E' ? 'nfe' : 'nfce'}.xml`,
+                      );
+                      setExportOpen(false);
+                    } catch (e) {
+                      setExportErr((e as Error).message);
+                    } finally {
+                      setExportBusy(false);
+                    }
+                  })();
+                }}
+              >
+                {exportBusy ? 'Exportando…' : 'Exportar'}
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      )}
+
       <ReportPrintSticker
-        documentTitle={`Notas Fiscais — ${tab === 'NFC_E' ? 'NFC-e' : 'NF-e'}`}
+        documentTitle={`Notas Fiscais — ${tab === 'NFC_E' ? 'NFC-e' : tab === 'NF_E' ? 'NF-e' : 'Vendas'}`}
         documentExtras={
           <p className="print-sub page-desc" style={{ marginBottom: 0 }}>
             {total} registro(s) · filtros aplicados na listagem
@@ -582,10 +826,90 @@ export function FiscalNotesPage() {
         }
       />
 
-      {list.isError && (
+      {tab !== 'SALES' && list.isError && (
         <div className="alert alert-error">{(list.error as Error).message}</div>
       )}
+      {tab === 'SALES' && salesPending.isError && (
+        <div className="alert alert-error">{(salesPending.error as Error).message}</div>
+      )}
 
+      {tab === 'SALES' ? (
+      <div className="table-wrap" style={{ marginTop: '0.75rem' }}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th className="num">Controle</th>
+              <th>Data</th>
+              <th>Cliente</th>
+              <th className="num">Total</th>
+              <th className="col-actions no-print">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {salesPending.isLoading && (
+              <tr>
+                <td colSpan={5} className="empty">
+                  Carregando vendas…
+                </td>
+              </tr>
+            )}
+            {!salesPending.isLoading && pendingSales.length === 0 && (
+              <tr>
+                <td colSpan={5} className="empty">
+                  Nenhuma venda sem nota fiscal. Após o envio, a nota aparece em NFC-e ou NF-e.
+                </td>
+              </tr>
+            )}
+            {pendingSales.map((s) => (
+              <tr key={s.id}>
+                <td className="num">{s.number}</td>
+                <td>{formatDate(s.createdAt)}</td>
+                <td>{s.customer?.name ?? 'Consumidor'}</td>
+                <td className="num">{formatBRL(Number(s.total))}</td>
+                <td className="col-actions no-print">
+                  <div className="row-record-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-compact"
+                      disabled={emitFromSale.isPending}
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            `Enviar NFC-e da venda #${s.number}? A nota passará a aparecer na aba NFC-e.`,
+                          )
+                        ) {
+                          return;
+                        }
+                        emitFromSale.mutate({ saleId: s.id, kind: 'NFC_E' });
+                      }}
+                    >
+                      Enviar NFC-e
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-compact"
+                      disabled={emitFromSale.isPending}
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            `Enviar NF-e da venda #${s.number}? A nota passará a aparecer na aba NF-e.`,
+                          )
+                        ) {
+                          return;
+                        }
+                        emitFromSale.mutate({ saleId: s.id, kind: 'NF_E' });
+                      }}
+                    >
+                      Enviar NF-e
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      ) : (
       <div className="table-wrap" style={{ marginTop: '0.75rem' }}>
         <table className="data-table">
           <thead>
@@ -661,6 +985,21 @@ export function FiscalNotesPage() {
                     >
                       Visualizar
                     </button>
+                    {tab === 'NFC_E' && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-compact"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const returnTo = encodeURIComponent('/notas-fiscais?tab=NFC_E');
+                          navigate(
+                            `/vendas/impressao?id=${encodeURIComponent(r.saleId)}&returnTo=${returnTo}`,
+                          );
+                        }}
+                      >
+                        2ª via
+                      </button>
+                    )}
                     {tab === 'NF_E' && (
                       <>
                         <button
@@ -787,7 +1126,9 @@ export function FiscalNotesPage() {
           </tbody>
         </table>
       </div>
+      )}
 
+      {tab !== 'SALES' && (
       <ListPagination
         page={page}
         totalPages={totalPages}
@@ -795,6 +1136,7 @@ export function FiscalNotesPage() {
         onPageChange={setPage}
         itemLabel="nota(s)"
       />
+      )}
 
       {viewId && !openId && (
         <RecordViewModal
@@ -845,7 +1187,10 @@ export function FiscalNotesPage() {
                     );
                     return;
                   }
-                  navigate(`/vendas/impressao?id=${encodeURIComponent(detail.data!.saleId)}`);
+                  const returnTo = encodeURIComponent('/notas-fiscais?tab=NFC_E');
+                  navigate(
+                    `/vendas/impressao?id=${encodeURIComponent(detail.data!.saleId)}&returnTo=${returnTo}`,
+                  );
                 }}
                 onEmitNfe={
                   detail.data.kind === 'NF_E'
@@ -931,7 +1276,7 @@ export function FiscalNotesPage() {
                   setInutMsg(null);
                   inutilizar.mutate(
                     {
-                      kind: tab,
+                      kind: fiscalTab,
                       serie: Number(inutForm.serie),
                       nNFIni: Number(inutForm.nNFIni),
                       nNFFin: Number(inutForm.nNFFin),
@@ -1088,7 +1433,7 @@ function FiscalNotesReportsPanel({
   selectedId,
   onClose,
 }: {
-  kind: TabKind;
+  kind: FiscalKind;
   customers: CustomerOpt[];
   categories: CategoryOpt[];
   products: ProductOpt[];
@@ -1123,7 +1468,12 @@ function FiscalNotesReportsPanel({
       }
       p.set('documentId', selectedId);
     }
+    p.set('tab', kind === 'NF_E' ? 'NF_E' : 'NFC_E');
     onClose();
+    if (printKind === 'second' && selectedId && kind === 'NF_E') {
+      navigate(`/notas-fiscais/danfe/${encodeURIComponent(selectedId)}`);
+      return;
+    }
     navigate(`/notas-fiscais/impressao?${p.toString()}`);
   }
 

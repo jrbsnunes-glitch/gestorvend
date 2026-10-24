@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { api } from '../lib/api';
 import { companyUsesCustomLogo } from '../lib/company-branding';
 import { formatBRL, formatDate } from '../lib/format';
 import { getDesktopApi, isGestorVendDesktop } from '../lib/desktop-bridge';
 import { consumeAutoPrintNonce } from '../lib/sale-receipt-print';
+import { formatNfceAccessKey, NfceQrImage, useNfceQrDataUrl } from '../lib/nfce-qr';
 import {
   hardenSaleReceiptStyles,
   inlineSaleReceiptImages,
@@ -61,9 +62,23 @@ type SaleReceipt = {
   }>;
 };
 
+type NfceReceipt = {
+  documentId: string;
+  status: string;
+  accessKey: string | null;
+  protocol: string | null;
+  sefazEnvironment: string | null;
+  qrCode: string | null;
+  urlChave: string | null;
+  serie: number | null;
+  nNF: number | null;
+  pending: boolean;
+};
+
 type ReceiptPayload = {
   sale: SaleReceipt;
   company: Company;
+  nfce?: NfceReceipt | null;
 };
 
 const PAY_LABEL: Record<SaleReceipt['payments'][number]['method'], string> = {
@@ -146,7 +161,40 @@ function buildDemoSale(): SaleReceipt {
   };
 }
 
+function safeReturnTo(raw: string | null): string | null {
+  const value = raw?.trim() ?? '';
+  if (!value.startsWith('/')) return null;
+  if (value.startsWith('//')) return null;
+  if (value.startsWith('/notas-fiscais') || value.startsWith('/vendas')) return value;
+  return null;
+}
+
+function leaveReceiptPage(
+  navigate: ReturnType<typeof useNavigate>,
+  returnTo?: string | null,
+): void {
+  if (window.opener && !window.opener.closed) {
+    try {
+      window.close();
+      return;
+    } catch {
+      /* janela principal segue no sistema */
+    }
+  }
+  const dest = safeReturnTo(returnTo ?? null);
+  if (dest) {
+    navigate(dest);
+    return;
+  }
+  if (window.history.length > 1) {
+    navigate(-1);
+    return;
+  }
+  navigate('/vendas');
+}
+
 export function SaleReceiptPrintPage() {
+  const navigate = useNavigate();
   const [sp] = useSearchParams();
   const saleId = sp.get('id')?.trim() ?? '';
   const demo = sp.get('demo') === '1' || sp.get('demo') === 'true';
@@ -159,7 +207,7 @@ export function SaleReceiptPrintPage() {
     queryFn: async (): Promise<ReceiptPayload> => {
       if (demo) {
         const company = await api<Company>('/company');
-        return { sale: buildDemoSale(), company };
+        return { sale: buildDemoSale(), company, nfce: null };
       }
       try {
         return await api<ReceiptPayload>(`/sales/${encodeURIComponent(saleId)}/receipt`);
@@ -169,12 +217,18 @@ export function SaleReceiptPrintPage() {
           api<SaleReceipt>(`/sales/${encodeURIComponent(saleId)}`),
           api<Company>('/company'),
         ]);
-        return { sale, company };
+        return { sale, company, nfce: null };
       }
     },
     enabled: demo || Boolean(saleId),
     retry: 2,
     retryDelay: 400,
+    refetchInterval: (query) => {
+      if (demo) return false;
+      const nfce = query.state.data?.nfce;
+      if (nfce?.pending) return 2000;
+      return false;
+    },
   });
 
   const docRef = useRef<HTMLElement | null>(null);
@@ -188,10 +242,16 @@ export function SaleReceiptPrintPage() {
 
   const s = receiptQ.data?.sale;
   const c = receiptQ.data?.company;
+  const nfce = receiptQ.data?.nfce ?? null;
+  const nfceAuthorized = nfce?.status === 'AUTHORIZED';
+  const qrSrc = useNfceQrDataUrl(nfceAuthorized ? nfce?.qrCode : null);
+  const needQr = Boolean(nfceAuthorized && nfce?.qrCode);
+  const [fiscalWaitDone, setFiscalWaitDone] = useState(false);
   const loading = (demo || Boolean(saleId)) && receiptQ.isLoading;
   const companyOk = Boolean(s && (c?.legalName || c?.tradeName));
-  /** Só libera impressão com empresa no DOM e layout já blindado. */
-  const receiptReady = companyOk && hardened;
+  const waitingFiscal = Boolean(wantAutoPrint && nfce?.pending && !fiscalWaitDone);
+  /** Só libera impressão com empresa no DOM, QR (se NFC-e) e layout já blindado. */
+  const receiptReady = companyOk && hardened && !waitingFiscal && (!needQr || Boolean(qrSrc));
 
   useEffect(() => {
     document.documentElement.classList.add('gv-sale-receipt-print');
@@ -208,8 +268,17 @@ export function SaleReceiptPrintPage() {
    * injetada pelo shell) e logo em `data:` URL.
    */
   useEffect(() => {
+    if (!nfce?.pending) {
+      setFiscalWaitDone(false);
+      return;
+    }
+    const t = window.setTimeout(() => setFiscalWaitDone(true), 15_000);
+    return () => window.clearTimeout(t);
+  }, [nfce?.pending, saleId]);
+
+  useEffect(() => {
     const root = docRef.current;
-    if (!companyOk || !root) return;
+    if (!companyOk || (needQr && !qrSrc) || !root) return;
     let alive = true;
     setHardened(false);
     void (async () => {
@@ -224,7 +293,7 @@ export function SaleReceiptPrintPage() {
     return () => {
       alive = false;
     };
-  }, [companyOk, receiptQ.dataUpdatedAt]);
+  }, [companyOk, needQr, qrSrc, receiptQ.dataUpdatedAt]);
 
   useEffect(() => {
     if (!wantClose) return;
@@ -265,14 +334,23 @@ export function SaleReceiptPrintPage() {
       data-company-ok={companyOk ? '1' : '0'}
     >
       <div className="sale-receipt-toolbar no-print">
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => void printDocument('80mm')}
-          disabled={!receiptReady}
-        >
-          Imprimir (Ctrl+P)
-        </button>
+        <div className="sale-receipt-toolbar-actions">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => leaveReceiptPage(navigate, sp.get('returnTo'))}
+          >
+            Voltar
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => void printDocument('80mm')}
+            disabled={!receiptReady}
+          >
+            Imprimir (Ctrl+P)
+          </button>
+        </div>
         <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
           {demo ? (
             <>
@@ -280,8 +358,11 @@ export function SaleReceiptPrintPage() {
               sua empresa.{' '}
             </>
           ) : null}
-          Bobina 80 mm — não fiscal. No GestorVend Desktop, use a impressora configurada em
-          Configurações → Impressão (PDV). No navegador, o diálogo do sistema escolhe a impressora.
+          {nfceAuthorized
+            ? 'Bobina 80 mm — DANFE NFC-e com QR Code.'
+            : 'Bobina 80 mm — cupom não fiscal.'}{' '}
+          No GestorVend Desktop, use a impressora configurada em Configurações → Impressão (PDV). No
+          navegador, o diálogo do sistema escolhe a impressora.
           {browserPrint ? (
             <>
               {' '}
@@ -307,6 +388,7 @@ export function SaleReceiptPrintPage() {
         </span>
       </div>
 
+      <div className="sale-receipt-preview">
       {!saleId && !demo && (
         <div className="sale-receipt-doc">
           <p>
@@ -357,12 +439,38 @@ export function SaleReceiptPrintPage() {
 
           <hr className="sale-receipt-line" />
 
-          <p className="sale-receipt-center sale-receipt-sub">
-            <strong>DOCUMENTO AUXILIAR DE VENDA</strong>
-          </p>
-          <p className="sale-receipt-center sale-receipt-fiscal-note">
-            Não possui validade fiscal — conferência interna / troca mediante política da loja
-          </p>
+          {nfceAuthorized ? (
+            <>
+              <p className="sale-receipt-center sale-receipt-sub">
+                <strong>DANFE NFC-e</strong>
+              </p>
+              <p className="sale-receipt-center sale-receipt-fiscal-note">
+                Documento Auxiliar da Nota Fiscal de Consumidor Eletrônica
+              </p>
+              <p className="sale-receipt-center sale-receipt-fiscal-note">
+                Não permite aproveitamento de crédito de ICMS
+              </p>
+              {nfce?.sefazEnvironment !== 'PRODUCAO' ? (
+                <p className="sale-receipt-banner">
+                  Emitida em homologação — sem valor fiscal
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <p className="sale-receipt-center sale-receipt-sub">
+                <strong>DOCUMENTO AUXILIAR DE VENDA</strong>
+              </p>
+              <p className="sale-receipt-center sale-receipt-fiscal-note">
+                Não possui validade fiscal — conferência interna / troca mediante política da loja
+              </p>
+              {nfce?.pending ? (
+                <p className="sale-receipt-center sale-receipt-fiscal-note">
+                  NFC-e em processamento na SEFAZ…
+                </p>
+              ) : null}
+            </>
+          )}
 
           {s.status === 'CANCELLED' && (
             <p className="sale-receipt-banner">Venda cancelada</p>
@@ -370,10 +478,24 @@ export function SaleReceiptPrintPage() {
 
           <div className="sale-receipt-meta">
             <span>
-              <strong>Venda</strong> #{s.number}
+              {nfceAuthorized ? (
+                <strong>
+                  NFC-e
+                  {nfce?.nNF != null ? ` nº ${nfce.nNF}` : ''}
+                  {nfce?.serie != null ? ` · Série ${nfce.serie}` : ''}
+                </strong>
+              ) : (
+                <strong>Venda #{s.number}</strong>
+              )}
             </span>
             <span>{formatDate(s.createdAt)}</span>
           </div>
+          {nfceAuthorized ? (
+            <div className="sale-receipt-meta">
+              <span>Venda</span>
+              <span>#{s.number}</span>
+            </div>
+          ) : null}
           {s.user?.name ? (
             <div className="sale-receipt-meta">
               <span>Operador</span>
@@ -487,16 +609,46 @@ export function SaleReceiptPrintPage() {
             </>
           ) : null}
 
+          {nfceAuthorized ? (
+            <>
+              <hr className="sale-receipt-line" />
+              <div className="sale-receipt-nfce">
+                <p className="sale-receipt-center sale-receipt-fiscal-note">
+                  Consulte pela Chave de Acesso em
+                </p>
+                {nfce?.urlChave ? (
+                  <p className="sale-receipt-center sale-receipt-fiscal-note">{nfce.urlChave}</p>
+                ) : null}
+                {nfce?.accessKey ? (
+                  <p className="sale-receipt-nfce-key">{formatNfceAccessKey(nfce.accessKey)}</p>
+                ) : null}
+                {nfce?.protocol ? (
+                  <p className="sale-receipt-center sale-receipt-fiscal-note">
+                    Protocolo de Autorização: {nfce.protocol}
+                  </p>
+                ) : null}
+                {qrSrc ? (
+                  <div className="sale-receipt-nfce-qr">
+                    <NfceQrImage src={qrSrc} />
+                  </div>
+                ) : null}
+              </div>
+            </>
+          ) : null}
+
           <hr className="sale-receipt-line" />
 
           <footer className="sale-receipt-foot">
             <p style={{ margin: 0 }}>Obrigado pela preferência!</p>
             <p className="sale-receipt-foot-muted">
-              Cupom gerado pelo GestorVend v{APP_VERSION} · ID {s.id.slice(0, 8)}…
+              {nfceAuthorized
+                ? `DANFE NFC-e · GestorVend v${APP_VERSION}`
+                : `Cupom gerado pelo GestorVend v${APP_VERSION} · ID ${s.id.slice(0, 8)}…`}
             </p>
           </footer>
         </article>
       )}
+      </div>
     </div>
   );
 }

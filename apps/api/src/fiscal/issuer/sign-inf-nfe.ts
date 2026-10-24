@@ -24,7 +24,15 @@ export function signNfeSignatureSibling(xmlInner: string, opts: {
     uri: '#' + opts.infNFeId,
   });
   sig.computeSignature(xmlInner);
-  return sig.getSignedXml();
+  return keepLeafX509Certificate(sig.getSignedXml());
+}
+
+/** O schema da NF-e admite um único X509Certificate. A cadeia extra gera cStat 215. */
+function keepLeafX509Certificate(signedXml: string): string {
+  return signedXml.replace(
+    /(<X509Certificate>[^<]+<\/X509Certificate>)(?:<X509Certificate>[^<]+<\/X509Certificate>)+/,
+    '$1',
+  );
 }
 
 /** Extrai primeira DigestValue (base64) do XML assinado — usada no QR da NFC-e. */

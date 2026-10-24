@@ -91,10 +91,11 @@ export class FiscalController {
           urls: ['https://www.gov.br/fazenda/pt-br/assuntos/noticias/'],
         },
         {
-          topic: 'Transição documental — destaque CBS/IBS em DFe (orientação período-teste)',
-          ref: 'Ato conjunto RFB/CGIBS nº 1/2025 (conforme veiculação oficial da Receita e do CGIBS)',
+          topic: 'Reforma tributária do consumo — NF-e e NFC-e',
+          ref: 'NT 2025.002 v1.52, NT 2026.008 v1.00 e NT 2026.010 v1.00 (Ato Técnico Conjunto RFB/CGIBS nº 8/2026)',
+          urls: ['https://dfe-portal.svrs.rs.gov.br/Nfe/Documentos'],
           note:
-            'Em 2026 o sistema usa alíquota de teste apenas para validação de layout: referência comum 0,9% CBS + 0,1% IBS sobre a base de cálculo — sem recolhimento cheio nessa fase. Atualize os percentuais “teste” em Cadastros gerais → Situação fiscal quando a norma evoluir.',
+            'Para CRT 1, 2 e 4 o grupo IBSCBS não é transmitido em 2026: a incidência no Simples começa em 2027 (art. 348 da LC 214/2025). O valor líquido (NT 2026.008) entra no schema de homologação em 26/10/2026 e em produção em 16/11/2026. No regime normal (CRT 3), desde 03/08/2026 o grupo IBSCBS é obrigatório, com IBS da UF de 0,1% e CBS de 0,9% em 2026.',
         },
       ],
       implementationPlan: [

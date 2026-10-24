@@ -2728,7 +2728,8 @@ function PosScreen({
       {receiptPrompt && (
         <div className="pos-receipt-prompt no-print" role="status">
           <span>
-            Venda <strong>#{receiptPrompt.number}</strong> — cupom não fiscal pronto para impressão.
+            Venda <strong>#{receiptPrompt.number}</strong> — cupom
+            {electronicFiscalPlanned ? ' / NFC-e' : ' não fiscal'} pronto para impressão.
           </span>
           <div className="pos-receipt-prompt-actions">
             <button
@@ -3910,7 +3911,10 @@ function PosScreen({
                               window.setTimeout(() => scannerRef.current?.focus(), 0);
                             }}
                           >
-                            Cupom (não fiscal)
+                            {s.fiscalDocument?.kind === 'NFC_E' &&
+                            s.fiscalDocument.status === 'AUTHORIZED'
+                              ? 'Reimprimir NFC-e'
+                              : 'Cupom (não fiscal)'}
                           </button>
                           {s.status === 'COMPLETED' &&
                             electronicFiscalPlanned &&
@@ -4697,6 +4701,8 @@ function PaymentOverlay({
   const [amountStr, setAmountStr] = useState('');
   const [installments, setInstallments] = useState('1');
   const amountInputRef = useRef<HTMLInputElement>(null);
+  const remainingRef = useRef(remaining);
+  remainingRef.current = remaining;
 
   useEffect(() => {
     if (!selectedId && tiles[0]) setSelectedId(tiles[0].id);
@@ -4742,20 +4748,28 @@ function PaymentOverlay({
       onRequireCustomer();
       return;
     }
+    const rem = remainingRef.current;
+    if (rem <= 0.005) return;
     const parsed = parseDecimal(amountStr);
-    const value = opts?.fullAmount || parsed <= 0 ? remaining : parsed;
-    if (value <= 0 || !selected) return;
+    if (!opts?.fullAmount && parsed <= 0) {
+      setAmountStr(rem.toFixed(2).replace('.', ','));
+      focusAmountField();
+      return;
+    }
+    const value = Math.round((opts?.fullAmount ? rem : parsed) * 100) / 100;
+    if (value <= 0.005 || !selected) return;
     const maxInst = selected.form?.maxInstallments ?? 48;
     onAddPayment({
       id: uid(),
       method,
-      amount: Math.round(value * 100) / 100,
+      amount: value,
       installments: showInstallments
         ? Math.min(Math.max(1, parseInt(installments, 10) || 1), maxInst)
         : 1,
       paymentFormId: selected.form?.id ?? null,
       paymentFormName: selected.form?.name ?? selected.label,
     });
+    remainingRef.current = Math.max(0, rem - value);
     setAmountStr('');
     setTimeout(() => amountInputRef.current?.focus(), 0);
   }
@@ -4885,7 +4899,7 @@ function PaymentOverlay({
 
         <p className="pos-payment-total-detail" style={{ margin: '0 0 0.65rem', padding: '0 0.25rem' }}>
           <span className="pos-shortcut-key">A–Z</span> forma · <span className="pos-shortcut-key">Enter</span>{' '}
-          adiciona ·{' '}
+          preenche / adiciona ·{' '}
           <span className="pos-shortcut-key">F2</span> confirma · <span className="pos-shortcut-key">Esc</span>{' '}
           volta
         </p>
@@ -5068,7 +5082,7 @@ function PaymentOverlay({
         <div className="pos-payment-footer">
           <span className="pos-payment-tip">
             Atalhos: letras <span className="pos-shortcut-key">A–Z</span> escolhem a forma ·{' '}
-            <span className="pos-shortcut-key">Enter</span> adicionar ·{' '}
+            <span className="pos-shortcut-key">Enter</span> preenche o valor, de novo adiciona ·{' '}
             <span className="pos-shortcut-key">F2</span> confirmar ·{' '}
             <span className="pos-shortcut-key">Esc</span> voltar
           </span>

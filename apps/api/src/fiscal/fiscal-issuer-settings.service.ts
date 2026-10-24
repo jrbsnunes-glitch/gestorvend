@@ -12,6 +12,7 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { formatPfxLoadError } from './issuer/pfx.errors';
 import { IssuerCertificateStorage } from './issuer/issuer-certificate.storage';
 import { loadPfxMaterialFromBuffer } from './issuer/load-pfx';
+import { ufCapitalIbge } from './utils/uf-ibge';
 
 function onlyDigits7(s: string): string {
   return s.replace(/\D/g, '').slice(0, 7);
@@ -98,7 +99,7 @@ export class FiscalIssuerSettingsService {
       data: {
         companyId: company.id,
         uf,
-        municipalityIbge: '3550308',
+        municipalityIbge: ufCapitalIbge(uf),
         crt: 1,
         sefazEnvironment: FiscalSefazEnvironment.HOMOLOGACAO,
       },

@@ -8,7 +8,6 @@ import {
   FiscalDocumentKind,
   FiscalDocumentStatus,
   FiscalSefazEnvironment,
-  PdvDocumentMode,
   Prisma,
   UserPermissionCode,
 } from '../generated/tenant-client';
@@ -31,6 +30,12 @@ import {
 import { SalesService } from '../sales/sales.service';
 import { postCceNfe } from './sefaz/nfe-cce.soap';
 import type { ManualNfeInput } from './manual-nfe.types';
+import { OutboundNfeStorage } from './issuer/outbound-nfe.storage';
+import {
+  parseNfceAccessKey,
+  readNfceAuthorizedXml,
+  resolveNfceCouponPrint,
+} from './issuer/nfce-print-supl';
 
 export type FiscalDocumentListQuery = {
   kind?: FiscalDocumentKind;
@@ -59,6 +64,7 @@ export class FiscalDocumentsService {
     private readonly config: ConfigService,
     private readonly issuerSvc: FiscalIssuerSettingsService,
     private readonly sales: SalesService,
+    private readonly outboundStorage: OutboundNfeStorage,
   ) {}
 
   async queue(tenantSlug: string, saleId: string, kind: FiscalDocumentKind) {
@@ -66,11 +72,6 @@ export class FiscalDocumentsService {
     const company = await db.company.findFirst({ orderBy: { createdAt: 'asc' } });
     if (!company) {
       throw new BadRequestException('Empresa não configurada');
-    }
-    if (company.pdvDocumentMode !== PdvDocumentMode.ELECTRONIC_FISCAL_PLANNED) {
-      throw new BadRequestException(
-        'A empresa está em modo comprovante não fiscal. Em Cadastro da empresa, selecione documento fiscal planejado antes de enfileirar.',
-      );
     }
     return upsertFiscalDocumentQueue(db, saleId, kind);
   }
@@ -243,6 +244,90 @@ export class FiscalDocumentsService {
       skip,
       items: rows.map((r) => this.mapListItem(r)),
     };
+  }
+
+  /**
+   * Exporta XML autorizado/contingência. Um arquivo solto ou ZIP (store) se houver mais de um.
+   */
+  async exportXml(
+    tenantSlug: string,
+    q: {
+      kind?: FiscalDocumentKind;
+      dateFrom?: string | null;
+      dateTo?: string | null;
+      controlMin?: number | null;
+      controlMax?: number | null;
+      accessKey?: string | null;
+    },
+  ): Promise<Array<{ name: string; xml: string }>> {
+    const key = (q.accessKey ?? '').replace(/\D/g, '');
+    const hasRange = q.controlMin != null || q.controlMax != null;
+    const hasDate = Boolean(q.dateFrom?.trim() || q.dateTo?.trim());
+    if (!hasRange && !hasDate && !key) {
+      throw new BadRequestException('Informe faixa de numeração, período ou chave da nota.');
+    }
+    if (key && key.length !== 44) {
+      throw new BadRequestException('Chave da nota deve ter 44 dígitos.');
+    }
+
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const saleWhere: Prisma.SaleWhereInput = {};
+    if (q.dateFrom || q.dateTo) {
+      saleWhere.createdAt = {};
+      if (q.dateFrom) {
+        const d = new Date(q.dateFrom);
+        if (!Number.isNaN(d.getTime())) saleWhere.createdAt.gte = d;
+      }
+      if (q.dateTo) {
+        const d = new Date(q.dateTo);
+        if (!Number.isNaN(d.getTime())) {
+          d.setHours(23, 59, 59, 999);
+          saleWhere.createdAt.lte = d;
+        }
+      }
+    }
+    if (q.controlMin != null || q.controlMax != null) {
+      saleWhere.number = {};
+      if (q.controlMin != null && Number.isFinite(q.controlMin)) {
+        saleWhere.number.gte = Math.trunc(q.controlMin);
+      }
+      if (q.controlMax != null && Number.isFinite(q.controlMax)) {
+        saleWhere.number.lte = Math.trunc(q.controlMax);
+      }
+    }
+
+    const where: Prisma.FiscalDocumentWhereInput = {
+      ...(q.kind ? { kind: q.kind } : {}),
+      status: {
+        in: [FiscalDocumentStatus.AUTHORIZED, FiscalDocumentStatus.CONTINGENCY],
+      },
+      sale: saleWhere,
+      ...(key ? { accessKey: key } : {}),
+    };
+
+    const rows = await db.fiscalDocument.findMany({
+      where,
+      take: 500,
+      orderBy: [{ createdAt: 'desc' }],
+      include: { sale: { select: { number: true } } },
+    });
+
+    const files: Array<{ name: string; xml: string }> = [];
+    for (const row of rows) {
+      const xml =
+        (await readNfceAuthorizedXml(row.xmlPath)) ??
+        (row.accessKey
+          ? await this.outboundStorage.readXml(tenantSlug, row.accessKey.replace(/\D/g, ''))
+          : null);
+      if (!xml?.trim()) continue;
+      const rawKey = (row.accessKey ?? '').replace(/\D/g, '');
+      const name = `${rawKey || `venda-${row.sale.number}`}.xml`;
+      files.push({ name, xml });
+    }
+    if (files.length === 0) {
+      throw new NotFoundException('Nenhum XML encontrado para os filtros informados.');
+    }
+    return files;
   }
 
   /** Relatório: itens de notas filtradas (produto / categoria / CFOP). */
@@ -672,7 +757,21 @@ export class FiscalDocumentsService {
         sale: {
           include: {
             customer: {
-              select: { id: true, name: true, document: true, segment: true },
+              select: {
+                id: true,
+                name: true,
+                document: true,
+                segment: true,
+                street: true,
+                number: true,
+                complement: true,
+                district: true,
+                city: true,
+                state: true,
+                zip: true,
+                phone: true,
+                email: true,
+              },
             },
             operationNature: true,
             items: {
@@ -683,6 +782,8 @@ export class FiscalDocumentsService {
                       select: {
                         id: true,
                         name: true,
+                        ncm: true,
+                        taxUnit: true,
                         fiscalSituation: {
                           select: {
                             code: true,
@@ -692,6 +793,11 @@ export class FiscalDocumentsService {
                             aliqPis: true,
                             aliqCofins: true,
                             cfopInternal: true,
+                            cfopInterstate: true,
+                            cstIcms: true,
+                            csosn: true,
+                            cstIbsCbs: true,
+                            cClassTrib: true,
                           },
                         },
                       },
@@ -708,6 +814,15 @@ export class FiscalDocumentsService {
     if (!raw) throw new NotFoundException('Documento fiscal não encontrado.');
     const doc = this.mapListItem(raw);
     const company = await db.company.findFirst({ orderBy: { createdAt: 'asc' } });
+    const issuer = await db.fiscalIssuerSettings.findFirst({
+      select: {
+        crt: true,
+        uf: true,
+        nfceCscId: true,
+        nfceCsc: true,
+        sefazEnvironment: true,
+      },
+    });
 
     const aliqMap = new Map<
       string,
@@ -728,6 +843,24 @@ export class FiscalDocumentsService {
       }
     }
 
+    const xml =
+      (await readNfceAuthorizedXml(raw.xmlPath)) ??
+      (raw.accessKey
+        ? await this.outboundStorage.readXml(tenantSlug, raw.accessKey.replace(/\D/g, ''))
+        : null);
+    const nfce =
+      raw.kind === FiscalDocumentKind.NFC_E
+        ? resolveNfceCouponPrint({
+            xml,
+            accessKey: raw.accessKey,
+            sefazEnvironment: raw.sefazEnvironment ?? issuer?.sefazEnvironment,
+            uf: issuer?.uf ?? company?.state,
+            cscId: issuer?.nfceCscId || this.config.get<string>('FISCAL_NFCE_CSC_ID'),
+            csc: issuer?.nfceCsc || this.config.get<string>('FISCAL_NFCE_CSC'),
+          })
+        : null;
+    const keyParts = parseNfceAccessKey(raw.accessKey);
+
     return {
       document: {
         ...doc,
@@ -746,20 +879,51 @@ export class FiscalDocumentsService {
                 cfop: raw.sale.operationNature.cfop,
               }
             : null,
+          payments: (raw.sale.payments ?? []).map((p) => ({
+            method: p.method,
+            amount: String(p.amount),
+            installments: p.installments,
+          })),
+          customer: raw.sale.customer
+            ? {
+                name: raw.sale.customer.name,
+                document: raw.sale.customer.document,
+                street: raw.sale.customer.street,
+                number: raw.sale.customer.number,
+                complement: raw.sale.customer.complement,
+                district: raw.sale.customer.district,
+                city: raw.sale.customer.city,
+                state: raw.sale.customer.state,
+                zip: raw.sale.customer.zip,
+                phone: raw.sale.customer.phone,
+                email: raw.sale.customer.email,
+              }
+            : null,
         },
       },
+      nfe: {
+        serie: keyParts.serie,
+        nNF: keyParts.nNF,
+      },
       aliquots: [...aliqMap.values()],
+      rtc: rtcDanfeBlock(issuer?.crt ?? 1),
+      nfce,
       company: company
         ? {
             legalName: company.legalName,
             tradeName: company.tradeName,
             cnpj: company.cnpj,
             ie: company.ie,
+            im: company.im,
             address: company.address,
+            addressNumber: company.addressNumber,
+            district: company.district,
             city: company.city,
             state: company.state,
             zip: company.zip,
             phone: company.phone,
+            email: company.email,
+            logoUrl: company.logoUrl,
           }
         : null,
     };
@@ -882,6 +1046,8 @@ export class FiscalDocumentsService {
                 aliqPis: true,
                 aliqCofins: true,
                 cfopInternal: true,
+                cstIbsCbs: true,
+                cClassTrib: true,
               },
             },
           },
@@ -890,12 +1056,14 @@ export class FiscalDocumentsService {
     });
     const byVariant = new Map(variants.map((v) => [v.id, v]));
     const company = await db.company.findFirst({ orderBy: { createdAt: 'asc' } });
+    const issuer = await db.fiscalIssuerSettings.findFirst({ select: { crt: true } });
     const items = input.items.map((it, idx) => {
       const v = byVariant.get(it.variantId);
       const qty = Number(it.quantity);
       const unit = Number(it.unitPrice);
       const disc = Number(it.discount ?? 0);
       const totalLine = Math.max(0, qty * unit - disc);
+      const fs = v?.product.fiscalSituation;
       return {
         quantity: String(qty),
         unitPrice: String(unit),
@@ -903,9 +1071,20 @@ export class FiscalDocumentsService {
         variant: v
           ? {
               sku: v.sku,
-              product: { name: v.product.name },
+              product: {
+                name: v.product.name,
+                ncm: v.product.ncm,
+                taxUnit: v.product.taxUnit,
+                fiscalSituation: fs
+                  ? {
+                      cstIbsCbs: fs.cstIbsCbs,
+                      cClassTrib: fs.cClassTrib,
+                      cfopInternal: fs.cfopInternal,
+                    }
+                  : null,
+              },
             }
-          : { sku: `ITEM-${idx + 1}`, product: { name: 'Produto' } },
+          : { sku: `ITEM-${idx + 1}`, product: { name: 'Produto', fiscalSituation: null } },
       };
     });
 
@@ -946,6 +1125,15 @@ export class FiscalDocumentsService {
           customer: {
             name: customer.name,
             document: customer.document,
+            street: customer.street,
+            number: customer.number,
+            complement: customer.complement,
+            district: customer.district,
+            city: customer.city,
+            state: customer.state,
+            zip: customer.zip,
+            phone: customer.phone,
+            email: customer.email,
           },
           operationNature: nature
             ? {
@@ -959,17 +1147,24 @@ export class FiscalDocumentsService {
         },
       },
       aliquots: [...aliqMap.values()],
+      rtc: rtcDanfeBlock(issuer?.crt ?? 1),
+      nfe: { serie: null, nNF: null },
       company: company
         ? {
             legalName: company.legalName,
             tradeName: company.tradeName,
             cnpj: company.cnpj,
             ie: company.ie,
+            im: company.im,
             address: company.address,
+            addressNumber: company.addressNumber,
+            district: company.district,
             city: company.city,
             state: company.state,
             zip: company.zip,
             phone: company.phone,
+            email: company.email,
+            logoUrl: company.logoUrl,
           }
         : null,
     };
@@ -978,4 +1173,12 @@ export class FiscalDocumentsService {
 
 function roundMoney2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/** NT 2026.010 — totais do DANFE. No Simples/MEI em 2026 os valores ficam zerados. */
+function rtcDanfeBlock(crt: number) {
+  return {
+    crt,
+    totals: { cbs: '0.00', ibsUf: '0.00', ibsMun: '0.00', is: '0.00' },
+  };
 }
