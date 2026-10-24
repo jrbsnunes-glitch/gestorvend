@@ -1,5 +1,5 @@
 {
-  "version": "1.0.43",
+  "version": "1.0.44",
   "downloadUrl": "",
-  "notes": "PDV operador: sessão persistente, /vendas?terminal=N, allowlist e setup mestre/secundário."
+  "notes": "Abertura mais rápida (licença em cache), GPU, uma instância só, cupom térmico mais ágil e menu oculto (Alt)."
 }

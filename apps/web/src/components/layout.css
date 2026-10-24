@@ -20,7 +20,7 @@
 .sidebar-brand {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 0.45rem;
   padding: 0 1.1rem 1rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -28,20 +28,28 @@
 }
 
 .sidebar-brand-top {
+  position: relative;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
   width: 100%;
+  min-height: 2.25rem;
 }
 
 .sidebar-brand-mark {
-  width: 100%;
+  display: block;
+  width: auto;
+  max-width: calc(100% - 2.6rem);
   max-height: 56px;
+  margin-inline: auto;
   object-fit: contain;
-  object-position: left center;
-  flex: 1;
-  min-width: 0;
+  object-position: center;
+}
+
+.sidebar-brand-top .sidebar-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
 }
 
 .sidebar-brand-text {

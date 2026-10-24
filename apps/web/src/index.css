@@ -85,3 +85,13 @@ textarea {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
+
+/* Shell Electron: menos overscroll e transições mais curtas (PDV / listagens). */
+html.gv-desktop {
+  overscroll-behavior: none;
+}
+html.gv-desktop .sidebar,
+html.gv-desktop .sidebar-link,
+html.gv-desktop .btn {
+  transition-duration: 0.12s;
+}

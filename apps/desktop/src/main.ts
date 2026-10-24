@@ -17,7 +17,7 @@ import {
   type DesktopConfig,
   type StationConfig,
 } from './config';
-import { checkLicense, REVALIDATE_MS } from './license';
+import { checkLicense, hasValidLicenseCache, REVALIDATE_MS } from './license';
 import {
   getPrintAgentStatus,
   printTestTicket,
@@ -36,6 +36,35 @@ import {
 let mainWindow: BrowserWindow | null = null;
 let mainWindowPartition: string | undefined;
 let revalidateTimer: NodeJS.Timeout | null = null;
+
+// PDV / listagens: GPU e janela não “dormem” atrás de outro app.
+if (!app.isReady()) {
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('enable-zero-copy');
+  app.commandLine.appendSwitch('ignore-gpu-blocklist');
+  app.commandLine.appendSwitch('disable-renderer-backgrounding');
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+}
+
+const gotSingleInstance = app.requestSingleInstanceLock();
+if (!gotSingleInstance) {
+  app.quit();
+}
+
+function appWebPrefs(partition?: string): Electron.WebPreferences {
+  return {
+    ...(partition ? { partition } : {}),
+    preload: path.join(__dirname, 'preload.js'),
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: false,
+    backgroundThrottling: false,
+    spellcheck: false,
+    autoplayPolicy: 'no-user-gesture-required',
+    v8CacheOptions: 'bypassHeatCheck',
+  };
+}
 
 function rendererPath(file: string): string {
   return path.join(__dirname, '..', 'renderer', file);
@@ -77,13 +106,8 @@ function attachPdvNavGuard(win: BrowserWindow, allowPath: (pathname: string) => 
           action: 'allow',
           overrideBrowserWindowOptions: {
             autoHideMenuBar: true,
-            webPreferences: {
-              preload: path.join(__dirname, 'preload.js'),
-              contextIsolation: true,
-              nodeIntegration: false,
-              sandbox: false,
-              backgroundThrottling: false,
-            },
+            backgroundColor: '#0b1220',
+            webPreferences: appWebPrefs(),
           },
         };
       }
@@ -102,21 +126,18 @@ function createWindow(partition?: string): BrowserWindow {
     minWidth: 1024,
     minHeight: 640,
     show: false,
-    autoHideMenuBar: false,
+    autoHideMenuBar: true,
+    backgroundColor: '#0b1220',
     title: 'GestorVend',
-    webPreferences: {
-      ...(partition ? { partition } : {}),
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-      backgroundThrottling: false,
-    },
+    webPreferences: appWebPrefs(partition),
   });
+  win.webContents.session.setSpellCheckerEnabled(false);
 
   win.once('ready-to-show', () => {
-    win.maximize();
-    win.show();
+    if (!win.isDestroyed()) {
+      win.maximize();
+      win.show();
+    }
   });
 
   // Mesma origem (páginas de impressão do app): permitir nova janela.
@@ -132,12 +153,8 @@ function createWindow(partition?: string): BrowserWindow {
             action: 'allow',
             overrideBrowserWindowOptions: {
               autoHideMenuBar: true,
-              webPreferences: {
-                preload: path.join(__dirname, 'preload.js'),
-                contextIsolation: true,
-                nodeIntegration: false,
-                sandbox: false,
-              },
+              backgroundColor: '#0b1220',
+              webPreferences: appWebPrefs(),
             },
           };
         }
@@ -182,10 +199,19 @@ function ensureMainWindowForTenant(cfg: DesktopConfig): BrowserWindow {
 async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
   const win = ensureMainWindowForTenant(cfg);
 
-  const result = await checkLicense(cfg);
-  if (!result.ok) {
-    showBlocked(win, result.message);
-    return;
+  const cachedOk = hasValidLicenseCache(cfg);
+  if (!cachedOk) {
+    const result = await checkLicense(cfg);
+    if (!result.ok) {
+      showBlocked(win, result.message);
+      return;
+    }
+  } else {
+    void checkLicense(cfg).then((r) => {
+      if (!r.ok && mainWindow && !mainWindow.isDestroyed()) {
+        showBlocked(mainWindow, r.message);
+      }
+    });
   }
 
   const isKiosk = cfg.pdvTerminal?.mode === 'self_service';
@@ -236,13 +262,8 @@ async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
               kiosk: true,
               fullscreen: true,
               autoHideMenuBar: true,
-              webPreferences: {
-                preload: path.join(__dirname, 'preload.js'),
-                contextIsolation: true,
-                nodeIntegration: false,
-                sandbox: false,
-                backgroundThrottling: false,
-              },
+              backgroundColor: '#0b1220',
+              webPreferences: appWebPrefs(),
             },
           };
         }
@@ -521,12 +542,8 @@ function registerIpc() {
         width: THERMAL_WINDOW_WIDTH_PX,
         height: 900,
         show: false,
-        webPreferences: {
-          preload: path.join(__dirname, 'preload.js'),
-          contextIsolation: true,
-          nodeIntegration: false,
-          sandbox: false,
-        },
+        backgroundColor: '#ffffff',
+        webPreferences: appWebPrefs(),
       });
 
       try {
@@ -565,7 +582,7 @@ function registerIpc() {
             }
             setTimeout(() => {
               void tick();
-            }, 250);
+            }, 100);
           };
           void tick();
         });
@@ -789,7 +806,15 @@ function registerIpc() {
   ipcMain.handle('station:status', () => getPrintAgentStatus());
 }
 
+app.on('second-instance', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
+
 app.whenReady().then(() => {
+  if (!gotSingleInstance) return;
   buildMenu();
   registerIpc();
   mainWindow = createWindow();

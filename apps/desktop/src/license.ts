@@ -11,6 +11,16 @@ export const OFFLINE_GRACE_MS = 72 * 60 * 60 * 1000;
 /** Intervalo de revalidação em background (12 h). */
 export const REVALIDATE_MS = 12 * 60 * 60 * 1000;
 
+/** Cache recente e do mesmo tenant — permite abrir o sistema sem esperar a rede. */
+export function hasValidLicenseCache(cfg: DesktopConfig): boolean {
+  const cached = readLicenseCache();
+  if (!cached?.ok || !cached.checkedAt) return false;
+  if (Date.now() - cached.checkedAt > OFFLINE_GRACE_MS) return false;
+  if (cached.tenantSlug && cached.tenantSlug !== cfg.tenantSlug) return false;
+  if (cached.serverUrl && cached.serverUrl !== cfg.serverUrl) return false;
+  return true;
+}
+
 export type LicenseCheckResult = {
   ok: boolean;
   offline: boolean;
@@ -75,6 +85,8 @@ export async function checkLicense(cfg: DesktopConfig): Promise<LicenseCheckResu
       expiresAt: data.expiresAt ?? null,
       remainingDays: data.remainingDays ?? null,
       planCode: data.planCode ?? null,
+      tenantSlug: cfg.tenantSlug,
+      serverUrl: cfg.serverUrl,
     };
     writeLicenseCache(cache);
     return {

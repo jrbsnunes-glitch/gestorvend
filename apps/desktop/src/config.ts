@@ -46,6 +46,8 @@ export type LicenseCache = {
   expiresAt?: string | null;
   remainingDays?: number | null;
   planCode?: string | null;
+  tenantSlug?: string;
+  serverUrl?: string;
 };
 
 const CONFIG_FILE = 'config.json';
