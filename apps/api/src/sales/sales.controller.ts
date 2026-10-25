@@ -30,6 +30,7 @@ export class SalesController {
     @Body()
     body: {
       customerId?: string | null;
+      sellerUserId?: string | null;
       notes?: string | null;
       discount?: number;
       surcharge?: number;
@@ -68,6 +69,7 @@ export class SalesController {
     return this.sales.create({
       tenantSlug: user.tenantSlug,
       userId: user.sub,
+      sellerUserId: body.sellerUserId ?? null,
       userRoles: user.roles,
       permissionPassword: body.permissionPassword,
       customerId: body.customerId,

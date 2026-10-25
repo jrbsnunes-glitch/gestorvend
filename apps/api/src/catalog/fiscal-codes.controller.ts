@@ -13,6 +13,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { ensureConstructionNcms } from './construction-ncm';
 
 function normDigits(s: string, maxLen: number) {
   return s.replace(/\D/g, '').slice(0, maxLen);
@@ -31,6 +32,7 @@ export class FiscalCodesController {
   @Roles('admin', 'manager', 'seller', 'finance')
   async listNcm(@CurrentUser() user: JwtPayload, @Query('q') q?: string) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    await ensureConstructionNcms(db, user.tenantSlug);
     const term = q?.trim();
     return db.ncmCode.findMany({
       where: term
@@ -41,8 +43,8 @@ export class FiscalCodesController {
             ],
           }
         : undefined,
-      take: 60,
-      orderBy: { code: 'asc' },
+      take: 120,
+      orderBy: term ? { code: 'asc' } : { description: 'asc' },
     });
   }
 

@@ -725,6 +725,12 @@ export function FiscalCodeSearchCombo({
           {kind === 'tax-units' && !list.isLoading && (
             <div className="catalog-combo-hint">Digite para filtrar ou escolha uma unidade abaixo.</div>
           )}
+          {kind === 'ncm' && !list.isLoading && (
+            <div className="catalog-combo-hint">
+              Lista TIPI/NCM de materiais de construção e ferragens. Digite código ou descrição
+              (cimento, parafuso, fechadura, tinta…).
+            </div>
+          )}
           {list.isLoading && <div className="catalog-combo-empty">Carregando…</div>}
           {list.isError && (
             <div className="catalog-combo-error">{(list.error as Error).message}</div>

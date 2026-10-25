@@ -37,11 +37,10 @@ let mainWindow: BrowserWindow | null = null;
 let mainWindowPartition: string | undefined;
 let revalidateTimer: NodeJS.Timeout | null = null;
 
-// PDV / listagens: GPU e janela não “dormem” atrás de outro app.
+// PDV: janela não “dorme” atrás de outro app.
+// Evitar ignore-gpu-blocklist / zero-copy — em PCs de PDV isso derruba o
+// renderer (ícone pisca e a janela nunca aparece).
 if (!app.isReady()) {
-  app.commandLine.appendSwitch('enable-gpu-rasterization');
-  app.commandLine.appendSwitch('enable-zero-copy');
-  app.commandLine.appendSwitch('ignore-gpu-blocklist');
   app.commandLine.appendSwitch('disable-renderer-backgrounding');
   app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
@@ -50,6 +49,60 @@ if (!app.isReady()) {
 const gotSingleInstance = app.requestSingleInstanceLock();
 if (!gotSingleInstance) {
   app.quit();
+}
+
+function forceShowWindow(win: BrowserWindow | null) {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  try {
+    win.maximize();
+  } catch {
+    /* ignore */
+  }
+  win.show();
+  win.focus();
+}
+
+function attachWindowLifecycle(win: BrowserWindow) {
+  const reveal = () => forceShowWindow(win);
+  win.once('ready-to-show', reveal);
+  // ready-to-show às vezes não dispara após loadURL remoto / troca de partition.
+  setTimeout(reveal, 2500);
+
+  win.webContents.on('did-fail-load', (_ev, code, desc, url, isMainFrame) => {
+    if (!isMainFrame || win.isDestroyed()) return;
+    if (code === -3) return; // aborted
+    const safeDesc = (desc || 'Falha ao carregar').replace(/[<>&]/g, '');
+    const safeUrl = (url || '').replace(/[<>&]/g, '').slice(0, 240);
+    void win.loadURL(
+      'data:text/html;charset=utf-8,' +
+        encodeURIComponent(`<!doctype html><html><head><meta charset="utf-8">
+<title>GestorVend</title>
+<style>
+  body{font-family:Segoe UI,sans-serif;background:#0b1220;color:#e2e8f0;margin:0;padding:2.5rem;line-height:1.5}
+  h1{font-size:1.25rem;margin:0 0 .75rem} p{color:#94a3b8} code{color:#f8fafc}
+  button{margin-top:1rem;padding:.55rem 1rem;border:0;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer}
+</style></head><body>
+<h1>Não foi possível abrir o sistema</h1>
+<p>${safeDesc} (código ${code})</p>
+<p><code>${safeUrl}</code></p>
+<p>Confira se o servidor está no ar e se a URL configurada está correta. Use o menu GestorVend → Reconfigurar servidor.</p>
+<button onclick="location.reload()">Tentar de novo</button>
+</body></html>`),
+    );
+    forceShowWindow(win);
+  });
+
+  win.webContents.on('render-process-gone', (_ev, details) => {
+    console.error('[desktop] render-process-gone', details.reason, details.exitCode);
+    if (win.isDestroyed()) return;
+    forceShowWindow(win);
+    if (details.reason !== 'clean-exit') {
+      setTimeout(() => {
+        if (!win.isDestroyed()) win.webContents.reload();
+      }, 400);
+    }
+  });
 }
 
 function appWebPrefs(partition?: string): Electron.WebPreferences {
@@ -132,13 +185,7 @@ function createWindow(partition?: string): BrowserWindow {
     webPreferences: appWebPrefs(partition),
   });
   win.webContents.session.setSpellCheckerEnabled(false);
-
-  win.once('ready-to-show', () => {
-    if (!win.isDestroyed()) {
-      win.maximize();
-      win.show();
-    }
-  });
+  attachWindowLifecycle(win);
 
   // Mesma origem (páginas de impressão do app): permitir nova janela.
   // URLs externas: abrir no navegador do sistema.
@@ -189,11 +236,20 @@ function ensureMainWindowForTenant(cfg: DesktopConfig): BrowserWindow {
   if (mainWindow && !mainWindow.isDestroyed() && mainWindowPartition === part) {
     return mainWindow;
   }
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.destroy();
+  const previous = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  const next = createWindow(part);
+  mainWindow = next;
+  forceShowWindow(next);
+  if (previous) {
+    // Só destrói a janela antiga depois que a nova já está visível —
+    // destruir antes era o “pisca e não abre” após configurar o servidor.
+    const dispose = () => {
+      if (!previous.isDestroyed()) previous.destroy();
+    };
+    next.once('ready-to-show', dispose);
+    setTimeout(dispose, 4000);
   }
-  mainWindow = createWindow(part);
-  return mainWindow;
+  return next;
 }
 
 async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
@@ -283,6 +339,7 @@ async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
   }
 
   void win.loadURL(target);
+  forceShowWindow(win);
 
   if (revalidateTimer) clearInterval(revalidateTimer);
   revalidateTimer = setInterval(() => {
@@ -297,6 +354,7 @@ async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
 }
 
 async function boot(win: BrowserWindow) {
+  forceShowWindow(win);
   const cfg = readConfig();
   if (!cfg) {
     showSetup(win);
@@ -543,7 +601,7 @@ function registerIpc() {
         height: 900,
         show: false,
         backgroundColor: '#ffffff',
-        webPreferences: appWebPrefs(),
+        webPreferences: appWebPrefs(mainWindowPartition),
       });
 
       try {
@@ -559,7 +617,7 @@ function registerIpc() {
             try {
               const ok = await win.webContents.executeJavaScript(`
                 (() => {
-                  const article = document.querySelector('article.sale-receipt-doc');
+                  const article = document.querySelector('article.sale-receipt-doc, article.cash-close-doc');
                   if (!article) return false;
                   // Build novo: só pronto após blindar estilos e embutir a logo.
                   if (article.getAttribute('data-receipt-ready') === '1') return true;
@@ -807,10 +865,12 @@ function registerIpc() {
 }
 
 app.on('second-instance', () => {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = createWindow();
+    void boot(mainWindow);
+    return;
+  }
+  forceShowWindow(mainWindow);
 });
 
 app.whenReady().then(() => {

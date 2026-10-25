@@ -5,9 +5,10 @@ import { getToken } from './api';
  *  - manager     → roles internas `admin` ou `manager`
  *  - cashier     → role interna `seller`
  *  - waiter      → role interna `waiter` (só Salão)
- *  - technician  → role interna `technician` (Ordens de Serviço)
+ *  - technician     → role interna `technician` (Ordens de Serviço)
+ *  - salesIdentity  → role interna `sales_id` (só nome nas vendas)
  */
-export type UserProfile = 'manager' | 'cashier' | 'waiter' | 'technician';
+export type UserProfile = 'manager' | 'cashier' | 'waiter' | 'technician' | 'salesIdentity';
 
 export type PlanCode = 'STANDARD' | 'WHATSAPP' | 'RESTAURANT';
 
@@ -64,6 +65,7 @@ export function getIdentity(): JwtIdentity | null {
 
 export function profileFromRoles(roles: string[]): UserProfile {
   if (roles.includes('admin') || roles.includes('manager')) return 'manager';
+  if (roles.includes('sales_id') && !roles.includes('seller')) return 'salesIdentity';
   if (roles.includes('technician') && !roles.includes('seller')) return 'technician';
   if (roles.includes('waiter') && !roles.includes('seller')) return 'waiter';
   return 'cashier';
@@ -73,6 +75,7 @@ export function profileLabel(profile: UserProfile): string {
   if (profile === 'manager') return 'Gerente';
   if (profile === 'waiter') return 'Garçom';
   if (profile === 'technician') return 'Técnico';
+  if (profile === 'salesIdentity') return 'Identificação em Vendas';
   return 'Caixa';
 }
 

@@ -50,6 +50,7 @@ import {
   setPosAutoPrintMode,
   type PosAutoPrintMode,
 } from '../lib/sale-receipt-print';
+import { queueCashCloseAutoPrint } from '../lib/cash-close-print';
 import { isGestorVendDesktop } from '../lib/desktop-bridge';
 import { usePdvTerminal } from '../hooks/usePdvTerminal';
 import type { PdvTerminalCapabilities } from '../lib/pdv-terminal-context';
@@ -1187,6 +1188,36 @@ function PosScreen({
   const [customer, setCustomer] = useState<Customer | null>(null);
   const customerRef = useRef(customer);
   customerRef.current = customer;
+  const [sellerUserId, setSellerUserId] = useState(() => {
+    try {
+      return localStorage.getItem('gv_pdv_seller_user_id') || '';
+    } catch {
+      return '';
+    }
+  });
+  const salesStaffQ = useQuery({
+    queryKey: ['users', 'for-sales'],
+    queryFn: () =>
+      api<Array<{ id: string; name: string; profile: UserProfile }>>('/users/for-sales'),
+    staleTime: 60_000,
+  });
+  useEffect(() => {
+    const staff = salesStaffQ.data;
+    if (!staff?.length) return;
+    setSellerUserId((prev) => {
+      if (prev && staff.some((u) => u.id === prev)) return prev;
+      const op = operator?.id && staff.some((u) => u.id === operator.id) ? operator.id : staff[0]!.id;
+      return op;
+    });
+  }, [salesStaffQ.data, operator?.id]);
+  useEffect(() => {
+    if (!sellerUserId) return;
+    try {
+      localStorage.setItem('gv_pdv_seller_user_id', sellerUserId);
+    } catch {
+      /* ignore */
+    }
+  }, [sellerUserId]);
   const [payments, setPayments] = useState<CartPayment[]>([]);
   /** Comanda do salão sendo cobrada neste PDV (fecha após a venda). */
   const [serviceTab, setServiceTab] = useState<{
@@ -1818,6 +1849,7 @@ function PosScreen({
           guestCount: serviceTabRef.current?.guestCount,
           permissionPassword: permissionPassword || undefined,
           cashSessionId: session.id,
+          sellerUserId: sellerUserId || undefined,
           terminalId: pdvTerminalId,
           source: serviceTabRef.current
             ? 'RESTAURANT'
@@ -2115,11 +2147,16 @@ function PosScreen({
         },
       });
     },
-    onSuccess: () => {
+    onSuccess: (closed) => {
       setCloseOpen(false);
       setCloseErr(null);
       onCashClosed();
       setToast({ kind: 'ok', text: 'Caixa fechado com sucesso.' });
+      const closedId =
+        closed && typeof closed === 'object' && 'id' in closed
+          ? String((closed as { id?: string }).id ?? session.id)
+          : session.id;
+      queueCashCloseAutoPrint(closedId);
     },
     onError: (e: Error) => setCloseErr(e.message),
   });
@@ -3381,6 +3418,25 @@ function PosScreen({
                   </span>
                 </span>
               </button>
+
+              <label className="pos-seller-field">
+                <span className="pos-seller-label">Funcionário da venda</span>
+                <select
+                  className="pos-seller-select"
+                  value={sellerUserId}
+                  onChange={(e) => setSellerUserId(e.target.value)}
+                  disabled={salesStaffQ.isLoading}
+                  title="Nome que aparece na venda"
+                >
+                  {!sellerUserId ? <option value="">Selecione…</option> : null}
+                  {(salesStaffQ.data ?? []).map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                      {u.profile === 'salesIdentity' ? ' (identificação)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
               <p className="pos-pay-later-hint" role="note">
                 As formas de pagamento aparecem após{' '}

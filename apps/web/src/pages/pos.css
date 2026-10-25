@@ -1832,6 +1832,32 @@
   font-weight: 800;
 }
 
+.pos-seller-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.45rem 0 0.15rem;
+}
+
+.pos-seller-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--pos-text-muted);
+}
+
+.pos-seller-select {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--pos-radius);
+  border: 1px solid var(--pos-border-strong);
+  background: var(--pos-surface);
+  color: var(--pos-text);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
 .pos-customer-meta {
   font-size: 0.78rem;
   color: var(--pos-text-muted);

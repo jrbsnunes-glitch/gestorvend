@@ -1,6 +1,7 @@
 import * as bcrypt from 'bcrypt';
 import { Prisma, PrismaClient } from '../generated/tenant-client';
 import { assertValidUsername, usernameFromEmail } from '../users/username.util';
+import { ensureConstructionNcms } from '../catalog/construction-ncm';
 import { ensureReferentialAccountsSeeded } from './seed-referential-accounts';
 
 export type TenantMinimalSeedOptions = {
@@ -20,7 +21,7 @@ export async function seedTenantMinimal(
 ): Promise<void> {
   const tenant = new PrismaClient({ datasources: { db: { url: tenantUrl } } });
   try {
-    const roles = ['admin', 'manager', 'seller', 'finance'] as const;
+    const roles = ['admin', 'manager', 'seller', 'finance', 'sales_id'] as const;
     for (const name of roles) {
       await tenant.role.upsert({
         where: { name },
@@ -159,6 +160,7 @@ export async function seedTenantMinimal(
 
     // Plano referencial mínimo (grupos 4/5) — necessário para dropdown de centro de custo no caixa.
     await ensureReferentialAccountsSeeded(tenant);
+    await ensureConstructionNcms(tenant);
   } finally {
     await tenant.$disconnect();
   }

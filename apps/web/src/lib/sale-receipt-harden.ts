@@ -207,6 +207,27 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
     },
   },
   {
+    selector: '.sale-receipt-totals-row.is-sold',
+    decls: {
+      'font-size': '16px',
+      'font-weight': '800',
+      margin: '0.45rem 0',
+      padding: '0.4rem 0.15rem',
+      'border-top': '2px solid #000',
+      'border-bottom': '2px solid #000',
+    },
+  },
+  {
+    selector: '.sale-receipt-totals-row.is-outflow',
+    decls: {
+      'font-size': '14px',
+      'font-weight': '800',
+      margin: '0.28rem 0',
+      padding: '0.28rem 0.15rem',
+      border: '2px solid #000',
+    },
+  },
+  {
     selector: '.sale-receipt-payments',
     decls: {
       margin: '0.4rem 0 0',
@@ -268,6 +289,58 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
       width: '32mm',
       height: '32mm',
     },
+  },
+  {
+    selector: '.sale-receipt-doc--nfce .sale-receipt-logo',
+    decls: {
+      'max-width': '38mm',
+      'max-height': '12mm',
+      'margin-bottom': '0.12rem',
+    },
+  },
+  {
+    selector: '.sale-receipt-doc--nfce .sale-receipt-title',
+    decls: {
+      'font-size': '12px',
+      margin: '0.1rem 0 0.06rem',
+      'letter-spacing': '0',
+    },
+  },
+  {
+    selector: '.sale-receipt-doc--nfce .sale-receipt-sub, .sale-receipt-doc--nfce .sale-receipt-legal',
+    decls: {
+      'font-size': '10px',
+      'line-height': '1.2',
+      margin: '0 0 0.05rem',
+    },
+  },
+  {
+    selector: '.sale-receipt-doc--nfce .sale-receipt-fiscal-note',
+    decls: {
+      'font-size': '9px',
+      'line-height': '1.2',
+      margin: '0 0 0.08rem',
+    },
+  },
+  {
+    selector: '.sale-receipt-doc--nfce .sale-receipt-line',
+    decls: { margin: '0.25rem 0' },
+  },
+  {
+    selector: '.sale-receipt-doc--nfce .sale-receipt-nfce-key',
+    decls: { 'font-size': '9px', margin: '0.15rem 0' },
+  },
+  {
+    selector: '.sale-receipt-doc--nfce .nfce-qr',
+    decls: { width: '28mm', height: '28mm' },
+  },
+  {
+    selector: '.sale-receipt-doc--nfce .sale-receipt-foot',
+    decls: { 'font-size': '10px', margin: '0.4rem 0 0.1rem' },
+  },
+  {
+    selector: '.sale-receipt-doc--nfce .sale-receipt-foot-muted',
+    decls: { 'font-size': '8px', margin: '0.15rem 0 0' },
   },
 ];
 

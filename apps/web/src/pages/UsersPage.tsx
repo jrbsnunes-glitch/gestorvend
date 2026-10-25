@@ -230,7 +230,7 @@ export function UsersPage() {
 
   const create = useMutation({
     mutationFn: () => {
-      if (form.password !== form.confirmPassword) {
+      if (form.profile !== 'salesIdentity' && form.password !== form.confirmPassword) {
         throw new Error('As senhas não coincidem.');
       }
       return api<SystemUser>('/users', {
@@ -240,7 +240,7 @@ export function UsersPage() {
           username: form.username.trim().toLowerCase(),
           email: form.email,
           profile: form.profile,
-          password: form.password,
+          password: form.profile === 'salesIdentity' ? undefined : form.password,
         },
       });
     },
@@ -446,7 +446,9 @@ export function UsersPage() {
                                 ? 'rgba(180,83,9,0.12)'
                                 : u.profile === 'technician'
                                   ? 'rgba(124,58,237,0.12)'
-                                  : 'rgba(37,99,235,0.12)',
+                                  : u.profile === 'salesIdentity'
+                                    ? 'rgba(13,148,136,0.12)'
+                                    : 'rgba(37,99,235,0.12)',
                           color:
                             u.profile === 'manager'
                               ? '#15803d'
@@ -454,7 +456,9 @@ export function UsersPage() {
                                 ? '#b45309'
                                 : u.profile === 'technician'
                                   ? '#6d28d9'
-                                  : '#1d4ed8',
+                                  : u.profile === 'salesIdentity'
+                                    ? '#0f766e'
+                                    : '#1d4ed8',
                           fontSize: '0.78rem',
                           fontWeight: 700,
                         }}
@@ -488,7 +492,7 @@ export function UsersPage() {
                             Editar
                           </button>
                         )}
-                        {canUpdateUsers && (
+                        {canUpdateUsers && u.profile !== 'salesIdentity' && (
                           <button
                             type="button"
                             className="btn btn-ghost"
@@ -566,7 +570,7 @@ export function UsersPage() {
           >
             <h2>{editing ? `Editar “${editing.name}”` : 'Novo usuário'}</h2>
 
-            {editing && isMgr && editing.profile !== 'waiter' && editing.profile !== 'technician' && (
+            {editing && isMgr && editing.profile !== 'waiter' && editing.profile !== 'technician' && editing.profile !== 'salesIdentity' && (
               <div className="user-modal-tabs" role="tablist" aria-label="Seções do cadastro">
                 <button
                   type="button"
@@ -594,7 +598,9 @@ export function UsersPage() {
             {(!editing || userModalTab === 'dados') && (
               <>
             <p style={{ marginTop: 0, color: 'var(--color-text-secondary)', fontSize: '0.88rem' }}>
-              {editing
+              {form.profile === 'salesIdentity'
+                ? 'Cadastro só para aparecer o nome nas vendas do PDV. Não acessa o sistema (sem login).'
+                : editing
                 ? 'Atualize os dados de acesso. Para alterar a senha use o botão Trocar senha.'
                 : 'Cadastre um novo operador. Permissões operacionais podem ser definidas após salvar, na aba Permissões.'}
             </p>
@@ -610,7 +616,9 @@ export function UsersPage() {
             </div>
             <div className="form-row">
               <div className="field">
-                <label htmlFor="user-username">Usuário (login)</label>
+                <label htmlFor="user-username">
+                  Usuário (login){form.profile === 'salesIdentity' ? ' — opcional' : ''}
+                </label>
                 <input
                   id="user-username"
                   type="text"
@@ -624,7 +632,9 @@ export function UsersPage() {
                 />
               </div>
               <div className="field">
-                <label htmlFor="user-email">E-mail (interno)</label>
+                <label htmlFor="user-email">
+                  E-mail (interno){form.profile === 'salesIdentity' ? ' — opcional' : ''}
+                </label>
                 <input
                   id="user-email"
                   type="email"
@@ -635,8 +645,9 @@ export function UsersPage() {
               </div>
             </div>
             <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginTop: 0 }}>
-              O usuário é usado na tela de login (com a abreviatura da empresa e a senha). O e-mail fica só
-              no cadastro interno.
+              {form.profile === 'salesIdentity'
+                ? 'E-mail e senha são opcionais neste perfil. O nome é o que aparece na venda.'
+                : 'O usuário é usado na tela de login (com a abreviatura da empresa e a senha). O e-mail fica só no cadastro interno.'}
             </p>
 
             <div className="field">
@@ -670,10 +681,16 @@ export function UsersPage() {
                     onClick={() => setForm((f) => ({ ...f, profile: 'technician' }))}
                   />
                 )}
+                <ProfileChoice
+                  active={form.profile === 'salesIdentity'}
+                  title="Identificação em Vendas"
+                  subtitle="Só o nome nas vendas do PDV. Não faz login e não opera caixa."
+                  onClick={() => setForm((f) => ({ ...f, profile: 'salesIdentity' }))}
+                />
               </div>
             </div>
 
-            {!editing && (
+            {!editing && form.profile !== 'salesIdentity' && (
               <>
                 <div className="form-row">
                   <div className="field">
@@ -935,8 +952,8 @@ export function UsersPage() {
                   className="btn btn-primary"
                   disabled={
                     !form.name.trim() ||
-                    !form.username.trim() ||
-                    !form.email.trim() ||
+                    (form.profile !== 'salesIdentity' &&
+                      (!form.username.trim() || !form.email.trim())) ||
                     create.isPending ||
                     update.isPending
                   }

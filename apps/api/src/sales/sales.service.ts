@@ -96,6 +96,8 @@ async function resolveSaleStockTarget(
 export type CreateSaleInput = {
   tenantSlug: string;
   userId: string;
+  /** Funcionário cujo nome aparece na venda (pode diferir do operador). */
+  sellerUserId?: string | null;
   userRoles: string[];
   permissionPassword?: string;
   customerId?: string | null;
@@ -563,6 +565,22 @@ export class SalesService {
       }
     }
 
+    let sellerUserId: string | null = null;
+    let sellerName: string | null = null;
+    const sellerIdRaw =
+      typeof input.sellerUserId === 'string' ? input.sellerUserId.trim() : '';
+    if (sellerIdRaw) {
+      const seller = await db.user.findUnique({
+        where: { id: sellerIdRaw },
+        select: { id: true, name: true, isActive: true },
+      });
+      if (!seller || !seller.isActive) {
+        throw new BadRequestException('Funcionário da venda inválido ou inativo.');
+      }
+      sellerUserId = seller.id;
+      sellerName = seller.name;
+    }
+
     return db.$transaction(async (tx) => {
       const sale = await tx.sale.create({
         data: {
@@ -571,6 +589,8 @@ export class SalesService {
           externalRef: input.externalRef ?? null,
           customerId: input.customerId ?? null,
           userId: input.userId,
+          sellerUserId,
+          sellerName,
           cashSessionId,
           terminalId: input.terminalId ?? null,
           subtotal: String(subtotal.toFixed(2)),
@@ -1024,6 +1044,7 @@ export class SalesService {
       include: {
         customer: true,
         user: { select: { id: true, name: true, email: true } },
+        sellerUser: { select: { id: true, name: true } },
         fiscalDocument: true,
         items: { include: { variant: { include: { product: true } } } },
         payments: true,
@@ -1103,6 +1124,8 @@ export class SalesService {
       take: hasDateFilter ? 5000 : 100,
       include: {
         customer: true,
+        user: { select: { id: true, name: true } },
+        sellerUser: { select: { id: true, name: true } },
         fiscalDocument: true,
         items: { include: { variant: { include: { product: true } } } },
         payments: true,

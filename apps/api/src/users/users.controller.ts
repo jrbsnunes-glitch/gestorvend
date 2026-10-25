@@ -92,6 +92,13 @@ export class UsersController {
     return this.users.list(user.tenantSlug);
   }
 
+  /** Funcionários ativos para identificar o vendedor no PDV. */
+  @Get('for-sales')
+  @Roles('admin', 'manager', 'seller')
+  listForSales(@CurrentUser() user: JwtPayload) {
+    return this.users.listForSales(user.tenantSlug);
+  }
+
   @Get(':id/permissions')
   @Roles('admin', 'manager')
   getPermissions(@CurrentUser() user: JwtPayload, @Param('id') id: string) {

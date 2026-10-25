@@ -1,5 +1,5 @@
 {
-  "version": "1.0.44",
+  "version": "1.0.45",
   "downloadUrl": "",
-  "notes": "Abertura mais rápida (licença em cache), GPU, uma instância só, cupom térmico mais ágil e menu oculto (Alt)."
+  "notes": "Corrige o Desktop que só piscava o ícone e não abria após configurar o servidor. Cupom térmico de fechamento de caixa 80 mm."
 }

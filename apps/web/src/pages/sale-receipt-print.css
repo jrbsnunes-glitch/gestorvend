@@ -242,6 +242,24 @@
   border-top: 2px solid #000;
 }
 
+.sale-receipt-totals-row.is-sold {
+  font-weight: 800;
+  font-size: 16px;
+  margin: 0.45rem 0;
+  padding: 0.4rem 0.2rem;
+  border-top: 2px solid #000;
+  border-bottom: 2px solid #000;
+  letter-spacing: 0.02em;
+}
+
+.sale-receipt-totals-row.is-outflow {
+  font-weight: 800;
+  font-size: 14px;
+  margin: 0.28rem 0;
+  padding: 0.28rem 0.15rem;
+  border: 2px solid #000;
+}
+
 .sale-receipt-payments {
   margin: 0.4rem 0 0;
   padding: 0;
@@ -271,6 +289,67 @@
   color: #262626;
   text-align: center;
   line-height: 1.35;
+}
+
+/* NFC-e: cabeçalho e textos legais mais compactos para gastar menos bobina. */
+.sale-receipt-doc--nfce .sale-receipt-logo {
+  max-width: 38mm;
+  max-height: 12mm;
+  margin-bottom: 0.12rem;
+}
+
+.sale-receipt-doc--nfce .sale-receipt-company {
+  margin-bottom: 0;
+}
+
+.sale-receipt-doc--nfce .sale-receipt-title {
+  font-size: 12px;
+  margin: 0.1rem 0 0.06rem;
+  letter-spacing: 0;
+}
+
+.sale-receipt-doc--nfce .sale-receipt-sub,
+.sale-receipt-doc--nfce .sale-receipt-legal {
+  font-size: 10px;
+  line-height: 1.2;
+  margin: 0 0 0.05rem;
+}
+
+.sale-receipt-doc--nfce .sale-receipt-fiscal-note {
+  font-size: 9px;
+  line-height: 1.2;
+  margin: 0 0 0.08rem;
+}
+
+.sale-receipt-doc--nfce .sale-receipt-line {
+  margin: 0.25rem 0;
+}
+
+.sale-receipt-doc--nfce .sale-receipt-nfce-key {
+  font-size: 9px;
+  margin: 0.15rem 0;
+  letter-spacing: 0;
+}
+
+.sale-receipt-doc--nfce .sale-receipt-nfce-qr,
+.sale-receipt-doc--nfce .nfce-qr-wrap {
+  margin: 0.25rem 0 0.1rem;
+}
+
+.sale-receipt-doc--nfce .nfce-qr,
+.sale-receipt-doc--nfce .sale-receipt-nfce-qr img {
+  width: 28mm;
+  height: 28mm;
+}
+
+.sale-receipt-doc--nfce .sale-receipt-foot {
+  font-size: 10px;
+  margin: 0.4rem 0 0.1rem;
+}
+
+.sale-receipt-doc--nfce .sale-receipt-foot-muted {
+  font-size: 8px;
+  margin: 0.15rem 0 0;
 }
 
 @media print {
@@ -413,6 +492,23 @@
     border-top: 2px solid #000 !important;
   }
 
+  .sale-receipt-totals-row.is-sold {
+    font-size: 16px !important;
+    font-weight: 800 !important;
+    border-top: 2px solid #000 !important;
+    border-bottom: 2px solid #000 !important;
+    padding: 0.4rem 0.15rem !important;
+    margin: 0.4rem 0 !important;
+  }
+
+  .sale-receipt-totals-row.is-outflow {
+    font-size: 14px !important;
+    font-weight: 800 !important;
+    border: 2px solid #000 !important;
+    padding: 0.28rem 0.15rem !important;
+    margin: 0.28rem 0 !important;
+  }
+
   .sale-receipt-item-sku,
   .sale-receipt-fiscal-note,
   .sale-receipt-foot-muted {
@@ -437,5 +533,54 @@
   .sale-receipt-nfce-qr img {
     width: 32mm !important;
     height: 32mm !important;
+  }
+
+  .sale-receipt-doc--nfce .sale-receipt-logo {
+    max-width: 38mm !important;
+    max-height: 12mm !important;
+    margin-bottom: 0.12rem !important;
+  }
+
+  .sale-receipt-doc--nfce .sale-receipt-title {
+    font-size: 12px !important;
+    margin: 0.1rem 0 0.06rem !important;
+    letter-spacing: 0 !important;
+  }
+
+  .sale-receipt-doc--nfce .sale-receipt-sub,
+  .sale-receipt-doc--nfce .sale-receipt-legal {
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+    margin: 0 0 0.05rem !important;
+  }
+
+  .sale-receipt-doc--nfce .sale-receipt-fiscal-note {
+    font-size: 9px !important;
+    line-height: 1.2 !important;
+    margin: 0 0 0.08rem !important;
+  }
+
+  .sale-receipt-doc--nfce .sale-receipt-line {
+    margin: 0.25rem 0 !important;
+  }
+
+  .sale-receipt-doc--nfce .sale-receipt-nfce-key {
+    font-size: 9px !important;
+    margin: 0.15rem 0 !important;
+  }
+
+  .sale-receipt-doc--nfce .nfce-qr,
+  .sale-receipt-doc--nfce .sale-receipt-nfce-qr img {
+    width: 28mm !important;
+    height: 28mm !important;
+  }
+
+  .sale-receipt-doc--nfce .sale-receipt-foot {
+    font-size: 10px !important;
+    margin: 0.4rem 0 0.1rem !important;
+  }
+
+  .sale-receipt-doc--nfce .sale-receipt-foot-muted {
+    font-size: 8px !important;
   }
 }

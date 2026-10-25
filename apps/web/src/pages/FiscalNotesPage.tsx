@@ -870,6 +870,16 @@ export function FiscalNotesPage() {
                   <div className="row-record-actions">
                     <button
                       type="button"
+                      className="btn btn-secondary btn-compact"
+                      title="Segunda via do comprovante de venda"
+                      onClick={() => {
+                        navigate(`/vendas/impressao?id=${encodeURIComponent(s.id)}&copy=1`);
+                      }}
+                    >
+                      2ª via
+                    </button>
+                    <button
+                      type="button"
                       className="btn btn-primary btn-compact"
                       disabled={emitFromSale.isPending}
                       onClick={() => {

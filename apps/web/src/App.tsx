@@ -46,6 +46,9 @@ const CashPrintPage = lazy(() =>
 const CashPrintItemsPage = lazy(() =>
   import('./pages/CashPrintItemsPage').then((m) => ({ default: m.CashPrintItemsPage })),
 );
+const CashCloseThermalPage = lazy(() =>
+  import('./pages/CashCloseThermalPage').then((m) => ({ default: m.CashCloseThermalPage })),
+);
 const CompanyPage = lazy(() =>
   import('./pages/CompanyPage').then((m) => ({ default: m.CompanyPage })),
 );
@@ -433,6 +436,7 @@ function AppInner() {
 
           <Route path="caixa/impressao" element={<CashPrintPage />} />
           <Route path="caixa/impressao/itens" element={<CashPrintItemsPage />} />
+          <Route path="caixa/impressao-fechamento" element={<CashCloseThermalPage />} />
           <Route path="estoque/movimentos/impressao" element={<StockMovPrintPage />} />
           <Route
             path="estoque/inventario/relatorio/resumo"

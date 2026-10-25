@@ -38,6 +38,14 @@ export class AuthService {
     }
 
     const roles = user.roles.map((r) => r.name);
+    const canOperate = roles.some((r) =>
+      ['admin', 'manager', 'seller', 'finance', 'waiter', 'technician'].includes(r),
+    );
+    if (!canOperate) {
+      throw new UnauthorizedException(
+        'Este cadastro é só identificação em vendas e não acessa o sistema.',
+      );
+    }
     const tenant = await this.tenantService.getBySlug(dto.tenantSlug);
     const enabledModules = await this.tenantService.getEnabledModules(dto.tenantSlug);
     const payload: JwtPayload = {

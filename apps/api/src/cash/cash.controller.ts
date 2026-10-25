@@ -621,6 +621,7 @@ export class CashController {
     @Query('userId') userId?: string,
     @Query('controlFrom') controlFromRaw?: string,
     @Query('controlTo') controlToRaw?: string,
+    @Query('sessionId') sessionIdRaw?: string,
     /** OPEN | CLOSED | RECONCILED | ALL (padrão: todos) */
     @Query('status') statusRaw?: string,
   ) {
@@ -642,6 +643,10 @@ export class CashController {
 
     const status = (statusRaw ?? 'ALL').trim().toUpperCase();
     const where: Record<string, unknown> = {};
+    const sessionId = sessionIdRaw?.trim();
+    if (sessionId) {
+      where.id = sessionId;
+    }
     if (useControlFilter) {
       const cn: Record<string, number> = {};
       if (Number.isFinite(controlFrom as number)) cn.gte = controlFrom as number;
@@ -649,7 +654,7 @@ export class CashController {
       where.controlNumber = cn;
     }
     // Janela de tempo: sessões que existiram dentro do range (combinável com controle).
-    if (useDateFilter || !useControlFilter) {
+    if (!sessionId && (useDateFilter || !useControlFilter)) {
       where.openedAt = { lte: to };
       where.AND = [
         {

@@ -48,6 +48,8 @@ type SaleReceipt = {
   notes: string | null;
   customer: { name: string } | null;
   user: { name: string } | null;
+  sellerName?: string | null;
+  sellerUser?: { name: string } | null;
   items: Array<{
     quantity: string;
     unitPrice: string;
@@ -181,13 +183,13 @@ function leaveReceiptPage(
       /* janela principal segue no sistema */
     }
   }
+  if (window.history.length > 1) {
+    navigate(-1);
+    return;
+  }
   const dest = safeReturnTo(returnTo ?? null);
   if (dest) {
     navigate(dest);
-    return;
-  }
-  if (window.history.length > 1) {
-    navigate(-1);
     return;
   }
   navigate('/vendas');
@@ -200,6 +202,7 @@ export function SaleReceiptPrintPage() {
   const demo = sp.get('demo') === '1' || sp.get('demo') === 'true';
   const wantAutoPrint = sp.get('autoprint') === '1' || sp.get('autoprint') === 'true';
   const wantClose = sp.get('close') === '1' || sp.get('close') === 'true';
+  const isSecondCopy = sp.get('copy') === '1' || sp.get('copy') === 'true';
   const np = sp.get('_np');
 
   const receiptQ = useQuery({
@@ -412,7 +415,7 @@ export function SaleReceiptPrintPage() {
       {s && c && (
         <article
           ref={docRef}
-          className="sale-receipt-doc"
+          className={'sale-receipt-doc' + (nfceAuthorized ? ' sale-receipt-doc--nfce' : '')}
           data-receipt-ready={receiptReady ? '1' : '0'}
           data-company-ok={companyOk ? '1' : '0'}
         >
@@ -496,10 +499,19 @@ export function SaleReceiptPrintPage() {
               <span>#{s.number}</span>
             </div>
           ) : null}
+          {isSecondCopy ? (
+            <p className="sale-receipt-banner">2ª via do comprovante</p>
+          ) : null}
           {s.user?.name ? (
             <div className="sale-receipt-meta">
               <span>Operador</span>
               <span>{s.user.name}</span>
+            </div>
+          ) : null}
+          {s.sellerName || s.sellerUser?.name || s.user?.name ? (
+            <div className="sale-receipt-meta">
+              <span>Responsável</span>
+              <span>{s.sellerName || s.sellerUser?.name || s.user?.name}</span>
             </div>
           ) : null}
           <div className="sale-receipt-meta">

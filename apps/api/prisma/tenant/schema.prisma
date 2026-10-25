@@ -291,6 +291,7 @@ model User {
   updatedAt      DateTime         @updatedAt
   roles          Role[]           @relation("UserRoles")
   sales          Sale[]
+  salesAsSeller  Sale[]           @relation("SaleSeller")
   stockMoves     StockMovement[]
   cashSessions        CashRegisterSession[]
   cashSessionsReconciled CashRegisterSession[] @relation("CashSessionReconciledBy")
@@ -1006,6 +1007,10 @@ model Sale {
   customer      Customer?      @relation(fields: [customerId], references: [id])
   userId        String?
   user          User?          @relation(fields: [userId], references: [id])
+  /// Funcionário identificado na venda (pode diferir do operador do caixa).
+  sellerUserId  String?
+  sellerUser    User?          @relation("SaleSeller", fields: [sellerUserId], references: [id], onDelete: SetNull)
+  sellerName    String?        @db.VarChar(160)
   /// Caixa ao qual o lançamento foi amarrado explicitamente (requisição fora do PDV).
   /// No PDV o vínculo continua implícito: operador + janela de abertura/fechamento.
   cashSessionId String?
@@ -1059,6 +1064,7 @@ model Sale {
   @@index([cashSessionId])
   @@index([terminalId])
   @@index([terminalId, status])
+  @@index([sellerUserId])
 }
 
 /// Metadados da fila de emissão DFe por venda (próximo passo: XML, assinatura, SEFAZ).

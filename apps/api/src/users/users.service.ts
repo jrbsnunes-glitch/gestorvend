@@ -8,6 +8,7 @@ import * as bcrypt from 'bcrypt';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { MenuAccessService } from './menu-access.service';
 import { PermissionGrantInput, UserPermissionsService } from './user-permissions.service';
+import { randomBytes } from 'crypto';
 import { assertValidUsername } from './username.util';
 
 /**
@@ -16,15 +17,17 @@ import { assertValidUsername } from './username.util';
  *  - manager     → acesso total (gerencia cadastros e usuários)
  *  - cashier     → role interna `seller` (operação no PDV)
  *  - waiter      → role interna `waiter` (só Salão / comandas)
- *  - technician  → role interna `technician` (Ordens de Serviço)
+ *  - technician     → role interna `technician` (Ordens de Serviço)
+ *  - salesIdentity  → role interna `sales_id` (só nome no PDV; sem login)
  */
-export type UserProfile = 'manager' | 'cashier' | 'waiter' | 'technician';
+export type UserProfile = 'manager' | 'cashier' | 'waiter' | 'technician' | 'salesIdentity';
 
 const PROFILE_TO_ROLE: Record<UserProfile, string> = {
   manager: 'manager',
   cashier: 'seller',
   waiter: 'waiter',
   technician: 'technician',
+  salesIdentity: 'sales_id',
 };
 
 export type UserSummary = {
@@ -55,6 +58,7 @@ export class UsersService {
   private toProfile(roles: { name: string }[]): UserProfile {
     const names = roles.map((r) => r.name);
     if (names.includes('admin') || names.includes('manager')) return 'manager';
+    if (names.includes('sales_id') && !names.includes('seller')) return 'salesIdentity';
     if (names.includes('technician') && !names.includes('seller')) return 'technician';
     if (names.includes('waiter') && !names.includes('seller')) return 'waiter';
     return 'cashier';
@@ -88,12 +92,13 @@ export class UsersService {
       value === 'manager' ||
       value === 'cashier' ||
       value === 'waiter' ||
-      value === 'technician'
+      value === 'technician' ||
+      value === 'salesIdentity'
     ) {
       return value;
     }
     throw new BadRequestException(
-      'Perfil inválido. Use "manager", "cashier", "waiter" ou "technician".',
+      'Perfil inválido. Use "manager", "cashier", "waiter", "technician" ou "salesIdentity".',
     );
   }
 
@@ -151,6 +156,16 @@ export class UsersService {
     return users.map((u) => this.toSummary(u));
   }
 
+  /** Nomes para o seletor de funcionário no PDV (sem garçom). */
+  async listForSales(
+    tenantSlug: string,
+  ): Promise<Array<{ id: string; name: string; profile: UserProfile }>> {
+    const users = await this.list(tenantSlug);
+    return users
+      .filter((u) => u.isActive && u.profile !== 'waiter')
+      .map((u) => ({ id: u.id, name: u.name, profile: u.profile }));
+  }
+
   async getById(tenantSlug: string, id: string): Promise<UserSummary> {
     const db = await this.tenantPrisma.getClient(tenantSlug);
     const u = await db.user.findUnique({ where: { id }, include: { roles: true } });
@@ -169,10 +184,30 @@ export class UsersService {
     },
   ): Promise<UserSummary> {
     const name = this.validateName(body.name);
-    const username = this.validateUsername(body.username);
-    const email = this.validateEmail(body.email);
-    const password = this.validatePassword(body.password);
     const profile = this.validateProfile(body.profile);
+    const usernameRaw =
+      typeof body.username === 'string' ? body.username.trim().toLowerCase() : '';
+    const username =
+      profile === 'salesIdentity' && usernameRaw.length < 3
+        ? this.validateUsername(
+            `idv${name
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/[^a-zA-Z0-9]+/g, '')
+              .toLowerCase()
+              .slice(0, 20)}${Date.now().toString(36).slice(-4)}`,
+          )
+        : this.validateUsername(body.username);
+    const email =
+      profile === 'salesIdentity' &&
+      (body.email == null || String(body.email).trim() === '')
+        ? `${username}@identificacao.local`
+        : this.validateEmail(body.email);
+    const password =
+      profile === 'salesIdentity' &&
+      (body.password == null || String(body.password).trim() === '')
+        ? randomBytes(16).toString('hex')
+        : this.validatePassword(body.password);
 
     const db = await this.tenantPrisma.getClient(tenantSlug);
     const existingUser = await db.user.findUnique({ where: { username } });
@@ -259,7 +294,7 @@ export class UsersService {
       const profile = this.validateProfile(body.profile);
       const currentProfile = this.toProfile(target.roles);
       if (profile !== currentProfile) {
-        if (currentProfile === 'manager' && (profile === 'cashier' || profile === 'waiter' || profile === 'technician')) {
+        if (currentProfile === 'manager' && profile !== 'manager') {
           await this.ensureNotLastManager(db, target.id, target.roles);
         }
         const role = await this.resolveRole(db, profile);
