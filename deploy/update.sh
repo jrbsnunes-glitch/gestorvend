@@ -197,8 +197,26 @@ fix_permissions_root() {
   fi
 }
 
+ensure_nginx_upload_limit() {
+  command -v nginx >/dev/null 2>&1 || return 0
+  if [ ! -d /etc/nginx/conf.d ]; then
+    echo "AVISO: /etc/nginx/conf.d ausente — defina client_max_body_size 20m no site do Nginx."
+    return 0
+  fi
+  local snippet="/etc/nginx/conf.d/gestorvend-uploads.conf"
+  if [ -f "$snippet" ] && grep -q 'client_max_body_size' "$snippet"; then
+    return 0
+  fi
+  cat > "$snippet" <<'EOF'
+# Uploads GestorVend (logo, certificado A1, XML, CSV). Padrão do Nginx é 1m (413).
+client_max_body_size 20m;
+EOF
+  echo "Nginx: criado $snippet (client_max_body_size 20m)"
+}
+
 reload_nginx_root() {
   command -v nginx >/dev/null 2>&1 || return 0
+  ensure_nginx_upload_limit
   if nginx -t 2>/dev/null; then
     log "Recarregando Nginx"
     systemctl reload nginx

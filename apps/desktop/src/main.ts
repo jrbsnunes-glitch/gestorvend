@@ -8,6 +8,7 @@ import {
   type WebContents,
   type WebContentsPrintOptions,
 } from 'electron';
+import * as fs from 'fs';
 import * as path from 'path';
 import {
   readConfig,
@@ -123,6 +124,12 @@ function rendererPath(file: string): string {
   return path.join(__dirname, '..', 'renderer', file);
 }
 
+function appIconPath(): string {
+  const ico = path.join(__dirname, '..', 'resources', 'icon.ico');
+  if (fs.existsSync(ico)) return ico;
+  return rendererPath('logo.png');
+}
+
 function sessionPartitionFor(tenantSlug: string): string {
   const safe =
     tenantSlug
@@ -160,6 +167,7 @@ function attachPdvNavGuard(win: BrowserWindow, allowPath: (pathname: string) => 
           overrideBrowserWindowOptions: {
             autoHideMenuBar: true,
             backgroundColor: '#0b1220',
+            icon: appIconPath(),
             webPreferences: appWebPrefs(),
           },
         };
@@ -182,6 +190,7 @@ function createWindow(partition?: string): BrowserWindow {
     autoHideMenuBar: true,
     backgroundColor: '#0b1220',
     title: 'GestorVend',
+    icon: appIconPath(),
     webPreferences: appWebPrefs(partition),
   });
   win.webContents.session.setSpellCheckerEnabled(false);
@@ -201,6 +210,7 @@ function createWindow(partition?: string): BrowserWindow {
             overrideBrowserWindowOptions: {
               autoHideMenuBar: true,
               backgroundColor: '#0b1220',
+              icon: appIconPath(),
               webPreferences: appWebPrefs(),
             },
           };
@@ -319,6 +329,7 @@ async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
               fullscreen: true,
               autoHideMenuBar: true,
               backgroundColor: '#0b1220',
+              icon: appIconPath(),
               webPreferences: appWebPrefs(),
             },
           };
@@ -601,6 +612,7 @@ function registerIpc() {
         height: 900,
         show: false,
         backgroundColor: '#ffffff',
+        icon: appIconPath(),
         webPreferences: appWebPrefs(mainWindowPartition),
       });
 
@@ -875,6 +887,7 @@ app.on('second-instance', () => {
 
 app.whenReady().then(() => {
   if (!gotSingleInstance) return;
+  app.setAppUserModelId('br.com.gestorvend.desktop');
   buildMenu();
   registerIpc();
   mainWindow = createWindow();

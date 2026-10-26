@@ -29,7 +29,22 @@
         padding: 1.5rem;
       }
       .wrap { max-width: 640px; margin: 0 auto; }
-      h1 { margin: 0 0 0.35rem; font-size: 1.4rem; }
+      .page-brand {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        margin-bottom: 0.35rem;
+      }
+      .page-brand img {
+        width: 56px;
+        height: 56px;
+        border-radius: 12px;
+        object-fit: contain;
+        background: #0b1220;
+        box-shadow: 0 4px 12px rgba(20, 33, 89, 0.2);
+        flex-shrink: 0;
+      }
+      h1 { margin: 0; font-size: 1.4rem; }
       .muted { color: var(--muted); font-size: 0.92rem; line-height: 1.45; margin: 0 0 1.25rem; }
       .card {
         background: var(--surface);
@@ -88,7 +103,10 @@
   </head>
   <body>
     <div class="wrap">
-      <h1>Estação de impressão</h1>
+      <div class="page-brand">
+        <img src="logo.png" alt="GestorVend" width="56" height="56" />
+        <h1>Estação de impressão</h1>
+      </div>
       <p class="muted">
         Pareie com o token gerado em <strong>Configurações → Impressão</strong> no sistema web.
         O agente consulta a fila a cada poucos segundos e imprime silenciosamente na impressora

@@ -15,11 +15,16 @@ Add-Type -AssemblyName System.Drawing
 function New-BitmapSquare([System.Drawing.Image]$src, [int]$size) {
   $bmp = New-Object System.Drawing.Bitmap $size, $size
   $g = [System.Drawing.Graphics]::FromImage($bmp)
-  $g.Clear([System.Drawing.Color]::Transparent)
+  $g.Clear([System.Drawing.Color]::FromArgb(255, 11, 18, 32))
   $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
   $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
   $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-  $g.DrawImage($src, 0, 0, $size, $size)
+  $scale = [Math]::Min($size / [double]$src.Width, $size / [double]$src.Height)
+  $w = [int]($src.Width * $scale)
+  $h = [int]($src.Height * $scale)
+  $x = [int](($size - $w) / 2)
+  $y = [int](($size - $h) / 2)
+  $g.DrawImage($src, $x, $y, $w, $h)
   $g.Dispose()
   return $bmp
 }

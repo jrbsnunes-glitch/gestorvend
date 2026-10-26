@@ -22,6 +22,7 @@ import { RecordViewModal, type RecordViewSection } from '../components/RecordVie
 import { ProductSearchModal, type ProductSearchRow as SearchPickRow } from '../components/ProductSearchModal';
 import { StockLocationBalancesPopover } from '../components/StockLocationBalancesPopover';
 import { api, apiUpload } from '../lib/api';
+import { prepareImageUpload } from '../lib/prepare-image-upload';
 import { getIdentity, hasFactoryModule } from '../lib/auth';
 import { formatBRL, formatDate } from '../lib/format';
 import {
@@ -849,11 +850,13 @@ export function ProductsPage() {
   });
 
   const uploadProductImage = useMutation({
-    mutationFn: ({ id, file }: { id: string; file: File }) =>
-      apiUpload<{ hasImage: boolean; imageVersion: number; imageThumbUrl: string }>(
+    mutationFn: async ({ id, file }: { id: string; file: File }) => {
+      const ready = await prepareImageUpload(file);
+      return apiUpload<{ hasImage: boolean; imageVersion: number; imageThumbUrl: string }>(
         `/products/${id}/image`,
-        file,
-      ),
+        ready,
+      );
+    },
     onSuccess: (data, vars) => {
       setImagePreviewKey((k) => k + 1);
       setEditProduct((p) =>

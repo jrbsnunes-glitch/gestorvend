@@ -22,29 +22,33 @@
 
 .sidebar-brand-name {
   display: block;
+  width: 100%;
   font-size: 0.95rem;
   font-weight: 700;
   color: #ffffff;
   line-height: 1.25;
   margin-top: 0.15rem;
   word-break: break-word;
+  text-align: center;
 }
 
 .sidebar-brand-text {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.15rem;
   width: 100%;
+  text-align: center;
 }
 
 .sidebar-app-version {
   display: block;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #f8fafc;
+  color: #e2e8f0;
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 /* Página inicial */

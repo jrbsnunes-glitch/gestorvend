@@ -295,8 +295,35 @@ function handleAuthFailure(status: number, statusText: string, text: string): ne
   throw new Error(formatApiErrorBody(status, statusText, text));
 }
 
+function looksLikeHtmlErrorPage(raw: string): boolean {
+  const head = raw.trim().slice(0, 200).toLowerCase();
+  return (
+    head.startsWith('<') ||
+    head.includes('<html') ||
+    head.includes('<!doctype') ||
+    head.includes('request entity too large')
+  );
+}
+
+function formatProxyUploadLimitMessage(): string {
+  return 'O arquivo é grande demais para o servidor (limite do proxy). Use PNG, JPEG ou WebP de até 2 MB — imagens grandes são reduzidas automaticamente.';
+}
+
 function formatApiErrorBody(status: number, statusText: string, raw: string): string {
   const trimmed = raw.trim();
+  if (
+    status === 413 ||
+    /413\s*request entity too large/i.test(trimmed) ||
+    (looksLikeHtmlErrorPage(trimmed) && /entity too large|nginx/i.test(trimmed))
+  ) {
+    return formatProxyUploadLimitMessage();
+  }
+  if (looksLikeHtmlErrorPage(trimmed)) {
+    const st = statusText?.trim();
+    return st
+      ? `O servidor recusou o envio (HTTP ${status}: ${st}).`
+      : `O servidor recusou o envio (HTTP ${status}).`;
+  }
   const looksUnauthorizedPlain =
     status === 401 && /^Unauthorized$/iu.test(trimmed);
   if (looksUnauthorizedPlain) {

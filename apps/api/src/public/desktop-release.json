@@ -1,5 +1,5 @@
 {
-  "version": "1.0.45",
+  "version": "1.0.46",
   "downloadUrl": "",
-  "notes": "Corrige o Desktop que só piscava o ícone e não abria após configurar o servidor. Cupom térmico de fechamento de caixa 80 mm."
+  "notes": "Logo oficial do GestorVend na janela, na barra de tarefas e no instalador."
 }

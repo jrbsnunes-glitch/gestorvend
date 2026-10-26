@@ -33,6 +33,9 @@ server {
     listen [::]:443 ssl http2;
     server_name gestorvend.seudominio.com;
 
+    # Padrão do Nginx é 1m (413 em logo, foto de produto, A1 e XML).
+    client_max_body_size 20m;
+
     ssl_certificate     /etc/letsencrypt/live/gestorvend.seudominio.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/gestorvend.seudominio.com/privkey.pem;
 

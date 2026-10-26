@@ -400,6 +400,11 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
             <span className="sidebar-app-version" title="Versão do sistema">
               v{APP_VERSION}
             </span>
+            {me.data?.name ? (
+              <span className="sidebar-brand-user" title="Usuário logado">
+                {me.data.name}
+              </span>
+            ) : null}
           </div>
           <span className="sidebar-tag">{profileLabel(profile)}</span>
         </div>

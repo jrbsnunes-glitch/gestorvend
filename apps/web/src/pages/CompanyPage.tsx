@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { api, apiUpload } from '../lib/api';
+import { prepareImageUpload } from '../lib/prepare-image-upload';
 import { hasFactoryModule } from '../lib/auth';
 import { resolveCompanyAssetUrl } from '../lib/company-branding';
 import { useMenuAccess } from '../hooks/useMenuAccess';
@@ -771,7 +772,10 @@ export function CompanyPage() {
   }, [company.data, touched]);
 
   const uploadLogo = useMutation({
-    mutationFn: (file: File) => apiUpload<Company>('/company/logo', file),
+    mutationFn: async (file: File) => {
+      const ready = await prepareImageUpload(file);
+      return apiUpload<Company>('/company/logo', ready);
+    },
     onSuccess: (data) => {
       qc.setQueryData(['company'], data);
       void qc.invalidateQueries({ queryKey: ['company'] });
@@ -1763,8 +1767,9 @@ export function CompanyPage() {
               ) : null}
             </div>
             <p className="company-form__hint" style={{ margin: '0.35rem 0 0' }}>
-              PNG/JPEG/WebP · até 2 MB. Cada envio substitui a logo anterior e atualiza o menu,
-              PDV e impressões na hora. URL pública é alternativa se a imagem já estiver hospedada.
+              PNG/JPEG/WebP · até 2 MB (imagens maiores são reduzidas automaticamente). Cada envio
+              substitui a logo anterior e atualiza o menu, PDV e impressões na hora. URL pública é
+              alternativa se a imagem já estiver hospedada.
             </p>
           </section>
           )}
