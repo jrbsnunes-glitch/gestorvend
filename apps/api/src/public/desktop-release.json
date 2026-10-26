@@ -1,5 +1,5 @@
 {
-  "version": "1.0.52",
+  "version": "1.0.53",
   "downloadUrl": "",
-  "notes": "PDV de operador (não autoatendimento). Ctrl+Shift+S reconfigura mesmo em kiosk."
+  "notes": "Sair para o sistema no PDV mestre e secundário; barra de botões compacta."
 }

@@ -561,7 +561,7 @@ export function SalesPage() {
     return (
       <PosGatewayLoading
         operator={operator}
-        onExit={desktopPdvStation ? undefined : exitToDashboard}
+        onExit={exitToDashboard}
       />
     );
   }
@@ -589,7 +589,7 @@ export function SalesPage() {
           setLocalFailBump((n) => n + 1);
         }}
         onDismissNotice={() => setGatewayNotice(null)}
-        onExit={desktopPdvStation ? undefined : exitToDashboard}
+        onExit={exitToDashboard}
         onEnter={enterPdv}
         onEnterSession={enterPdvOnSession}
         onSelectOtherSession={() => navigate('/caixa')}
@@ -619,11 +619,10 @@ export function SalesPage() {
       pdvTerminalNumber={pdvTerminal.number}
       pdvTerminalName={pdvTerminal.profile?.name ?? null}
       pdvCapabilities={pdvCapabilities}
-      lockToPdv={desktopPdvStation}
       onExit={() => {
         setOperatingSessionId(null);
         setEntered(false);
-        if (!desktopPdvStation) exitToDashboard();
+        exitToDashboard();
       }}
       onCashClosed={() => {
         /*
@@ -1192,7 +1191,6 @@ function PosScreen({
   pdvTerminalNumber,
   pdvTerminalName,
   pdvCapabilities,
-  lockToPdv,
   onExit,
   onCashClosed,
 }: {
@@ -1202,7 +1200,6 @@ function PosScreen({
   pdvTerminalNumber: number | null;
   pdvTerminalName: string | null;
   pdvCapabilities: PdvTerminalCapabilities;
-  lockToPdv?: boolean;
   onExit: () => void;
   onCashClosed: () => void;
 }) {
@@ -2781,7 +2778,6 @@ function PosScreen({
         onOpenHistory={() => setHistoryOpen(true)}
         onOpenProcedures={() => setProceduresOpen(true)}
         onExit={tryExit}
-        hideExit={lockToPdv}
         onCloseCash={() => {
           if (!pdvCapabilities.canCloseCash) return;
           setCloseOpen(true);
@@ -4552,7 +4548,6 @@ function PosTopbar({
   onOpenHistory,
   onOpenProcedures,
   onExit,
-  hideExit,
   onCloseCash,
 }: {
   session: CashSession;
@@ -4566,7 +4561,6 @@ function PosTopbar({
   onOpenHistory: () => void;
   onOpenProcedures: () => void;
   onExit: () => void;
-  hideExit?: boolean;
   onCloseCash: () => void;
 }) {
   const company = useCompanyBranding();
@@ -4627,18 +4621,6 @@ function PosTopbar({
         <span>
           Vendas hoje: <strong>{salesToday}</strong>
         </span>
-        <span style={{ fontSize: '0.75rem', color: 'var(--pos-text-muted)' }}>
-          <span className="pos-shortcut-key">F2</span> finalizar ·{' '}
-          {pdvCapabilities.canPdvProcedures ? (
-            <>
-              <span className="pos-shortcut-key">F3</span> procedimentos ·{' '}
-            </>
-          ) : null}
-          <span className="pos-shortcut-key">F4</span> cliente ·{' '}
-          <span className="pos-shortcut-key">F8</span> desconto ·{' '}
-          <span className="pos-shortcut-key">F9</span> acréscimo ·{' '}
-          <span className="pos-shortcut-key">Esc</span> cancelar
-        </span>
         <span
           className="pos-topbar-print-hint"
           title="Clique em Impressão para mudar o comportamento neste computador"
@@ -4662,7 +4644,7 @@ function PosTopbar({
             onClick={onOpenProcedures}
             title="Sangria, despesas e suprimentos (F3)"
           >
-            Procedimentos <span className="pos-shortcut-key">F3</span>
+            Procedimentos
           </button>
         ) : null}
         {pdvCapabilities.canManagePastSales ? (
@@ -4675,11 +4657,9 @@ function PosTopbar({
             Fechar caixa
           </button>
         ) : null}
-        {hideExit ? null : (
-          <button type="button" className="pos-topbar-exit" onClick={onExit}>
-            ← Sair
-          </button>
-        )}
+        <button type="button" className="pos-topbar-exit" onClick={onExit}>
+          ← Sair para o sistema
+        </button>
       </div>
     </div>
   );

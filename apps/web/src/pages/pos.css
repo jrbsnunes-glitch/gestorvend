@@ -2113,24 +2113,53 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem 0.75rem;
-  margin-bottom: 1rem;
-  padding: 0.5rem 0.75rem;
+  flex-wrap: nowrap;
+  gap: 0.4rem 0.55rem;
+  margin-bottom: 0;
+  padding: 0.35rem 0.65rem;
   background: var(--pos-surface);
   border: 1px solid var(--pos-border);
   border-radius: var(--pos-radius);
+  min-width: 0;
+}
+
+.pos-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  flex: 0 1 9rem;
+}
+
+.pos-topbar-brand-mark {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.pos-topbar-brand-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: 0.82rem;
 }
 
 .pos-topbar-info {
   display: flex;
   align-items: center;
-  gap: 1rem 1.25rem;
-  flex-wrap: wrap;
+  gap: 0.4rem 0.7rem;
+  flex-wrap: nowrap;
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 0.85rem;
+  overflow: hidden;
+  font-size: 0.78rem;
   color: var(--pos-text-sub);
+}
+
+.pos-topbar-info > span {
+  white-space: nowrap;
 }
 
 .pos-topbar-info strong {
@@ -2139,27 +2168,36 @@
 }
 
 .pos-topbar-print-hint {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--pos-text-muted);
-  max-width: 12rem;
+  max-width: 8.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
   line-height: 1.2;
-}
-
-@media (max-width: 900px) {
-  .pos-topbar-print-hint {
-    max-width: none;
-    width: 100%;
-    flex-basis: 100%;
-  }
 }
 
 .pos-topbar-actions {
   display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  flex-shrink: 0;
+  gap: 0.28rem;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
   margin-left: auto;
   justify-content: flex-end;
+}
+
+.pos-topbar-actions .pos-btn {
+  min-height: 32px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.pos-topbar-exit {
+  min-height: 32px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* === Histórico (drawer) === */

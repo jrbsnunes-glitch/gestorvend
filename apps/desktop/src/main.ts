@@ -383,7 +383,9 @@ async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
     attachPdvNavGuard(
       win,
       (pathname) =>
-        pathname.startsWith('/vendas') || pathname.startsWith('/vendas/impressao'),
+        pathname === '/' ||
+        pathname.startsWith('/vendas') ||
+        pathname.startsWith('/vendas/impressao'),
     );
   }
 
