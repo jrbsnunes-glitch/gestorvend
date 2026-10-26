@@ -1,5 +1,5 @@
 {
-  "version": "1.0.53",
+  "version": "1.0.54",
   "downloadUrl": "",
-  "notes": "Sair para o sistema no PDV mestre e secundário; barra de botões compacta."
+  "notes": "Cupom do PDV na térmica 80 mm (tamanho de página em mícrons, sem A4 vazio)."
 }

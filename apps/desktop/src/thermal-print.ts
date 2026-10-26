@@ -9,6 +9,31 @@ export type ThermalPrintPageSize = '80mm' | 'A4';
  */
 export const THERMAL_WINDOW_WIDTH_PX = 302;
 
+/** Electron `pageSize` usa mícrons (1 mm = 1000). */
+const THERMAL_WIDTH_MICRONS = 80_000;
+const THERMAL_MIN_HEIGHT_MICRONS = 80_000;
+const THERMAL_MAX_HEIGHT_MICRONS = 2_000_000;
+const THERMAL_FALLBACK_HEIGHT_MICRONS = 200_000;
+const THERMAL_PAD_MICRONS = 12_000;
+
+/** 1 CSS px @ 96 dpi = 25 400 / 96 mícrons. */
+export function cssPxToMicrons(px: number): number {
+  if (!Number.isFinite(px) || px <= 0) return 0;
+  return Math.round((px * 25_400) / 96);
+}
+
+export function thermalPageSizeMicrons(contentHeightPx?: number): { width: number; height: number } {
+  const measured = cssPxToMicrons(contentHeightPx ?? 0);
+  const height =
+    measured > 0
+      ? Math.min(
+          Math.max(measured + THERMAL_PAD_MICRONS, THERMAL_MIN_HEIGHT_MICRONS),
+          THERMAL_MAX_HEIGHT_MICRONS,
+        )
+      : THERMAL_FALLBACK_HEIGHT_MICRONS;
+  return { width: THERMAL_WIDTH_MICRONS, height };
+}
+
 async function inlineReceiptImages(wc: WebContents): Promise<void> {
   // Timeout curto — não pode travar o job de impressão se a logo falhar.
   await Promise.race([
@@ -99,8 +124,8 @@ export async function prepareSaleReceiptForThermalPrint(wc: WebContents): Promis
         html.gv-sale-receipt-print, html {
           margin: 0 !important;
           padding: 0 !important;
-          width: 100% !important;
-          max-width: none !important;
+          width: 80mm !important;
+          max-width: 80mm !important;
           height: auto !important;
           min-height: 0 !important;
           background: #fff !important;
@@ -110,8 +135,8 @@ export async function prepareSaleReceiptForThermalPrint(wc: WebContents): Promis
         body.gv-sale-receipt-print, body {
           margin: 0 !important;
           padding: 0 !important;
-          width: 100% !important;
-          max-width: none !important;
+          width: 80mm !important;
+          max-width: 80mm !important;
           height: auto !important;
           min-height: 0 !important;
           background: #fff !important;
@@ -122,17 +147,18 @@ export async function prepareSaleReceiptForThermalPrint(wc: WebContents): Promis
           padding: 0 !important;
           min-height: 0 !important;
           height: auto !important;
-          width: 100% !important;
-          max-width: none !important;
+          width: 80mm !important;
+          max-width: 80mm !important;
           background: #fff !important;
         }
         /*
-         * Geometria e escala são responsabilidade da página (largura física da
-         * bobina + escala tipográfica). Aqui não se mexe em width/zoom: com
-         * width:100% o cupom assumia a largura da página do driver e a coluna
-         * da direita (valores, data) saía cortada no papel.
+         * Largura física da bobina, encostada à esquerda. Sem isso o cupom
+         * fica centrado num canvas largo (janela do PDV) e o spooler captura
+         * só a margem cinza — a térmica só empurra um pedaço de papel.
          */
         .sale-receipt-doc, article.sale-receipt-doc {
+          width: 72mm !important;
+          max-width: 72mm !important;
           margin: 0 !important;
           box-shadow: none !important;
           height: auto !important;
@@ -179,19 +205,23 @@ export function buildThermalPrintOptions(opts: {
 }): WebContentsPrintOptions & {
   deviceName?: string;
   scaleFactor?: number;
-  dpi?: { horizontal: number; vertical: number };
 } {
   const printOpts: WebContentsPrintOptions & {
     deviceName?: string;
     scaleFactor?: number;
-    dpi?: { horizontal: number; vertical: number };
   } = {
     silent: true,
     printBackground: true,
     margins: { marginType: 'none' },
     scaleFactor: 100,
-    dpi: { horizontal: 203, vertical: 203 },
   };
+
+  if (opts.pageSize === 'A4') {
+    printOpts.pageSize = 'A4';
+  } else {
+    // Sem pageSize numérico o Chromium manda A4; a térmica só avança a bobina.
+    printOpts.pageSize = thermalPageSizeMicrons(opts.contentHeightPx);
+  }
 
   if (opts.deviceName?.trim()) {
     printOpts.deviceName = opts.deviceName.trim();
