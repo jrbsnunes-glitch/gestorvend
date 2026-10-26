@@ -134,12 +134,12 @@
         <textarea id="pdvToken" rows="2" placeholder="uuid.segredo (de Terminais PDV no admin)"></textarea>
         <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;font-size:0.88rem;">
           <input id="pdvKiosk" type="checkbox" />
-          Abrir em modo kiosk (tela cheia, autoatendimento)
+          Autoatendimento (catálogo / pesquisa de produtos, sem PDV de operador)
         </label>
         <p class="hint" style="margin-top: -0.75rem">
-          Sem kiosk: abre o PDV em tela cheia, com o mesmo visual do PDV normal. Neste computador
-          não aparecem fechamento de caixa, vendas recentes nem procedimentos (isso fica no PDV
-          mestre / sistema completo). Kiosk = autoatendimento.
+          Deixe desmarcado para o PDV normal (mesma tela de Vendas: leitor, carrinho e F2),
+          sem Fechar caixa, Vendas recentes e Procedimentos. Só marque se for totem de
+          autoatendimento.
         </p>
         <button type="submit" id="submit">Salvar e entrar</button>
       </form>

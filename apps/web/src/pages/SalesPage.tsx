@@ -540,10 +540,13 @@ export function SalesPage() {
   /**
    * Cobrar no PDV: se já há caixa aberto e veio comanda na URL/storage,
    * entra direto no PDV (sem parar no gateway) para carregar a comanda.
+   * No Desktop pareado como PDV, também entra direto — a tela inicial é o
+   * PDV de vendas, não o catálogo nem o restante do sistema.
    */
   useEffect(() => {
     if (entered || gatewayBlocked || sessionQ.isLoading) return;
-    if (!activeSession || !pendingComandaId) return;
+    if (!activeSession) return;
+    if (!pendingComandaId && !desktopPdvStation) return;
     setEntered(true);
   }, [
     entered,
@@ -551,10 +554,16 @@ export function SalesPage() {
     sessionQ.isLoading,
     activeSession,
     pendingComandaId,
+    desktopPdvStation,
   ]);
 
   if (sessionQ.isLoading) {
-    return <PosGatewayLoading operator={operator} onExit={exitToDashboard} />;
+    return (
+      <PosGatewayLoading
+        operator={operator}
+        onExit={desktopPdvStation ? undefined : exitToDashboard}
+      />
+    );
   }
 
   // Sem caixa aberto OU usuário ainda não confirmou -> Gateway
@@ -580,7 +589,7 @@ export function SalesPage() {
           setLocalFailBump((n) => n + 1);
         }}
         onDismissNotice={() => setGatewayNotice(null)}
-        onExit={exitToDashboard}
+        onExit={desktopPdvStation ? undefined : exitToDashboard}
         onEnter={enterPdv}
         onEnterSession={enterPdvOnSession}
         onSelectOtherSession={() => navigate('/caixa')}
@@ -610,6 +619,7 @@ export function SalesPage() {
       pdvTerminalNumber={pdvTerminal.number}
       pdvTerminalName={pdvTerminal.profile?.name ?? null}
       pdvCapabilities={pdvCapabilities}
+      lockToPdv={desktopPdvStation}
       onExit={() => {
         setOperatingSessionId(null);
         setEntered(false);
@@ -643,7 +653,7 @@ function PosGatewayLoading({
   onExit,
 }: {
   operator: Operator | null;
-  onExit: () => void;
+  onExit?: () => void;
 }) {
   return (
     <div className="pos-gateway">
@@ -660,7 +670,7 @@ function PosGatewayHeader({
   onExit,
 }: {
   operator: Operator | null;
-  onExit: () => void;
+  onExit?: () => void;
 }) {
   const company = useCompanyBranding();
   const storeName = companyDisplayName(company.data);
@@ -698,9 +708,11 @@ function PosGatewayHeader({
             </div>
           </div>
         )}
-        <button type="button" className="pos-gateway-exit" onClick={onExit}>
-          ← Sair para o sistema
-        </button>
+        {onExit ? (
+          <button type="button" className="pos-gateway-exit" onClick={onExit}>
+            ← Sair para o sistema
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -741,7 +753,7 @@ function PosGateway({
   gatewayBlockMessages: string[];
   onDismissCheckoutFailure: () => void;
   onDismissNotice: () => void;
-  onExit: () => void;
+  onExit?: () => void;
   onEnter: () => void;
   onEnterSession: (sessionId: string) => void;
   onSelectOtherSession: () => void;
@@ -1180,6 +1192,7 @@ function PosScreen({
   pdvTerminalNumber,
   pdvTerminalName,
   pdvCapabilities,
+  lockToPdv,
   onExit,
   onCashClosed,
 }: {
@@ -1189,6 +1202,7 @@ function PosScreen({
   pdvTerminalNumber: number | null;
   pdvTerminalName: string | null;
   pdvCapabilities: PdvTerminalCapabilities;
+  lockToPdv?: boolean;
   onExit: () => void;
   onCashClosed: () => void;
 }) {
@@ -2767,6 +2781,7 @@ function PosScreen({
         onOpenHistory={() => setHistoryOpen(true)}
         onOpenProcedures={() => setProceduresOpen(true)}
         onExit={tryExit}
+        hideExit={lockToPdv}
         onCloseCash={() => {
           if (!pdvCapabilities.canCloseCash) return;
           setCloseOpen(true);
@@ -4537,6 +4552,7 @@ function PosTopbar({
   onOpenHistory,
   onOpenProcedures,
   onExit,
+  hideExit,
   onCloseCash,
 }: {
   session: CashSession;
@@ -4550,6 +4566,7 @@ function PosTopbar({
   onOpenHistory: () => void;
   onOpenProcedures: () => void;
   onExit: () => void;
+  hideExit?: boolean;
   onCloseCash: () => void;
 }) {
   const company = useCompanyBranding();
@@ -4658,9 +4675,11 @@ function PosTopbar({
             Fechar caixa
           </button>
         ) : null}
-        <button type="button" className="pos-topbar-exit" onClick={onExit}>
-          ← Sair
-        </button>
+        {hideExit ? null : (
+          <button type="button" className="pos-topbar-exit" onClick={onExit}>
+            ← Sair
+          </button>
+        )}
       </div>
     </div>
   );
