@@ -214,9 +214,42 @@ EOF
   echo "Nginx: criado $snippet (client_max_body_size 20m)"
 }
 
+# Evita o Desktop/navegador reter index.html antigo após o build (sidebar v1.1.25).
+ensure_nginx_spa_nocache() {
+  command -v nginx >/dev/null 2>&1 || return 0
+  local f
+  for f in /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf; do
+    [ -f "$f" ] || continue
+    grep -q 'try_files \$uri \$uri/ /index.html' "$f" || continue
+    grep -q 'gv-spa-nocache' "$f" && continue
+    if command -v python3 >/dev/null 2>&1; then
+      python3 - "$f" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+text = p.read_text(encoding="utf-8", errors="replace")
+needle = "try_files $uri $uri/ /index.html;"
+if "gv-spa-nocache" in text or needle not in text:
+    raise SystemExit(0)
+text = text.replace(
+    needle,
+    needle
+    + '\n        # gv-spa-nocache: front novo após update.sh (Desktop/Electron)\n'
+    + '        add_header Cache-Control "no-cache, must-revalidate";',
+    1,
+)
+p.write_text(text, encoding="utf-8")
+print(f"Nginx: Cache-Control no-cache em {p}")
+PY
+    else
+      echo "AVISO: python3 ausente — acrescente add_header Cache-Control \"no-cache, must-revalidate\" no location / do Nginx."
+    fi
+  done
+}
+
 reload_nginx_root() {
   command -v nginx >/dev/null 2>&1 || return 0
   ensure_nginx_upload_limit
+  ensure_nginx_spa_nocache
   if nginx -t 2>/dev/null; then
     log "Recarregando Nginx"
     systemctl reload nginx

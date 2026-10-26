@@ -1,5 +1,5 @@
 {
-  "version": "1.0.46",
+  "version": "1.0.47",
   "downloadUrl": "",
-  "notes": "Logo oficial do GestorVend na janela, na barra de tarefas e no instalador."
+  "notes": "Logo oficial no atalho e janela. Busca o sistema no servidor sem cache antigo."
 }

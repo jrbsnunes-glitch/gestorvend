@@ -45,6 +45,9 @@ if (!app.isReady()) {
   app.commandLine.appendSwitch('disable-renderer-backgrounding');
   app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+  // Sem cache HTTP: o front muda no servidor (update.sh) e o atalho antigo
+  // continuava mostrando v1.1.25 / CSS velho.
+  app.commandLine.appendSwitch('disable-http-cache');
 }
 
 const gotSingleInstance = app.requestSingleInstanceLock();
@@ -122,6 +125,19 @@ function appWebPrefs(partition?: string): Electron.WebPreferences {
 
 function rendererPath(file: string): string {
   return path.join(__dirname, '..', 'renderer', file);
+}
+
+function withCacheBust(url: string): string {
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}_gv=${Date.now()}`;
+}
+
+async function refreshRemoteCache(win: BrowserWindow): Promise<void> {
+  try {
+    await win.webContents.session.clearCache();
+  } catch {
+    /* ignore */
+  }
 }
 
 function appIconPath(): string {
@@ -349,7 +365,8 @@ async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
     );
   }
 
-  void win.loadURL(target);
+  await refreshRemoteCache(win);
+  void win.loadURL(withCacheBust(target));
   forceShowWindow(win);
 
   if (revalidateTimer) clearInterval(revalidateTimer);
