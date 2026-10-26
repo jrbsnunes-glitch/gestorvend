@@ -1,3 +1,5 @@
+import { isGestorVendDesktop } from './desktop-bridge';
+
 const PDV_TERMINAL_NUMBER_KEY = 'gv-pdv-terminal-number';
 
 export function getPdvTerminalNumber(): number | null {
@@ -45,3 +47,25 @@ export const FULL_PDV_CAPABILITIES: PdvTerminalCapabilities = {
   canManagePastSales: true,
   isSatellite: false,
 };
+
+/** Desktop pareado como PDV operador (mestre ou secundário). */
+export function isDesktopPdvStation(terminalNumber: number | null): boolean {
+  return isGestorVendDesktop() && terminalNumber != null;
+}
+
+/**
+ * No Desktop em PDV, a tela é a mesma do PDV normal, sem opções gerenciais
+ * (fechar caixa, vendas recentes, procedimentos).
+ */
+export function withDesktopCashierLimits(
+  caps: PdvTerminalCapabilities,
+  terminalNumber: number | null,
+): PdvTerminalCapabilities {
+  if (!caps.isSatellite && !isDesktopPdvStation(terminalNumber)) return caps;
+  return {
+    ...caps,
+    canCloseCash: false,
+    canPdvProcedures: false,
+    canManagePastSales: false,
+  };
+}

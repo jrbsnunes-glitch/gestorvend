@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { A4ReportPages, type A4Item } from '../components/A4ReportPages';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
+import { printCurrentPage } from '../lib/print-page';
 import { formatDate } from '../lib/format';
 import {
   buildProductMovementReportQuery,
@@ -286,7 +287,7 @@ export function ProductReportMovementPrintPage() {
           ← Voltar
         </button>
         <div style={{ flex: 1 }} />
-        <button type="button" className="btn btn-primary" onClick={() => window.print()}>
+        <button type="button" className="btn btn-primary" onClick={printCurrentPage}>
           Imprimir ou salvar PDF
         </button>
       </div>

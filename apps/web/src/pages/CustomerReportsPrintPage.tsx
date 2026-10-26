@@ -7,6 +7,7 @@ import './cash-print.css';
 import { api } from '../lib/api';
 import { PAYMENT_LABELS } from '../lib/finance-bills';
 import { formatBRL, formatCpfCnpj, formatDate } from '../lib/format';
+import { printCurrentPage, scheduleAutoPrint } from '../lib/print-page';
 
 type CreditLimitsReport = {
   title: string;
@@ -100,7 +101,7 @@ export function CustomerReportsPrintPage() {
   const onReady = useCallback((count: number) => {
     if (printed.current || count < 1 || !query.isSuccess) return;
     printed.current = true;
-    window.setTimeout(() => window.print(), 400);
+    scheduleAutoPrint();
   }, [query.isSuccess]);
 
   const err =
@@ -134,7 +135,7 @@ export function CustomerReportsPrintPage() {
           ← Voltar aos clientes
         </Link>
         <div style={{ flex: 1 }} />
-        <button type="button" className="btn btn-primary" onClick={() => window.print()}>
+        <button type="button" className="btn btn-primary" onClick={printCurrentPage}>
           Imprimir
         </button>
       </div>

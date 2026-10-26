@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { BillPaymentsButton } from '../components/BillSettlementsModal';
 import { api } from '../lib/api';
+import { printCurrentPage } from '../lib/print-page';
 import { hasInformedPayment, PAYMENT_LABELS, saldoAbertoBill } from '../lib/finance-bills';
 import { formatBRL, formatCalendarDate, formatCpfCnpj, formatDate } from '../lib/format';
 
@@ -812,7 +813,7 @@ export function FinancePrintPage() {
           ← Voltar ao financeiro
         </Link>
         <div style={{ flex: 1 }} />
-        <button type="button" className="btn btn-primary" onClick={() => window.print()}>
+        <button type="button" className="btn btn-primary" onClick={printCurrentPage}>
           Imprimir
         </button>
       </div>

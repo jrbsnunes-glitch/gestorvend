@@ -53,7 +53,11 @@ import {
 import { queueCashCloseAutoPrint } from '../lib/cash-close-print';
 import { isGestorVendDesktop } from '../lib/desktop-bridge';
 import { usePdvTerminal } from '../hooks/usePdvTerminal';
-import type { PdvTerminalCapabilities } from '../lib/pdv-terminal-context';
+import {
+  isDesktopPdvStation,
+  withDesktopCashierLimits,
+  type PdvTerminalCapabilities,
+} from '../lib/pdv-terminal-context';
 import { parseBarcodeWeight, type ScaleMode } from '../lib/pos-scale';
 import { usePosScale } from '../lib/use-pos-scale';
 import {
@@ -380,6 +384,12 @@ export function SalesPage() {
   const qc = useQueryClient();
   const [searchParams] = useSearchParams();
   const pdvTerminal = usePdvTerminal();
+  const pdvCapabilities = withDesktopCashierLimits(
+    pdvTerminal.capabilities,
+    pdvTerminal.number,
+  );
+  const desktopPdvStation = isDesktopPdvStation(pdvTerminal.number);
+  const hideManagerChrome = pdvCapabilities.isSatellite || desktopPdvStation;
 
   const [localFailBump, setLocalFailBump] = useState(0);
 
@@ -561,9 +571,10 @@ export function SalesPage() {
         currentUserId={operator?.id ?? null}
         gatewayBlocked={gatewayBlocked}
         gatewayBlockMessages={gatewayBlockMessages}
-        pdvCapabilities={pdvTerminal.capabilities}
+        pdvCapabilities={pdvCapabilities}
         pdvTerminalNumber={pdvTerminal.number}
         pdvTerminalName={pdvTerminal.profile?.name ?? null}
+        hideManagerChrome={hideManagerChrome}
         onDismissCheckoutFailure={() => {
           sessionStorage.removeItem(GV_POS_CHECKOUT_FAILURE_KEY);
           setLocalFailBump((n) => n + 1);
@@ -598,11 +609,11 @@ export function SalesPage() {
       pdvTerminalId={pdvTerminal.profile?.id ?? null}
       pdvTerminalNumber={pdvTerminal.number}
       pdvTerminalName={pdvTerminal.profile?.name ?? null}
-      pdvCapabilities={pdvTerminal.capabilities}
+      pdvCapabilities={pdvCapabilities}
       onExit={() => {
         setOperatingSessionId(null);
         setEntered(false);
-        exitToDashboard();
+        if (!desktopPdvStation) exitToDashboard();
       }}
       onCashClosed={() => {
         /*
@@ -716,6 +727,7 @@ function PosGateway({
   pdvCapabilities,
   pdvTerminalNumber,
   pdvTerminalName,
+  hideManagerChrome,
 }: {
   session: CashSession | null;
   operator: Operator | null;
@@ -737,6 +749,7 @@ function PosGateway({
   pdvCapabilities: PdvTerminalCapabilities;
   pdvTerminalNumber: number | null;
   pdvTerminalName: string | null;
+  hideManagerChrome?: boolean;
 }) {
   const [opening, setOpening] = useState('0,00');
   const [err, setErr] = useState<string | null>(null);
@@ -996,7 +1009,7 @@ function PosGateway({
           )}
 
           {/* === Bloco exclusivo do gerente: outros caixas abertos === */}
-          {isManagerView && !pdvCapabilities.isSatellite && (
+          {isManagerView && !hideManagerChrome && !pdvCapabilities.isSatellite && (
             <ManagerOpenSessions
               sessions={openSessions}
               currentUserId={currentUserId}

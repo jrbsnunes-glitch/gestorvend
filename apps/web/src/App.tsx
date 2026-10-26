@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 're
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from './components/AppLayout';
 import { ManagerPasswordGate } from './components/ManagerPasswordGate';
+import { PrintUnavailableBanner } from './components/PrintUnavailableBanner';
 import { ResponsiveTablesBootstrap } from './components/ResponsiveTablesBootstrap';
 import {
   GV_AUTH_CHANGED_EVENT,
@@ -419,6 +420,7 @@ function AppInner() {
 
   return (
     <BrowserRouter>
+      <PrintUnavailableBanner />
       <BusinessTimezoneProvider>
       <Suspense fallback={<RouteFallback />}>
         <Routes>

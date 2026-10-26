@@ -203,7 +203,7 @@ function createWindow(partition?: string): BrowserWindow {
     minWidth: 1024,
     minHeight: 640,
     show: false,
-    autoHideMenuBar: true,
+    autoHideMenuBar: false,
     backgroundColor: '#0b1220',
     title: 'GestorVend',
     icon: appIconPath(),
@@ -224,7 +224,7 @@ function createWindow(partition?: string): BrowserWindow {
           return {
             action: 'allow',
             overrideBrowserWindowOptions: {
-              autoHideMenuBar: true,
+              autoHideMenuBar: false,
               backgroundColor: '#0b1220',
               icon: appIconPath(),
               webPreferences: appWebPrefs(),
@@ -312,6 +312,8 @@ async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
     win.setKiosk(false);
     win.setFullScreen(false);
     buildMenu();
+    win.setAutoHideMenuBar(false);
+    win.setMenuBarVisibility(true);
     if (isOperatorPdv) {
       win.setTitle(`GestorVend — PDV ${cfg.pdvTerminal!.number}`);
     } else {
@@ -320,11 +322,13 @@ async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
   }
 
   const base = cfg.serverUrl.replace(/\/$/, '');
-  // Operador (mestre ou secundário): mesmo sistema completo. O secundário
-  // só perde abrir/fechar caixa e procedimentos (capabilities no front/API).
+  // Operador: PDV em tela cheia (mesmo visual do PDV normal).
+  // Kiosk: autoatendimento. Sem kiosk e sem terminal: sistema completo.
   const target = isKiosk
     ? `${base}/auto-atendimento?terminal=${cfg.pdvTerminal!.number}`
-    : `${base}/`;
+    : isOperatorPdv
+      ? `${base}/vendas?terminal=${cfg.pdvTerminal!.number}`
+      : `${base}/`;
 
   if (isKiosk) {
     attachPdvNavGuard(
@@ -355,6 +359,14 @@ async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
       }
       return { action: 'deny' };
     });
+  } else if (isOperatorPdv) {
+    attachPdvNavGuard(
+      win,
+      (pathname) =>
+        pathname === '/' ||
+        pathname.startsWith('/vendas') ||
+        pathname.startsWith('/vendas/impressao'),
+    );
   }
 
   await refreshRemoteCache(win);
@@ -511,12 +523,13 @@ function buildMenu() {
         },
         {
           label: 'Reconfigurar servidor…',
+          accelerator: 'CmdOrCtrl+Shift+S',
           click: () => {
             if (mainWindow && !mainWindow.isDestroyed()) showSetup(mainWindow);
           },
         },
         { type: 'separator' },
-        { role: 'quit', label: 'Sair' },
+        { role: 'quit', label: 'Sair', accelerator: 'CmdOrCtrl+Q' },
       ],
     },
     {

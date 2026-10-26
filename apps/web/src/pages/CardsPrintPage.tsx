@@ -7,6 +7,7 @@ import { api } from '../lib/api';
 import './cash-print.css';
 import { formatBRL, formatDate } from '../lib/format';
 import { cardBrandLabel, cardOperationLabel } from '../lib/payment-forms';
+import { printCurrentPage, scheduleAutoPrint } from '../lib/print-page';
 
 type CardRow = {
   id: string;
@@ -50,7 +51,7 @@ export function CardsPrintPage() {
   const onReady = useCallback((count: number) => {
     if (printed.current || count < 1 || !list.isSuccess) return;
     printed.current = true;
-    window.setTimeout(() => window.print(), 400);
+    scheduleAutoPrint();
   }, [list.isSuccess]);
 
   const title =
@@ -163,7 +164,7 @@ export function CardsPrintPage() {
           ← Voltar
         </Link>
         <div style={{ flex: 1 }} />
-        <button type="button" className="btn btn-primary" onClick={() => window.print()}>
+        <button type="button" className="btn btn-primary" onClick={printCurrentPage}>
           Imprimir
         </button>
       </div>

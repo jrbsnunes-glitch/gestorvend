@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { A4ReportPages, type A4Item } from '../components/A4ReportPages';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
+import { printCurrentPage } from '../lib/print-page';
 import './cash-print.css';
 import { formatBRL, formatDate } from '../lib/format';
 
@@ -217,7 +218,7 @@ export function FiscalNotesPrintPage() {
         >
           Voltar
         </Link>
-        <button type="button" className="btn btn-primary" onClick={() => window.print()}>
+        <button type="button" className="btn btn-primary" onClick={printCurrentPage}>
           Imprimir
         </button>
       </div>

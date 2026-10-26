@@ -18,6 +18,7 @@ import {
   mfgProjectReportQueryString,
   mfgReportsModalSearch,
 } from '../lib/manufacturing-project-reports';
+import { printCurrentPage, scheduleAutoPrint } from '../lib/print-page';
 import './cash-print.css';
 import './manufacturing-reports.css';
 
@@ -64,7 +65,7 @@ export function ManufacturingProjectReportsPrintPage() {
   const onReady = useCallback((count: number) => {
     if (printed.current || count < 1 || !query.isSuccess) return;
     printed.current = true;
-    window.setTimeout(() => window.print(), 400);
+    scheduleAutoPrint();
   }, [query.isSuccess]);
 
   const err =
@@ -206,7 +207,7 @@ export function ManufacturingProjectReportsPrintPage() {
           ← Voltar aos filtros
         </Link>
         <div style={{ flex: 1 }} />
-        <button type="button" className="btn btn-primary" onClick={() => window.print()}>
+        <button type="button" className="btn btn-primary" onClick={printCurrentPage}>
           Imprimir
         </button>
       </div>

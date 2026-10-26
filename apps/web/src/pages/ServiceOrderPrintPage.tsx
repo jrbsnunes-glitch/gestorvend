@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
+import { printCurrentPage } from '../lib/print-page';
 import { formatBRL } from '../lib/format';
 import './cash-print.css';
 
@@ -227,7 +228,7 @@ export function ServiceOrderPrintPage() {
           </div>
         ) : null}
         <div style={{ flex: 1 }} />
-        <button type="button" className="btn btn-primary" onClick={() => window.print()}>
+        <button type="button" className="btn btn-primary" onClick={printCurrentPage}>
           Imprimir
         </button>
       </div>

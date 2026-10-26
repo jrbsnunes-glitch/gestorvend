@@ -5,6 +5,7 @@ import { A4ReportPages, type A4Item } from '../../components/A4ReportPages';
 import { StandardReportHeader } from '../../components/StandardReportHeader';
 import { api } from '../../lib/api';
 import { formatBRL } from '../../lib/format';
+import { printCurrentPage, scheduleAutoPrint } from '../../lib/print-page';
 import '../cash-print.css';
 
 type Movement = {
@@ -112,7 +113,7 @@ export function StockMovPrintPage() {
   const onReady = useCallback((count: number) => {
     if (printed.current || count < 1 || !report.data) return;
     printed.current = true;
-    window.setTimeout(() => window.print(), 400);
+    scheduleAutoPrint();
   }, [report.data]);
 
   const summary = report.data?.summary;
@@ -211,7 +212,7 @@ export function StockMovPrintPage() {
         <button type="button" className="btn btn-secondary" onClick={() => navigate('/estoque/movimentos')}>
           ← Voltar
         </button>
-        <button type="button" className="btn btn-primary" onClick={() => window.print()}>
+        <button type="button" className="btn btn-primary" onClick={printCurrentPage}>
           Imprimir
         </button>
       </div>

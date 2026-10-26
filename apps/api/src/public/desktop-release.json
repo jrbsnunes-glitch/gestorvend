@@ -1,5 +1,5 @@
 {
-  "version": "1.0.48",
+  "version": "1.0.50",
   "downloadUrl": "",
-  "notes": "PDV secundário com a mesma tela do principal, sem abrir/fechar caixa nem procedimentos."
+  "notes": "Desktop em tela cheia com o PDV normal, sem fechamento de caixa nem vendas recentes."
 }

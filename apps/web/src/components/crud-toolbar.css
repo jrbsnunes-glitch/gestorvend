@@ -195,6 +195,12 @@
   box-shadow: var(--shadow-sm);
 }
 
+@media (max-width: 900px) {
+  .crud-toolbar .btn {
+    min-height: 44px;
+  }
+}
+
 .crud-toolbar-group {
   display: flex;
   flex-wrap: wrap;
