@@ -204,6 +204,8 @@ export function SaleReceiptPrintPage() {
   const wantClose = sp.get('close') === '1' || sp.get('close') === 'true';
   const isSecondCopy = sp.get('copy') === '1' || sp.get('copy') === 'true';
   const np = sp.get('_np');
+  const [printErr, setPrintErr] = useState<string | null>(null);
+  const [printing, setPrinting] = useState(false);
 
   const receiptQ = useQuery({
     queryKey: demo ? ['sale-receipt', 'demo'] : ['sales', saleId, 'receipt'],
@@ -330,6 +332,40 @@ export function SaleReceiptPrintPage() {
     return () => window.clearTimeout(t);
   }, [wantAutoPrint, saleId, receiptReady, np, wantClose]);
 
+  async function handlePrint() {
+    if (!receiptReady || printing) return;
+    setPrintErr(null);
+    setPrinting(true);
+    try {
+      await printDocument('80mm');
+    } catch (err) {
+      setPrintErr(err instanceof Error ? err.message : 'Falha ao imprimir o cupom.');
+    } finally {
+      setPrinting(false);
+    }
+  }
+
+  useEffect(() => {
+    function onFail(ev: Event) {
+      const detail = (ev as CustomEvent<{ error?: string }>).detail;
+      const msg = detail?.error?.trim() || 'Falha ao enviar cupom à impressora.';
+      setPrintErr(msg);
+      setPrinting(false);
+    }
+    function onKey(ev: KeyboardEvent) {
+      if (!(ev.ctrlKey || ev.metaKey) || ev.key.toLowerCase() !== 'p') return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      void handlePrint();
+    }
+    window.addEventListener('gv-print-failed', onFail);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('gv-print-failed', onFail);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [receiptReady, printing]);
+
   return (
     <div
       className="sale-receipt-page"
@@ -348,12 +384,17 @@ export function SaleReceiptPrintPage() {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => void printDocument('80mm')}
-            disabled={!receiptReady}
+            onClick={() => void handlePrint()}
+            disabled={!receiptReady || printing}
           >
-            Imprimir (Ctrl+P)
+            {printing ? 'Imprimindo…' : 'Imprimir (Ctrl+P)'}
           </button>
         </div>
+        {printErr ? (
+          <p role="alert" style={{ margin: '0.35rem 0 0', color: '#b91c1c', fontSize: '0.88rem' }}>
+            {printErr}
+          </p>
+        ) : null}
         <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
           {demo ? (
             <>

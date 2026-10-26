@@ -54,13 +54,18 @@ export function consumeAutoPrintNonce(nonce: string | null, saleId: string): boo
   return true;
 }
 
-function receiptPrintPath(saleId: string, nonce: string, opts?: { autoprint?: boolean; close?: boolean }): string {
+function receiptPrintPath(
+  saleId: string,
+  nonce: string,
+  opts?: { autoprint?: boolean; close?: boolean; copy?: boolean },
+): string {
   const q = new URLSearchParams({
     id: saleId,
     _np: nonce,
   });
   if (opts?.autoprint !== false) q.set('autoprint', '1');
   if (opts?.close !== false) q.set('close', '1');
+  if (opts?.copy) q.set('copy', '1');
   return `/vendas/impressao?${q.toString()}`;
 }
 
@@ -69,19 +74,20 @@ function receiptPrintPath(saleId: string, nonce: string, opts?: { autoprint?: bo
  * No Desktop: janela oculta + impressão silenciosa (sem diálogo Windows).
  * Não usa `noopener` (senão window.open retorna null e caía em iframe sem bridge).
  */
-export function queueSaleReceiptAutoPrint(saleId: string): void {
+export function queueSaleReceiptAutoPrint(saleId: string, opts?: { copy?: boolean }): void {
   const nonce = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
-  const path = receiptPrintPath(saleId, nonce);
+  const copy = Boolean(opts?.copy);
+  const path = receiptPrintPath(saleId, nonce, { copy });
 
   if (isGestorVendDesktop()) {
     void (async () => {
-      const pathSilent = receiptPrintPath(saleId, nonce, { autoprint: false, close: false });
+      const pathSilent = receiptPrintPath(saleId, nonce, { autoprint: false, close: false, copy });
       const ok = await tryDesktopPrintUrl(pathSilent, '80mm');
       if (ok) return;
 
       // Fallback: janela filha COM preload e autoprint na página.
       const w = window.open(
-        receiptPrintPath(saleId, nonce, { autoprint: true, close: true }),
+        receiptPrintPath(saleId, nonce, { autoprint: true, close: true, copy }),
         'gv_sale_receipt',
         'width=420,height=720',
       );

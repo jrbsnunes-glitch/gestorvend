@@ -19,6 +19,7 @@ import { api, apiDownload } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
 import { trimFilterPeriod, validateFilterPeriodRange } from '../lib/list-filters';
 import { matchesListSearch } from '../lib/list-search';
+import { queueSaleReceiptAutoPrint } from '../lib/sale-receipt-print';
 
 type FiscalKind = 'NFC_E' | 'NF_E';
 type TabKind = FiscalKind | 'SALES';
@@ -873,6 +874,7 @@ export function FiscalNotesPage() {
                       className="btn btn-secondary btn-compact"
                       title="Segunda via do comprovante de venda"
                       onClick={() => {
+                        queueSaleReceiptAutoPrint(s.id, { copy: true });
                         navigate(`/vendas/impressao?id=${encodeURIComponent(s.id)}&copy=1`);
                       }}
                     >
@@ -1002,8 +1004,9 @@ export function FiscalNotesPage() {
                         onClick={(e) => {
                           e.stopPropagation();
                           const returnTo = encodeURIComponent('/notas-fiscais?tab=NFC_E');
+                          queueSaleReceiptAutoPrint(r.saleId, { copy: true });
                           navigate(
-                            `/vendas/impressao?id=${encodeURIComponent(r.saleId)}&returnTo=${returnTo}`,
+                            `/vendas/impressao?id=${encodeURIComponent(r.saleId)}&copy=1&returnTo=${returnTo}`,
                           );
                         }}
                       >
@@ -1198,8 +1201,9 @@ export function FiscalNotesPage() {
                     return;
                   }
                   const returnTo = encodeURIComponent('/notas-fiscais?tab=NFC_E');
+                  queueSaleReceiptAutoPrint(detail.data!.saleId, { copy: true });
                   navigate(
-                    `/vendas/impressao?id=${encodeURIComponent(detail.data!.saleId)}&returnTo=${returnTo}`,
+                    `/vendas/impressao?id=${encodeURIComponent(detail.data!.saleId)}&copy=1&returnTo=${returnTo}`,
                   );
                 }}
                 onEmitNfe={

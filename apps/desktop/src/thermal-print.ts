@@ -1,4 +1,6 @@
-import type { WebContents, WebContentsPrintOptions } from 'electron';
+import type { BrowserWindow, WebContents, WebContentsPrintOptions } from 'electron';
+import { bgraToEscPosRaster, darkPixelRatio, ESCPOS_DOTS_80MM } from './escpos-raster';
+import { sendRawToWindowsPrinter } from './windows-raw-print';
 
 export type ThermalPrintPageSize = '80mm' | 'A4';
 
@@ -228,4 +230,128 @@ export function buildThermalPrintOptions(opts: {
   }
 
   return printOpts;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+export type ReceiptCaptureRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  clipped: boolean;
+};
+
+export async function measureSaleReceiptRect(wc: WebContents): Promise<ReceiptCaptureRect | null> {
+  const box = (await wc.executeJavaScript(`
+    (() => {
+      const a = document.querySelector('article.sale-receipt-doc');
+      if (!a) return null;
+      try { a.scrollIntoView({ block: 'start', inline: 'nearest' }); } catch (_) {}
+      const r = a.getBoundingClientRect();
+      const ready =
+        a.getAttribute('data-receipt-ready') === '1' || Boolean(a.querySelector('.sale-receipt-title'));
+      if (!ready) return null;
+      return {
+        x: Math.max(0, Math.floor(r.left)),
+        y: Math.max(0, Math.floor(r.top)),
+        width: Math.max(1, Math.ceil(r.width)),
+        height: Math.max(1, Math.ceil(r.height)),
+        clipped: r.bottom > window.innerHeight + 8,
+      };
+    })()
+  `)) as ReceiptCaptureRect | null;
+  if (!box || box.width < 40 || box.height < 40) return null;
+  return box;
+}
+
+async function sendCapturedImageEscPos(
+  wc: WebContents,
+  device: string,
+  rect: { x: number; y: number; width: number; height: number },
+): Promise<void> {
+  let lastRatio = 0;
+  let chosen: { width: number; height: number; bgra: Buffer } | null = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const shot = await wc.capturePage(rect);
+    if (shot.isEmpty()) {
+      await sleep(160);
+      continue;
+    }
+    const sized = shot.resize({ width: ESCPOS_DOTS_80MM, quality: 'best' });
+    const { width, height: h } = sized.getSize();
+    const bgra = sized.toBitmap();
+    lastRatio = darkPixelRatio(bgra, width, h);
+    if (lastRatio >= 0.004) {
+      chosen = { width, height: h, bgra };
+      break;
+    }
+    await sleep(160);
+  }
+
+  if (!chosen) {
+    throw new Error(
+      `Cupom capturado em branco (${(lastRatio * 100).toFixed(2)}% de tinta). Atualize o servidor e tente de novo.`,
+    );
+  }
+
+  const payload = bgraToEscPosRaster(chosen.bgra, chosen.width, chosen.height);
+  console.log(
+    `[thermal-escpos] ${chosen.width}x${chosen.height} dots dark=${(lastRatio * 100).toFixed(2)}% bytes=${payload.length} printer=${device}`,
+  );
+  await sendRawToWindowsPrinter(device, payload);
+}
+
+/** Imprime o cupom que já está na tela (2ª via / botão Imprimir). */
+export async function printVisibleReceiptEscPos(wc: WebContents, deviceName: string): Promise<void> {
+  const device = deviceName.trim();
+  if (!device) throw new Error('Defina a impressora do PDV em Configurações → Impressão.');
+  const rect = await measureSaleReceiptRect(wc);
+  if (!rect || rect.clipped) {
+    throw new Error('VISIBLE_RECEIPT_UNAVAILABLE');
+  }
+  await sleep(80);
+  await sendCapturedImageEscPos(wc, device, rect);
+}
+
+/**
+ * Fotografa o cupom já preparado numa janela de impressão e manda ESC/POS RAW.
+ */
+export async function printPreparedReceiptEscPos(
+  win: BrowserWindow,
+  deviceName: string,
+  contentHeightPx: number,
+): Promise<void> {
+  const device = deviceName.trim();
+  if (!device) throw new Error('Defina a impressora do PDV em Configurações → Impressão.');
+
+  const wc = win.webContents;
+  const height = Math.max(160, Math.min(Math.round(contentHeightPx) + 24, 8000));
+  try {
+    win.setContentSize(THERMAL_WINDOW_WIDTH_PX, height);
+  } catch {
+    /* janela principal pode recusar o resize — captura com recorte */
+  }
+  if (!win.isVisible()) {
+    try {
+      win.setOpacity(0);
+    } catch {
+      /* ignore */
+    }
+    win.showInactive();
+  }
+  try {
+    await wc.executeJavaScript('document.body && document.body.offsetHeight');
+  } catch {
+    /* ignore */
+  }
+  await sleep(180);
+  await sendCapturedImageEscPos(wc, device, {
+    x: 0,
+    y: 0,
+    width: THERMAL_WINDOW_WIDTH_PX,
+    height,
+  });
 }

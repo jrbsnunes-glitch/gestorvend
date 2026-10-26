@@ -3994,7 +3994,7 @@ function PosScreen({
                             type="button"
                             className="pos-btn pos-btn-ghost pos-history-action-print"
                             onClick={() => {
-                              queueSaleReceiptAutoPrint(s.id);
+                              queueSaleReceiptAutoPrint(s.id, { copy: true });
                               setHistoryOpen(false);
                               setSaleLineRemoveDraft(null);
                               window.setTimeout(() => scannerRef.current?.focus(), 0);

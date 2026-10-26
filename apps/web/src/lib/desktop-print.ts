@@ -26,13 +26,25 @@ export async function tryDesktopSilentPrint(
   }
 
   if (!deviceName) {
-    console.warn('[desktop-print] Impressora do PDV não configurada.');
+    const msg = 'Defina a impressora do PDV em Configurações → Impressão.';
+    console.warn('[desktop-print]', msg);
+    try {
+      window.dispatchEvent(new CustomEvent('gv-print-failed', { detail: { error: msg } }));
+    } catch {
+      /* ignore */
+    }
     return false;
   }
 
   const res = await api.printSilent({ deviceName, pageSize, printBackground: true });
   if (!res.ok) {
-    console.warn('[desktop-print]', res.error || 'Falha na impressão silenciosa');
+    const msg = res.error || 'Falha na impressão silenciosa';
+    console.warn('[desktop-print]', msg);
+    try {
+      window.dispatchEvent(new CustomEvent('gv-print-failed', { detail: { error: msg } }));
+    } catch {
+      /* ignore */
+    }
     return false;
   }
   return true;

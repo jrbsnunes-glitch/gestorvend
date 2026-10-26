@@ -1,5 +1,5 @@
 {
-  "version": "1.0.54",
+  "version": "1.0.56",
   "downloadUrl": "",
-  "notes": "Cupom do PDV na térmica 80 mm (tamanho de página em mícrons, sem A4 vazio)."
+  "notes": "Imprimir 2ª via do cupom na térmica (captura o cupom visível)."
 }

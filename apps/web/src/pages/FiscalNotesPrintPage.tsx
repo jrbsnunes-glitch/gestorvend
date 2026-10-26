@@ -99,7 +99,7 @@ export function FiscalNotesPrintPage() {
     if (detail.data.saleId) {
       const returnTo = encodeURIComponent('/notas-fiscais?tab=NFC_E');
       navigate(
-        `/vendas/impressao?id=${encodeURIComponent(detail.data.saleId)}&returnTo=${returnTo}`,
+        `/vendas/impressao?id=${encodeURIComponent(detail.data.saleId)}&copy=1&returnTo=${returnTo}`,
         { replace: true },
       );
     }

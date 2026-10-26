@@ -33,6 +33,8 @@ import {
   THERMAL_WINDOW_WIDTH_PX,
   buildThermalPrintOptions,
   prepareSaleReceiptForThermalPrint,
+  printPreparedReceiptEscPos,
+  printVisibleReceiptEscPos,
 } from './thermal-print';
 
 let mainWindow: BrowserWindow | null = null;
@@ -131,6 +133,106 @@ function rendererPath(file: string): string {
 function withCacheBust(url: string): string {
   const sep = url.includes('?') ? '&' : '?';
   return `${url}${sep}_gv=${Date.now()}`;
+}
+
+function resolveAbsolutePrintUrl(rawUrl: string): { ok: true; url: string } | { ok: false; error: string } {
+  const raw = rawUrl.trim();
+  if (!raw) return { ok: false, error: 'URL de impressão inválida.' };
+  if (raw.startsWith('/')) {
+    const cfg = readConfig();
+    if (!cfg?.serverUrl) return { ok: false, error: 'Configure o servidor antes de imprimir.' };
+    return { ok: true, url: `${cfg.serverUrl.replace(/\/$/, '')}${raw}` };
+  }
+  if (!/^https?:\/\//i.test(raw)) return { ok: false, error: 'URL de impressão inválida.' };
+  return { ok: true, url: raw };
+}
+
+async function waitReceiptReady(win: BrowserWindow): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    let tries = 0;
+    const tick = async () => {
+      if (win.isDestroyed()) {
+        resolve(false);
+        return;
+      }
+      try {
+        const ok = await win.webContents.executeJavaScript(`
+          (() => {
+            const article = document.querySelector('article.sale-receipt-doc, article.cash-close-doc');
+            if (!article) return false;
+            if (article.getAttribute('data-receipt-ready') === '1') return true;
+            if (${tries} >= 12 && article.querySelector('.sale-receipt-title')) return true;
+            return false;
+          })()
+        `);
+        if (ok) {
+          resolve(true);
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+      tries += 1;
+      if (tries >= 80) {
+        resolve(false);
+        return;
+      }
+      setTimeout(() => {
+        void tick();
+      }, 100);
+    };
+    void tick();
+  });
+}
+
+async function printReceiptFromUrl(
+  target: string,
+  device: string,
+  pageSize: '80mm' | 'A4' = '80mm',
+): Promise<{ ok: boolean; error?: string }> {
+  const win = new BrowserWindow({
+    width: THERMAL_WINDOW_WIDTH_PX,
+    height: 900,
+    show: false,
+    backgroundColor: '#ffffff',
+    icon: appIconPath(),
+    webPreferences: appWebPrefs(mainWindowPartition),
+  });
+
+  try {
+    await win.loadURL(target);
+    const ready = await waitReceiptReady(win);
+    if (!ready) {
+      return {
+        ok: false,
+        error: 'Cupom não carregou a tempo (venda/empresa). Atualize o servidor e tente de novo.',
+      };
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    const contentHeightPx = await prepareSaleReceiptForThermalPrint(win.webContents);
+
+    if (pageSize === 'A4') {
+      const opts = buildThermalPrintOptions({
+        deviceName: device,
+        pageSize,
+        contentHeightPx,
+      });
+      await new Promise<void>((resolve, reject) => {
+        win.webContents.print(opts, (success, failureReason) => {
+          if (success) resolve();
+          else reject(new Error(failureReason || 'Falha na impressão silenciosa'));
+        });
+      });
+      return { ok: true };
+    }
+
+    await printPreparedReceiptEscPos(win, device, contentHeightPx);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Erro ao imprimir.' };
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
 }
 
 async function refreshRemoteCache(win: BrowserWindow): Promise<void> {
@@ -632,22 +734,8 @@ function registerIpc() {
       _e,
       body?: { url?: string; deviceName?: string; pageSize?: '80mm' | 'A4' },
     ) => {
-      const rawUrl = typeof body?.url === 'string' ? body.url.trim() : '';
-      if (!rawUrl) {
-        return { ok: false, error: 'URL de impressão inválida.' };
-      }
-      let target = rawUrl;
-      if (target.startsWith('/')) {
-        const cfg = readConfig();
-        if (!cfg?.serverUrl) {
-          return { ok: false, error: 'Configure o servidor antes de imprimir.' };
-        }
-        target = `${cfg.serverUrl.replace(/\/$/, '')}${target}`;
-      }
-      if (!/^https?:\/\//i.test(target)) {
-        return { ok: false, error: 'URL de impressão inválida.' };
-      }
-
+      const resolved = resolveAbsolutePrintUrl(typeof body?.url === 'string' ? body.url : '');
+      if (!resolved.ok) return resolved;
       const device =
         typeof body?.deviceName === 'string' && body.deviceName.trim()
           ? body.deviceName.trim()
@@ -658,85 +746,7 @@ function registerIpc() {
           error: 'Defina a impressora do PDV em Configurações → Impressão.',
         };
       }
-
-      const win = new BrowserWindow({
-        width: THERMAL_WINDOW_WIDTH_PX,
-        height: 900,
-        show: false,
-        backgroundColor: '#ffffff',
-        icon: appIconPath(),
-        webPreferences: appWebPrefs(mainWindowPartition),
-      });
-
-      try {
-        await win.loadURL(target);
-        // Pronto quando o cupom tem título da empresa (novo ou legado) ou article após carga.
-        const ready = await new Promise<boolean>((resolve) => {
-          let tries = 0;
-          const tick = async () => {
-            if (win.isDestroyed()) {
-              resolve(false);
-              return;
-            }
-            try {
-              const ok = await win.webContents.executeJavaScript(`
-                (() => {
-                  const article = document.querySelector('article.sale-receipt-doc, article.cash-close-doc');
-                  if (!article) return false;
-                  // Build novo: só pronto após blindar estilos e embutir a logo.
-                  if (article.getAttribute('data-receipt-ready') === '1') return true;
-                  // Build antigo do web: cabeçalho da empresa já renderizado.
-                  if (${tries} >= 12 && article.querySelector('.sale-receipt-title')) return true;
-                  return false;
-                })()
-              `);
-              if (ok) {
-                resolve(true);
-                return;
-              }
-            } catch {
-              /* ignore */
-            }
-            tries += 1;
-            if (tries >= 80) {
-              resolve(false);
-              return;
-            }
-            setTimeout(() => {
-              void tick();
-            }, 100);
-          };
-          void tick();
-        });
-        if (!ready) {
-          return {
-            ok: false,
-            error:
-              'Cupom não carregou a tempo (venda/empresa). Atualize o servidor e tente de novo.',
-          };
-        }
-        await new Promise((r) => setTimeout(r, 200));
-
-        const contentHeightPx = await prepareSaleReceiptForThermalPrint(win.webContents);
-        const pageSize = body?.pageSize ?? '80mm';
-        const opts = buildThermalPrintOptions({
-          deviceName: device,
-          pageSize,
-          contentHeightPx,
-        });
-
-        await new Promise<void>((resolve, reject) => {
-          win.webContents.print(opts, (success, failureReason) => {
-            if (success) resolve();
-            else reject(new Error(failureReason || 'Falha na impressão silenciosa'));
-          });
-        });
-        return { ok: true };
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : 'Erro ao imprimir.' };
-      } finally {
-        if (!win.isDestroyed()) win.destroy();
-      }
+      return printReceiptFromUrl(resolved.url, device, body?.pageSize ?? '80mm');
     },
   );
 
@@ -747,34 +757,58 @@ function registerIpc() {
       body?: { deviceName?: string; pageSize?: '80mm' | 'A4'; printBackground?: boolean },
     ) => {
       try {
-        const wc = event.sender;
         const pageSize = body?.pageSize ?? '80mm';
         const device =
           typeof body?.deviceName === 'string' && body.deviceName.trim()
             ? body.deviceName.trim()
             : readConfig()?.pdv?.printer?.trim();
+        if (!device) {
+          return {
+            ok: false,
+            error: 'Defina a impressora do PDV em Configurações → Impressão.',
+          };
+        }
 
-        let contentHeightPx: number | undefined;
         if (pageSize === '80mm') {
+          try {
+            await printVisibleReceiptEscPos(event.sender, device);
+            return { ok: true };
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg !== 'VISIBLE_RECEIPT_UNAVAILABLE') {
+              return { ok: false, error: msg };
+            }
+          }
+          const current = event.sender.getURL();
+          const resolved = resolveAbsolutePrintUrl(current || '');
+          if (resolved.ok) {
+            return printReceiptFromUrl(resolved.url, device, '80mm');
+          }
+          const wc = event.sender;
           const isReceipt = await wc
             .executeJavaScript(`Boolean(document.querySelector('article.sale-receipt-doc'))`)
             .catch(() => false);
-          if (isReceipt) {
-            contentHeightPx = await prepareSaleReceiptForThermalPrint(wc);
+          if (!isReceipt) {
+            return { ok: false, error: 'Cupom não encontrado na página.' };
           }
+          const contentHeightPx = await prepareSaleReceiptForThermalPrint(wc);
+          const owner = BrowserWindow.fromWebContents(wc);
+          if (!owner || owner.isDestroyed()) {
+            return { ok: false, error: 'Janela de impressão indisponível.' };
+          }
+          await printPreparedReceiptEscPos(owner, device, contentHeightPx);
+          return { ok: true };
         }
 
         const opts = buildThermalPrintOptions({
           deviceName: device,
           pageSize,
-          contentHeightPx,
         });
         if (body?.printBackground === false) {
           opts.printBackground = false;
         }
-
         await new Promise<void>((resolve, reject) => {
-          wc.print(opts, (success, failureReason) => {
+          event.sender.print(opts, (success, failureReason) => {
             if (success) resolve();
             else reject(new Error(failureReason || 'Falha na impressão'));
           });
