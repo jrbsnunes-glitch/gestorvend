@@ -920,28 +920,30 @@ function PosGateway({
               </div>
             </article>
 
-            {pdvCapabilities.canOpenCash ? (
-              <article
-                className="pos-gateway-card"
-                data-disabled={hasOpen ? 'true' : 'false'}
-              >
-                <div className="pos-gateway-card-icon is-open" aria-hidden>
-                  +
-                </div>
-                <h3>Abrir novo caixa</h3>
-                <p className="pos-gateway-card-desc">
-                  Iniciar uma nova sessão informando o saldo de troco (fundo de caixa).
-                </p>
+            <article
+              className="pos-gateway-card"
+              data-disabled={pdvCapabilities.canOpenCash ? (hasOpen ? 'true' : 'false') : 'true'}
+            >
+              <div className="pos-gateway-card-icon is-open" aria-hidden>
+                +
+              </div>
+              <h3>Abrir novo caixa</h3>
+              <p className="pos-gateway-card-desc">
+                {pdvCapabilities.canOpenCash
+                  ? 'Iniciar uma nova sessão informando o saldo de troco (fundo de caixa).'
+                  : 'Função do PDV mestre. Neste secundário só é possível vender no caixa já aberto.'}
+              </p>
 
-                {operator && (
-                  <dl className="pos-gateway-card-info">
-                    <dt>Operador</dt>
-                    <dd>{operator.name}</dd>
-                    <dt>Perfil</dt>
-                    <dd>{profileLabel(operator.profile)}</dd>
-                  </dl>
-                )}
+              {operator && (
+                <dl className="pos-gateway-card-info">
+                  <dt>Operador</dt>
+                  <dd>{operator.name}</dd>
+                  <dt>Perfil</dt>
+                  <dd>{profileLabel(operator.profile)}</dd>
+                </dl>
+              )}
 
+              {pdvCapabilities.canOpenCash ? (
                 <div className="pos-gateway-card-input">
                   <label htmlFor="opening">Saldo inicial (R$)</label>
                   <input
@@ -957,19 +959,26 @@ function PosGateway({
                     placeholder="0,00"
                   />
                 </div>
+              ) : null}
 
-                <div className="pos-gateway-card-cta">
-                  <button
-                    type="button"
-                    className="pos-gateway-btn pos-gateway-btn-secondary"
-                    disabled={hasOpen || openMut.isPending || gatewayBlocked}
-                    onClick={() => openMut.mutate()}
-                  >
-                    {openMut.isPending ? 'Abrindo…' : 'Abrir caixa'}
-                  </button>
-                </div>
-              </article>
-            ) : null}
+              <div className="pos-gateway-card-cta">
+                <button
+                  type="button"
+                  className="pos-gateway-btn pos-gateway-btn-secondary"
+                  disabled={!pdvCapabilities.canOpenCash || hasOpen || openMut.isPending || gatewayBlocked}
+                  onClick={() => {
+                    if (!pdvCapabilities.canOpenCash) return;
+                    openMut.mutate();
+                  }}
+                >
+                  {pdvCapabilities.canOpenCash
+                    ? openMut.isPending
+                      ? 'Abrindo…'
+                      : 'Abrir caixa'
+                    : 'Somente no PDV mestre'}
+                </button>
+              </div>
+            </article>
           </div>
 
           {hasOpen && pdvCapabilities.canOpenCash && (

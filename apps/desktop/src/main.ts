@@ -320,11 +320,11 @@ async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
   }
 
   const base = cfg.serverUrl.replace(/\/$/, '');
+  // Operador (mestre ou secundário): mesmo sistema completo. O secundário
+  // só perde abrir/fechar caixa e procedimentos (capabilities no front/API).
   const target = isKiosk
     ? `${base}/auto-atendimento?terminal=${cfg.pdvTerminal!.number}`
-    : isOperatorPdv
-      ? `${base}/vendas?terminal=${cfg.pdvTerminal!.number}`
-      : `${base}/`;
+    : `${base}/`;
 
   if (isKiosk) {
     attachPdvNavGuard(
@@ -355,14 +355,6 @@ async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
       }
       return { action: 'deny' };
     });
-  } else if (isOperatorPdv) {
-    attachPdvNavGuard(
-      win,
-      (pathname) =>
-        pathname === '/' ||
-        pathname.startsWith('/vendas') ||
-        pathname.startsWith('/vendas/impressao'),
-    );
   }
 
   await refreshRemoteCache(win);

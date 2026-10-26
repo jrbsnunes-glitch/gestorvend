@@ -1,5 +1,5 @@
 {
-  "version": "1.0.47",
+  "version": "1.0.48",
   "downloadUrl": "",
-  "notes": "Logo oficial no atalho e janela. Busca o sistema no servidor sem cache antigo."
+  "notes": "PDV secundário com a mesma tela do principal, sem abrir/fechar caixa nem procedimentos."
 }
