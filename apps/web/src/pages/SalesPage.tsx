@@ -389,7 +389,7 @@ export function SalesPage() {
     pdvTerminal.number,
   );
   const desktopPdvStation = isDesktopPdvStation(pdvTerminal.number);
-  const hideManagerChrome = pdvCapabilities.isSatellite || desktopPdvStation;
+  const hideManagerChrome = pdvCapabilities.isSatellite;
 
   const [localFailBump, setLocalFailBump] = useState(0);
 

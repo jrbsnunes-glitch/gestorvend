@@ -36,7 +36,14 @@ export type DesktopConfig = {
   station?: StationConfig;
   pdv?: PdvPrinterConfig;
   pdvTerminal?: PdvTerminalConfig;
+  /**
+   * Revisão do arquivo local. Rev 2: o checkbox antigo “kiosk / tela cheia”
+   * gravava autoatendimento sem o usuário querer — PDV numerado vira operador.
+   */
+  configRev?: number;
 };
+
+const DESKTOP_CONFIG_REV = 2;
 
 export type LicenseCache = {
   ok: boolean;
@@ -123,18 +130,35 @@ export function readConfig(): DesktopConfig | null {
       typeof parsed.tenantSlug === 'string' &&
       parsed.tenantSlug.trim()
     ) {
-      return {
+      const cfg: DesktopConfig = {
         serverUrl: parsed.serverUrl.trim().replace(/\/$/, ''),
         tenantSlug: parsed.tenantSlug.trim().toLowerCase(),
         station: normalizeStation(parsed.station),
         pdv: normalizePdv(parsed.pdv),
         pdvTerminal: normalizePdvTerminal(parsed.pdvTerminal),
+        configRev: typeof parsed.configRev === 'number' ? parsed.configRev : 0,
       };
+      return migrateDesktopConfig(cfg);
     }
     return null;
   } catch {
     return null;
   }
+}
+
+function migrateDesktopConfig(cfg: DesktopConfig): DesktopConfig {
+  const rev = cfg.configRev ?? 0;
+  if (rev >= DESKTOP_CONFIG_REV) return cfg;
+  const next: DesktopConfig = { ...cfg, configRev: DESKTOP_CONFIG_REV };
+  if (next.pdvTerminal?.mode === 'self_service') {
+    next.pdvTerminal = { ...next.pdvTerminal, mode: 'operator' };
+  }
+  try {
+    writeConfig(next);
+  } catch {
+    /* ignore */
+  }
+  return next;
 }
 
 export function writeConfig(cfg: DesktopConfig): void {
@@ -143,6 +167,7 @@ export function writeConfig(cfg: DesktopConfig): void {
   const payload: DesktopConfig = {
     serverUrl: cfg.serverUrl.trim().replace(/\/$/, ''),
     tenantSlug: cfg.tenantSlug.trim().toLowerCase(),
+    configRev: cfg.configRev ?? DESKTOP_CONFIG_REV,
   };
   if (cfg.station?.token) {
     payload.station = {

@@ -54,14 +54,14 @@ export function isDesktopPdvStation(terminalNumber: number | null): boolean {
 }
 
 /**
- * No Desktop em PDV, a tela é a mesma do PDV normal, sem opções gerenciais
- * (fechar caixa, vendas recentes, procedimentos).
+ * Só o PDV secundário perde fechamento de caixa, vendas recentes e procedimentos.
+ * O mestre (PRIMARY) mantém as opções administrativas, no Desktop e no navegador.
  */
 export function withDesktopCashierLimits(
   caps: PdvTerminalCapabilities,
-  terminalNumber: number | null,
+  _terminalNumber: number | null,
 ): PdvTerminalCapabilities {
-  if (!caps.isSatellite && !isDesktopPdvStation(terminalNumber)) return caps;
+  if (!caps.isSatellite) return caps;
   return {
     ...caps,
     canCloseCash: false,

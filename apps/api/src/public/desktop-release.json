@@ -1,5 +1,5 @@
 {
-  "version": "1.0.51",
+  "version": "1.0.52",
   "downloadUrl": "",
-  "notes": "PDV de operador (mesma tela de Vendas), sem fechar caixa nem vendas recentes. Autoatendimento só se marcado no setup."
+  "notes": "PDV de operador (não autoatendimento). Ctrl+Shift+S reconfigura mesmo em kiosk."
 }

@@ -2,6 +2,7 @@ import {
   app,
   BrowserWindow,
   dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   shell,
@@ -244,7 +245,25 @@ function createWindow(partition?: string): BrowserWindow {
   return win;
 }
 
+function leaveExclusiveFullscreen(win: BrowserWindow) {
+  try {
+    if (win.isKiosk()) win.setKiosk(false);
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (win.isFullScreen()) win.setFullScreen(false);
+  } catch {
+    /* ignore */
+  }
+  win.setAutoHideMenuBar(false);
+  win.setMenuBarVisibility(true);
+  buildMenu();
+}
+
 function showSetup(win: BrowserWindow) {
+  leaveExclusiveFullscreen(win);
+  forceShowWindow(win);
   void win.loadFile(rendererPath('setup.html'));
 }
 
@@ -254,6 +273,7 @@ function showBlocked(win: BrowserWindow, message: string) {
 }
 
 function showStation(win: BrowserWindow) {
+  leaveExclusiveFullscreen(win);
   void win.loadFile(rendererPath('station.html'));
 }
 
@@ -302,8 +322,9 @@ async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
     cfg.pdvTerminal.number != null &&
     cfg.pdvTerminal.number >= 1;
 
+  buildMenu();
   if (isKiosk) {
-    Menu.setApplicationMenu(null);
+    win.setAutoHideMenuBar(true);
     win.setMenuBarVisibility(false);
     win.setKiosk(true);
     win.setFullScreen(true);
@@ -311,7 +332,6 @@ async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
   } else {
     win.setKiosk(false);
     win.setFullScreen(false);
-    buildMenu();
     win.setAutoHideMenuBar(false);
     win.setMenuBarVisibility(true);
     if (isOperatorPdv) {
@@ -543,6 +563,16 @@ function buildMenu() {
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+function registerDesktopShortcuts() {
+  globalShortcut.unregisterAll();
+  globalShortcut.register('CommandOrControl+Shift+S', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) showSetup(mainWindow);
+  });
+  globalShortcut.register('CommandOrControl+Q', () => {
+    app.quit();
+  });
 }
 
 function registerIpc() {
@@ -909,6 +939,7 @@ app.whenReady().then(() => {
   if (!gotSingleInstance) return;
   app.setAppUserModelId('br.com.gestorvend.desktop');
   buildMenu();
+  registerDesktopShortcuts();
   registerIpc();
   mainWindow = createWindow();
   void boot(mainWindow);
@@ -920,6 +951,10 @@ app.whenReady().then(() => {
       void boot(mainWindow);
     }
   });
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
 });
 
 app.on('window-all-closed', () => {
