@@ -127,7 +127,7 @@ async function readPdvReceiptScale(): Promise<number> {
   } catch {
     /* navegador ou shell antigo */
   }
-  return 1.2;
+  return 1.4;
 }
 
 /** Venda fictícia do modo demonstração (`?demo=1`) — valida o layout na térmica. */

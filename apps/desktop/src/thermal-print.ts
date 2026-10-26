@@ -1,5 +1,12 @@
 import type { BrowserWindow, WebContents, WebContentsPrintOptions } from 'electron';
-import { bgraToEscPosRaster, darkPixelRatio, ESCPOS_DOTS_80MM } from './escpos-raster';
+import {
+  bgraToEscPosRaster,
+  darkPixelRatio,
+  ESCPOS_DOTS_80MM,
+  resolveBitmapSize,
+  scaleBgraNearest,
+  trimBgra,
+} from './escpos-raster';
 import { sendRawToWindowsPrinter } from './windows-raw-print';
 
 export type ThermalPrintPageSize = '80mm' | 'A4';
@@ -280,12 +287,14 @@ async function sendCapturedImageEscPos(
       await sleep(160);
       continue;
     }
-    const sized = shot.resize({ width: ESCPOS_DOTS_80MM, quality: 'best' });
-    const { width, height: h } = sized.getSize();
-    const bgra = sized.toBitmap();
-    lastRatio = darkPixelRatio(bgra, width, h);
+    const dip = shot.getSize();
+    const raw = shot.toBitmap();
+    const actual = resolveBitmapSize(raw, dip.width, dip.height);
+    lastRatio = darkPixelRatio(raw, actual.width, actual.height);
     if (lastRatio >= 0.004) {
-      chosen = { width, height: h, bgra };
+      const trimmed = trimBgra(raw, actual.width, actual.height);
+      const scaled = scaleBgraNearest(trimmed.bgra, trimmed.width, trimmed.height, ESCPOS_DOTS_80MM);
+      chosen = scaled;
       break;
     }
     await sleep(160);
@@ -328,7 +337,7 @@ export async function printPreparedReceiptEscPos(
   if (!device) throw new Error('Defina a impressora do PDV em Configurações → Impressão.');
 
   const wc = win.webContents;
-  const height = Math.max(160, Math.min(Math.round(contentHeightPx) + 24, 8000));
+  const height = Math.max(160, Math.min(Math.round(contentHeightPx), 8000));
   try {
     win.setContentSize(THERMAL_WINDOW_WIDTH_PX, height);
   } catch {

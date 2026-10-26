@@ -32,11 +32,11 @@ $binPath = [string]$job.bin
 $bytes = [System.IO.File]::ReadAllBytes($binPath)
 if ($bytes.Length -lt 8) { throw 'Arquivo ESC/POS vazio.' }
 
-if (-not ([System.Management.Automation.PSTypeName]'GvRawPrinter54').Type) {
+if (-not ([System.Management.Automation.PSTypeName]'GvRawPrinter57').Type) {
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
-public class GvRawPrinter54 {
+public class GvRawPrinter57 {
   [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
   public class DOCINFOA {
     [MarshalAs(UnmanagedType.LPStr)] public string pDocName;
@@ -51,10 +51,6 @@ public class GvRawPrinter54 {
   public static extern bool StartDocPrinter(IntPtr hPrinter, int level, [In, MarshalAs(UnmanagedType.LPStruct)] DOCINFOA di);
   [DllImport("winspool.drv", SetLastError = true)]
   public static extern bool EndDocPrinter(IntPtr hPrinter);
-  [DllImport("winspool.drv", SetLastError = true)]
-  public static extern bool StartPagePrinter(IntPtr hPrinter);
-  [DllImport("winspool.drv", SetLastError = true)]
-  public static extern bool EndPagePrinter(IntPtr hPrinter);
   [DllImport("winspool.drv", SetLastError = true)]
   public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);
 
@@ -71,31 +67,27 @@ public class GvRawPrinter54 {
       ClosePrinter(h);
       return "StartDocPrinter falhou (Win32 " + err + ").";
     }
-    if (!StartPagePrinter(h)) {
-      EndDocPrinter(h);
-      ClosePrinter(h);
-      return "StartPagePrinter falhou.";
-    }
     IntPtr p = Marshal.AllocHGlobal(data.Length);
     try {
       Marshal.Copy(data, 0, p, data.Length);
       int written;
       if (!WritePrinter(h, p, data.Length, out written) || written != data.Length) {
+        EndDocPrinter(h);
+        ClosePrinter(h);
         return "WritePrinter escreveu " + written + " de " + data.Length + " bytes.";
       }
     } finally {
       Marshal.FreeHGlobal(p);
-      EndPagePrinter(h);
-      EndDocPrinter(h);
-      ClosePrinter(h);
     }
+    EndDocPrinter(h);
+    ClosePrinter(h);
     return "OK";
   }
 }
 "@
 }
 
-$result = [GvRawPrinter54]::Send($printerName, $bytes)
+$result = [GvRawPrinter57]::Send($printerName, $bytes)
 if ($result -ne 'OK') { throw $result }
 Write-Output $result
 `;

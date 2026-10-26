@@ -1,5 +1,5 @@
 {
-  "version": "1.0.56",
+  "version": "1.0.57",
   "downloadUrl": "",
-  "notes": "Imprimir 2ª via do cupom na térmica (captura o cupom visível)."
+  "notes": "Cupom 80 mm numa só bobina, um pouco maior, sem segunda página vazia."
 }
