@@ -13,7 +13,8 @@
 
 type Decls = Record<string, string>;
 
-const FONT_STACK = "'Courier New', Courier, 'Liberation Mono', monospace";
+/** Sem serifa de x-alto: na térmica 1-bit o Courier some (traço fino vira cinza). */
+const FONT_STACK = "Verdana, Tahoma, 'Segoe UI', Arial, sans-serif";
 
 /**
  * Área imprimível de uma bobina de 80 mm (o mecanismo imprime ~72 mm).
@@ -38,10 +39,13 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
       zoom: '1',
       transform: 'none',
       'font-family': FONT_STACK,
-      'font-size': '13px',
+      'font-size': '15px',
       'font-weight': '700',
-      'line-height': '1.35',
+      'line-height': '1.4',
       color: '#000',
+      '-webkit-font-smoothing': 'none',
+      'font-smooth': 'never',
+      'text-rendering': 'geometricPrecision',
       background: '#fff',
       'box-shadow': 'none',
       overflow: 'visible',
@@ -67,9 +71,9 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   {
     selector: '.sale-receipt-title',
     decls: {
-      'font-size': '15px',
+      'font-size': '17px',
       'font-weight': '800',
-      'letter-spacing': '0.02em',
+      'letter-spacing': '0',
       'text-transform': 'uppercase',
       'text-align': 'center',
       margin: '0.35rem 0 0.25rem',

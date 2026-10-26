@@ -50,13 +50,14 @@
   padding: 3mm 2.5mm 5mm;
   background: #fff;
   color: #000;
-  font-family: 'Courier New', Courier, 'Liberation Mono', monospace;
-  font-size: 13px;
+  font-family: Verdana, Tahoma, 'Segoe UI', Arial, sans-serif;
+  font-size: 15px;
   font-weight: 700;
-  line-height: 1.35;
+  line-height: 1.4;
   box-sizing: border-box;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
 }
 
 .sale-receipt-doc strong {
@@ -88,7 +89,7 @@
 }
 
 .sale-receipt-title {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 800;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -388,7 +389,7 @@
     padding: 0 !important;
     background: #fff !important;
     overflow: visible !important;
-    font-family: 'Courier New', Courier, 'Liberation Mono', monospace !important;
+    font-family: Verdana, Tahoma, 'Segoe UI', Arial, sans-serif !important;
   }
 
   .sale-receipt-page {
@@ -429,10 +430,10 @@
     zoom: 1 !important;
     height: auto !important;
     min-height: 0 !important;
-    font-family: 'Courier New', Courier, 'Liberation Mono', monospace !important;
-    font-size: 13px !important;
+    font-family: Verdana, Tahoma, 'Segoe UI', Arial, sans-serif !important;
+    font-size: 15px !important;
     font-weight: 700 !important;
-    line-height: 1.35 !important;
+    line-height: 1.4 !important;
     color: #000 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
