@@ -143,9 +143,9 @@
 /* Cupom não fiscal */
 .sale-receipt-logo {
   display: block;
-  margin: 0 auto 0.35rem;
-  max-height: 72px;
-  max-width: 85%;
+  margin: 0 auto 0.4rem;
+  max-height: 30mm;
+  max-width: 64mm;
   width: auto;
   object-fit: contain;
 }

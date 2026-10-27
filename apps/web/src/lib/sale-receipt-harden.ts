@@ -59,9 +59,9 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
       display: 'block',
       'margin-left': 'auto',
       'margin-right': 'auto',
-      'margin-bottom': '0.35rem',
-      'max-width': '52mm',
-      'max-height': '20mm',
+      'margin-bottom': '0.4rem',
+      'max-width': '64mm',
+      'max-height': '30mm',
       width: 'auto',
       height: 'auto',
       'object-fit': 'contain',
@@ -297,9 +297,9 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-logo',
     decls: {
-      'max-width': '38mm',
-      'max-height': '12mm',
-      'margin-bottom': '0.12rem',
+      'max-width': '58mm',
+      'max-height': '24mm',
+      'margin-bottom': '0.2rem',
     },
   },
   {

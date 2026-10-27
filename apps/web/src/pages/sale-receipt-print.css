@@ -73,13 +73,13 @@
 }
 
 .sale-receipt-logo {
-  max-width: 52mm;
-  max-height: 20mm;
+  max-width: 64mm;
+  max-height: 30mm;
   width: auto;
   height: auto;
   object-fit: contain;
   object-position: center center;
-  margin: 0 auto 0.35rem;
+  margin: 0 auto 0.4rem;
   display: block;
 }
 
@@ -294,9 +294,9 @@
 
 /* NFC-e: cabeçalho e textos legais mais compactos para gastar menos bobina. */
 .sale-receipt-doc--nfce .sale-receipt-logo {
-  max-width: 38mm;
-  max-height: 12mm;
-  margin-bottom: 0.12rem;
+  max-width: 58mm;
+  max-height: 24mm;
+  margin-bottom: 0.2rem;
 }
 
 .sale-receipt-doc--nfce .sale-receipt-company {
@@ -444,8 +444,8 @@
   }
 
   .sale-receipt-logo {
-    max-width: 52mm !important;
-    max-height: 20mm !important;
+    max-width: 64mm !important;
+    max-height: 30mm !important;
     object-fit: contain !important;
   }
 
@@ -541,9 +541,9 @@
   }
 
   .sale-receipt-doc--nfce .sale-receipt-logo {
-    max-width: 38mm !important;
-    max-height: 12mm !important;
-    margin-bottom: 0.12rem !important;
+    max-width: 58mm !important;
+    max-height: 24mm !important;
+    margin-bottom: 0.2rem !important;
   }
 
   .sale-receipt-doc--nfce .sale-receipt-title {
