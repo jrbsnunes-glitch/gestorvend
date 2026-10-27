@@ -187,8 +187,19 @@ export async function prepareSaleReceiptForThermalPrint(wc: WebContents): Promis
           print-color-adjust: exact !important;
         }
         .sale-receipt-doc--nfce .sale-receipt-logo {
-          max-width: 58mm !important;
-          max-height: 24mm !important;
+          max-width: 42mm !important;
+          max-height: 14mm !important;
+          margin-bottom: 0.08rem !important;
+        }
+        .sale-receipt-doc--nfce {
+          font-size: 11px !important;
+          line-height: 1.15 !important;
+          padding: 1mm 1.5mm 2mm !important;
+        }
+        .sale-receipt-doc--nfce .nfce-qr,
+        .sale-receipt-doc--nfce .sale-receipt-nfce-qr img {
+          width: 24mm !important;
+          height: 24mm !important;
         }
         .sale-receipt-company, .sale-receipt-title, .sale-receipt-sub, .sale-receipt-legal {
           text-align: center !important;

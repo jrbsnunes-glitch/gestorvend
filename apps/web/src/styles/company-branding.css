@@ -150,6 +150,12 @@
   object-fit: contain;
 }
 
+.sale-receipt-doc--nfce .sale-receipt-logo {
+  max-width: 42mm;
+  max-height: 14mm;
+  margin-bottom: 0.08rem;
+}
+
 /* Cadastro Empresa — layout compacto */
 .company-form {
   max-width: 960px;

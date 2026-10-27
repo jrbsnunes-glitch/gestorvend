@@ -295,56 +295,85 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
     },
   },
   {
+    selector: '.sale-receipt-doc--nfce',
+    decls: {
+      'font-size': '11px',
+      'line-height': '1.15',
+      padding: '1.5mm 2mm 3mm',
+    },
+  },
+  {
     selector: '.sale-receipt-doc--nfce .sale-receipt-logo',
     decls: {
-      'max-width': '58mm',
-      'max-height': '24mm',
-      'margin-bottom': '0.2rem',
+      'max-width': '42mm',
+      'max-height': '14mm',
+      'margin-bottom': '0.08rem',
     },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-title',
     decls: {
-      'font-size': '16px',
-      margin: '0.18rem 0 0.1rem',
-      'letter-spacing': '0.01em',
+      'font-size': '12px',
+      margin: '0.06rem 0 0.04rem',
+      'letter-spacing': '0',
     },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-sub, .sale-receipt-doc--nfce .sale-receipt-legal',
     decls: {
-      'font-size': '13px',
-      'line-height': '1.25',
-      margin: '0 0 0.08rem',
+      'font-size': '10px',
+      'line-height': '1.15',
+      margin: '0',
     },
+  },
+  {
+    selector:
+      '.sale-receipt-doc--nfce .sale-receipt-meta, .sale-receipt-doc--nfce .sale-receipt-items, .sale-receipt-doc--nfce .sale-receipt-totals, .sale-receipt-doc--nfce .sale-receipt-payments',
+    decls: { 'font-size': '10px' },
+  },
+  {
+    selector: '.sale-receipt-doc--nfce .sale-receipt-section-title',
+    decls: { 'font-size': '10px', margin: '0.18rem 0 0.08rem' },
+  },
+  {
+    selector: '.sale-receipt-doc--nfce .sale-receipt-items li',
+    decls: { margin: '0.12rem 0', 'padding-bottom': '0.08rem' },
+  },
+  {
+    selector: '.sale-receipt-doc--nfce .sale-receipt-item-sku',
+    decls: { 'font-size': '9px' },
+  },
+  {
+    selector: '.sale-receipt-doc--nfce .sale-receipt-totals-row.is-total',
+    decls: { 'font-size': '12px', 'margin-top': '0.15rem', 'padding-top': '0.12rem' },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-fiscal-note',
     decls: {
-      'font-size': '11px',
-      'line-height': '1.25',
-      margin: '0 0 0.1rem',
+      'font-size': '9px',
+      'line-height': '1.15',
+      margin: '0',
     },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-line',
-    decls: { margin: '0.25rem 0' },
+    decls: { margin: '0.12rem 0' },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-nfce-key',
-    decls: { 'font-size': '11px', margin: '0.18rem 0' },
+    decls: { 'font-size': '9px', margin: '0.08rem 0' },
   },
   {
     selector: '.sale-receipt-doc--nfce .nfce-qr',
-    decls: { width: '28mm', height: '28mm' },
+    decls: { width: '24mm', height: '24mm' },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-foot',
-    decls: { 'font-size': '12px', margin: '0.4rem 0 0.1rem' },
+    decls: { 'font-size': '9px', margin: '0.2rem 0 0' },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-foot-muted',
-    decls: { 'font-size': '10px', margin: '0.15rem 0 0' },
+    decls: { 'font-size': '8px', margin: '0.08rem 0 0' },
   },
 ];
 
