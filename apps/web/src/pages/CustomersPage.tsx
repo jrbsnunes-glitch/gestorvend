@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AddressFormBlock, EMPTY_ADDRESS, type AddressFormFields } from '../components/AddressFormBlock';
 import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
@@ -136,6 +136,7 @@ export function CustomersPage() {
   const [limitEditMode, setLimitEditMode] = useState<'ADD' | 'SET'>('ADD');
   const [limitEditValue, setLimitEditValue] = useState('');
   const [limitEditErr, setLimitEditErr] = useState<string | null>(null);
+  const limitEditInputRef = useRef<HTMLInputElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draftSearch, setDraftSearch] = useState('');
@@ -289,9 +290,22 @@ export function CustomersPage() {
   function openLimitEdit(kind: 'CREDIT' | 'REQUISITION', mode: 'ADD' | 'SET') {
     setLimitEditKind(kind);
     setLimitEditMode(mode);
-    setLimitEditValue(mode === 'SET' ? (kind === 'CREDIT' ? creditLimit : requisitionLimit) : '');
+    const current =
+      kind === 'CREDIT'
+        ? creditSummaryQ.data?.creditLimit ?? creditLimit
+        : creditSummaryQ.data?.requisitionLimit ?? requisitionLimit;
+    setLimitEditValue(mode === 'SET' ? String(current ?? '0') : '');
     setLimitEditErr(null);
   }
+
+  useEffect(() => {
+    if (!limitEditKind) return;
+    const t = window.setTimeout(() => {
+      limitEditInputRef.current?.focus();
+      limitEditInputRef.current?.select();
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [limitEditKind]);
 
   function resetForm() {
     setName('');
@@ -510,7 +524,7 @@ export function CustomersPage() {
                       type="button"
                       className="btn btn-ghost btn-sm"
                       style={{ paddingInline: 0 }}
-                      onClick={() => openLimitEdit('REQUISITION', 'ADD')}
+                      onClick={() => openLimitEdit('REQUISITION', 'SET')}
                     >
                       Valor de Requisição
                     </button>
@@ -1100,7 +1114,7 @@ export function CustomersPage() {
 
       {limitEditKind && (
         <FormModalBackdrop
-          className="modal-backdrop--cadastro no-print"
+          className="modal-backdrop--cadastro modal-backdrop--nested no-print"
           onClose={() => {
             setLimitEditKind(null);
             setLimitEditErr(null);
@@ -1118,7 +1132,7 @@ export function CustomersPage() {
             <p className="muted" style={{ marginTop: '-0.35rem' }}>
               {limitEditKind === 'CREDIT'
                 ? 'Informe o valor a somar ao saldo restante de crédito.'
-                : 'Informe o valor a somar ao limite de requisição do cliente.'}
+                : 'Informe o limite de requisição do cliente. Esse valor substitui o limite atual.'}
             </p>
             {editCustomer && (
               <p style={{ margin: '0 0 0.75rem', fontWeight: 600 }}>
@@ -1132,12 +1146,19 @@ export function CustomersPage() {
             )}
             {limitEditErr && <div className="alert alert-error">{limitEditErr}</div>}
             <div className="field">
-              <label htmlFor="limit-edit-value">Valor a incluir</label>
+              <label htmlFor="limit-edit-value">
+                {limitEditKind === 'REQUISITION' && limitEditMode === 'SET'
+                  ? 'Limite de requisição'
+                  : 'Valor a incluir'}
+              </label>
               <input
                 id="limit-edit-value"
+                ref={limitEditInputRef}
+                type="text"
                 value={limitEditValue}
                 onChange={(e) => setLimitEditValue(e.target.value)}
                 inputMode="decimal"
+                autoComplete="off"
                 autoFocus
               />
             </div>

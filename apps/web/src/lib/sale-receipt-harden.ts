@@ -23,7 +23,7 @@ const FONT_STACK = "Verdana, Tahoma, 'Segoe UI', Arial, sans-serif";
  * alinhado à direita — valores, datas, e até o cabeçalho centralizado —
  * cai fora do papel e sai cortado.
  */
-export const RECEIPT_PRINT_WIDTH_MM = 72;
+export const RECEIPT_PRINT_WIDTH_MM = 80;
 
 const RULES: Array<{ selector: string; decls: Decls }> = [
   {
@@ -33,18 +33,18 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
       'max-width': `${RECEIPT_PRINT_WIDTH_MM}mm`,
       'min-width': '0',
       'box-sizing': 'border-box',
-      padding: '2mm 1.5mm 4mm',
+      padding: '1mm 1.5mm 3mm',
       margin: '0',
       // A escala é tipográfica: `zoom`/`transform` alargariam a caixa e voltariam a cortar.
       zoom: '1',
       transform: 'none',
       'font-family': FONT_STACK,
-      'font-size': '15px',
-      'font-weight': '700',
-      'line-height': '1.4',
+      'font-size': '17px',
+      'font-weight': '800',
+      'line-height': '1.35',
       color: '#000',
-      '-webkit-font-smoothing': 'none',
-      'font-smooth': 'never',
+      '-webkit-font-smoothing': 'antialiased',
+      'font-smooth': 'always',
       'text-rendering': 'geometricPrecision',
       background: '#fff',
       'box-shadow': 'none',
@@ -71,7 +71,7 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   {
     selector: '.sale-receipt-title',
     decls: {
-      'font-size': '17px',
+      'font-size': '20px',
       'font-weight': '800',
       'letter-spacing': '0',
       'text-transform': 'uppercase',
@@ -83,8 +83,8 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   {
     selector: '.sale-receipt-legal',
     decls: {
-      'font-size': '12px',
-      'font-weight': '700',
+      'font-size': '14px',
+      'font-weight': '800',
       'text-align': 'center',
       margin: '0',
       color: '#000',
@@ -93,8 +93,8 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   {
     selector: '.sale-receipt-sub',
     decls: {
-      'font-size': '12px',
-      'font-weight': '700',
+      'font-size': '14px',
+      'font-weight': '800',
       margin: '0 0 0.2rem',
       color: '#000',
     },
@@ -111,8 +111,8 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   {
     selector: '.sale-receipt-fiscal-note',
     decls: {
-      'font-size': '11px',
-      'font-weight': '700',
+      'font-size': '13px',
+      'font-weight': '800',
       'text-align': 'center',
       margin: '0 0 0.35rem',
       color: '#000',
@@ -123,7 +123,7 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
     decls: {
       'text-align': 'center',
       'font-weight': '800',
-      'font-size': '13px',
+      'font-size': '16px',
       'text-transform': 'uppercase',
       margin: '0.25rem 0 0.15rem',
       padding: '0.25rem',
@@ -140,8 +140,8 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
       'justify-content': 'space-between',
       gap: '0.5rem',
       'flex-wrap': 'wrap',
-      'font-size': '12px',
-      'font-weight': '700',
+      'font-size': '14px',
+      'font-weight': '800',
       margin: '0.2rem 0',
       color: '#000',
     },
@@ -149,10 +149,10 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   {
     selector: '.sale-receipt-section-title',
     decls: {
-      'font-size': '12px',
+      'font-size': '15px',
       'font-weight': '800',
       'text-transform': 'uppercase',
-      'letter-spacing': '0.04em',
+      'letter-spacing': '0',
       margin: '0.55rem 0 0.3rem',
       color: '#000',
     },
@@ -163,8 +163,8 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
       margin: '0',
       padding: '0',
       'list-style': 'none',
-      'font-size': '12px',
-      'font-weight': '700',
+      'font-size': '15px',
+      'font-weight': '800',
       color: '#000',
     },
   },
@@ -190,11 +190,11 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   },
   {
     selector: '.sale-receipt-item-sku',
-    decls: { display: 'block', 'font-size': '11px', 'font-weight': '700', color: '#000' },
+    decls: { display: 'block', 'font-size': '13px', 'font-weight': '800', color: '#000' },
   },
   {
     selector: '.sale-receipt-totals',
-    decls: { 'margin-top': '0.5rem', 'font-size': '12px', 'font-weight': '700', color: '#000' },
+    decls: { 'margin-top': '0.5rem', 'font-size': '15px', 'font-weight': '800', color: '#000' },
   },
   {
     selector: '.sale-receipt-totals-row',
@@ -203,7 +203,7 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   {
     selector: '.sale-receipt-totals-row.is-total',
     decls: {
-      'font-size': '15px',
+      'font-size': '19px',
       'font-weight': '800',
       'margin-top': '0.4rem',
       'padding-top': '0.35rem',
@@ -237,8 +237,8 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
       margin: '0.4rem 0 0',
       padding: '0',
       'list-style': 'none',
-      'font-size': '12px',
-      'font-weight': '700',
+      'font-size': '15px',
+      'font-weight': '800',
       color: '#000',
     },
   },
@@ -250,8 +250,8 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
     selector: '.sale-receipt-foot',
     decls: {
       'text-align': 'center',
-      'font-size': '12px',
-      'font-weight': '700',
+      'font-size': '14px',
+      'font-weight': '800',
       margin: '0.7rem 0 0.25rem',
       color: '#000',
     },
@@ -260,8 +260,8 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
     selector: '.sale-receipt-foot-muted',
     decls: {
       'text-align': 'center',
-      'font-size': '10px',
-      'font-weight': '700',
+      'font-size': '12px',
+      'font-weight': '800',
       'line-height': '1.35',
       margin: '0.4rem 0 0',
       color: '#000',

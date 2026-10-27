@@ -2082,6 +2082,11 @@
   align-items: center;
 }
 
+/** Segundo modal (limite de requisição/crédito) acima do cadastro — no Desktop o mesmo z-index bloqueava o campo. */
+.modal-backdrop--nested {
+  z-index: 500;
+}
+
 @media (max-height: 720px) {
   .modal-backdrop--cadastro,
   .modal-backdrop--product-form {

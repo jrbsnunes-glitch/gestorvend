@@ -171,6 +171,126 @@ function safeReturnTo(raw: string | null): string | null {
   return null;
 }
 
+function buildReceiptTicketJson(
+  s: SaleReceipt,
+  c: Company,
+  opts: { isSecondCopy: boolean; nfceAuthorized: boolean; nfce: NfceReceipt | null },
+): string {
+  const companyLines = [
+    c.cnpj?.trim() ? `CNPJ ${formatCnpjForReceipt(c.cnpj)}` : '',
+    c.ie?.trim() ? `IE ${c.ie}` : '',
+    c.address?.trim() || '',
+    formatAddressLine(c),
+    c.phone?.trim() ? `Tel. ${c.phone}` : '',
+  ].filter(Boolean);
+
+  const headlines = opts.nfceAuthorized
+    ? [
+        'DANFE NFC-e',
+        'Documento Auxiliar da Nota Fiscal de Consumidor Eletrônica',
+        'Não permite aproveitamento de crédito de ICMS',
+      ]
+    : [
+        'DOCUMENTO AUXILIAR DE VENDA',
+        'Não possui validade fiscal - conferência interna / troca mediante política da loja',
+      ];
+  if (opts.nfce?.pending && !opts.nfceAuthorized) {
+    headlines.push('NFC-e em processamento na SEFAZ...');
+  }
+
+  const banners = [
+    opts.nfceAuthorized && opts.nfce?.sefazEnvironment !== 'PRODUCAO'
+      ? 'Emitida em homologação - sem valor fiscal'
+      : '',
+    s.status === 'CANCELLED' ? 'Venda cancelada' : '',
+    opts.isSecondCopy ? '2ª via do comprovante' : '',
+  ].filter(Boolean);
+
+  const metas: Array<{ left: string; right: string }> = [
+    {
+      left: opts.nfceAuthorized
+        ? `NFC-e${opts.nfce?.nNF != null ? ` nº ${opts.nfce.nNF}` : ''}${
+            opts.nfce?.serie != null ? ` · Série ${opts.nfce.serie}` : ''
+          }`
+        : `Venda #${s.number}`,
+      right: formatDate(s.createdAt),
+    },
+  ];
+  if (opts.nfceAuthorized) metas.push({ left: 'Venda', right: `#${s.number}` });
+  if (s.user?.name) metas.push({ left: 'Operador', right: s.user.name });
+  const seller = s.sellerName || s.sellerUser?.name || s.user?.name;
+  if (seller) metas.push({ left: 'Responsável', right: seller });
+  metas.push({ left: 'Cliente', right: s.customer?.name ?? 'Balcão' });
+
+  const items = s.items.map((it) => {
+    const q = parseN(it.quantity);
+    const line = parseN(it.totalLine);
+    const unit = parseN(it.unitPrice);
+    const itemDisc = parseN(it.discount);
+    return {
+      name: it.variant.product?.name ?? 'Item',
+      sku: `Cód. ${it.variant.sku}`,
+      qty: `${q} x ${formatBRL(unit)}${itemDisc > 0.005 ? ` (- ${formatBRL(itemDisc)})` : ''}`,
+      total: formatBRL(line),
+    };
+  });
+
+  const totals: Array<{ left: string; right: string; emph?: boolean }> = [
+    { left: 'Subtotal', right: formatBRL(s.subtotal) },
+  ];
+  if (parseN(s.discount) > 0.005) totals.push({ left: 'Desconto', right: `- ${formatBRL(s.discount)}` });
+  if (parseN(s.serviceFeeAmount) > 0.005) {
+    totals.push({ left: 'Taxa de serviço', right: `+ ${formatBRL(s.serviceFeeAmount)}` });
+  }
+  if (parseN(s.couvertAmount) > 0.005) {
+    totals.push({ left: 'Couvert', right: `+ ${formatBRL(s.couvertAmount)}` });
+  }
+  if (parseN(s.waiterTipAmount) > 0.005) {
+    totals.push({ left: 'Taxa do garçom', right: `+ ${formatBRL(s.waiterTipAmount)}` });
+  }
+  if (
+    parseN(s.serviceFeeAmount) <= 0.005 &&
+    parseN(s.couvertAmount) <= 0.005 &&
+    parseN(s.waiterTipAmount) <= 0.005 &&
+    parseN(s.surcharge) > 0.005
+  ) {
+    totals.push({ left: 'Acréscimo', right: `+ ${formatBRL(s.surcharge)}` });
+  }
+  if (parseN(s.cardFeeSurcharge) > 0.005) {
+    totals.push({ left: 'Taxa cartão (repasse)', right: `+ ${formatBRL(s.cardFeeSurcharge)}` });
+  }
+  totals.push({ left: 'TOTAL', right: formatBRL(s.total), emph: true });
+
+  const payments = s.payments.map((p) => ({
+    left: `${PAY_LABEL[p.method]}${p.method === 'CREDIT' && p.installments > 1 ? ` · ${p.installments}x` : ''}`,
+    right: formatBRL(p.amount),
+  }));
+
+  const foot = ['Obrigado pela preferência!'];
+  if (opts.nfceAuthorized && opts.nfce?.accessKey) {
+    foot.unshift(`Chave ${opts.nfce.accessKey}`);
+  }
+  foot.push(
+    opts.nfceAuthorized
+      ? `DANFE NFC-e · GestorVend v${APP_VERSION}`
+      : `Cupom gerado pelo GestorVend v${APP_VERSION}`,
+  );
+
+  return JSON.stringify({
+    title: c.tradeName || c.legalName,
+    legal: c.tradeName && c.legalName && c.legalName !== c.tradeName ? c.legalName : '',
+    companyLines,
+    headlines,
+    banners,
+    metas,
+    items,
+    totals,
+    payments,
+    notes: s.notes?.trim() || '',
+    foot,
+  });
+}
+
 function leaveReceiptPage(
   navigate: ReturnType<typeof useNavigate>,
   returnTo?: string | null,
@@ -459,6 +579,7 @@ export function SaleReceiptPrintPage() {
           className={'sale-receipt-doc' + (nfceAuthorized ? ' sale-receipt-doc--nfce' : '')}
           data-receipt-ready={receiptReady ? '1' : '0'}
           data-company-ok={companyOk ? '1' : '0'}
+          data-gv-ticket={buildReceiptTicketJson(s, c, { isSecondCopy, nfceAuthorized, nfce })}
         >
           <header className="sale-receipt-center sale-receipt-company">
             <CompanyLogo

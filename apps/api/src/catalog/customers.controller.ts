@@ -147,7 +147,7 @@ export class CustomersController {
   }
 
   @Post(':id/credit-adjustments')
-  @Roles('admin', 'manager')
+  @Roles('admin', 'manager', 'seller')
   applyCreditAdjustment(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,

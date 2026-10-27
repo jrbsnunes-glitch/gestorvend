@@ -2,11 +2,11 @@ import type { BrowserWindow, WebContents, WebContentsPrintOptions } from 'electr
 import {
   bgraToEscPosRaster,
   darkPixelRatio,
-  ESCPOS_DOTS_80MM,
+  fitBgraToEscPosWidth,
   resolveBitmapSize,
-  scaleBgraNearest,
   trimBgra,
 } from './escpos-raster';
+import { buildEscPosText, EXTRACT_RECEIPT_TICKET_JS, type ReceiptTicket } from './escpos-text';
 import { sendRawToWindowsPrinter } from './windows-raw-print';
 
 export type ThermalPrintPageSize = '80mm' | 'A4';
@@ -129,7 +129,7 @@ export async function prepareSaleReceiptForThermalPrint(wc: WebContents): Promis
         document.head.appendChild(style);
       }
       style.textContent = \`
-        @page { size: 80mm auto !important; margin: 0 !important; }
+        @page { size: 80mm auto !important; margin: 1.5mm !important; }
         html.gv-sale-receipt-print, html {
           margin: 0 !important;
           padding: 0 !important;
@@ -166,9 +166,11 @@ export async function prepareSaleReceiptForThermalPrint(wc: WebContents): Promis
          * só a margem cinza — a térmica só empurra um pedaço de papel.
          */
         .sale-receipt-doc, article.sale-receipt-doc {
-          width: 72mm !important;
-          max-width: 72mm !important;
+          width: 80mm !important;
+          max-width: 80mm !important;
           margin: 0 !important;
+          padding: 1mm 1.5mm 3mm !important;
+          box-sizing: border-box !important;
           box-shadow: none !important;
           height: auto !important;
           min-height: 0 !important;
@@ -274,6 +276,19 @@ export async function measureSaleReceiptRect(wc: WebContents): Promise<ReceiptCa
   return box;
 }
 
+async function printReceiptTextEscPos(wc: WebContents, device: string): Promise<boolean> {
+  const ticket = (await wc.executeJavaScript(EXTRACT_RECEIPT_TICKET_JS).catch(() => null)) as
+    | ReceiptTicket
+    | null;
+  if (!ticket?.title?.trim() && !ticket?.items?.length && !ticket?.totals?.length) {
+    return false;
+  }
+  const payload = buildEscPosText(ticket);
+  console.log(`[thermal-escpos-text] bytes=${payload.length} printer=${device} title=${ticket.title}`);
+  await sendRawToWindowsPrinter(device, payload);
+  return true;
+}
+
 async function sendCapturedImageEscPos(
   wc: WebContents,
   device: string,
@@ -293,8 +308,7 @@ async function sendCapturedImageEscPos(
     lastRatio = darkPixelRatio(raw, actual.width, actual.height);
     if (lastRatio >= 0.004) {
       const trimmed = trimBgra(raw, actual.width, actual.height);
-      const scaled = scaleBgraNearest(trimmed.bgra, trimmed.width, trimmed.height, ESCPOS_DOTS_80MM);
-      chosen = scaled;
+      chosen = fitBgraToEscPosWidth(trimmed.bgra, trimmed.width, trimmed.height);
       break;
     }
     await sleep(160);
@@ -313,16 +327,25 @@ async function sendCapturedImageEscPos(
   await sendRawToWindowsPrinter(device, payload);
 }
 
+/** Fotografa o article do preview (o que o operador vê) e manda para a térmica. */
+async function printReceiptPreviewEscPos(wc: WebContents, device: string): Promise<void> {
+  const rect = await measureSaleReceiptRect(wc);
+  if (!rect) throw new Error('VISIBLE_RECEIPT_UNAVAILABLE');
+  await sendCapturedImageEscPos(wc, device, rect);
+}
+
 /** Imprime o cupom que já está na tela (2ª via / botão Imprimir). */
 export async function printVisibleReceiptEscPos(wc: WebContents, deviceName: string): Promise<void> {
   const device = deviceName.trim();
   if (!device) throw new Error('Defina a impressora do PDV em Configurações → Impressão.');
-  const rect = await measureSaleReceiptRect(wc);
-  if (!rect || rect.clipped) {
-    throw new Error('VISIBLE_RECEIPT_UNAVAILABLE');
+  try {
+    await printReceiptPreviewEscPos(wc, device);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg !== 'VISIBLE_RECEIPT_UNAVAILABLE' && !/branco/i.test(msg)) throw err;
+    if (await printReceiptTextEscPos(wc, device)) return;
+    throw err;
   }
-  await sleep(80);
-  await sendCapturedImageEscPos(wc, device, rect);
 }
 
 /**
@@ -337,9 +360,9 @@ export async function printPreparedReceiptEscPos(
   if (!device) throw new Error('Defina a impressora do PDV em Configurações → Impressão.');
 
   const wc = win.webContents;
-  const height = Math.max(160, Math.min(Math.round(contentHeightPx), 8000));
+  const height = Math.max(200, Math.min(Math.round(contentHeightPx) + 48, 9000));
   try {
-    win.setContentSize(THERMAL_WINDOW_WIDTH_PX, height);
+    win.setContentSize(THERMAL_WINDOW_WIDTH_PX + 24, height);
   } catch {
     /* janela principal pode recusar o resize — captura com recorte */
   }
@@ -357,10 +380,12 @@ export async function printPreparedReceiptEscPos(
     /* ignore */
   }
   await sleep(180);
-  await sendCapturedImageEscPos(wc, device, {
-    x: 0,
-    y: 0,
-    width: THERMAL_WINDOW_WIDTH_PX,
-    height,
-  });
+  try {
+    await printReceiptPreviewEscPos(wc, device);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg !== 'VISIBLE_RECEIPT_UNAVAILABLE' && !/branco/i.test(msg)) throw err;
+    if (await printReceiptTextEscPos(wc, device)) return;
+    throw err;
+  }
 }

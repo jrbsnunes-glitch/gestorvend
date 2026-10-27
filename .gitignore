@@ -73,6 +73,10 @@ Desktop.ini
 .netlify/
 *.pid
 
+# --- Scans de comprovante (não versionar) ---
+docs/_scan*
+docs/Documento Escaneado*
+
 # --- Dumps, backups e dados locais ---
 *.dump
 *.sql.backup

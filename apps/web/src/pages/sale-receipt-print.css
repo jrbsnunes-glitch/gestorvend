@@ -51,13 +51,13 @@
   background: #fff;
   color: #000;
   font-family: Verdana, Tahoma, 'Segoe UI', Arial, sans-serif;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.4;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.35;
   box-sizing: border-box;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
-  -webkit-font-smoothing: none;
-  font-smooth: never;
+  -webkit-font-smoothing: antialiased;
+  font-smooth: always;
 }
 
 .sale-receipt-doc strong {
@@ -363,7 +363,7 @@
    */
   @page {
     size: 80mm auto;
-    margin: 0;
+    margin: 1.5mm;
   }
 
   html.gv-sale-receipt-print,
@@ -422,10 +422,10 @@
 
   .sale-receipt-doc {
     box-shadow: none !important;
-    width: 72mm !important;
-    max-width: 72mm !important;
+    width: auto !important;
+    max-width: none !important;
     margin: 0 !important;
-    padding: 2mm 1.5mm 4mm !important;
+    padding: 1mm 1.5mm 3mm !important;
     box-sizing: border-box !important;
     zoom: 1 !important;
     height: auto !important;
