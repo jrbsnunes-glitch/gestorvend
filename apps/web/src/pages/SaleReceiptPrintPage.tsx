@@ -14,6 +14,8 @@ import {
   waitSaleReceiptImages,
 } from '../lib/sale-receipt-harden';
 import { printDocument } from '../lib/desktop-print';
+import { fiscalPaymentLabel } from '../lib/nfce-payment';
+import { PAYMENT_FORM_KIND_LABELS, type PaymentFormKind } from '../lib/payment-forms';
 import { APP_VERSION } from '../version';
 import './sale-receipt-print.css';
 
@@ -58,9 +60,14 @@ type SaleReceipt = {
     variant: { sku: string; product: { name: string } };
   }>;
   payments: Array<{
-    method: 'CASH' | 'CARD' | 'PIX' | 'CREDIT' | 'OTHER';
+    method: PaymentFormKind;
     amount: string;
     installments: number;
+    cardOperation?: 'CREDIT' | 'DEBIT' | null;
+    paymentForm?: { name?: string | null } | null;
+    tPag?: string | null;
+    xPag?: string | null;
+    fiscalLabel?: string | null;
   }>;
 };
 
@@ -83,13 +90,17 @@ type ReceiptPayload = {
   nfce?: NfceReceipt | null;
 };
 
-const PAY_LABEL: Record<SaleReceipt['payments'][number]['method'], string> = {
-  CASH: 'Dinheiro',
-  CARD: 'Cartão',
-  PIX: 'Pix',
-  CREDIT: 'Crediário',
-  OTHER: 'Outro',
-};
+function payLabel(method: string): string {
+  return PAYMENT_FORM_KIND_LABELS[method as PaymentFormKind] ?? method;
+}
+
+function receiptPayLabel(
+  p: SaleReceipt['payments'][number],
+  fiscal: boolean,
+): string {
+  if (fiscal) return fiscalPaymentLabel(p);
+  return payLabel(p.method);
+}
 
 function onlyDigits(s: string): string {
   return String(s ?? '').replace(/\D/g, '');
@@ -262,7 +273,11 @@ function buildReceiptTicketJson(
   totals.push({ left: 'TOTAL', right: formatBRL(s.total), emph: true });
 
   const payments = s.payments.map((p) => ({
-    left: `${PAY_LABEL[p.method]}${p.method === 'CREDIT' && p.installments > 1 ? ` · ${p.installments}x` : ''}`,
+    left: `${receiptPayLabel(p, opts.nfceAuthorized)}${
+      !opts.nfceAuthorized && p.method === 'CREDIT' && p.installments > 1
+        ? ` · ${p.installments}x`
+        : ''
+    }`,
     right: formatBRL(p.amount),
   }));
 
@@ -766,8 +781,10 @@ export function SaleReceiptPrintPage() {
             {s.payments.map((p, i) => (
               <li key={`${s.id}-pay-${i}`}>
                 <span>
-                  {PAY_LABEL[p.method]}
-                  {p.method === 'CREDIT' && p.installments > 1 ? ` · ${p.installments}×` : ''}
+                  {receiptPayLabel(p, nfceAuthorized)}
+                  {!nfceAuthorized && p.method === 'CREDIT' && p.installments > 1
+                    ? ` · ${p.installments}×`
+                    : ''}
                 </span>
                 <span>{formatBRL(p.amount)}</span>
               </li>

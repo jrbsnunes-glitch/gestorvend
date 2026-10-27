@@ -28,6 +28,7 @@ import { resolveSaleStockQuantity } from '../common/product-conversion.util';
 import { PaymentsService } from '../payments/payments.service';
 import { calcRestaurantFees } from '../restaurant/restaurant-fees';
 import { maybeAutoQueueNfce } from '../fiscal/fiscal-document-queue.helper';
+import { mapSalePaymentToNfcePag } from '../fiscal/issuer/nfce-payment';
 import { readNfceAuthorizedXml, resolveNfceCouponPrint } from '../fiscal/issuer/nfce-print-supl';
 
 type TenantTx = Prisma.TransactionClient;
@@ -1047,7 +1048,7 @@ export class SalesService {
         sellerUser: { select: { id: true, name: true } },
         fiscalDocument: true,
         items: { include: { variant: { include: { product: true } } } },
-        payments: true,
+        payments: { include: { paymentForm: { select: { name: true } } } },
       },
     });
     if (!sale) {
@@ -1088,7 +1089,23 @@ export class SalesService {
     });
 
     return {
-      sale,
+      sale: {
+        ...sale,
+        payments: sale.payments.map((p) => {
+          const fiscal = mapSalePaymentToNfcePag({
+            method: String(p.method),
+            amount: p.amount,
+            cardOperation: p.cardOperation,
+            paymentFormName: p.paymentForm?.name ?? null,
+          });
+          return {
+            ...p,
+            tPag: fiscal.tPag,
+            xPag: fiscal.xPag ?? null,
+            fiscalLabel: fiscal.label,
+          };
+        }),
+      },
       company,
       nfce: {
         documentId: fiscal.id,

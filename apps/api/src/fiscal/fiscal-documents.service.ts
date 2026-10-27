@@ -36,6 +36,7 @@ import {
   readNfceAuthorizedXml,
   resolveNfceCouponPrint,
 } from './issuer/nfce-print-supl';
+import { mapSalePaymentToNfcePag } from './issuer/nfce-payment';
 
 export type FiscalDocumentListQuery = {
   kind?: FiscalDocumentKind;
@@ -806,7 +807,7 @@ export class FiscalDocumentsService {
                 },
               },
             },
-            payments: true,
+            payments: { include: { paymentForm: { select: { name: true } } } },
           },
         },
       },
@@ -879,11 +880,23 @@ export class FiscalDocumentsService {
                 cfop: raw.sale.operationNature.cfop,
               }
             : null,
-          payments: (raw.sale.payments ?? []).map((p) => ({
-            method: p.method,
-            amount: String(p.amount),
-            installments: p.installments,
-          })),
+          payments: (raw.sale.payments ?? []).map((p) => {
+            const fiscal = mapSalePaymentToNfcePag({
+              method: String(p.method),
+              amount: p.amount,
+              cardOperation: p.cardOperation,
+              paymentFormName: p.paymentForm?.name ?? null,
+            });
+            return {
+              method: p.method,
+              amount: String(p.amount),
+              installments: p.installments,
+              cardOperation: p.cardOperation,
+              tPag: fiscal.tPag,
+              xPag: fiscal.xPag ?? null,
+              fiscalLabel: fiscal.label,
+            };
+          }),
           customer: raw.sale.customer
             ? {
                 name: raw.sale.customer.name,
@@ -1144,6 +1157,20 @@ export class FiscalDocumentsService {
               }
             : null,
           items,
+          payments: (input.payments ?? []).map((p) => {
+            const fiscal = mapSalePaymentToNfcePag({
+              method: String(p.method),
+              amount: p.amount,
+            });
+            return {
+              method: p.method,
+              amount: String(p.amount),
+              installments: 1,
+              tPag: fiscal.tPag,
+              xPag: fiscal.xPag ?? null,
+              fiscalLabel: fiscal.label,
+            };
+          }),
         },
       },
       aliquots: [...aliqMap.values()],

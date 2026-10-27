@@ -1,5 +1,8 @@
 import * as crypto from 'crypto';
 import { xmlEscape } from '../utils/xml-escape';
+import { sanitizeXPag } from './nfce-payment';
+
+export { mapSalePaymentToNfcePag, paymentMethodToTPag } from './nfce-payment';
 
 const NS = 'http://www.portalfiscal.inf.br/nfe';
 
@@ -99,23 +102,6 @@ export function sanitizeTString(raw: string, max: number): string {
     .replace(/\s+/g, ' ')
     .trim();
   return latin.slice(0, max);
-}
-
-/** Método pagamento Gestor → tPag NFC-e/NF-e. */
-export function paymentMethodToTPag(method: string): string {
-  const m = method.toUpperCase();
-  switch (m) {
-    case 'CASH':
-      return '01';
-    case 'CARD':
-      return '03';
-    case 'PIX':
-      return '17';
-    case 'CREDIT':
-      return '05';
-    default:
-      return '99';
-  }
 }
 
 export type NfceItemInput = {
@@ -489,7 +475,7 @@ export function buildNfceInfNFeXml(opts: {
   dest?: DestInput;
   items: NfceItemInput[];
   totals: { vNF: number; vProd: number; vDesc: number; vOutro: number; vFrete?: number };
-  payments: Array<{ tPag: string; vPag: number }>;
+  payments: Array<{ tPag: string; vPag: number; xPag?: string; indPag?: 0 | 1 }>;
   modelo: number;
   serie: number;
   nNF: number;
@@ -605,7 +591,17 @@ export function buildNfceInfNFeXml(opts: {
     .join('');
 
   const pagXml = opts.payments
-    .map((p) => `<detPag><tPag>${p.tPag}</tPag><vPag>${fmt2(p.vPag)}</vPag></detPag>`)
+    .map((p) => {
+      const xPag = p.tPag === '99' ? xmlEscape(sanitizeXPag(p.xPag)) : '';
+      return (
+        `<detPag>` +
+        (p.indPag === 0 || p.indPag === 1 ? `<indPag>${p.indPag}</indPag>` : '') +
+        `<tPag>${p.tPag}</tPag>` +
+        (xPag ? `<xPag>${xPag}</xPag>` : '') +
+        `<vPag>${fmt2(p.vPag)}</vPag>` +
+        `</detPag>`
+      );
+    })
     .join('');
 
   const vFrete = Math.max(0, Number(opts.totals.vFrete ?? 0));

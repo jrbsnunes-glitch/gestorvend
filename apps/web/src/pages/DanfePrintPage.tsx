@@ -7,6 +7,7 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { printDocument } from '../lib/desktop-print';
 import { formatBRL, formatCnpj, formatCpfCnpj, formatDate } from '../lib/format';
+import { fiscalPaymentLabel } from '../lib/nfce-payment';
 import { formatNfceAccessKey, NfceQrImage, useNfceQrDataUrl } from '../lib/nfce-qr';
 import { DanfeNfeDocument, type DanfeNfePayload } from './DanfeNfeDocument';
 import './danfe-thermal-print.css';
@@ -55,6 +56,11 @@ type DanfePayload = {
         method: string;
         amount: string;
         installments: number;
+        cardOperation?: string | null;
+        paymentForm?: { name?: string | null } | null;
+        tPag?: string | null;
+        xPag?: string | null;
+        fiscalLabel?: string | null;
       }>;
     };
   };
@@ -94,15 +100,6 @@ type DanfePayload = {
     logoUrl?: string | null;
   } | null;
   nfe?: { serie: number | null; nNF: number | null } | null;
-};
-
-const NFCE_PAY_LABEL: Record<string, string> = {
-  CASH: 'Dinheiro',
-  CARD: 'Cartão',
-  PIX: 'Pix',
-  CREDIT: 'Crediário',
-  OTHER: 'Outro',
-  REQUISITION: 'Requisição',
 };
 
 export function DanfePrintPage() {
@@ -258,8 +255,7 @@ export function DanfePrintPage() {
               {payments.map((p, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>
-                    {NFCE_PAY_LABEL[p.method] ?? p.method}
-                    {p.method === 'CREDIT' && p.installments > 1 ? ` · ${p.installments}×` : ''}
+                    {fiscalPaymentLabel(p)}
                   </span>
                   <span>{formatBRL(p.amount)}</span>
                 </div>

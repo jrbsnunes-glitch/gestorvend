@@ -1,6 +1,7 @@
 import { CompanyLogo } from '../components/CompanyLogo';
 import { Code128Barcode } from '../lib/code128-barcode';
 import { formatBRL, formatCnpj, formatCpfCnpj, formatDate } from '../lib/format';
+import { fiscalPaymentLabel } from '../lib/nfce-payment';
 import { formatNfceAccessKey } from '../lib/nfce-qr';
 
 export type DanfeNfePayload = {
@@ -36,6 +37,15 @@ export type DanfeNfePayload = {
         email?: string | null;
       } | null;
       operationNature?: { code: string; description: string; cfop: string } | null;
+      payments?: Array<{
+        method: string;
+        amount: string;
+        cardOperation?: string | null;
+        paymentForm?: { name?: string | null } | null;
+        tPag?: string | null;
+        xPag?: string | null;
+        fiscalLabel?: string | null;
+      }>;
       items?: Array<{
         quantity: string;
         unitPrice: string;
@@ -141,6 +151,7 @@ export function DanfeNfeDocument({ data }: { data: DanfeNfePayload }) {
   const serie = data.nfe?.serie;
   const nature = sale.operationNature;
   const items = sale.items ?? [];
+  const payments = sale.payments ?? [];
   const disc = Number(sale.discount) || 0;
   const freight = Number(sale.freightAmount) || 0;
   const surcharge = Number(sale.surcharge) || 0;
@@ -445,6 +456,22 @@ export function DanfeNfeDocument({ data }: { data: DanfeNfePayload }) {
           </tr>
         </tbody>
       </table>
+
+      {payments.length > 0 ? (
+        <table>
+          <tbody>
+            <tr>
+              {payments.map((p, i) => (
+                <td key={i}>
+                  <span className="lbl">Forma de pagamento</span>
+                  <span className="val">{fiscalPaymentLabel(p)}</span>
+                  <span className="val right">{formatBRL(p.amount)}</span>
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      ) : null}
 
       <table>
         <tbody>

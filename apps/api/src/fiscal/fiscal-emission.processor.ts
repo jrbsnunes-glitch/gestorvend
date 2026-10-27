@@ -25,7 +25,7 @@ import {
   buildNfceInfNFeXml,
   buildNfceQrUrlAm,
   buildNfceQrUrlV3,
-  paymentMethodToTPag,
+  mapSalePaymentToNfcePag,
   type DestInput,
   type NfceItemInput,
 } from './issuer/nfce-xml.builder';
@@ -306,7 +306,7 @@ export class FiscalEmissionProcessorService {
       where: { id: doc.saleId },
       include: {
         customer: true,
-        payments: true,
+        payments: { include: { paymentForm: { select: { name: true } } } },
         operationNature: true,
         items: {
           include: {
@@ -635,10 +635,15 @@ export class FiscalEmissionProcessorService {
 
     const payRows = sale.payments
       .filter((p) => p.method !== PaymentMethod.EXPENSE)
-      .map((p) => ({
-        tPag: paymentMethodToTPag(String(p.method)),
-        vPag: Number(p.amount),
-      }));
+      .map((p) => {
+        const row = mapSalePaymentToNfcePag({
+          method: String(p.method),
+          amount: p.amount,
+          cardOperation: p.cardOperation,
+          paymentFormName: p.paymentForm?.name ?? null,
+        });
+        return { tPag: row.tPag, vPag: row.vPag, xPag: row.xPag, indPag: row.indPag };
+      });
 
     const vNF = Number(sale.total);
     const vProd = itemsXml.reduce((s, x) => s + x.vProd, 0);

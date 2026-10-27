@@ -134,6 +134,41 @@ describe('nfce-xml.builder', () => {
     expect(xml).toContain('<vCBS>0.01</vCBS>');
   });
 
+  it('envia xPag só quando tPag é 99', () => {
+    const withX = buildNfceInfNFeXml({
+      chave44: '13261052604282000130650010000000011123456782',
+      cNF: '12345678',
+      natOp: 'VENDA',
+      tpAmb: 2,
+      dhEmiIso: '2026-10-23T10:00:00-04:00',
+      crt: 1,
+      codMunIbgeFg: '1302504',
+      modelo: 65,
+      serie: 1,
+      nNF: 1,
+      emit: {
+        cnpj: '52604282000130',
+        ie: '054612942',
+        xNome: 'NAUTICA BALBY LTDA',
+        xLgr: 'Rua Teste',
+        nro: '1',
+        xBairro: 'Centro',
+        cMun: '1302504',
+        xMun: 'Manacapuru',
+        uf: 'AM',
+        cep: '69400064',
+      },
+      items: [item],
+      totals: { vNF: 1, vProd: 1, vDesc: 0, vOutro: 0 },
+      payments: [{ tPag: '99', vPag: 1, xPag: 'Vale funcionario', indPag: 0 }],
+    }).xmlNfeEnvelope;
+    expect(withX).toContain('<tPag>99</tPag><xPag>Vale funcionario</xPag><vPag>1.00</vPag>');
+
+    const cash = sampleXml();
+    expect(cash).toContain('<tPag>01</tPag><vPag>1.00</vPag>');
+    expect(cash).not.toContain('<xPag>');
+  });
+
   it('sanitizeTString remove caracteres fora do Latin-1', () => {
     expect(sanitizeTString('Rua Solimões', 60)).toBe('Rua Solimões');
     expect(sanitizeTString('  ABC  ', 60)).toBe('ABC');
