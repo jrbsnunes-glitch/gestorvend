@@ -14,5 +14,5 @@ node_modules/
 builder-effective-config.yaml
 builder-debug.yml
 
-# Gerado por scripts/make-icon.ps1 a cada build
-resources/icon.ico
+# Preview temporário do make-icon.ps1 (o .ico entra no instalador)
+resources/icon-preview-256.png

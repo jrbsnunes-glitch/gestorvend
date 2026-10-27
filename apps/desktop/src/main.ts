@@ -244,8 +244,18 @@ async function refreshRemoteCache(win: BrowserWindow): Promise<void> {
 }
 
 function appIconPath(): string {
-  const ico = path.join(__dirname, '..', 'resources', 'icon.ico');
-  if (fs.existsSync(ico)) return ico;
+  const candidates = [
+    path.join(process.resourcesPath, 'icon.ico'),
+    path.join(__dirname, '..', 'resources', 'icon.ico'),
+    rendererPath('logo.png'),
+  ];
+  for (const p of candidates) {
+    try {
+      if (p && fs.existsSync(p)) return p;
+    } catch {
+      /* ignore */
+    }
+  }
   return rendererPath('logo.png');
 }
 

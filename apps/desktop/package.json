@@ -1,6 +1,6 @@
 {
   "name": "@gestorvend/desktop",
-  "version": "1.0.63",
+  "version": "1.0.64",
   "private": true,
   "description": "Cliente desktop GestorVend (Electron) — janela própria apontando para o servidor do cliente",
   "author": "GestorVend",
@@ -16,12 +16,14 @@
     "@types/node": "20.17.57",
     "electron": "33.4.11",
     "electron-builder": "25.1.8",
+    "rcedit": "^5.0.2",
     "typescript": "5.8.3"
   },
   "build": {
     "appId": "br.com.gestorvend.desktop",
     "productName": "GestorVend",
     "electronVersion": "33.4.11",
+    "afterPack": "./scripts/stamp-icon.js",
     "directories": {
       "output": "out",
       "buildResources": "resources"
@@ -31,6 +33,12 @@
       "renderer/**/*",
       "resources/icon.ico",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/icon.ico",
+        "to": "icon.ico"
+      }
     ],
     "win": {
       "icon": "resources/icon.ico",
