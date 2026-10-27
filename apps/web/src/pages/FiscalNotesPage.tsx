@@ -116,7 +116,24 @@ function statusLabel(s: string): string {
 }
 
 function canSendFiscalNote(status: string): boolean {
-  return ['DRAFT', 'QUEUED', 'ERROR', 'REJECTED', 'BUILDING_XML', 'CONTINGENCY'].includes(status);
+  return !['AUTHORIZED', 'CANCELLED'].includes(status);
+}
+
+type BatchSendResult = {
+  total: number;
+  processedNow: number;
+  queuedForWorker: number;
+  authorized: number;
+  failed: number;
+};
+
+function summarizeBatch(r: BatchSendResult): string {
+  const parts = [
+    `${r.authorized} autorizada(s)`,
+    r.failed ? `${r.failed} com erro` : null,
+    r.queuedForWorker ? `${r.queuedForWorker} na fila do worker` : null,
+  ].filter(Boolean);
+  return `Envio: ${r.total} nota(s) · ${parts.join(' · ')}.`;
 }
 
 function statusClass(s: string): string {
@@ -190,6 +207,8 @@ export function FiscalNotesPage() {
   const [viewId, setViewId] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [checkedIds, setCheckedIds] = useState<string[]>([]);
+  const [sendingId, setSendingId] = useState<string | null>(null);
 
   const fiscalTab = tab === 'SALES' ? 'NFC_E' : tab;
   const qs = useMemo(
@@ -246,10 +265,36 @@ export function FiscalNotesPage() {
 
   const sendContingency = useMutation({
     mutationFn: (id: string) =>
-      api(`/fiscal/documents/${id}/send-contingency`, { method: 'POST', json: {} }),
-    onSuccess: () => {
+      api<FiscalDocRow>(`/fiscal/documents/${id}/send-contingency`, { method: 'POST', json: {} }),
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
+      qc.invalidateQueries({ queryKey: ['sales'] });
+      if (data.status === 'AUTHORIZED') {
+        window.alert(`${data.kind === 'NF_E' ? 'NF-e' : 'NFC-e'} autorizada pela SEFAZ.`);
+        return;
+      }
+      if (data.lastError?.trim()) window.alert(data.lastError.trim());
     },
+    onError: (err: Error) => window.alert(err.message),
+  });
+
+  const sendBatch = useMutation({
+    mutationFn: (body: {
+      ids?: string[];
+      contingencyOnly?: boolean;
+      kind: FiscalKind;
+      dateFrom?: string;
+      dateTo?: string;
+      controlMin?: number;
+      controlMax?: number;
+    }) => api<BatchSendResult>('/fiscal/documents/send-batch', { method: 'POST', json: body }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
+      qc.invalidateQueries({ queryKey: ['sales'] });
+      setCheckedIds([]);
+      window.alert(summarizeBatch(data));
+    },
+    onError: (err: Error) => window.alert(err.message),
   });
 
   const cancelDoc = useMutation({
@@ -287,8 +332,11 @@ export function FiscalNotesPage() {
   });
 
   const sendNow = useMutation({
-    mutationFn: (id: string) =>
-      api<FiscalDocRow>(`/fiscal/documents/${id}/send`, { method: 'POST', json: {} }),
+    mutationFn: (id: string) => {
+      setSendingId(id);
+      return api<FiscalDocRow>(`/fiscal/documents/${id}/send`, { method: 'POST', json: {} });
+    },
+    onSettled: () => setSendingId(null),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
       qc.invalidateQueries({ queryKey: ['sales'] });
@@ -379,6 +427,7 @@ export function FiscalNotesPage() {
     setTab(next);
     setPage(1);
     setSelectedId(null);
+    setCheckedIds([]);
     setSearchParams({ tab: tabToSearch(next) }, { replace: true });
   }
 
@@ -413,6 +462,7 @@ export function FiscalNotesPage() {
     const { from, to } = trimFilterPeriod(filters.dateFrom, filters.dateTo);
     setApplied({ ...filters, dateFrom: from, dateTo: to });
     setPage(1);
+    setCheckedIds([]);
     setFiltersOpen(false);
   }
 
@@ -421,6 +471,7 @@ export function FiscalNotesPage() {
     setApplied(EMPTY_FILTERS);
     setFilterErr(null);
     setPage(1);
+    setCheckedIds([]);
     setFiltersOpen(false);
   }
 
@@ -443,6 +494,60 @@ export function FiscalNotesPage() {
     );
   }, [apiRows, appliedSearch]);
 
+  const sendableRows = useMemo(
+    () => rows.filter((r) => canSendFiscalNote(r.status)),
+    [rows],
+  );
+  const allSendableChecked =
+    sendableRows.length > 0 && sendableRows.every((r) => checkedIds.includes(r.id));
+  const contingencyOnPage = rows.filter((r) => r.status === 'CONTINGENCY').length;
+  const batchBusy = sendBatch.isPending || sendNow.isPending || sendContingency.isPending;
+
+  function toggleChecked(id: string, on: boolean) {
+    setCheckedIds((prev) => {
+      if (on) return prev.includes(id) ? prev : [...prev, id];
+      return prev.filter((x) => x !== id);
+    });
+  }
+
+  function toggleAllSendable(on: boolean) {
+    setCheckedIds(on ? sendableRows.map((r) => r.id) : []);
+  }
+
+  function runSendSelected() {
+    const ids = checkedIds.filter((id) => sendableRows.some((r) => r.id === id));
+    if (ids.length === 0) {
+      window.alert('Marque ao menos uma nota para enviar.');
+      return;
+    }
+    if (
+      !window.confirm(
+        `Enviar ${ids.length} nota(s) selecionada(s) à SEFAZ agora? Até 15 saem nesta chamada.`,
+      )
+    ) {
+      return;
+    }
+    sendBatch.mutate({ ids, kind: fiscalTab });
+  }
+
+  function runSendContingencyFilter() {
+    if (
+      !window.confirm(
+        'Enviar as notas em contingência deste filtro (tipo + período/controle) à SEFAZ? Até 15 agora; o restante entra na fila.',
+      )
+    ) {
+      return;
+    }
+    sendBatch.mutate({
+      contingencyOnly: true,
+      kind: fiscalTab,
+      dateFrom: applied.dateFrom || undefined,
+      dateTo: applied.dateTo || undefined,
+      controlMin: applied.controlMin.trim() ? Number(applied.controlMin) : undefined,
+      controlMax: applied.controlMax.trim() ? Number(applied.controlMax) : undefined,
+    });
+  }
+
   const pendingSales = useMemo(() => {
     const items = (salesPending.data ?? []).filter(
       (s) => s.status === 'COMPLETED' && !s.fiscalDocument,
@@ -456,9 +561,9 @@ export function FiscalNotesPage() {
     <div className="page print-area">
       <h1 className="page-title">Notas Fiscais</h1>
       <p className="page-desc">
-        NFC-e (modelo 65) e NF-e (modelo 55). NF-e pode ser emitida pelo PDV ou pelo formulário
-        completo (Incluir nesta aba). Em modo comprovante não fiscal, use a aba Vendas para enviar
-        NFC-e ou NF-e. Use o filtro para período, controle, cliente e situação.
+        NFC-e (modelo 65) e NF-e (modelo 55). Após erro ou rejeição o botão Enviar permanece nas
+        ações. Notas em contingência podem ser reenviadas uma a uma ou em lote (marcando a lista
+        ou pelo filtro + Enviar contingência).
       </p>
 
       <nav className="stock-subnav no-print" aria-label="Tipo de documento">
@@ -505,19 +610,40 @@ export function FiscalNotesPage() {
         includeLabel={tab === 'NF_E' ? 'Incluir NF-e' : 'Inutilizar numeração'}
         trailingExtra={
           tab !== 'SALES' ? (
-            <button type="button" className="btn btn-secondary" onClick={() => {
-              setExportErr(null);
-              setExportForm({
-                controlMin: applied.controlMin,
-                controlMax: applied.controlMax,
-                dateFrom: applied.dateFrom,
-                dateTo: applied.dateTo,
-                accessKey: '',
-              });
-              setExportOpen(true);
-            }}>
-              Exportar XML
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={batchBusy || checkedIds.length === 0}
+                title="Envia à SEFAZ as notas marcadas na lista"
+                onClick={runSendSelected}
+              >
+                {sendBatch.isPending ? 'Enviando…' : `Enviar selecionadas${checkedIds.length ? ` (${checkedIds.length})` : ''}`}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={batchBusy}
+                title="Reenvia NFC-e/NF-e em contingência do filtro atual (ou todas do tipo, se não houver filtro)"
+                onClick={runSendContingencyFilter}
+              >
+                Enviar contingência
+                {contingencyOnPage > 0 ? ` (${contingencyOnPage} na página)` : ''}
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => {
+                setExportErr(null);
+                setExportForm({
+                  controlMin: applied.controlMin,
+                  controlMax: applied.controlMax,
+                  dateFrom: applied.dateFrom,
+                  dateTo: applied.dateTo,
+                  accessKey: '',
+                });
+                setExportOpen(true);
+              }}>
+                Exportar XML
+              </button>
+            </>
           ) : null
         }
         leadingPrimary={
@@ -557,7 +683,8 @@ export function FiscalNotesPage() {
               <label htmlFor="fn-search-q">Termo</label>
               <input
                 id="fn-search-q"
-                type="search"
+                type="text"
+                inputMode="search"
                 autoFocus
                 value={draftSearch}
                 onChange={(e) => setDraftSearch(e.target.value)}
@@ -954,6 +1081,15 @@ export function FiscalNotesPage() {
         <table className="data-table">
           <thead>
             <tr>
+              <th className="no-print" style={{ width: '2.2rem' }}>
+                <input
+                  type="checkbox"
+                  checked={allSendableChecked}
+                  disabled={sendableRows.length === 0}
+                  onChange={(e) => toggleAllSendable(e.target.checked)}
+                  aria-label="Selecionar todas as notas da página"
+                />
+              </th>
               <th className="num">Controle</th>
               <th>Data</th>
               <th>Cliente</th>
@@ -966,14 +1102,14 @@ export function FiscalNotesPage() {
           <tbody>
             {list.isLoading && (
               <tr>
-                <td colSpan={7} className="empty">
+                <td colSpan={8} className="empty">
                   Carregando…
                 </td>
               </tr>
             )}
             {!list.isLoading && rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="empty">
+                <td colSpan={8} className="empty">
                   Nenhuma nota encontrada para {tab === 'NFC_E' ? 'NFC-e' : 'NF-e'} com os filtros atuais.
                 </td>
               </tr>
@@ -984,6 +1120,15 @@ export function FiscalNotesPage() {
                 className={selectedId === r.id ? 'is-selected' : undefined}
                 onClick={() => setSelectedId(r.id)}
               >
+                <td className="no-print" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={checkedIds.includes(r.id)}
+                    disabled={!canSendFiscalNote(r.status)}
+                    onChange={(e) => toggleChecked(r.id, e.target.checked)}
+                    aria-label={`Selecionar nota ${r.sale.number}`}
+                  />
+                </td>
                 <td className="num">{r.sale.number}</td>
                 <td>{formatDate(r.sale.createdAt)}</td>
                 <td>{r.sale.customer?.name ?? 'Consumidor'}</td>
@@ -1019,14 +1164,18 @@ export function FiscalNotesPage() {
                       <button
                         type="button"
                         className="btn btn-primary btn-compact"
-                        disabled={sendNow.isPending}
-                        title="Transmite a nota à SEFAZ agora (não espera o worker da fila)"
+                        disabled={batchBusy}
+                        title={
+                          r.status === 'CONTINGENCY'
+                            ? 'Reenvia esta nota em contingência à SEFAZ agora'
+                            : 'Transmite a nota à SEFAZ agora'
+                        }
                         onClick={(e) => {
                           e.stopPropagation();
                           sendNow.mutate(r.id);
                         }}
                       >
-                        {sendNow.isPending ? 'Enviando…' : 'Enviar'}
+                        {sendingId === r.id ? 'Enviando…' : r.status === 'CONTINGENCY' ? 'Reenviar' : 'Enviar'}
                       </button>
                     )}
                     <button
@@ -1160,19 +1309,6 @@ export function FiscalNotesPage() {
                           </button>
                         )}
                       </>
-                    )}
-                    {r.status === 'CONTINGENCY' && (
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-compact"
-                        disabled={sendContingency.isPending}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          sendContingency.mutate(r.id);
-                        }}
-                      >
-                        Enviar SEFAZ
-                      </button>
                     )}
                   </div>
                 </td>
@@ -1452,14 +1588,14 @@ function FiscalNoteDetail({
 
       {editable && (
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
-          {doc.status === 'CONTINGENCY' && (
+          {doc.status === 'CONTINGENCY' && !onSendNow && (
             <button
               type="button"
               className="btn btn-primary"
               disabled={sending}
               onClick={onSendContingency}
             >
-              {sending ? 'Enfileirando…' : 'Enviar contingência à SEFAZ'}
+              {sending ? 'Enviando…' : 'Enviar contingência à SEFAZ'}
             </button>
           )}
           {onSendNow && (
@@ -1469,7 +1605,11 @@ function FiscalNoteDetail({
               disabled={sendingNow}
               onClick={onSendNow}
             >
-              {sendingNow ? 'Enviando…' : 'Enviar nota'}
+              {sendingNow
+                ? 'Enviando…'
+                : doc.status === 'CONTINGENCY'
+                  ? 'Reenviar contingência'
+                  : 'Enviar nota'}
             </button>
           )}
           {onEmitNfe && (

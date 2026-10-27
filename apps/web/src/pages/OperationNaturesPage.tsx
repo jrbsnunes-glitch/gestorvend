@@ -217,7 +217,8 @@ export function OperationNaturesPage() {
               <label htmlFor="nat-search-q">Termo</label>
               <input
                 id="nat-search-q"
-                type="search"
+                type="text"
+                inputMode="search"
                 autoFocus
                 value={draftSearch}
                 onChange={(e) => setDraftSearch(e.target.value)}

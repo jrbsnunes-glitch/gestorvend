@@ -23,6 +23,7 @@ import {
 } from '../lib/auth';
 import { navPathToMenuKey } from '../lib/menu-access';
 import { useMenuAccess } from '../hooks/useMenuAccess';
+import { isGestorVendDesktop } from '../lib/desktop-bridge';
 import { APP_VERSION } from '../version';
 import './layout.css';
 
@@ -133,6 +134,7 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+  const desktopShell = isGestorVendDesktop();
 
   const me = useQuery({
     queryKey: ['users', 'me'],
@@ -469,20 +471,22 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
       </aside>
 
       <div className="main-area">
-        <div className="main-topbar">
-          <button
-            type="button"
-            className="sidebar-hamburger"
-            onClick={() => setMobileNavOpen(true)}
-            aria-expanded={mobileNavOpen}
-            aria-controls="sidebar-nav"
-            aria-label="Abrir menu"
-          >
-            <NavIcon name="menu" />
-          </button>
-          <span className="main-topbar-title">{companyDisplayName(company.data)}</span>
-          {profileMenu}
-        </div>
+        {!desktopShell ? (
+          <div className="main-topbar">
+            <button
+              type="button"
+              className="sidebar-hamburger"
+              onClick={() => setMobileNavOpen(true)}
+              aria-expanded={mobileNavOpen}
+              aria-controls="sidebar-nav"
+              aria-label="Abrir menu"
+            >
+              <NavIcon name="menu" />
+            </button>
+            <span className="main-topbar-title">{companyDisplayName(company.data)}</span>
+            {profileMenu}
+          </div>
+        ) : null}
         <ConnectionStatusBanner />
         <ApiOutdatedBanner />
         <DesktopUpdateBanner />

@@ -224,7 +224,8 @@ export function FinancialOverviewPage() {
               <label htmlFor="bal-search-q">Termo</label>
               <input
                 id="bal-search-q"
-                type="search"
+                type="text"
+                inputMode="search"
                 autoFocus
                 value={draftSearch}
                 onChange={(e) => setDraftSearch(e.target.value)}

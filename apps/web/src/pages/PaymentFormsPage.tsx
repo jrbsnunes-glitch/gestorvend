@@ -364,7 +364,8 @@ export function PaymentFormsPage() {
               <label htmlFor="pf-search-q">Termo</label>
               <input
                 id="pf-search-q"
-                type="search"
+                type="text"
+                inputMode="search"
                 autoFocus
                 value={draftSearch}
                 onChange={(e) => setDraftSearch(e.target.value)}

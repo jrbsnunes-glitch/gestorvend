@@ -39,7 +39,7 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
       zoom: '1',
       transform: 'none',
       'font-family': FONT_STACK,
-      'font-size': '17px',
+      'font-size': '18px',
       'font-weight': '800',
       'line-height': '1.35',
       color: '#000',
@@ -305,25 +305,25 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-title',
     decls: {
-      'font-size': '12px',
-      margin: '0.1rem 0 0.06rem',
-      'letter-spacing': '0',
+      'font-size': '16px',
+      margin: '0.18rem 0 0.1rem',
+      'letter-spacing': '0.01em',
     },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-sub, .sale-receipt-doc--nfce .sale-receipt-legal',
     decls: {
-      'font-size': '10px',
-      'line-height': '1.2',
-      margin: '0 0 0.05rem',
+      'font-size': '13px',
+      'line-height': '1.25',
+      margin: '0 0 0.08rem',
     },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-fiscal-note',
     decls: {
-      'font-size': '9px',
-      'line-height': '1.2',
-      margin: '0 0 0.08rem',
+      'font-size': '11px',
+      'line-height': '1.25',
+      margin: '0 0 0.1rem',
     },
   },
   {
@@ -332,7 +332,7 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-nfce-key',
-    decls: { 'font-size': '9px', margin: '0.15rem 0' },
+    decls: { 'font-size': '11px', margin: '0.18rem 0' },
   },
   {
     selector: '.sale-receipt-doc--nfce .nfce-qr',
@@ -340,11 +340,11 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-foot',
-    decls: { 'font-size': '10px', margin: '0.4rem 0 0.1rem' },
+    decls: { 'font-size': '12px', margin: '0.4rem 0 0.1rem' },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-foot-muted',
-    decls: { 'font-size': '8px', margin: '0.15rem 0 0' },
+    decls: { 'font-size': '10px', margin: '0.15rem 0 0' },
   },
 ];
 

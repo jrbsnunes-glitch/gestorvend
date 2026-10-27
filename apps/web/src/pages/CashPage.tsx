@@ -713,7 +713,8 @@ export function CashPage() {
               <label htmlFor="cash-search-q">Termo</label>
               <input
                 id="cash-search-q"
-                type="search"
+                type="text"
+                inputMode="search"
                 autoFocus
                 value={draftSearch}
                 onChange={(e) => setDraftSearch(e.target.value)}

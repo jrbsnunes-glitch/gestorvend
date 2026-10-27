@@ -562,7 +562,8 @@ export function FiscalSituationsPage() {
               <label htmlFor="fs-search-q">Termo</label>
               <input
                 id="fs-search-q"
-                type="search"
+                type="text"
+                inputMode="search"
                 autoFocus
                 value={draftSearch}
                 onChange={(e) => setDraftSearch(e.target.value)}

@@ -213,6 +213,33 @@ export class FiscalDocumentsController {
     return this.docs.queue(user.tenantSlug, body.saleId, kind);
   }
 
+  /** Envia várias notas agora (seleção ou todas em contingência do filtro). */
+  @Post('send-batch')
+  @Roles('admin', 'manager')
+  sendBatch(
+    @CurrentUser() user: JwtPayload,
+    @Body()
+    body: {
+      ids?: string[];
+      contingencyOnly?: boolean;
+      kind?: 'NFC_E' | 'NF_E';
+      dateFrom?: string;
+      dateTo?: string;
+      controlMin?: number;
+      controlMax?: number;
+    },
+  ) {
+    return this.manualNfe.sendBatch(user.tenantSlug, {
+      ids: body.ids,
+      contingencyOnly: Boolean(body.contingencyOnly),
+      kind: body.kind === 'NF_E' ? FiscalDocumentKind.NF_E : FiscalDocumentKind.NFC_E,
+      dateFrom: body.dateFrom,
+      dateTo: body.dateTo,
+      controlMin: body.controlMin,
+      controlMax: body.controlMax,
+    });
+  }
+
   /** Inutiliza faixa de numeração NFC-e/NF-e na SEFAZ (antes de rotas :id). */
   @Post('inutilizar')
   @Roles('admin', 'manager')
@@ -275,7 +302,7 @@ export class FiscalDocumentsController {
   @Post(':id/send-contingency')
   @Roles('admin', 'manager')
   sendContingency(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
-    return this.docs.queueContingencySend(user.tenantSlug, id);
+    return this.manualNfe.sendDraftDocument(user.tenantSlug, id);
   }
 
   /** Cancela documento fiscal (SEFAZ se autorizado; senão só local). */

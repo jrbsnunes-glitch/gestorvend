@@ -390,7 +390,8 @@ export function PortalClientsPage() {
           <div className="portal-clients-search__row">
             <input
               id="portal-clients-q"
-              type="search"
+              type="text"
+              inputMode="search"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyDown={(e) => {

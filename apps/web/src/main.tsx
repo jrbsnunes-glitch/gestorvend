@@ -1,11 +1,9 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
-import { isGestorVendDesktop } from './lib/desktop-bridge';
+import { installDesktopInputUnlock } from './lib/desktop-input-unlock';
 
-if (isGestorVendDesktop()) {
-  document.documentElement.classList.add('gv-desktop');
-}
+installDesktopInputUnlock();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

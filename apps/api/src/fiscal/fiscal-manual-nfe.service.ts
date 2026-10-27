@@ -223,11 +223,7 @@ export class FiscalManualNfeService {
     ) {
       throw new BadRequestException('Esta nota já foi concluída e não pode ser reenviada.');
     }
-    if (doc.status === FiscalDocumentStatus.SENT) {
-      throw new BadRequestException(
-        'A nota já foi enviada à SEFAZ e aguarda retorno. Use Consultar para atualizar a situação.',
-      );
-    }
+    // SENT sem retorno (ou com rejeição) precisa poder reenviar — senão o botão some.
 
     const alreadyProcessable =
       doc.status === FiscalDocumentStatus.QUEUED ||
@@ -259,6 +255,150 @@ export class FiscalManualNfeService {
     }
 
     return this.docs.getById(tenantSlug, docId);
+  }
+
+  /**
+   * Envia várias notas agora (SEFAZ). Usado para contingência em lote ou seleção.
+   * Processa no máximo 15 por chamada; o restante fica na fila do worker.
+   */
+  async sendBatch(
+    tenantSlug: string,
+    opts: {
+      ids?: string[];
+      contingencyOnly?: boolean;
+      kind?: FiscalDocumentKind;
+      dateFrom?: string | null;
+      dateTo?: string | null;
+      controlMin?: number | null;
+      controlMax?: number | null;
+    },
+  ) {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const ids = await this.resolveBatchIds(db, opts);
+    if (ids.length === 0) {
+      throw new BadRequestException(
+        opts.contingencyOnly
+          ? 'Nenhuma nota em contingência neste filtro.'
+          : 'Selecione ao menos uma nota para enviar.',
+      );
+    }
+
+    const nowIds = ids.slice(0, 15);
+    const queuedIds = ids.slice(15);
+    if (queuedIds.length > 0) {
+      await db.fiscalDocument.updateMany({
+        where: {
+          id: { in: queuedIds },
+          status: { notIn: [FiscalDocumentStatus.AUTHORIZED, FiscalDocumentStatus.CANCELLED] },
+        },
+        data: { status: FiscalDocumentStatus.QUEUED, nextAttemptAt: new Date() },
+      });
+    }
+
+    const results: Array<{
+      id: string;
+      ok: boolean;
+      status?: string;
+      lastError?: string | null;
+      error?: string;
+    }> = [];
+
+    for (const id of nowIds) {
+      try {
+        const doc = await this.sendDraftDocument(tenantSlug, id);
+        results.push({
+          id,
+          ok: doc.status === FiscalDocumentStatus.AUTHORIZED,
+          status: doc.status,
+          lastError: doc.lastError,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        results.push({ id, ok: false, error: msg.slice(0, 400) });
+      }
+    }
+
+    const authorized = results.filter((r) => r.ok).length;
+    const failed = results.filter((r) => !r.ok).length;
+    return {
+      total: ids.length,
+      processedNow: nowIds.length,
+      queuedForWorker: queuedIds.length,
+      authorized,
+      failed,
+      results,
+    };
+  }
+
+  private async resolveBatchIds(
+    db: TenantDb,
+    opts: {
+      ids?: string[];
+      contingencyOnly?: boolean;
+      kind?: FiscalDocumentKind;
+      dateFrom?: string | null;
+      dateTo?: string | null;
+      controlMin?: number | null;
+      controlMax?: number | null;
+    },
+  ): Promise<string[]> {
+    const requested = [...new Set((opts.ids ?? []).map((id) => id.trim()).filter(Boolean))];
+    if (requested.length > 0 && !opts.contingencyOnly) {
+      return requested.slice(0, 40);
+    }
+
+    const saleWhere: {
+      createdAt?: { gte?: Date; lte?: Date };
+      number?: { gte?: number; lte?: number };
+    } = {};
+    if (opts.dateFrom || opts.dateTo) {
+      saleWhere.createdAt = {};
+      if (opts.dateFrom) {
+        const d = new Date(opts.dateFrom);
+        if (!Number.isNaN(d.getTime())) saleWhere.createdAt.gte = d;
+      }
+      if (opts.dateTo) {
+        const d = new Date(opts.dateTo);
+        if (!Number.isNaN(d.getTime())) {
+          d.setHours(23, 59, 59, 999);
+          saleWhere.createdAt.lte = d;
+        }
+      }
+    }
+    if (opts.controlMin != null || opts.controlMax != null) {
+      saleWhere.number = {};
+      if (opts.controlMin != null && Number.isFinite(opts.controlMin)) {
+        saleWhere.number.gte = Math.trunc(opts.controlMin);
+      }
+      if (opts.controlMax != null && Number.isFinite(opts.controlMax)) {
+        saleWhere.number.lte = Math.trunc(opts.controlMax);
+      }
+    }
+
+    const rows = await db.fiscalDocument.findMany({
+      where: {
+        ...(opts.kind ? { kind: opts.kind } : {}),
+        status: opts.contingencyOnly
+          ? FiscalDocumentStatus.CONTINGENCY
+          : {
+              in: [
+                FiscalDocumentStatus.DRAFT,
+                FiscalDocumentStatus.QUEUED,
+                FiscalDocumentStatus.ERROR,
+                FiscalDocumentStatus.REJECTED,
+                FiscalDocumentStatus.BUILDING_XML,
+                FiscalDocumentStatus.CONTINGENCY,
+                FiscalDocumentStatus.SENT,
+              ],
+            },
+        ...(requested.length > 0 ? { id: { in: requested } } : {}),
+        sale: saleWhere,
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 40,
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
   }
 
   private async loadEditableManualDoc(db: TenantDb, docId: string) {

@@ -203,10 +203,19 @@ function buildIcmsNormalXml(
   if (['40', '41', '50'].includes(c)) {
     return `<ICMS><ICMS${c}><orig>${o}</orig><CST>${c}</CST></ICMS${c}></ICMS>`;
   }
+  if (c === '20') {
+    return (
+      `<ICMS><ICMS20><orig>${o}</orig><CST>20</CST>` +
+      `<modBC>${mod}</modBC>` +
+      (pRed > 0 ? `<pRedBC>${fmt2(pRed)}</pRedBC>` : '') +
+      `<vBC>${fmt2(base)}</vBC>` +
+      `<pICMS>${fmt2(pIcms)}</pICMS><vICMS>${fmt2(vIcms)}</vICMS></ICMS20></ICMS>`
+    );
+  }
+  // ICMS00 não admite pRedBC — a tag extra gera cStat 215.
   return (
     `<ICMS><ICMS00><orig>${o}</orig><CST>${c}</CST>` +
     `<modBC>${mod}</modBC><vBC>${fmt2(base)}</vBC>` +
-    (pRed > 0 ? `<pRedBC>${fmt2(pRed)}</pRedBC>` : '') +
     `<pICMS>${fmt2(pIcms)}</pICMS><vICMS>${fmt2(vIcms)}</vICMS></ICMS00></ICMS>`
   );
 }
@@ -271,13 +280,16 @@ export function crtDefersIbsCbs(crt: number): boolean {
 }
 
 /**
- * NT 2026.008 (vUnComLiq, vProdLiq, vProdLiqTot) entra no schema de homologação
- * em 26/10/2026. Antes disso a SEFAZ responde cStat 215.
+ * NT 2026.008 (vUnComLiq, vProdLiq, vProdLiqTot):
+ * homologação 26/10/2026 · produção 16/11/2026.
+ * Enviar antes disso (ou no ambiente errado) gera cStat 215 — Falha no schema XML.
  */
-const VALOR_LIQUIDO_SCHEMA_FROM_MS = Date.parse('2026-10-26T03:00:00.000Z');
+const VALOR_LIQUIDO_HOMOLOG_FROM_MS = Date.parse('2026-10-26T03:00:00.000Z');
+const VALOR_LIQUIDO_PRODUCAO_FROM_MS = Date.parse('2026-11-16T03:00:00.000Z');
 
-export function sefazSchemaIncludesValorLiquido(now = new Date()): boolean {
-  return now.getTime() >= VALOR_LIQUIDO_SCHEMA_FROM_MS;
+export function sefazSchemaIncludesValorLiquido(now = new Date(), tpAmb: 1 | 2 = 2): boolean {
+  const from = tpAmb === 1 ? VALOR_LIQUIDO_PRODUCAO_FROM_MS : VALOR_LIQUIDO_HOMOLOG_FROM_MS;
+  return now.getTime() >= from;
 }
 
 type IbsCbsBreakdown = {
@@ -508,7 +520,7 @@ export function buildNfceInfNFeXml(opts: {
   const modelo = opts.modelo;
   const tpImp = modelo === 65 ? 4 : 1;
 
-  const includeValorLiquido = sefazSchemaIncludesValorLiquido();
+  const includeValorLiquido = sefazSchemaIncludesValorLiquido(new Date(), opts.tpAmb);
   const vProdLiqTot = opts.items.reduce((sum, it) => sum + Math.round(it.vProd * 100), 0) / 100;
 
   const taxTotals = opts.items.reduce(

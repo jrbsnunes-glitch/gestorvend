@@ -73,6 +73,15 @@ function forceShowWindow(win: BrowserWindow | null) {
 function attachWindowLifecycle(win: BrowserWindow) {
   const reveal = () => forceShowWindow(win);
   win.once('ready-to-show', reveal);
+  win.webContents.on('did-finish-load', () => {
+    if (!win.isDestroyed()) win.webContents.focus();
+  });
+  // Impede o menu Alt do Windows de “engolir” o teclado após um campo de pesquisa.
+  try {
+    win.webContents.setIgnoreMenuShortcuts(true);
+  } catch {
+    /* ignore */
+  }
   // ready-to-show às vezes não dispara após loadURL remoto / troca de partition.
   setTimeout(reveal, 2500);
 
@@ -794,6 +803,18 @@ function buildMenu() {
       ],
     },
     {
+      label: 'Editar',
+      submenu: [
+        { role: 'undo', label: 'Desfazer' },
+        { role: 'redo', label: 'Refazer' },
+        { type: 'separator' },
+        { role: 'cut', label: 'Recortar' },
+        { role: 'copy', label: 'Copiar' },
+        { role: 'paste', label: 'Colar' },
+        { role: 'selectAll', label: 'Selecionar tudo' },
+      ],
+    },
+    {
       label: 'Exibir',
       submenu: [
         { role: 'reload', label: 'Recarregar' },
@@ -819,6 +840,13 @@ function registerDesktopShortcuts() {
 }
 
 function registerIpc() {
+  ipcMain.on('desktop:focus-window', (ev) => {
+    const win = BrowserWindow.fromWebContents(ev.sender);
+    if (!win || win.isDestroyed()) return;
+    if (!win.isFocused()) win.focus();
+    ev.sender.focus();
+  });
+
   ipcMain.handle('config:get', () => readConfig());
 
   ipcMain.handle('shell:getVersion', () => ({ version: app.getVersion() }));

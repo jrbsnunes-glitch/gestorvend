@@ -121,4 +121,5 @@ contextBridge.exposeInMainWorld('gestorvend', {
   platform: process.platform,
   isDesktop: true,
   isKiosk: ipcRenderer.sendSync('shell:isKiosk') as boolean,
+  focusWindow: () => ipcRenderer.send('desktop:focus-window'),
 });

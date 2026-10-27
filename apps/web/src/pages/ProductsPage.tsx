@@ -392,6 +392,7 @@ export function ProductsPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [searchActionErr, setSearchActionErr] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const searchQ = useDeferredValue(searchInput.trim());
 
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -492,6 +493,12 @@ export function ProductsPage() {
     enabled: searchOpen && searchQ.length >= 1,
     staleTime: 5_000,
   });
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    const t = window.setTimeout(() => searchInputRef.current?.focus(), 50);
+    return () => window.clearTimeout(t);
+  }, [searchOpen]);
 
   const editSupplierLinksQ = useQuery({
     queryKey: ['products', editProduct?.id, 'supplier-links'],
@@ -1208,6 +1215,7 @@ export function ProductsPage() {
             <div className="field" style={{ marginBottom: '0.75rem' }}>
               <label htmlFor="product-search-q">Termo</label>
               <input
+                ref={searchInputRef}
                 id="product-search-q"
                 type="text"
                 inputMode="search"

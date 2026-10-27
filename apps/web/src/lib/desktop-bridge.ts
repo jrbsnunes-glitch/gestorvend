@@ -92,6 +92,8 @@ export type GestorVendDesktopApi = {
   getShellVersion?: () => Promise<{ version: string }>;
   checkForUpdates?: () => Promise<DesktopUpdateCheckResult>;
   openExternal?: (url: string) => Promise<void> | void;
+  /** Devolve o teclado à janela (campos de pesquisa no Windows). */
+  focusWindow?: () => void;
 };
 
 declare global {

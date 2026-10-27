@@ -571,7 +571,8 @@ export function RequisicoesPage() {
               <label htmlFor="req-search-q">Termo</label>
               <input
                 id="req-search-q"
-                type="search"
+                type="text"
+                inputMode="search"
                 autoFocus
                 value={draftSearch}
                 onChange={(e) => setDraftSearch(e.target.value)}

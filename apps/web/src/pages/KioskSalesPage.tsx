@@ -456,7 +456,8 @@ export function KioskSalesPage() {
         <div className="kiosk-catalog">
           <div className="kiosk-search">
             <input
-              type="search"
+              type="text"
+              inputMode="search"
               placeholder="Buscar produto (nome, código, EAN)…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}

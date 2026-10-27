@@ -1,5 +1,6 @@
-import type { CSSProperties, MouseEventHandler, ReactNode } from 'react';
+import { useEffect, type CSSProperties, type MouseEventHandler, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { restoreDesktopKeyboard } from '../lib/desktop-input-unlock';
 import { useModalEscapeKey } from '../lib/useModalEscapeKey';
 
 type PortalModalBackdropProps = {
@@ -15,6 +16,12 @@ type PortalModalBackdropProps = {
  * de pesquisa e digitação ficam visualmente ativos mas não recebem clique.
  */
 export function PortalModalBackdrop({ children, className, style, onClick }: PortalModalBackdropProps) {
+  useEffect(() => {
+    return () => {
+      window.setTimeout(() => restoreDesktopKeyboard(), 0);
+    };
+  }, []);
+
   const node = (
     <div
       className={['modal-backdrop', className].filter(Boolean).join(' ')}

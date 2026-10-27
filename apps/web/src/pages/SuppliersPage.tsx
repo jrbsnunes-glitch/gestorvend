@@ -382,7 +382,8 @@ export function SuppliersPage() {
               <label htmlFor="sup-search-q">Termo</label>
               <input
                 id="sup-search-q"
-                type="search"
+                type="text"
+                inputMode="search"
                 autoFocus
                 value={draftSearch}
                 onChange={(e) => setDraftSearch(e.target.value)}

@@ -2920,6 +2920,10 @@ function PosScreen({
               <input
                 ref={scannerRef}
                 className="pos-scanner-input"
+                type="text"
+                inputMode="search"
+                autoComplete="off"
+                spellCheck={false}
                 autoFocus
                 placeholder="Bipar código, EAN, SKU ou pesquisar por nome…"
                 value={scannerValue}

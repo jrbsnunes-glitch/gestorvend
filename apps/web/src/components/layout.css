@@ -310,6 +310,11 @@
   display: none;
 }
 
+/* Desktop Electron: usuário fica na sidebar — o chip flutuante cobre pesquisa/PDV. */
+html.gv-desktop .main-topbar {
+  display: none !important;
+}
+
 .sidebar-hamburger {
   appearance: none;
   display: none;
@@ -528,6 +533,10 @@
   .connection-banner {
     padding-right: 14rem;
   }
+
+  html.gv-desktop .connection-banner {
+    padding-right: 1rem;
+  }
 }
 
 .connection-banner--offline {
@@ -562,6 +571,13 @@
   .main-content > .page-title:first-child,
   .main-content > header:first-child {
     padding-right: 13.5rem;
+  }
+
+  html.gv-desktop .main-content > .page > .page-title:first-child,
+  html.gv-desktop .main-content > .page > header:first-child,
+  html.gv-desktop .main-content > .page-title:first-child,
+  html.gv-desktop .main-content > header:first-child {
+    padding-right: 0;
   }
 }
 

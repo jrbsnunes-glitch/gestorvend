@@ -125,7 +125,9 @@ html.gv-desktop .field > textarea,
 html.gv-desktop .field > select,
 html.gv-desktop .catalog-combo input,
 html.gv-desktop .pos-scanner-input,
-html.gv-desktop .pos-customer-search-input {
+html.gv-desktop .pos-customer-search-input,
+html.gv-desktop .kiosk-search input {
   position: relative;
-  z-index: 1;
+  z-index: 2;
+  pointer-events: auto;
 }

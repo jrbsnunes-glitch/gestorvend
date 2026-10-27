@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useDeferredValue, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { FormModalBackdrop } from './FormModalBackdrop';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
@@ -40,6 +40,13 @@ export function ProductSearchModal({
 }: Props) {
   const [searchInput, setSearchInput] = useState('');
   const searchQ = useDeferredValue(searchInput.trim());
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const t = window.setTimeout(() => inputRef.current?.focus(), 50);
+    return () => window.clearTimeout(t);
+  }, [open]);
 
   const productSearch = useQuery({
     queryKey: ['products', 'search', searchQ],
@@ -65,6 +72,7 @@ export function ProductSearchModal({
         <div className="field">
           <label htmlFor="product-search-modal-q">Nome, SKU ou código de barras</label>
           <input
+            ref={inputRef}
             id="product-search-modal-q"
             type="text"
             inputMode="search"

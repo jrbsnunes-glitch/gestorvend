@@ -1315,7 +1315,8 @@ export function FinancePage() {
               <label htmlFor="fin-search-q">Termo</label>
               <input
                 id="fin-search-q"
-                type="search"
+                type="text"
+                inputMode="search"
                 autoFocus
                 value={draftSearch}
                 onChange={(e) => setDraftSearch(e.target.value)}
@@ -1391,7 +1392,8 @@ export function FinancePage() {
                 </label>
                 <input
                   id="fin-party"
-                  type="search"
+                  type="text"
+                  inputMode="search"
                   autoComplete="off"
                   placeholder={
                     tab === 'pagar' ? 'Pesquisar fornecedor…' : 'Pesquisar nome ou documento…'

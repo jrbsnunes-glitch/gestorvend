@@ -3,6 +3,7 @@ import {
   buildNfceQrUrlAm,
   buildNfceQrUrlV3,
   sanitizeTString,
+  sefazSchemaIncludesValorLiquido,
 } from './nfce-xml.builder';
 import { buildNfceAutorizacaoEnvelope } from '../sefaz/nfce-autorizacao-soap';
 
@@ -167,6 +168,44 @@ describe('nfce-xml.builder', () => {
     const cash = sampleXml();
     expect(cash).toContain('<tPag>01</tPag><vPag>1.00</vPag>');
     expect(cash).not.toContain('<xPag>');
+  });
+
+  it('omite valor líquido em produção antes de 16/11/2026 (cStat 215)', () => {
+    const oct27 = new Date('2026-10-27T12:00:00.000Z');
+    expect(sefazSchemaIncludesValorLiquido(oct27, 1)).toBe(false);
+    expect(sefazSchemaIncludesValorLiquido(oct27, 2)).toBe(true);
+    expect(sefazSchemaIncludesValorLiquido(new Date('2026-11-16T12:00:00.000Z'), 1)).toBe(true);
+
+    const prod = buildNfceInfNFeXml({
+      chave44: '13261052604282000130650010000000011123456782',
+      cNF: '12345678',
+      natOp: 'VENDA',
+      tpAmb: 1,
+      dhEmiIso: '2026-10-27T10:00:00-04:00',
+      crt: 1,
+      codMunIbgeFg: '1302504',
+      modelo: 65,
+      serie: 1,
+      nNF: 1,
+      emit: {
+        cnpj: '52604282000130',
+        ie: '054612942',
+        xNome: 'NAUTICA BALBY LTDA',
+        xLgr: 'Rua Teste',
+        nro: '1',
+        xBairro: 'Centro',
+        cMun: '1302504',
+        xMun: 'Manacapuru',
+        uf: 'AM',
+        cep: '69400064',
+      },
+      items: [item],
+      totals: { vNF: 1, vProd: 1, vDesc: 0, vOutro: 0 },
+      payments: [{ tPag: '01', vPag: 1 }],
+    }).xmlNfeEnvelope;
+    expect(prod).not.toContain('<vUnComLiq>');
+    expect(prod).not.toContain('<vProdLiq>');
+    expect(prod).not.toContain('<vProdLiqTot>');
   });
 
   it('sanitizeTString remove caracteres fora do Latin-1', () => {

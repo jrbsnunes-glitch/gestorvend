@@ -218,7 +218,8 @@ export function CardsPage() {
               <label htmlFor="card-search-q">Termo</label>
               <input
                 id="card-search-q"
-                type="search"
+                type="text"
+                inputMode="search"
                 autoFocus
                 value={draftSearch}
                 onChange={(e) => setDraftSearch(e.target.value)}

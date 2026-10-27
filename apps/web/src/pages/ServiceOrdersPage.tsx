@@ -715,7 +715,8 @@ export function ServiceOrdersPage() {
               <label htmlFor="os-search-q">Termo</label>
               <input
                 id="os-search-q"
-                type="search"
+                type="text"
+                inputMode="search"
                 autoFocus
                 value={draftSearch}
                 onChange={(e) => setDraftSearch(e.target.value)}
