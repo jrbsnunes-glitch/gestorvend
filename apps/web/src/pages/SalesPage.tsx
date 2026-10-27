@@ -4628,6 +4628,28 @@ function PosTopbar({
           {receiptAutoSummary}
         </span>
       </div>
+      <div className="pos-topbar-shortcuts" title="Atalhos do teclado">
+        <span>
+          <span className="pos-shortcut-key">F2</span> finalizar
+        </span>
+        {pdvCapabilities.canPdvProcedures ? (
+          <span>
+            <span className="pos-shortcut-key">F3</span> procedimentos
+          </span>
+        ) : null}
+        <span>
+          <span className="pos-shortcut-key">F4</span> cliente
+        </span>
+        <span>
+          <span className="pos-shortcut-key">F8</span> desconto
+        </span>
+        <span>
+          <span className="pos-shortcut-key">F9</span> acréscimo
+        </span>
+        <span>
+          <span className="pos-shortcut-key">Esc</span> cancelar
+        </span>
+      </div>
       <div className="pos-topbar-actions">
         <button
           type="button"
