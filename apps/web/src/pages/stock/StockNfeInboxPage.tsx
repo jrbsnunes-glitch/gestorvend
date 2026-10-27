@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { api } from '../../lib/api';
 import { formatBRL, formatDate } from '../../lib/format';
+import { digitsNfeAccessKey, nfeAccessKeyFromClipboard } from '../../lib/nfe-access-key';
 import { openPortalNfeConsulta, shouldOfferPortalXmlFallback } from '../../lib/portal-nfe';
 
 type InboxDoc = {
@@ -129,6 +130,7 @@ export function StockNfeInboxPage() {
   const [diagKey, setDiagKey] = useState('');
   const [justFor, setJustFor] = useState<{ accessKey: string; tpEvento: string } | null>(null);
   const [xJust, setXJust] = useState('');
+  const [buscaChave, setBuscaChave] = useState('');
 
   const list = useQuery({
     queryKey: ['fiscal', 'inbound', 'documents'],
@@ -217,10 +219,42 @@ export function StockNfeInboxPage() {
         className="toolbar no-print"
         style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', alignItems: 'center' }}
       >
-        <p style={{ margin: 0, flex: 1, fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
+        <p style={{ margin: 0, flex: '1 1 12rem', fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
           NF-e via webservice oficial (Distribuição DF-e), não scraping do Portal. Se o WS retornar
           cStat 137 e o Portal baixar o XML, use Importar XML na Entrada.
         </p>
+        <div className="entrada-nfe-key-row" style={{ flex: '1 1 18rem', margin: 0 }}>
+          <input
+            id="inbox-key"
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            spellCheck={false}
+            value={buscaChave}
+            onChange={(e) => setBuscaChave(digitsNfeAccessKey(e.target.value))}
+            onPaste={(e) => {
+              const digits = nfeAccessKeyFromClipboard(e.clipboardData);
+              if (!digits) return;
+              e.preventDefault();
+              setBuscaChave(digits);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              e.preventDefault();
+              const key = digitsNfeAccessKey(buscaChave);
+              if (key.length === 44) openInEntrada(key);
+            }}
+            placeholder="Chave de acesso (44 dígitos)"
+          />
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={digitsNfeAccessKey(buscaChave).length !== 44}
+            onClick={() => openInEntrada(digitsNfeAccessKey(buscaChave))}
+          >
+            Buscar por chave
+          </button>
+        </div>
         <button type="button" className="btn btn-ghost" onClick={() => setDiagOpen(true)}>
           Diagnóstico WS
         </button>
@@ -468,10 +502,19 @@ export function StockNfeInboxPage() {
               <label htmlFor="diag-key">Chave NF-e (opcional)</label>
               <input
                 id="diag-key"
-                value={diagKey}
-                onChange={(e) => setDiagKey(e.target.value.replace(/\D/g, '').slice(0, 44))}
-                placeholder="44 dígitos para analisar emitente"
+                type="text"
                 inputMode="numeric"
+                autoComplete="off"
+                spellCheck={false}
+                value={diagKey}
+                onChange={(e) => setDiagKey(digitsNfeAccessKey(e.target.value))}
+                onPaste={(e) => {
+                  const digits = nfeAccessKeyFromClipboard(e.clipboardData);
+                  if (!digits) return;
+                  e.preventDefault();
+                  setDiagKey(digits);
+                }}
+                placeholder="44 dígitos para analisar emitente"
               />
             </div>
             <button

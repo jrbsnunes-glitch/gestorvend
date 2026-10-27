@@ -1,3 +1,5 @@
+import { getDesktopApi, isGestorVendDesktop } from './desktop-bridge';
+
 /**
  * Consulta resumida no Portal Nacional da NF-e.
  * A SEFAZ não documenta (nem honra de forma estável) querystring com a chave —
@@ -27,6 +29,14 @@ export function shouldOfferPortalXmlFallback(message: string): boolean {
 
 /** Abre o Portal em nova aba. Síncrono de propósito: preserva o gesto do usuário. */
 function openPortalNfeConsultaTab(): boolean {
+  if (isGestorVendDesktop()) {
+    try {
+      void getDesktopApi()?.openExternal?.(PORTAL_NFE_CONSULTA_URL);
+      return true;
+    } catch {
+      /* fallback window.open — o shell encaminha https ao navegador do sistema */
+    }
+  }
   const w = window.open(PORTAL_NFE_CONSULTA_URL, '_blank', 'noopener,noreferrer');
   return Boolean(w);
 }

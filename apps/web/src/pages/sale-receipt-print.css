@@ -360,6 +360,10 @@
    * ele assume a largura da página do driver (às vezes A4) e tudo que é
    * alinhado à direita (valores, data) ou centralizado (logo, razão social)
    * cai fora do papel e sai cortado.
+   *
+   * Salvar PDF (html.gv-receipt-save-pdf) NÃO usa esta bobina: o Desktop
+   * gera A4 via printToPDF (preferCSSPageSize: false). No navegador o
+   * estilo injetado redefine @page para A4.
    */
   @page {
     size: 80mm auto;
@@ -583,5 +587,25 @@
 
   .sale-receipt-doc--nfce .sale-receipt-foot-muted {
     font-size: 8px !important;
+  }
+
+  /*
+   * Salvar PDF: cupom 80 mm centralizado em folha A4. Sem isso o @page da
+   * bobina (80mm auto) + width:auto esticava o cupom e o driver PDF gerava
+   * arquivo vazio.
+   */
+  html.gv-receipt-save-pdf .sale-receipt-page,
+  html.gv-receipt-save-pdf .sale-receipt-preview {
+    width: 100% !important;
+    max-width: none !important;
+    display: block !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+  }
+
+  html.gv-receipt-save-pdf .sale-receipt-doc {
+    width: 80mm !important;
+    max-width: 80mm !important;
+    margin: 0 auto !important;
   }
 }

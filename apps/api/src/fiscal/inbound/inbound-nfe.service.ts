@@ -257,7 +257,7 @@ export class InboundNfeService {
    * Útil quando consChNFe retorna cStat 137 mas o XML já está disponível.
    */
   async importXml(tenantSlug: string, xmlRaw: string): Promise<InboundFetchResponse> {
-    const xml = String(xmlRaw ?? '').trim();
+    const xml = String(xmlRaw ?? '').replace(/^\uFEFF/, '').trim();
     if (!xml) {
       throw new BadRequestException('Arquivo XML vazio.');
     }

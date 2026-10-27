@@ -115,6 +115,10 @@ function statusLabel(s: string): string {
   }
 }
 
+function canSendFiscalNote(status: string): boolean {
+  return ['DRAFT', 'QUEUED', 'ERROR', 'REJECTED', 'BUILDING_XML', 'CONTINGENCY'].includes(status);
+}
+
 function statusClass(s: string): string {
   switch (s) {
     case 'AUTHORIZED':
@@ -278,6 +282,30 @@ export function FiscalNotesPage() {
       qc.invalidateQueries({ queryKey: ['sales'] });
       qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
       switchTab(vars.kind);
+    },
+    onError: (err: Error) => window.alert(err.message),
+  });
+
+  const sendNow = useMutation({
+    mutationFn: (id: string) =>
+      api<FiscalDocRow>(`/fiscal/documents/${id}/send`, { method: 'POST', json: {} }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
+      qc.invalidateQueries({ queryKey: ['sales'] });
+      if (data.status === 'AUTHORIZED') {
+        window.alert(
+          `${data.kind === 'NF_E' ? 'NF-e' : 'NFC-e'} autorizada pela SEFAZ` +
+            (data.protocol ? ` (prot. ${data.protocol}).` : '.'),
+        );
+        return;
+      }
+      if (data.status === 'CONTINGENCY') {
+        window.alert('A SEFAZ não autorizou agora — a nota ficou em contingência.');
+        return;
+      }
+      if (data.lastError?.trim()) {
+        window.alert(data.lastError.trim());
+      }
     },
     onError: (err: Error) => window.alert(err.message),
   });
@@ -987,6 +1015,20 @@ export function FiscalNotesPage() {
                     >
                       Abrir
                     </button>
+                    {canSendFiscalNote(r.status) && (
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-compact"
+                        disabled={sendNow.isPending}
+                        title="Transmite a nota à SEFAZ agora (não espera o worker da fila)"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          sendNow.mutate(r.id);
+                        }}
+                      >
+                        {sendNow.isPending ? 'Enviando…' : 'Enviar'}
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="btn btn-secondary btn-compact"
@@ -1212,6 +1254,12 @@ export function FiscalNotesPage() {
                     : undefined
                 }
                 emitting={emitDoc.isPending}
+                onSendNow={
+                  canSendFiscalNote(detail.data.status)
+                    ? () => sendNow.mutate(detail.data!.id)
+                    : undefined
+                }
+                sendingNow={sendNow.isPending}
               />
             )}
             <div className="modal-actions">
@@ -1383,6 +1431,8 @@ function FiscalNoteDetail({
   onPrintSecondCopy,
   onEmitNfe,
   emitting,
+  onSendNow,
+  sendingNow,
 }: {
   doc: FiscalDocDetail;
   editable: boolean;
@@ -1393,6 +1443,8 @@ function FiscalNoteDetail({
   onPrintSecondCopy: () => void;
   onEmitNfe?: () => void;
   emitting?: boolean;
+  onSendNow?: () => void;
+  sendingNow?: boolean;
 }) {
   return (
     <div>
@@ -1408,6 +1460,16 @@ function FiscalNoteDetail({
               onClick={onSendContingency}
             >
               {sending ? 'Enfileirando…' : 'Enviar contingência à SEFAZ'}
+            </button>
+          )}
+          {onSendNow && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={sendingNow}
+              onClick={onSendNow}
+            >
+              {sendingNow ? 'Enviando…' : 'Enviar nota'}
             </button>
           )}
           {onEmitNfe && (

@@ -129,7 +129,7 @@ export class InboundNfeController {
     if (!file?.buffer?.length) {
       throw new BadRequestException('Envie o arquivo XML da NF-e.');
     }
-    const name = (file.originalname ?? '').toLowerCase();
+    const name = (file.originalname ?? '').replace(/^.*[\\/]/, '').toLowerCase();
     if (name && !name.endsWith('.xml')) {
       throw new BadRequestException('Envie um arquivo .xml');
     }

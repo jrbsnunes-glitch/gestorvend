@@ -7,7 +7,7 @@
  */
 
 import { isGestorVendDesktop } from './desktop-bridge';
-import { tryDesktopPrintUrl } from './desktop-print';
+import { absoluteAppUrl, saveDocumentPdf, tryDesktopPrintUrl } from './desktop-print';
 
 const POS_AUTO_PRINT_KEY = 'gv_pos_auto_print_receipt';
 
@@ -57,7 +57,7 @@ export function consumeAutoPrintNonce(nonce: string | null, saleId: string): boo
 function receiptPrintPath(
   saleId: string,
   nonce: string,
-  opts?: { autoprint?: boolean; close?: boolean; copy?: boolean },
+  opts?: { autoprint?: boolean; close?: boolean; copy?: boolean; savepdf?: boolean },
 ): string {
   const q = new URLSearchParams({
     id: saleId,
@@ -66,7 +66,18 @@ function receiptPrintPath(
   if (opts?.autoprint !== false) q.set('autoprint', '1');
   if (opts?.close !== false) q.set('close', '1');
   if (opts?.copy) q.set('copy', '1');
+  if (opts?.savepdf) q.set('savepdf', '1');
   return `/vendas/impressao?${q.toString()}`;
+}
+
+export function receiptPdfFileName(opts?: {
+  number?: number | string | null;
+  copy?: boolean;
+}): string {
+  const raw = opts?.number != null ? String(opts.number).trim() : '';
+  const n = (raw.replace(/[^\w.-]+/g, '') || 'cupom').slice(0, 24);
+  const via = opts?.copy ? '-2via' : '';
+  return `cupom-${n}${via}.pdf`;
 }
 
 /**
@@ -117,6 +128,43 @@ export function queueSaleReceiptAutoPrint(saleId: string, opts?: { copy?: boolea
       /* ignore */
     }
   }, 120_000);
+}
+
+/**
+ * Gera PDF A4 do cupom (segunda via ou 1ª). No Desktop usa printToPDF, sem
+ * passar pela térmica ESC/POS — o destino “Microsoft Print to PDF” em 80 mm
+ * gerava arquivo de 0 bytes.
+ */
+export function queueSaleReceiptPdf(
+  saleId: string,
+  opts?: { copy?: boolean; number?: number | string | null },
+): void {
+  const nonce = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+  const copy = Boolean(opts?.copy);
+  const desktop = isGestorVendDesktop();
+  const path = receiptPrintPath(saleId, nonce, {
+    autoprint: false,
+    close: false,
+    copy,
+    savepdf: !desktop,
+  });
+  const defaultPath = receiptPdfFileName({ number: opts?.number, copy });
+
+  void (async () => {
+    if (desktop) {
+      const res = await saveDocumentPdf({ url: absoluteAppUrl(path), defaultPath });
+      if (res.ok) return;
+      window.alert(
+        res.error?.trim() ||
+          'Não foi possível gerar o PDF.\n\nAtualize o GestorVend Desktop (novo Setup) para o recurso Salvar PDF.',
+      );
+      return;
+    }
+
+    const w = window.open(path, 'gv_sale_receipt_pdf', 'noopener,noreferrer,width=520,height=800');
+    if (w) return;
+    window.alert('Permita pop-ups para abrir o cupom e salvar o PDF.');
+  })();
 }
 
 export function posAutoPrintModeLabel(mode: PosAutoPrintMode): string {

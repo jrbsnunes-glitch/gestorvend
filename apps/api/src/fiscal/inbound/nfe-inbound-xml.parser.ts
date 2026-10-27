@@ -31,18 +31,24 @@ export type InboundNfePreviewDto = {
 };
 
 function textOf(xml: string, tag: string): string | null {
-  const m = xml.match(new RegExp(`<${tag}[^>]*>([^<]*)<\\/${tag}>`, 'i'));
+  const m = xml.match(
+    new RegExp(`<(?:\\w+:)?${tag}\\b[^>]*>([^<]*)<\\/(?:\\w+:)?${tag}\\s*>`, 'i'),
+  );
   return m?.[1]?.trim() ?? null;
 }
 
 function blockOf(xml: string, tag: string): string | null {
-  const m = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+  const m = xml.match(
+    new RegExp(`<(?:\\w+:)?${tag}\\b[^>]*>([\\s\\S]*?)<\\/(?:\\w+:)?${tag}\\s*>`, 'i'),
+  );
   return m?.[1] ?? null;
 }
 
-/** Lê chave 44 dígitos de nfeProc/protNFe/chNFe ou Id="NFe…". */
+/** Lê chave 44 dígitos de nfeProc/protNFe/chNFe ou Id="NFe…" (com ou sem prefixo de namespace). */
 export function extractAccessKeyFromXml(xml: string): string | null {
-  const fromTag = (textOf(xml, 'chNFe') ?? '').replace(/\D/g, '');
+  const tagged =
+    xml.match(/<(?:\w+:)?chNFe\b[^>]*>([^<]*)<\/(?:\w+:)?chNFe>/i)?.[1] ?? textOf(xml, 'chNFe');
+  const fromTag = (tagged ?? '').replace(/\D/g, '');
   if (fromTag.length === 44) return fromTag;
   const fromId = xml.match(/\bId\s*=\s*["']NFe(\d{44})["']/i);
   if (fromId?.[1]) return fromId[1];

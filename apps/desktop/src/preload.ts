@@ -26,6 +26,13 @@ contextBridge.exposeInMainWorld('gestorvend', {
   }) => ipcRenderer.invoke('print:silent', opts) as Promise<{ ok: boolean; error?: string }>,
   printUrl: (opts: { url: string; deviceName?: string; pageSize?: '80mm' | 'A4' }) =>
     ipcRenderer.invoke('print:url', opts) as Promise<{ ok: boolean; error?: string }>,
+  printToPdf: (opts?: { url?: string; defaultPath?: string }) =>
+    ipcRenderer.invoke('print:pdf', opts) as Promise<{
+      ok: boolean;
+      canceled?: boolean;
+      path?: string;
+      error?: string;
+    }>,
   getShellVersion: () =>
     ipcRenderer.invoke('shell:getVersion') as Promise<{ version: string }>,
   checkForUpdates: () =>

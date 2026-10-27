@@ -47,6 +47,7 @@ import {
   getPosAutoPrintMode,
   posAutoPrintModeLabel,
   queueSaleReceiptAutoPrint,
+  queueSaleReceiptPdf,
   setPosAutoPrintMode,
   type PosAutoPrintMode,
 } from '../lib/sale-receipt-print';
@@ -2860,6 +2861,16 @@ function PosScreen({
             >
               Imprimir cupom
             </button>
+            <button
+              type="button"
+              className="pos-btn pos-btn-ghost"
+              title="Gera um arquivo PDF em A4. Não envia para a térmica."
+              onClick={() => {
+                queueSaleReceiptPdf(receiptPrompt.id, { number: receiptPrompt.number });
+              }}
+            >
+              Salvar PDF
+            </button>
             <button type="button" className="pos-btn pos-btn-ghost" onClick={() => setReceiptPrompt(null)}>
               Ocultar
             </button>
@@ -4053,6 +4064,16 @@ function PosScreen({
                             s.fiscalDocument.status === 'AUTHORIZED'
                               ? 'Reimprimir NFC-e'
                               : 'Cupom (não fiscal)'}
+                          </button>
+                          <button
+                            type="button"
+                            className="pos-btn pos-btn-ghost pos-history-action-print"
+                            title="Gera um arquivo PDF em A4. Não envia para a térmica."
+                            onClick={() => {
+                              queueSaleReceiptPdf(s.id, { copy: true, number: s.number });
+                            }}
+                          >
+                            Salvar PDF
                           </button>
                           {s.status === 'COMPLETED' &&
                             electronicFiscalPlanned &&

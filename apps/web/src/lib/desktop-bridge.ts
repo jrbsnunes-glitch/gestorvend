@@ -80,6 +80,10 @@ export type GestorVendDesktopApi = {
     deviceName?: string;
     pageSize?: '80mm' | 'A4';
   }) => Promise<{ ok: boolean; error?: string }>;
+  printToPdf?: (opts?: {
+    url?: string;
+    defaultPath?: string;
+  }) => Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>;
   getPdvPrinter?: () => Promise<{ printer: string | null; receiptScale?: number }>;
   savePdvPrinter?: (body: {
     printer?: string | null;

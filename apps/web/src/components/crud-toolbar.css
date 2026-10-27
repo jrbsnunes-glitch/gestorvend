@@ -436,18 +436,23 @@
 .entrada-nfe-key-row .btn {
   padding: 0.32rem 0.55rem;
   font-size: 0.78rem;
-}
-
-.entrada-nfe-key-row input[type='text'],
-.entrada-nfe-key-row input:not([type]),
-.entrada-nfe-key-row > input#ent-key {
-  flex: 1 1 220px;
-  min-width: 0;
-}
-
-.entrada-nfe-key-row .btn {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+/*
+ * Desktop maximizado usa o grid de 3 colunas: com min-width:0 o campo
+ * sumia entre os botões e não dava para clicar/digitar a chave.
+ */
+.entrada-nfe-key-row input[type='text'],
+.entrada-nfe-key-row input:not([type]),
+.entrada-nfe-key-row > input#ent-key,
+.entrada-nfe-key-row > input#inbox-key {
+  flex: 1 1 100%;
+  min-width: min(100%, 16rem);
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
 }
 
 .entrada-nfe-key-hint {

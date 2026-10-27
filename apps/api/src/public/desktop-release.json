@@ -1,5 +1,5 @@
 {
-  "version": "1.0.64",
+  "version": "1.0.65",
   "downloadUrl": "",
-  "notes": "Ícone oficial GV no atalho, no instalador e na janela do Desktop."
+  "notes": "Salvar PDF da segunda via do cupom em A4 (sem passar pela térmica)."
 }

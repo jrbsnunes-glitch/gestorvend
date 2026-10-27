@@ -6,14 +6,14 @@ import { api } from '../lib/api';
 import { companyUsesCustomLogo } from '../lib/company-branding';
 import { formatBRL, formatDate } from '../lib/format';
 import { getDesktopApi, isGestorVendDesktop } from '../lib/desktop-bridge';
-import { consumeAutoPrintNonce } from '../lib/sale-receipt-print';
+import { consumeAutoPrintNonce, receiptPdfFileName } from '../lib/sale-receipt-print';
 import { formatNfceAccessKey, NfceQrImage, useNfceQrDataUrl } from '../lib/nfce-qr';
 import {
   hardenSaleReceiptStyles,
   inlineSaleReceiptImages,
   waitSaleReceiptImages,
 } from '../lib/sale-receipt-harden';
-import { printDocument } from '../lib/desktop-print';
+import { printDocument, saveDocumentPdf } from '../lib/desktop-print';
 import { fiscalPaymentLabel } from '../lib/nfce-payment';
 import { PAYMENT_FORM_KIND_LABELS, type PaymentFormKind } from '../lib/payment-forms';
 import { APP_VERSION } from '../version';
@@ -338,9 +338,11 @@ export function SaleReceiptPrintPage() {
   const wantAutoPrint = sp.get('autoprint') === '1' || sp.get('autoprint') === 'true';
   const wantClose = sp.get('close') === '1' || sp.get('close') === 'true';
   const isSecondCopy = sp.get('copy') === '1' || sp.get('copy') === 'true';
+  const wantSavePdf = sp.get('savepdf') === '1' || sp.get('savepdf') === 'true';
   const np = sp.get('_np');
   const [printErr, setPrintErr] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
+  const [savingPdf, setSavingPdf] = useState(false);
 
   const receiptQ = useQuery({
     queryKey: demo ? ['sale-receipt', 'demo'] : ['sales', saleId, 'receipt'],
@@ -468,7 +470,7 @@ export function SaleReceiptPrintPage() {
   }, [wantAutoPrint, saleId, receiptReady, np, wantClose]);
 
   async function handlePrint() {
-    if (!receiptReady || printing) return;
+    if (!receiptReady || printing || savingPdf) return;
     setPrintErr(null);
     setPrinting(true);
     try {
@@ -480,12 +482,40 @@ export function SaleReceiptPrintPage() {
     }
   }
 
+  async function handleSavePdf() {
+    if (!receiptReady || printing || savingPdf) return;
+    setPrintErr(null);
+    setSavingPdf(true);
+    try {
+      const res = await saveDocumentPdf({
+        defaultPath: receiptPdfFileName({ number: s?.number, copy: isSecondCopy }),
+      });
+      if (!res.ok) {
+        setPrintErr(res.error || 'Falha ao gerar o PDF do cupom.');
+      }
+    } catch (err) {
+      setPrintErr(err instanceof Error ? err.message : 'Falha ao gerar o PDF do cupom.');
+    } finally {
+      setSavingPdf(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!wantSavePdf || !receiptReady) return;
+    if (!consumeAutoPrintNonce(np, `pdf:${saleId || 'demo'}`)) return;
+    const t = window.setTimeout(() => {
+      void handleSavePdf();
+    }, 600);
+    return () => window.clearTimeout(t);
+  }, [wantSavePdf, saleId, receiptReady, np]);
+
   useEffect(() => {
     function onFail(ev: Event) {
       const detail = (ev as CustomEvent<{ error?: string }>).detail;
       const msg = detail?.error?.trim() || 'Falha ao enviar cupom à impressora.';
       setPrintErr(msg);
       setPrinting(false);
+      setSavingPdf(false);
     }
     function onKey(ev: KeyboardEvent) {
       if (!(ev.ctrlKey || ev.metaKey) || ev.key.toLowerCase() !== 'p') return;
@@ -520,9 +550,18 @@ export function SaleReceiptPrintPage() {
             type="button"
             className="btn btn-primary"
             onClick={() => void handlePrint()}
-            disabled={!receiptReady || printing}
+            disabled={!receiptReady || printing || savingPdf}
           >
             {printing ? 'Imprimindo…' : 'Imprimir (Ctrl+P)'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => void handleSavePdf()}
+            disabled={!receiptReady || printing || savingPdf}
+            title="Gera um arquivo PDF em A4. Não use a impressora térmica nem Microsoft Print to PDF no cupom 80 mm."
+          >
+            {savingPdf ? 'Salvando PDF…' : 'Salvar PDF'}
           </button>
         </div>
         {printErr ? (
@@ -540,7 +579,9 @@ export function SaleReceiptPrintPage() {
           {nfceAuthorized
             ? 'Bobina 80 mm — DANFE NFC-e com QR Code.'
             : 'Bobina 80 mm — cupom não fiscal.'}{' '}
-          No GestorVend Desktop, use a impressora configurada em Configurações → Impressão (PDV). No
+          <strong>Imprimir</strong> sai na térmica. <strong>Salvar PDF</strong> gera um arquivo A4
+          (não use “Microsoft Print to PDF” no diálogo da bobina — isso gera arquivo vazio). No
+          GestorVend Desktop, a térmica é a impressora de Configurações → Impressão (PDV). No
           navegador, o diálogo do sistema escolhe a impressora.
           {browserPrint ? (
             <>

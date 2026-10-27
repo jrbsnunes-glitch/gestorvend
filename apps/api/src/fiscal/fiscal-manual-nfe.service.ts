@@ -218,23 +218,31 @@ export class FiscalManualNfeService {
     const doc = await db.fiscalDocument.findUnique({ where: { id: docId } });
     if (!doc) throw new NotFoundException('Documento fiscal não encontrado.');
     if (
-      doc.status !== FiscalDocumentStatus.DRAFT &&
-      doc.status !== FiscalDocumentStatus.REJECTED &&
-      doc.status !== FiscalDocumentStatus.ERROR
+      doc.status === FiscalDocumentStatus.AUTHORIZED ||
+      doc.status === FiscalDocumentStatus.CANCELLED
     ) {
+      throw new BadRequestException('Esta nota já foi concluída e não pode ser reenviada.');
+    }
+    if (doc.status === FiscalDocumentStatus.SENT) {
       throw new BadRequestException(
-        'Somente rascunho ou notas com falha podem ser enviadas por este fluxo.',
+        'A nota já foi enviada à SEFAZ e aguarda retorno. Use Consultar para atualizar a situação.',
       );
     }
 
-    await db.fiscalDocument.update({
-      where: { id: docId },
-      data: {
-        status: FiscalDocumentStatus.QUEUED,
-        lastError: null,
-        nextAttemptAt: new Date(),
-      },
-    });
+    const alreadyProcessable =
+      doc.status === FiscalDocumentStatus.QUEUED ||
+      doc.status === FiscalDocumentStatus.CONTINGENCY;
+
+    if (!alreadyProcessable) {
+      await db.fiscalDocument.update({
+        where: { id: docId },
+        data: {
+          status: FiscalDocumentStatus.QUEUED,
+          lastError: null,
+          nextAttemptAt: new Date(),
+        },
+      });
+    }
 
     try {
       await this.emission.processDocumentNow(tenantSlug, docId);

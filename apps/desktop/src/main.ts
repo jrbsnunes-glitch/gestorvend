@@ -235,6 +235,135 @@ async function printReceiptFromUrl(
   }
 }
 
+function sanitizePdfFileName(raw?: string): string {
+  const base = (raw?.trim() || 'cupom.pdf').replace(/[/\\?%*:|"<>]/g, '-');
+  return base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
+}
+
+function defaultPdfSavePath(raw?: string): string {
+  const name = sanitizePdfFileName(raw);
+  if (path.isAbsolute(name)) return name;
+  return path.join(app.getPath('documents'), name);
+}
+
+function ownerWindowOf(wc: WebContents): BrowserWindow | undefined {
+  return BrowserWindow.fromWebContents(wc) ?? mainWindow ?? undefined;
+}
+
+async function prepareWebContentsForPdf(wc: WebContents): Promise<void> {
+  await wc
+    .executeJavaScript(
+      `(() => {
+        document.documentElement.classList.add('gv-receipt-save-pdf');
+        document.querySelectorAll('.no-print, .sale-receipt-toolbar').forEach((el) => {
+          el.setAttribute('data-gv-pdf-hide', '1');
+          el.style.setProperty('display', 'none', 'important');
+        });
+        return true;
+      })()`,
+    )
+    .catch(() => {});
+}
+
+async function restoreWebContentsAfterPdf(wc: WebContents): Promise<void> {
+  await wc
+    .executeJavaScript(
+      `(() => {
+        document.documentElement.classList.remove('gv-receipt-save-pdf');
+        document.querySelectorAll('[data-gv-pdf-hide]').forEach((el) => {
+          el.removeAttribute('data-gv-pdf-hide');
+          el.style.removeProperty('display');
+        });
+        return true;
+      })()`,
+    )
+    .catch(() => {});
+}
+
+async function renderWebContentsPdf(wc: WebContents): Promise<Buffer> {
+  await prepareWebContentsForPdf(wc);
+  try {
+    const data = await wc.printToPDF({
+      printBackground: true,
+      landscape: false,
+      pageSize: 'A4',
+      preferCSSPageSize: false,
+      margins: {
+        marginType: 'custom',
+        top: 12000,
+        bottom: 12000,
+        left: 12000,
+        right: 12000,
+      },
+    });
+    const buf = Buffer.from(data);
+    if (!buf.length) {
+      throw new Error('O PDF gerado veio vazio. Recarregue o cupom e tente de novo.');
+    }
+    return buf;
+  } finally {
+    await restoreWebContentsAfterPdf(wc);
+  }
+}
+
+async function promptAndWritePdf(
+  owner: BrowserWindow | undefined,
+  pdf: Buffer,
+  defaultPath: string,
+): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }> {
+  const saveOpts = {
+    title: 'Salvar cupom em PDF',
+    defaultPath,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  };
+  const { canceled, filePath } =
+    owner && !owner.isDestroyed()
+      ? await dialog.showSaveDialog(owner, saveOpts)
+      : await dialog.showSaveDialog(saveOpts);
+  if (canceled || !filePath) return { ok: true, canceled: true };
+  const out = filePath.toLowerCase().endsWith('.pdf') ? filePath : `${filePath}.pdf`;
+  await fs.promises.writeFile(out, pdf);
+  return { ok: true, path: out };
+}
+
+async function saveWebContentsPdf(
+  wc: WebContents,
+  defaultPath: string,
+): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }> {
+  const pdf = await renderWebContentsPdf(wc);
+  return promptAndWritePdf(ownerWindowOf(wc), pdf, defaultPath);
+}
+
+async function saveReceiptPdfFromUrl(
+  sender: WebContents,
+  target: string,
+  defaultPath: string,
+): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }> {
+  const win = new BrowserWindow({
+    width: 794,
+    height: 1123,
+    show: false,
+    backgroundColor: '#ffffff',
+    icon: appIconPath(),
+    webPreferences: appWebPrefs(mainWindowPartition),
+  });
+  try {
+    await win.loadURL(target);
+    const ready = await waitReceiptReady(win);
+    if (!ready) {
+      return {
+        ok: false,
+        error: 'Cupom não carregou a tempo (venda/empresa). Atualize o servidor e tente de novo.',
+      };
+    }
+    await new Promise((r) => setTimeout(r, 250));
+    const pdf = await renderWebContentsPdf(win.webContents);
+    return promptAndWritePdf(ownerWindowOf(sender), pdf, defaultPath);
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+}
+
 async function refreshRemoteCache(win: BrowserWindow): Promise<void> {
   try {
     await win.webContents.session.clearCache();
@@ -757,6 +886,26 @@ function registerIpc() {
         };
       }
       return printReceiptFromUrl(resolved.url, device, body?.pageSize ?? '80mm');
+    },
+  );
+
+  ipcMain.handle(
+    'print:pdf',
+    async (event, body?: { url?: string; defaultPath?: string }) => {
+      try {
+        const defaultPath = defaultPdfSavePath(
+          typeof body?.defaultPath === 'string' ? body.defaultPath : undefined,
+        );
+        const urlRaw = typeof body?.url === 'string' ? body.url.trim() : '';
+        if (urlRaw) {
+          const resolved = resolveAbsolutePrintUrl(urlRaw);
+          if (!resolved.ok) return resolved;
+          return await saveReceiptPdfFromUrl(event.sender, resolved.url, defaultPath);
+        }
+        return await saveWebContentsPdf(event.sender, defaultPath);
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Erro ao gerar PDF.' };
+      }
     },
   );
 

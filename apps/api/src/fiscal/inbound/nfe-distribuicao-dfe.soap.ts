@@ -159,9 +159,9 @@ function classifyDocKind(schema: string | undefined, xml: string): DistDocKind {
 
 function extractAccessKey(xml: string): string | undefined {
   const ch =
-    xml.match(/<chNFe>(\d{44})<\/chNFe>/i)?.[1] ??
+    xml.match(/<(?:\w+:)?chNFe\b[^>]*>(\d{44})<\/(?:\w+:)?chNFe>/i)?.[1] ??
     xml.match(/\bId="NFe(\d{44})"/i)?.[1] ??
-    xml.match(/<infNFe[^>]*Id="NFe(\d{44})"/i)?.[1];
+    xml.match(/<(?:\w+:)?infNFe[^>]*Id="NFe(\d{44})"/i)?.[1];
   return ch;
 }
 

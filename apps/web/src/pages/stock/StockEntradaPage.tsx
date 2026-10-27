@@ -9,6 +9,7 @@ import { SupplierSearchCombo } from '../../components/ProductCatalogCombos';
 import { ProductSearchModal, type ProductSearchRow } from '../../components/ProductSearchModal';
 import { api, apiUpload, ApiHttpError } from '../../lib/api';
 import { formatCnpj } from '../../lib/format';
+import { digitsNfeAccessKey, nfeAccessKeyFromClipboard } from '../../lib/nfe-access-key';
 import { openPortalNfeConsulta, shouldOfferPortalXmlFallback } from '../../lib/portal-nfe';
 import { formatConversionHint, isPackInvoiceUnit, suggestPackItemQtyFromText } from '../../lib/product-conversion';
 
@@ -404,7 +405,7 @@ export function StockEntradaPage() {
     mutationFn: (accessKeyOverride?: string) =>
       api<InboundFetchResponse>('/fiscal/inbound/fetch-by-key', {
         method: 'POST',
-        json: { accessKey: (accessKeyOverride ?? nfeKey).replace(/\D/g, '') },
+        json: { accessKey: digitsNfeAccessKey(accessKeyOverride ?? nfeKey) },
       }),
     onSuccess: (data) => {
       setDuplicateInfo(null);
@@ -440,7 +441,7 @@ export function StockEntradaPage() {
       }
       setDuplicateInfo(null);
       setErr(e.message);
-      const key = ((accessKeyOverride ?? nfeKey) || '').replace(/\D/g, '');
+      const key = digitsNfeAccessKey(accessKeyOverride ?? nfeKey);
       if (shouldOfferPortalXmlFallback(e.message) && key.length === 44) {
         void openPortalNfeConsulta(key).then(({ copied, opened }) => {
           setPortalFallback({ accessKey: key, copied, opened });
@@ -452,6 +453,7 @@ export function StockEntradaPage() {
   });
 
   const xmlFileRef = useRef<HTMLInputElement>(null);
+  const nfeKeyRef = useRef<HTMLInputElement>(null);
 
   const importXml = useMutation({
     mutationFn: (file: File) =>
@@ -490,7 +492,7 @@ export function StockEntradaPage() {
 
   // Abre o formulário e busca a NF-e quando chega ?chave= da Caixa de entrada.
   useEffect(() => {
-    const chave = (searchParams.get('chave') ?? '').replace(/\D/g, '');
+    const chave = digitsNfeAccessKey(searchParams.get('chave') ?? '');
     if (chave.length !== 44 || chaveFromUrlHandled.current) return;
     chaveFromUrlHandled.current = true;
     setMode('WITH_NFE_KEY');
@@ -501,13 +503,19 @@ export function StockEntradaPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  useEffect(() => {
+    if (!includeOpen || mode !== 'WITH_NFE_KEY') return;
+    const t = window.setTimeout(() => nfeKeyRef.current?.focus(), 80);
+    return () => window.clearTimeout(t);
+  }, [includeOpen, mode]);
+
   const submit = useMutation({
     mutationFn: () =>
       api('/goods-receipts', {
         method: 'POST',
         json: {
           mode,
-          nfeAccessKey: mode === 'WITH_NFE_KEY' ? nfeKey.replace(/\D/g, '') : null,
+          nfeAccessKey: mode === 'WITH_NFE_KEY' ? digitsNfeAccessKey(nfeKey) : null,
           supplierId: supplierId || null,
           locationId,
           documentNumber: documentNumber || null,
@@ -1055,19 +1063,38 @@ export function StockEntradaPage() {
                           <div className="entrada-nfe-key-row">
                             <input
                               id="ent-key"
+                              ref={nfeKeyRef}
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="off"
+                              spellCheck={false}
                               value={nfeKey}
                               onChange={(e) => {
-                                setNfeKey(e.target.value.replace(/\D/g, '').slice(0, 44));
+                                setNfeKey(digitsNfeAccessKey(e.target.value));
                                 setDuplicateInfo(null);
                                 setNfeFetchMsg(null);
                               }}
-                              placeholder="44 dígitos"
-                              maxLength={44}
+                              onPaste={(e) => {
+                                const digits = nfeAccessKeyFromClipboard(e.clipboardData);
+                                if (!digits) return;
+                                e.preventDefault();
+                                setNfeKey(digits);
+                                setDuplicateInfo(null);
+                                setNfeFetchMsg(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key !== 'Enter') return;
+                                e.preventDefault();
+                                if (digitsNfeAccessKey(nfeKey).length === 44 && !fetchNfe.isPending) {
+                                  fetchNfe.mutate(undefined);
+                                }
+                              }}
+                              placeholder="44 dígitos — digite ou cole a chave"
                             />
                             <button
                               type="button"
                               className="btn btn-secondary"
-                              disabled={nfeKey.replace(/\D/g, '').length !== 44 || fetchNfe.isPending}
+                              disabled={digitsNfeAccessKey(nfeKey).length !== 44 || fetchNfe.isPending}
                               onClick={() => fetchNfe.mutate(undefined)}
                             >
                               {fetchNfe.isPending ? 'Buscando…' : 'Buscar NF-e'}
@@ -1098,9 +1125,9 @@ export function StockEntradaPage() {
                             <button
                               type="button"
                               className="btn btn-ghost"
-                              disabled={nfeKey.replace(/\D/g, '').length !== 44}
+                              disabled={digitsNfeAccessKey(nfeKey).length !== 44}
                               onClick={() => {
-                                const key = nfeKey.replace(/\D/g, '');
+                                const key = digitsNfeAccessKey(nfeKey);
                                 void openPortalNfeConsulta(key).then(({ copied, opened }) => {
                                   setPortalFallback({ accessKey: key, copied, opened });
                                 });
