@@ -481,7 +481,6 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
             <NavIcon name="menu" />
           </button>
           <span className="main-topbar-title">{companyDisplayName(company.data)}</span>
-          <div className="topbar-search-spacer" />
           {profileMenu}
         </div>
         <ConnectionStatusBanner />

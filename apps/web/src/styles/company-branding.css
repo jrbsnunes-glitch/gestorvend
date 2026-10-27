@@ -51,17 +51,13 @@
   text-align: center;
 }
 
-/* Página inicial */
+/* Página inicial — título no canvas, sem faixa/card extra no topo */
 .company-page-head {
   display: flex;
   align-items: center;
   gap: 1rem;
   margin-bottom: 1.25rem;
-  padding: 1rem 1.15rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  padding: 0.15rem 0 0.35rem;
 }
 
 .company-page-head__logo {
