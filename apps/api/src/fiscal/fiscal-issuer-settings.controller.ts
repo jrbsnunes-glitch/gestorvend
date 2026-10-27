@@ -40,6 +40,7 @@ export class FiscalIssuerSettingsController {
       certPasswordConfigured: Boolean(certPassword),
       cscId: this.config.get<string>('FISCAL_NFCE_CSC_ID'),
       cscSecretConfigured: Boolean(csc),
+      emitTransport: this.config.get<string>('FISCAL_EMIT_TRANSPORT'),
     };
   }
 

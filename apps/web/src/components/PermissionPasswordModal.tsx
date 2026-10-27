@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useModalEscapeKey } from '../lib/useModalEscapeKey';
+import { FormModalBackdrop } from './FormModalBackdrop';
 
 type Props = {
   open: boolean;
@@ -32,12 +32,10 @@ export function PermissionPasswordModal({
     }
   }, [open]);
 
-  useModalEscapeKey(onClose, open);
-
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop no-print" role="presentation">
+    <FormModalBackdrop className="no-print" onClose={onClose}>
       <div
         className="modal"
         role="dialog"
@@ -78,6 +76,6 @@ export function PermissionPasswordModal({
           </div>
         </form>
       </div>
-    </div>
+    </FormModalBackdrop>
   );
 }

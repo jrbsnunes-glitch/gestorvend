@@ -14,6 +14,7 @@ import {
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { UserPermissionsService } from '../users/user-permissions.service';
 import { FiscalIssuerSettingsService } from './fiscal-issuer-settings.service';
+import { resolveFiscalEmitTransport } from './fiscal-emit-transport';
 import { upsertFiscalDocumentQueue } from './fiscal-document-queue.helper';
 import { createMutualTlsAgentFromPfx, loadPfxMaterial } from './issuer/load-pfx';
 import { extractCnpjFromPfx } from './issuer/cert-cnpj';
@@ -534,16 +535,21 @@ export class FiscalDocumentsService {
       (xJust ?? '').trim() ||
       'Cancelamento solicitado pelo emitente no GestorVend.';
 
+    const ensuredForCancel = await this.issuerSvc.ensureForTenant(tenantSlug);
+    if (!ensuredForCancel) throw new BadRequestException('Emissor fiscal não configurado.');
+    const soapLive = resolveFiscalEmitTransport({
+      envTransport: this.config.get<string>('FISCAL_EMIT_TRANSPORT'),
+      sefazEnvironment: ensuredForCancel.settings.sefazEnvironment,
+    }) === 'soap';
     const canSefaz =
       doc.status === FiscalDocumentStatus.AUTHORIZED &&
       doc.accessKey &&
       doc.protocol &&
       doc.protocol !== 'DRY-RUN' &&
-      (this.config.get<string>('FISCAL_EMIT_TRANSPORT') ?? 'dry-run').toLowerCase() === 'soap';
+      soapLive;
 
     if (canSefaz) {
-      const ensured = await this.issuerSvc.ensureForTenant(tenantSlug);
-      if (!ensured) throw new BadRequestException('Emissor fiscal não configurado.');
+      const ensured = ensuredForCancel;
       const { company, settings } = ensured;
       const certPath =
         (settings.certificatePath?.trim() ||
@@ -614,14 +620,19 @@ export class FiscalDocumentsService {
       ano?: number;
     },
   ) {
-    if ((this.config.get<string>('FISCAL_EMIT_TRANSPORT') ?? 'dry-run').toLowerCase() !== 'soap') {
-      throw new BadRequestException(
-        'Inutilização requer FISCAL_EMIT_TRANSPORT=soap e certificado A1.',
-      );
-    }
     const ensured = await this.issuerSvc.ensureForTenant(tenantSlug);
     if (!ensured) throw new BadRequestException('Emissor fiscal não configurado.');
     const { company, settings } = ensured;
+    if (
+      resolveFiscalEmitTransport({
+        envTransport: this.config.get<string>('FISCAL_EMIT_TRANSPORT'),
+        sefazEnvironment: settings.sefazEnvironment,
+      }) !== 'soap'
+    ) {
+      throw new BadRequestException(
+        'Inutilização exige ambiente Produção (ou FISCAL_EMIT_TRANSPORT=soap) e certificado A1.',
+      );
+    }
     const certPath =
       (settings.certificatePath?.trim() || this.config.get<string>('FISCAL_ISSUER_CERT_PATH')?.trim()) ??
       '';
@@ -960,15 +971,19 @@ export class FiscalDocumentsService {
     const seq = doc.correctionLetters.length + 1;
     if (seq > 20) throw new BadRequestException('Limite de 20 cartas de correção por NF-e.');
 
+    const ensuredForCce = await this.issuerSvc.ensureForTenant(tenantSlug);
+    if (!ensuredForCce) throw new BadRequestException('Emissor fiscal não configurado.');
     const canSefaz =
       doc.protocol &&
       doc.protocol !== 'DRY-RUN' &&
-      (this.config.get<string>('FISCAL_EMIT_TRANSPORT') ?? 'dry-run').toLowerCase() === 'soap';
+      resolveFiscalEmitTransport({
+        envTransport: this.config.get<string>('FISCAL_EMIT_TRANSPORT'),
+        sefazEnvironment: ensuredForCce.settings.sefazEnvironment,
+      }) === 'soap';
 
     let protocol: string | null = null;
     if (canSefaz) {
-      const ensured = await this.issuerSvc.ensureForTenant(tenantSlug);
-      if (!ensured) throw new BadRequestException('Emissor fiscal não configurado.');
+      const ensured = ensuredForCce;
       const { company, settings } = ensured;
       const certPath =
         (settings.certificatePath?.trim() ||

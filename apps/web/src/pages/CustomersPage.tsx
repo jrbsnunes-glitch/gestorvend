@@ -607,7 +607,10 @@ export function CustomersPage() {
               <label htmlFor="cust-search-q">Termo</label>
               <input
                 id="cust-search-q"
-                type="search"
+                type="text"
+                inputMode="search"
+                autoComplete="off"
+                spellCheck={false}
                 autoFocus
                 value={draftSearch}
                 onChange={(e) => setDraftSearch(e.target.value)}

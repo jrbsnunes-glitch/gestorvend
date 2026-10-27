@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { PortalModalBackdrop } from './FormModalBackdrop';
 import { useModalEscapeKey } from '../lib/useModalEscapeKey';
 
 export type RecordViewField = {
@@ -180,11 +181,8 @@ export function RecordViewModal({
   if (!open) return null;
 
   return (
-    <div
-      className={['modal-backdrop', wide ? 'modal-backdrop--wide' : '', 'no-print']
-        .filter(Boolean)
-        .join(' ')}
-      role="presentation"
+    <PortalModalBackdrop
+      className={[wide ? 'modal-backdrop--wide' : '', 'no-print'].filter(Boolean).join(' ')}
       onClick={onClose}
     >
       <div
@@ -208,6 +206,6 @@ export function RecordViewModal({
           </button>
         </div>
       </div>
-    </div>
+    </PortalModalBackdrop>
   );
 }

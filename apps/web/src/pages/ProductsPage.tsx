@@ -1089,11 +1089,7 @@ export function ProductsPage() {
       />
 
       {reportsOpen && (
-        <div
-          className="modal-backdrop no-print"
-          role="presentation"
-          onClick={() => setReportsOpen(false)}
-        >
+        <FormModalBackdrop className="no-print" onClose={() => setReportsOpen(false)}>
           <div
             className="modal product-reports-modal modal--filters-compact"
             role="dialog"
@@ -1112,7 +1108,7 @@ export function ProductsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       {filtersOpen && (
@@ -1202,11 +1198,7 @@ export function ProductsPage() {
       )}
 
       {searchOpen && (
-        <div
-          className="modal-backdrop modal-backdrop--wide no-print"
-          role="presentation"
-          onClick={() => setSearchOpen(false)}
-        >
+        <FormModalBackdrop className="modal-backdrop--wide no-print" onClose={() => setSearchOpen(false)}>
           <div className="modal modal--wide" role="dialog" aria-labelledby="product-search-title" onClick={(e) => e.stopPropagation()}>
             <h2 id="product-search-title">Pesquisar produtos</h2>
             <p style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>
@@ -1217,8 +1209,10 @@ export function ProductsPage() {
               <label htmlFor="product-search-q">Termo</label>
               <input
                 id="product-search-q"
-                type="search"
+                type="text"
+                inputMode="search"
                 autoComplete="off"
+                spellCheck={false}
                 autoFocus
                 placeholder="Ex.: bebidas, SKU-001, 789…"
                 value={searchInput}
@@ -1340,7 +1334,7 @@ export function ProductsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </FormModalBackdrop>
       )}
 
       <div className="toolbar no-print">

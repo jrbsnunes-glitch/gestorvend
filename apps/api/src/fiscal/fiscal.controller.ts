@@ -65,8 +65,9 @@ export class FiscalController {
     }
     return {
       enabled: true,
+      emitTransport: (this.config.get<string>('FISCAL_EMIT_TRANSPORT') ?? 'dry-run').toLowerCase(),
       note:
-        'Worker interno ~60s: A1 + CSC por tenant (Empresa / emissor) ou fallback `FISCAL_*` no servidor; `FISCAL_EMIT_TRANSPORT=dry-run|soap`, SOAP (`FISCAL_SEFAZ_NFCE_SOAP_URL`). API `GET|PATCH /fiscal/issuer-settings`.',
+        'Worker interno ~60s. CSC monta o QR da NFC-e; não liga o envio. Produção transmite SOAP à SEFAZ. Homologação usa FISCAL_EMIT_TRANSPORT (dry-run ou soap).',
     };
   }
 

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { useModalEscapeKey } from '../lib/useModalEscapeKey';
 import { CostCenterSelect } from './CostCenterSelect';
+import { FormModalBackdrop } from './FormModalBackdrop';
 import { api } from '../lib/api';
 
 const PAYMENT_IN_LABELS: Record<string, string> = {
@@ -44,8 +44,6 @@ export function BalanceMovementModal({ open, onClose }: Props) {
     setReferentialAccountId('');
   }, [movType]);
 
-  useModalEscapeKey(onClose, open);
-
   const movement = useMutation({
     mutationFn: () => {
       const v = parseFloat(String(amount).replace(',', '.')) || 0;
@@ -81,7 +79,7 @@ export function BalanceMovementModal({ open, onClose }: Props) {
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop no-print" role="presentation">
+    <FormModalBackdrop className="no-print" onClose={onClose}>
       <div
         className="modal"
         role="dialog"
@@ -209,6 +207,6 @@ export function BalanceMovementModal({ open, onClose }: Props) {
           </button>
         </div>
       </div>
-    </div>
+    </FormModalBackdrop>
   );
 }

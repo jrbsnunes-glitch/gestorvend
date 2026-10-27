@@ -112,6 +112,11 @@
   border-radius: var(--radius-md);
   background: var(--color-surface);
   color: var(--color-text);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  pointer-events: auto;
 }
 
 .field input::placeholder,
@@ -1693,8 +1698,17 @@
   align-items: flex-start;
   justify-content: center;
   padding: 2rem 1rem;
-  z-index: 100;
+  z-index: 400;
   overflow-y: auto;
+  pointer-events: auto;
+}
+
+.modal-backdrop .modal,
+.modal-backdrop .field input,
+.modal-backdrop .field textarea,
+.modal-backdrop .field select,
+.modal-backdrop .catalog-combo input {
+  pointer-events: auto;
 }
 
 /** Menos margem lateral — o modal ocupa mais a janela */

@@ -293,12 +293,21 @@
   top: 0;
   right: 0;
   left: auto;
-  z-index: 30;
+  z-index: 8;
   pointer-events: none;
 }
 
-.main-topbar > * {
+/* Só o avatar, o menu e o hambúrguer recebem clique — o wrapper não cobre pesquisa. */
+.main-topbar .sidebar-hamburger,
+.main-topbar .main-topbar-title,
+.main-topbar .topbar-avatar-btn,
+.main-topbar .topbar-profile-menu {
   pointer-events: auto;
+}
+
+/* PDV já tem operador no próprio topo; o chip da área principal não pode cobrir o scanner. */
+.app-shell:has(.pos-fullscreen) .main-topbar {
+  display: none;
 }
 
 .sidebar-hamburger {

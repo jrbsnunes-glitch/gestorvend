@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useModalEscapeKey } from '../lib/useModalEscapeKey';
+import { FormModalBackdrop } from './FormModalBackdrop';
 
 type ReportKind = 'balance' | 'profitability';
 
@@ -40,8 +40,6 @@ export function BalancePrintModal({
     setReportKind('balance');
   }, [open, initialFrom, initialTo, initialCostCenterId]);
 
-  useModalEscapeKey(onClose, open);
-
   if (!open) return null;
 
   function openReport() {
@@ -67,7 +65,7 @@ export function BalancePrintModal({
   }
 
   return (
-    <div className="modal-backdrop" role="presentation">
+    <FormModalBackdrop onClose={onClose}>
       <div
         className="modal"
         role="dialog"
@@ -165,6 +163,6 @@ export function BalancePrintModal({
           </button>
         </div>
       </div>
-    </div>
+    </FormModalBackdrop>
   );
 }

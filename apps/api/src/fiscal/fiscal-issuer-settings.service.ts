@@ -13,6 +13,7 @@ import { formatPfxLoadError } from './issuer/pfx.errors';
 import { IssuerCertificateStorage } from './issuer/issuer-certificate.storage';
 import { loadPfxMaterialFromBuffer } from './issuer/load-pfx';
 import { ufCapitalIbge } from './utils/uf-ibge';
+import { envFiscalEmitTransport, resolveFiscalEmitTransport } from './fiscal-emit-transport';
 
 function onlyDigits7(s: string): string {
   return s.replace(/\D/g, '').slice(0, 7);
@@ -34,6 +35,8 @@ export type FiscalIssuerEnvFallback = {
   certPasswordConfigured: boolean;
   cscId?: string;
   cscSecretConfigured: boolean;
+  /** Transporte do .env (`dry-run` ou `soap`). Produção força SOAP. */
+  emitTransport?: string;
 };
 
 /** DTO para o painel — sem expor segredos em texto (só flags + CSC ID da base). */
@@ -72,6 +75,10 @@ export type FiscalIssuerPublicDto = {
   inboundAutoReceiptPostStock: boolean;
   inboundAutoReceiptMinMatchPercent: number;
   inboundUltNsu: string | null;
+  /** Transporte efetivo (Produção = sempre SOAP). */
+  emitTransport: 'dry-run' | 'soap';
+  /** Valor de `FISCAL_EMIT_TRANSPORT` no servidor (sem o override de Produção). */
+  serverEmitTransport: 'dry-run' | 'soap';
 };
 
 @Injectable()
@@ -155,6 +162,11 @@ export class FiscalIssuerSettingsService {
       inboundAutoReceiptPostStock: s.inboundAutoReceiptPostStock,
       inboundAutoReceiptMinMatchPercent: s.inboundAutoReceiptMinMatchPercent,
       inboundUltNsu: s.inboundUltNsu,
+      emitTransport: resolveFiscalEmitTransport({
+        envTransport: env.emitTransport,
+        sefazEnvironment: s.sefazEnvironment,
+      }),
+      serverEmitTransport: envFiscalEmitTransport(env.emitTransport),
     };
   }
 

@@ -13,6 +13,7 @@ import { CentralPrismaService } from '../prisma/central-prisma.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { validateSaleItemsForFiscalEmission } from './fiscal-emission-validation';
+import { resolveFiscalEmitTransport, type FiscalEmitTransport } from './fiscal-emit-transport';
 import { buildNfceAccessKey } from './utils/nfe-access-key';
 import { lookupIbgeByCep } from './utils/via-cep';
 import { ufToCodIbge } from './utils/uf-ibge';
@@ -129,9 +130,11 @@ export class FiscalEmissionProcessorService {
     }
   }
 
-  private transportMode(): 'dry-run' | 'soap' {
-    const m = (this.config.get<string>('FISCAL_EMIT_TRANSPORT') ?? 'dry-run').toLowerCase();
-    return m === 'soap' ? 'soap' : 'dry-run';
+  private transportMode(sefazEnvironment?: string | null): FiscalEmitTransport {
+    return resolveFiscalEmitTransport({
+      envTransport: this.config.get<string>('FISCAL_EMIT_TRANSPORT'),
+      sefazEnvironment,
+    });
   }
 
   /** Emissão imediata (ex.: nota de teste homologação) — fora do ciclo do worker. */
@@ -298,7 +301,7 @@ export class FiscalEmissionProcessorService {
     const cscId =
       settings.nfceCscId?.trim() || this.config.get<string>('FISCAL_NFCE_CSC_ID')?.trim() || '';
     const csc = settings.nfceCsc?.trim() || this.config.get<string>('FISCAL_NFCE_CSC')?.trim() || '';
-    if (isNfce && this.transportMode() === 'soap' && (!cscId || !csc)) {
+    if (isNfce && this.transportMode(settings.sefazEnvironment) === 'soap' && (!cscId || !csc)) {
       throw new Error('NFC-e em modo SOAP exige CSC (ID e token) no emissor fiscal.');
     }
 
@@ -347,7 +350,7 @@ export class FiscalEmissionProcessorService {
       reuseAccessKey || doc.tpEmis > 1 ? doc.tpEmis || 9 : 1;
 
     // Contingência: retransmite o XML já assinado (mesma chave), sem remontar.
-    if (reuseAccessKey && this.transportMode() === 'soap') {
+    if (reuseAccessKey && this.transportMode(settings.sefazEnvironment) === 'soap') {
       const stored = await this.outboundStorage.readXml(tenantSlug, reuseAccessKey);
       if (stored && !/<nfeProc[\s>]/i.test(stored)) {
         const parsedKey = parseAccessKey44(reuseAccessKey)!;
@@ -717,7 +720,7 @@ export class FiscalEmissionProcessorService {
       dest,
       respTec: (() => {
         const respTec = resolveSoftwareHouseRespTec(this.config);
-        if (!respTec && this.transportMode() === 'soap') {
+        if (!respTec && this.transportMode(settings.sefazEnvironment) === 'soap') {
           throw new Error(
             'infRespTec deve ser da software house (não do emitente). Configure FISCAL_RESPTEC_CNPJ, FISCAL_RESPTEC_CONTATO, FISCAL_RESPTEC_EMAIL e FISCAL_RESPTEC_FONE no servidor. A SEFAZ/AM exige o grupo (cStat 972).',
           );
@@ -776,7 +779,7 @@ export class FiscalEmissionProcessorService {
       `<enviNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">` +
       `<idLote>1</idLote><indSinc>1</indSinc>${signed}</enviNFe>`;
 
-    const mode = this.transportMode();
+    const mode = this.transportMode(settings.sefazEnvironment);
     const soapUrl = wsEmit.autorizacao;
 
     const persistAuthorized = async (accessKey: string, protocol: string | null, xmlToSave: string) => {

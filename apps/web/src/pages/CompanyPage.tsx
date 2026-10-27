@@ -232,6 +232,8 @@ type IssuerSettingsPublic = {
   inboundAutoReceiptPostStock: boolean;
   inboundAutoReceiptMinMatchPercent: number;
   inboundUltNsu: string | null;
+  emitTransport: 'dry-run' | 'soap';
+  serverEmitTransport: 'dry-run' | 'soap';
 };
 
 function IssuerEmissorCard() {
@@ -409,7 +411,12 @@ function IssuerEmissorCard() {
                 : 'caminho OK'
               : 'sem caminho'}
             ] · CSC: [{issuer.data.nfceCscIdConfigured ? 'ID OK' : 'sem ID'},{' '}
-            {issuer.data.nfceCscSecretConfigured ? 'token OK' : 'sem token'}]
+            {issuer.data.nfceCscSecretConfigured ? 'token OK' : 'sem token'}] · Envio:{' '}
+            {issuer.data.emitTransport === 'soap' ? (
+              <strong>SEFAZ real</strong>
+            ) : (
+              <strong>simulação (dry-run)</strong>
+            )}
             {(issuer.data.nfceCscIdFromEnvFallback || issuer.data.nfceCscSecretFromEnvFallback) && (
               <span>
                 {' '}
@@ -506,7 +513,7 @@ function IssuerEmissorCard() {
                 checked={sefazEnvironment === 'HOMOLOGACAO'}
                 onChange={() => setSefazEnvironment('HOMOLOGACAO')}
               />
-              Homologação
+              Homologação (teste)
             </label>
             <label>
               <input
@@ -515,9 +522,24 @@ function IssuerEmissorCard() {
                 checked={sefazEnvironment === 'PRODUCAO'}
                 onChange={() => setSefazEnvironment('PRODUCAO')}
               />
-              Produção
+              Produção (notas com valor fiscal)
             </label>
           </div>
+          {sefazEnvironment === 'PRODUCAO' ? (
+            <p className="company-form__hint" style={{ marginTop: 0 }}>
+              Em produção o PDV e as vendas enviam NFC-e/NF-e de verdade à SEFAZ (SOAP). CSC e
+              certificado A1 são obrigatórios. Salve o emissor para valer.
+            </p>
+          ) : issuer.data.serverEmitTransport === 'dry-run' ? (
+            <p className="company-form__hint" style={{ marginTop: 0 }}>
+              Homologação neste servidor ainda simula autorização (<code>DRY-RUN</code>). CSC não
+              muda isso. Para notas reais, escolha <strong>Produção</strong> e salve.
+            </p>
+          ) : (
+            <p className="company-form__hint" style={{ marginTop: 0 }}>
+              Homologação com SOAP: a SEFAZ de teste autoriza, sem valor fiscal.
+            </p>
+          )}
           {sefazEnvironment === 'HOMOLOGACAO' && (
             <div
               className="form-row"
@@ -732,8 +754,9 @@ function IssuerEmissorCard() {
             {saveIssuer.isPending ? 'Salvando…' : 'Salvar emissor'}
           </button>
           <p className="company-form__hint" style={{ marginTop: '0.45rem' }}>
-            <code>FISCAL_EMIT_TRANSPORT=dry-run</code> assina NFC-e fictícia (<code>DRY-RUN</code>). SOAP
-            requer CSC e URL do autorizador. Worker rejeita CRT ≠ 1 por enquanto.
+            CSC (ID + token) serve para o QR da NFC-e, não para ligar o envio. Produção transmite
+            à SEFAZ. Homologação só envia de verdade se o servidor tiver{' '}
+            <code>FISCAL_EMIT_TRANSPORT=soap</code>. Worker rejeita CRT ≠ 1 por enquanto.
           </p>
         </>
       )}

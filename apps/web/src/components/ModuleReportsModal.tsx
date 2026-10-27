@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { PortalModalBackdrop } from './FormModalBackdrop';
 import { StandardReportHeader } from './StandardReportHeader';
 
 export function ModuleReportsModal({
@@ -28,7 +29,7 @@ export function ModuleReportsModal({
     .join(' ');
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <PortalModalBackdrop onClick={onClose}>
       <div className={modalClass} onClick={(e) => e.stopPropagation()}>
         <h2 className="no-print">Relatórios — {title}</h2>
         {!compactLauncher && (
@@ -65,6 +66,6 @@ export function ModuleReportsModal({
           </button>
         </div>
       </div>
-    </div>
+    </PortalModalBackdrop>
   );
 }

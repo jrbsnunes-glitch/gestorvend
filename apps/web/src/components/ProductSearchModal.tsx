@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useDeferredValue, useState } from 'react';
+import { FormModalBackdrop } from './FormModalBackdrop';
 import { api } from '../lib/api';
 import { formatBRL } from '../lib/format';
-import { useModalEscapeKey } from '../lib/useModalEscapeKey';
 
 export type ProductSearchRow = {
   productId: string;
@@ -48,15 +48,13 @@ export function ProductSearchModal({
     staleTime: 5_000,
   });
 
-  useModalEscapeKey(onClose, open);
-
   if (!open) return null;
 
   const noResults =
     searchQ.length >= 1 && !productSearch.isPending && Array.isArray(productSearch.data) && productSearch.data.length === 0;
 
   return (
-    <div className="modal-backdrop" role="presentation">
+    <FormModalBackdrop onClose={onClose}>
       <div
         className="modal modal--wide"
         role="dialog"
@@ -68,6 +66,10 @@ export function ProductSearchModal({
           <label htmlFor="product-search-modal-q">Nome, SKU ou código de barras</label>
           <input
             id="product-search-modal-q"
+            type="text"
+            inputMode="search"
+            autoComplete="off"
+            spellCheck={false}
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             autoFocus
@@ -164,6 +166,6 @@ export function ProductSearchModal({
           </button>
         </div>
       </div>
-    </div>
+    </FormModalBackdrop>
   );
 }

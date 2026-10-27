@@ -3628,7 +3628,8 @@ function PosScreen({
               </span>
               <input
                 ref={customerSearchRef}
-                type="search"
+                type="text"
+                inputMode="search"
                 className="pos-customer-search-input"
                 placeholder="Digite para pesquisar…"
                 value={customerSearch}
