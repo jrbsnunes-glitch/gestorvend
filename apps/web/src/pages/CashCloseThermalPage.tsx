@@ -6,7 +6,7 @@ import { api } from '../lib/api';
 import { consumeAutoPrintNonce } from '../lib/sale-receipt-print';
 import { printDocument } from '../lib/desktop-print';
 import { formatBRL } from '../lib/format';
-import { PAYMENT_LABELS } from '../lib/finance-bills';
+import { PAYMENT_LABELS, sortPaymentMethodKeys } from '../lib/finance-bills';
 import { presentedTotalFromSession } from '../lib/cash-reconciliation';
 import './sale-receipt-print.css';
 
@@ -91,7 +91,9 @@ function methodLabel(key: string): string {
 
 function entries(rec: Record<string, number> | null | undefined): Array<[string, number]> {
   if (!rec) return [];
-  return Object.entries(rec).filter(([, v]) => Number(v) !== 0);
+  return sortPaymentMethodKeys(Object.keys(rec))
+    .filter((k) => Number(rec[k]) !== 0)
+    .map((k) => [k, rec[k]] as [string, number]);
 }
 
 export function CashCloseThermalPage() {

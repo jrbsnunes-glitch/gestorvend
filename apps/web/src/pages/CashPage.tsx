@@ -12,7 +12,8 @@ import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import '../components/crud-toolbar.css';
 import { api } from '../lib/api';
 import { isManager } from '../lib/auth';
-import { formatBRL } from '../lib/format';
+import { cashSessionFromPreviousDay } from '../lib/cash-session-day';
+import { formatBRL, formatDate } from '../lib/format';
 import {
   analyzeCashExpenseDiff,
   analyticalExpenseReconFootnote,
@@ -200,6 +201,7 @@ const PAYMENT_LABELS: Record<string, string> = {
   CARD: 'Cartão',
   PIX: 'Pix',
   CREDIT: 'Crediário',
+  REQUISITION: 'Requisição',
   OTHER: 'Outro',
   EXPENSE: 'Despesa',
 };
@@ -1455,7 +1457,14 @@ type CashReconRow = {
 };
 
 /** Formas de pagamento na conferência (despesas têm bloco próprio abaixo). */
-const RECON_PAYMENT_METHOD_KEYS = ['CASH', 'CARD', 'PIX', 'CREDIT', 'OTHER'] as const;
+const RECON_PAYMENT_METHOD_KEYS = [
+  'CASH',
+  'CARD',
+  'PIX',
+  'CREDIT',
+  'REQUISITION',
+  'OTHER',
+] as const;
 const RECON_MANAGEABLE_METHOD_KEYS = [...RECON_PAYMENT_METHOD_KEYS, 'EXPENSE'] as const;
 
 function createEmptyExpenseLine(): {
@@ -1507,7 +1516,9 @@ function buildCashReconciliationRows(
     const diff = declaredVal == null ? null : declaredVal - expectedFinal;
     return { key, expectedFinal, declaredVal, diff };
   });
-  return rows.filter((r) => r.expectedFinal > 0 || r.declaredVal != null);
+  return sortReconMethodKeys(
+    rows.filter((r) => r.expectedFinal > 0 || r.declaredVal != null).map((r) => r.key),
+  ).map((key) => rows.find((r) => r.key === key)!);
 }
 
 /** Linhas editáveis: movimentações apuradas + o que já veio no fechamento + linhas extras do gerente. */
@@ -2273,6 +2284,12 @@ function SessionDetailDrawer({
               Fechar
             </button>
           </div>
+          {s && s.status === 'OPEN' && cashSessionFromPreviousDay(s.openedAt) && (
+            <div className="alert alert-warning" role="alert" style={{ margin: '0 0 0.75rem' }}>
+              Este caixa foi aberto em <strong>{formatDate(s.openedAt)}</strong>, em outro dia.
+              Feche o caixa em aberto para começar as vendas do dia de hoje.
+            </div>
+          )}
           {s && (
             <div className="cash-detail-meta">
               Operador: <strong style={{ color: 'var(--color-text)' }}>{s.user?.name ?? '—'}</strong>

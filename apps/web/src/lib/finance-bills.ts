@@ -8,6 +8,32 @@ export const PAYMENT_LABELS: Record<string, string> = {
   EXPENSE: 'Despesa',
 };
 
+/** Ordem única nas listagens de caixa / cupom de fechamento. */
+export const PAYMENT_METHOD_DISPLAY_ORDER = [
+  'CASH',
+  'CARD',
+  'PIX',
+  'CREDIT',
+  'REQUISITION',
+  'OTHER',
+  'EXPENSE',
+] as const;
+
+export function sortPaymentMethodKeys(keys: string[]): string[] {
+  return [...keys].sort((a, b) => {
+    const ia = PAYMENT_METHOD_DISPLAY_ORDER.indexOf(
+      a as (typeof PAYMENT_METHOD_DISPLAY_ORDER)[number],
+    );
+    const ib = PAYMENT_METHOD_DISPLAY_ORDER.indexOf(
+      b as (typeof PAYMENT_METHOD_DISPLAY_ORDER)[number],
+    );
+    if (ia === -1 && ib === -1) return a.localeCompare(b, 'pt-BR');
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+}
+
 export type BillKind = 'pagar' | 'receber';
 
 export type BillSettlementRow = {

@@ -58,6 +58,7 @@ import {
   withDesktopCashierLimits,
   type PdvTerminalCapabilities,
 } from '../lib/pdv-terminal-context';
+import { cashSessionFromPreviousDay } from '../lib/cash-session-day';
 import { parseBarcodeWeight, type ScaleMode } from '../lib/pos-scale';
 import { usePosScale } from '../lib/use-pos-scale';
 import {
@@ -786,6 +787,7 @@ function PosGateway({
   // Só considera "tem caixa aberto" se o status real ainda for OPEN.
   // Isso evita brechas quando o cache fica desatualizado por um instante.
   const hasOpen = !!session && session.status === 'OPEN';
+  const staleOpenCash = hasOpen && cashSessionFromPreviousDay(session.openedAt);
 
   return (
     <div className="pos-gateway">
@@ -870,6 +872,19 @@ function PosGateway({
                   Pendências gravadas na venda exigem ação do gerente: menu <strong>Vendas</strong> → cancelar erro fiscal ou usar a API «limpar fiscal».
                 </span>
               </div>
+            </div>
+          )}
+
+          {staleOpenCash && (
+            <div className="pos-gateway-stale-cash" role="alert">
+              <strong>Caixa de outro dia ainda aberto</strong>
+              <p>
+                Este caixa foi aberto em <strong>{formatDate(session.openedAt)}</strong>. Feche o
+                caixa em aberto para começar as vendas do dia de hoje
+                {pdvCapabilities.isSatellite
+                  ? ' — o fechamento é feito no PDV mestre.'
+                  : ' (use Fechar caixa no PDV e depois abra um caixa novo).'}
+              </p>
             </div>
           )}
 
@@ -2794,6 +2809,40 @@ function PosScreen({
           setCloseErr(null);
         }}
       />
+
+      {cashSessionFromPreviousDay(session.openedAt) && (
+        <div className="pos-stale-cash-banner no-print" role="alert">
+          <span>
+            Este caixa foi aberto em <strong>{formatDate(session.openedAt)}</strong>, em outro dia.
+            Feche o caixa em aberto para começar as vendas de hoje
+            {pdvCapabilities.canCloseCash
+              ? ' — use Fechar caixa na barra acima e depois abra um caixa novo.'
+              : ' — o fechamento é feito no PDV mestre.'}
+          </span>
+          {pdvCapabilities.canCloseCash ? (
+            <button
+              type="button"
+              className="pos-btn pos-btn-ghost"
+              onClick={() => {
+                setCloseOpen(true);
+                setClosingByMethod({
+                  CASH: '',
+                  CARD: '',
+                  PIX: '',
+                  CREDIT: '',
+                  REQUISITION: '',
+                  OTHER: '',
+                  EXPENSE: '',
+                });
+                setClosingNotes('');
+                setCloseErr(null);
+              }}
+            >
+              Fechar caixa
+            </button>
+          ) : null}
+        </div>
+      )}
 
       {receiptPrompt && (
         <div className="pos-receipt-prompt no-print" role="status">

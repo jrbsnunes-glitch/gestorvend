@@ -286,7 +286,7 @@ export function CashPrintPage() {
     Object.keys(report.data?.totals.salesByMethod ?? {}).forEach((k) => set.add(k));
     Object.keys(report.data?.totals.expectedByMethod ?? {}).forEach((k) => set.add(k));
     Object.keys(report.data?.totals.declaredByMethod ?? {}).forEach((k) => set.add(k));
-    const order = ['CASH', 'CARD', 'PIX', 'CREDIT', 'OTHER'];
+    const order = ['CASH', 'CARD', 'PIX', 'CREDIT', 'REQUISITION', 'OTHER'];
     return [...set].filter((k) => k !== 'EXPENSE').sort((a, b) => {
       const ai = order.indexOf(a);
       const bi = order.indexOf(b);
