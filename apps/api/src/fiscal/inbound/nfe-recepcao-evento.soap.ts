@@ -33,7 +33,7 @@ export const MANIFEST_REQUIRES_JUSTIFICATION = new Set<string>([
 const PROD_URL =
   'https://www.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx';
 const HOMOLOG_URL =
-  'https://hom.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx';
+  'https://hom1.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx';
 
 export function recepcaoEventoEndpoint(production: boolean): string {
   const override = process.env.FISCAL_INBOUND_RECEPCAO_EVENTO_URL?.trim();

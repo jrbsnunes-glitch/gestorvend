@@ -3,9 +3,9 @@ import { gunzipSync } from 'zlib';
 
 const PROD_URL =
   'https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx';
-/** Ambiente Nacional — não usar URL SVRS (/ws/...) para Distribuição DF-e */
+/** Ambiente Nacional — hom.nfe.fazenda.gov.br foi desligado em 23/05/2022. */
 const HOMOLOG_URL =
-  'https://hom.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx';
+  'https://hom1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx';
 
 export function distribuicaoDfeEndpoint(production: boolean): string {
   const override = process.env.FISCAL_INBOUND_DISTRIBUICAO_URL?.trim();

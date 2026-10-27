@@ -132,7 +132,7 @@ function svrsBucket(model: FiscalModel, production: boolean): SefazWebservices {
     status: production ? SVRS_STATUS_PROD : SVRS_STATUS_HOM,
     recepcaoEvento: production
       ? 'https://www.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx'
-      : 'https://hom.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx',
+      : 'https://hom1.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx',
     inutilizacao: production ? SVRS_INUTIL_PROD : SVRS_INUTIL_HOM,
     nfceQrConsultaBase: isNfce ? (production ? undefined : SP_NFCE_QR_HOM) : undefined,
     nfceUrlChave: isNfce ? SP_NFCE_URL_CHAVE : undefined,

@@ -78,6 +78,15 @@ export function formatSefazTransportError(err: unknown, ctx: SefazCallContext): 
     );
   }
 
+  if (/HTTP\s404/i.test(raw) || lower.includes('resource cannot be found')) {
+    return (
+      `A SEFAZ não encontrou o webservice (${ambLabel}, HTTP 404). ` +
+      `Endpoint usado: ${ctx.endpoint}. Em homologação o Ambiente Nacional passou a ser hom1.nfe.fazenda.gov.br ` +
+      `(hom.nfe.fazenda.gov.br foi desligado em 2022). Se houver FISCAL_INBOUND_DISTRIBUICAO_URL no servidor, ` +
+      'confira se ainda aponta para o endereço antigo.'
+    );
+  }
+
   if (raw.startsWith('HTTP ')) {
     const snippet = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
     return `A SEFAZ respondeu com erro (${ambLabel}): ${snippet}`;
