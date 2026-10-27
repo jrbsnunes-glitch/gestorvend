@@ -1877,6 +1877,55 @@ export class CashController {
     return created;
   }
 
+  /** Cupom térmico de um lançamento (sangria / suprimento / despesa). */
+  @Get('movement/:id')
+  @Roles('admin', 'manager', 'seller')
+  async movementById(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const mov = await db.cashMovement.findUnique({
+      where: { id },
+      include: {
+        session: { include: { user: { select: { id: true, name: true } } } },
+        referentialAccount: { select: { id: true, code: true, description: true } },
+      },
+    });
+    if (!mov) throw new NotFoundException('Lançamento não encontrado.');
+    const isManager = user.roles.includes('admin') || user.roles.includes('manager');
+    if (mov.session.userId !== user.sub && !isManager) {
+      throw new ForbiddenException('Sem permissão para este lançamento.');
+    }
+    const kind =
+      mov.type === CashMovementType.IN
+        ? 'suprimento'
+        : mov.method === PaymentMethod.EXPENSE
+          ? 'despesa'
+          : 'sangria';
+    const kindLabel =
+      kind === 'suprimento' ? 'Suprimento' : kind === 'despesa' ? 'Despesa' : 'Sangria';
+    return {
+      id: mov.id,
+      type: mov.type,
+      method: mov.method,
+      kind,
+      kindLabel,
+      amount: Number(mov.amount),
+      reason: mov.reason,
+      createdAt: mov.createdAt.toISOString(),
+      referentialAccount: mov.referentialAccount
+        ? {
+            id: mov.referentialAccount.id,
+            code: mov.referentialAccount.code,
+            name: mov.referentialAccount.description,
+          }
+        : null,
+      session: {
+        id: mov.session.id,
+        controlNumber: mov.session.controlNumber,
+        operatorName: mov.session.user?.name ?? 'operador',
+      },
+    };
+  }
+
   /**
    * Caixa alvo de um lançamento explícito (`sessionId`). Gerente/admin podem
    * movimentar o caixa aberto de qualquer operador; os demais, só o próprio.

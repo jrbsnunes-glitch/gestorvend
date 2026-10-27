@@ -5078,7 +5078,7 @@ function PaymentOverlay({
           </div>
 
           <div className="pos-payment-controls">
-            <div className="pos-payment-field">
+            <div className="pos-payment-field pos-payment-field--amount">
               <label htmlFor="pay-overlay-amount">
                 Valor em {selected?.label ?? 'pagamento'}
               </label>
@@ -5096,19 +5096,9 @@ function PaymentOverlay({
                   }
                 }}
               />
-              {feePreview > 0 ? (
-                <small style={{ color: 'var(--color-text-muted)' }}>
-                  {selected?.form?.passAdminFeeToCustomer
-                    ? `Repasse ao cliente: ${formatBRL(feePreview)} · no cartão ${(
-                        (parseDecimal(amountStr) > 0 ? parseDecimal(amountStr) : remaining) +
-                        feePreview
-                      ).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
-                    : `Taxa adm. estimada (custo loja): ${formatBRL(feePreview)}`}
-                </small>
-              ) : null}
             </div>
             {showInstallments && (
-              <div className="pos-payment-field" style={{ maxWidth: 130 }}>
+              <div className="pos-payment-field pos-payment-field--inst">
                 <label htmlFor="pay-overlay-inst">Parcelas</label>
                 <input
                   id="pay-overlay-inst"
@@ -5120,25 +5110,35 @@ function PaymentOverlay({
                 />
               </div>
             )}
-            <button
-              type="button"
-              className="pos-btn pos-btn-ghost"
-              style={{ alignSelf: 'flex-end', minHeight: 52 }}
-              onClick={() => addPayment()}
-              disabled={remaining <= 0}
-            >
-              + Adicionar
-            </button>
-            <button
-              type="button"
-              className="pos-btn pos-btn-ghost"
-              style={{ alignSelf: 'flex-end', minHeight: 52 }}
-              onClick={() => addPayment({ fullAmount: true })}
-              disabled={remaining <= 0}
-              title="Lançar o valor restante nesta forma"
-            >
-              Restante
-            </button>
+            <div className="pos-payment-control-actions">
+              <button
+                type="button"
+                className="pos-btn pos-btn-ghost"
+                onClick={() => addPayment()}
+                disabled={remaining <= 0}
+              >
+                + Adicionar
+              </button>
+              <button
+                type="button"
+                className="pos-btn pos-btn-ghost"
+                onClick={() => addPayment({ fullAmount: true })}
+                disabled={remaining <= 0}
+                title="Lançar o valor restante nesta forma"
+              >
+                Restante
+              </button>
+            </div>
+            {feePreview > 0 ? (
+              <p className="pos-payment-fee-hint">
+                {selected?.form?.passAdminFeeToCustomer
+                  ? `Repasse ao cliente: ${formatBRL(feePreview)} · no cartão ${(
+                      (parseDecimal(amountStr) > 0 ? parseDecimal(amountStr) : remaining) +
+                      feePreview
+                    ).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+                  : `Taxa adm. estimada (custo loja): ${formatBRL(feePreview)}`}
+              </p>
+            ) : null}
           </div>
 
           {method === 'PIX' && pdvPayQ.data?.hasOnlinePix && remaining > 0 ? (

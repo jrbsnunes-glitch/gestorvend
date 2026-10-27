@@ -1332,9 +1332,9 @@
 
 .pos-payment-controls {
   display: flex;
-  gap: 0.6rem;
   flex-wrap: wrap;
   align-items: flex-end;
+  gap: 0.55rem 0.65rem;
 }
 
 .pos-payment-field {
@@ -1345,20 +1345,57 @@
   min-width: 200px;
 }
 
+.pos-payment-field--amount {
+  flex: 1 1 14rem;
+  min-width: 12rem;
+}
+
+.pos-payment-field--inst {
+  flex: 0 0 7.25rem;
+  min-width: 6.75rem;
+  max-width: 7.25rem;
+}
+
+.pos-payment-control-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.pos-payment-control-actions .pos-btn {
+  min-height: 3.55rem;
+  height: 3.55rem;
+  padding: 0 1rem;
+}
+
+.pos-payment-fee-hint {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--pos-text-muted);
+  line-height: 1.35;
+}
+
 .pos-payment-field label {
   font-size: 0.78rem;
   font-weight: 700;
   color: var(--pos-text-sub);
+  line-height: 1.2;
+  min-height: 1.05rem;
 }
 
 .pos-payment-field input {
-  padding: 0.85rem 1rem;
+  height: 3.55rem;
+  padding: 0 1rem;
   border: 1px solid var(--pos-border-strong);
   border-radius: 12px;
   font-size: 1.3rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   text-align: right;
+  box-sizing: border-box;
 }
 
 .pos-payment-field input:focus {
@@ -1430,6 +1467,19 @@
 }
 
 @media (max-width: 640px) {
+  .pos-payment-field--amount {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .pos-payment-control-actions {
+    flex: 1 1 auto;
+  }
+
+  .pos-payment-control-actions .pos-btn {
+    flex: 1;
+  }
+
   .pos-payment-footer {
     flex-direction: column;
     align-items: stretch;

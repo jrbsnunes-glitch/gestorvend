@@ -11,6 +11,7 @@ import { ListPagination } from '../components/ListPagination';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import '../components/crud-toolbar.css';
 import { api } from '../lib/api';
+import { queueCashMovementAutoPrint } from '../lib/cash-movement-print';
 import { isManager } from '../lib/auth';
 import { cashSessionFromPreviousDay } from '../lib/cash-session-day';
 import { formatBRL, formatDate } from '../lib/format';
@@ -622,12 +623,12 @@ export function CashPage() {
           json.method = null;
         }
       }
-      return api('/cash/movement', {
+      return api<{ id: string }>('/cash/movement', {
         method: 'POST',
         json,
       });
     },
-    onSuccess: () => {
+    onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ['cash', 'sessions'] });
       qc.invalidateQueries({ queryKey: ['cash', 'session'] });
       setMovAmount('');
@@ -636,6 +637,7 @@ export function CashPage() {
       setMovOutKind('WITHDRAWAL');
       setMovErr(null);
       setMovOpenForId(null);
+      if (created?.id) queueCashMovementAutoPrint(created.id);
     },
     onError: (e: Error) => setMovErr(e.message),
   });

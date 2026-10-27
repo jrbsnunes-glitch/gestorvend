@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { CostCenterSelect } from './CostCenterSelect';
 import { api } from '../lib/api';
+import { queueCashMovementAutoPrint } from '../lib/cash-movement-print';
 import '../pages/pos.css';
 
 export type PdvProcedureKind = 'WITHDRAWAL' | 'EXPENSE' | 'SUPPLY';
@@ -100,9 +101,9 @@ export function PdvProceduresOverlay({
         json.type = 'OUT';
         json.method = null;
       }
-      return api('/cash/movement', { method: 'POST', json });
+      return api<{ id: string }>('/cash/movement', { method: 'POST', json });
     },
-    onSuccess: () => {
+    onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ['cash', 'session'] });
       qc.invalidateQueries({ queryKey: ['cash', 'sessions'] });
       qc.invalidateQueries({ queryKey: ['cash'] });
@@ -112,6 +113,7 @@ export function PdvProceduresOverlay({
           ? `${label} registrado(a) no caixa ${sessionLabel}.`
           : `${label} registrado(a) no caixa aberto.`,
       );
+      if (created?.id) queueCashMovementAutoPrint(created.id);
       onClose();
     },
     onError: (e: Error) => setErr(e.message),
@@ -229,7 +231,7 @@ export function PdvProceduresOverlay({
                 disabled={movement.isPending}
                 onClick={() => movement.mutate()}
               >
-                {movement.isPending ? 'Registrando…' : 'Registrar'}
+                {movement.isPending ? 'Registrando…' : 'Registrar e imprimir'}
               </button>
             </div>
           </div>
