@@ -424,7 +424,7 @@ function IssuerEmissorCard() {
               </span>
             )}
           </p>
-          <div className="form-row form-row--4">
+          <div className="form-row form-row--3">
             <div className="field">
               <label htmlFor="iss-uf">UF emissor</label>
               <input
@@ -453,7 +453,7 @@ function IssuerEmissorCard() {
               </select>
             </div>
           </div>
-          <div className="form-row form-row--4">
+          <div className="form-row form-row--4-eq">
             <div className="field">
               <label htmlFor="iss-serie-nfce">Série NFC-e</label>
               <input
@@ -502,10 +502,8 @@ function IssuerEmissorCard() {
           <p className="company-form__hint" style={{ marginTop: 0 }}>
             A próxima nota sai com esse número. Depois disso o sistema continua sozinho.
           </p>
-          <div className="inline-checks" style={{ marginBottom: '0.5rem' }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
-              Ambiente SEFAZ
-            </span>
+          <div className="issuer-form__amb">
+            <span className="issuer-form__amb-label">Ambiente SEFAZ</span>
             <label>
               <input
                 type="radio"
@@ -541,10 +539,7 @@ function IssuerEmissorCard() {
             </p>
           )}
           {sefazEnvironment === 'HOMOLOGACAO' && (
-            <div
-              className="form-row"
-              style={{ gap: '0.5rem', marginBottom: '0.65rem', flexWrap: 'wrap' }}
-            >
+            <div className="issuer-form__actions">
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
@@ -723,15 +718,7 @@ function IssuerEmissorCard() {
               />
             </div>
           </div>
-          <label
-            style={{
-              display: 'flex',
-              gap: '0.35rem',
-              alignItems: 'center',
-              marginBottom: '0.5rem',
-              fontSize: '0.74rem',
-            }}
-          >
+          <label className="company-form__check">
             <input
               type="checkbox"
               checked={clearNfceCsc}
@@ -740,7 +727,7 @@ function IssuerEmissorCard() {
                 if (e.target.checked) setNfceCscSecretInput('');
               }}
             />
-            Remover token CSC da base (usa só <code>FISCAL_NFCE_CSC</code>)
+            <span>Remover token CSC da base (usa só <code>FISCAL_NFCE_CSC</code>)</span>
           </label>
           <button
             type="button"

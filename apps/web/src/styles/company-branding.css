@@ -196,12 +196,20 @@
   font-size: 0.75rem;
 }
 
-.company-form .field input,
+.company-form .field input:not([type='checkbox']):not([type='radio']):not([type='file']),
 .company-form .field select,
 .company-form .field textarea {
   padding: 0.32rem 0.55rem;
   font-size: 0.86rem;
   border-radius: var(--radius-sm, 6px);
+}
+
+.company-form .field input[type='checkbox'],
+.company-form .field input[type='radio'] {
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  padding: 0;
 }
 
 .company-form .form-row {
@@ -223,6 +231,47 @@
 
 .company-form .form-row--4 {
   grid-template-columns: 1.4fr 1.1fr 0.9fr 0.9fr;
+}
+
+.company-form .form-row--4-eq {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.company-form .issuer-form__amb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1.15rem;
+  margin: 0.1rem 0 0.45rem;
+}
+
+.company-form .issuer-form__amb-label {
+  flex: 0 0 100%;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.company-form .issuer-form__amb label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.company-form .issuer-form__amb input {
+  width: auto;
+  margin: 0;
+}
+
+.company-form .issuer-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.55rem;
 }
 
 .company-form .form-row--addr {
@@ -387,6 +436,7 @@
   .company-form .form-row--2,
   .company-form .form-row--3,
   .company-form .form-row--4,
+  .company-form .form-row--4-eq,
   .company-form .form-row--addr {
     grid-template-columns: 1fr 1fr;
   }
