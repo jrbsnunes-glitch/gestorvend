@@ -160,6 +160,24 @@ function isReceiptCancelled(r: { status?: string }): boolean {
   return r.status === 'CANCELLED';
 }
 
+function parseMoneyInput(value: string | number | null | undefined): number | null {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const raw = value.trim();
+  if (!raw) return null;
+  const n = raw.includes(',')
+    ? parseFloat(raw.replace(/\./g, '').replace(',', '.'))
+    : parseFloat(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Valor monetário para input (2 casas, vírgula). */
+function formatBrMoney2(value: string | number | null | undefined): string {
+  const n = parseMoneyInput(value);
+  if (n == null) return '';
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function payableStatusLabel(status: string): string {
   if (status === 'PAID') return 'Pago';
   if (status === 'OVERDUE') return 'Vencido';
@@ -467,7 +485,7 @@ export function StockEntradaPage() {
               invoiceQuantity: String(item.quantity),
               quantity: String(item.quantity),
               unitCost: String(item.unitCost),
-              retailPrice: match?.retailPrice != null ? String(match.retailPrice) : '',
+              retailPrice: match?.retailPrice != null ? formatBrMoney2(match.retailPrice) : '',
               ncm: item.ncm ?? '',
               cfop: item.cfop ?? '1102',
               description: item.description,
@@ -642,8 +660,7 @@ export function StockEntradaPage() {
             .filter((l) => l.variantId)
             .map((l) => {
               const rawQty = parseFloat((l.invoiceQuantity || l.quantity).replace(',', '.')) || 0;
-              const retailRaw = l.retailPrice.trim().replace(',', '.');
-              const retailParsed = retailRaw === '' ? null : parseFloat(retailRaw);
+              const retailParsed = parseMoneyInput(l.retailPrice);
               return {
                 variantId: l.variantId,
                 quantity: rawQty,
@@ -797,7 +814,7 @@ export function StockEntradaPage() {
       ncm: lines[i]?.ncm || ncmByVariant.get(row.variantId) || '',
       retailPrice:
         lines[i]?.retailPrice?.trim() ||
-        (row.retailPrice != null && Number(row.retailPrice) > 0 ? String(row.retailPrice) : ''),
+        (row.retailPrice != null && Number(row.retailPrice) > 0 ? formatBrMoney2(row.retailPrice) : ''),
     });
   }
 
@@ -1648,6 +1665,10 @@ export function StockEntradaPage() {
                                   <input
                                     value={l.retailPrice}
                                     onChange={(e) => setLine(i, { retailPrice: e.target.value })}
+                                    onBlur={() => {
+                                      const formatted = formatBrMoney2(l.retailPrice);
+                                      if (formatted !== l.retailPrice) setLine(i, { retailPrice: formatted });
+                                    }}
                                     placeholder="0,00"
                                     title="Preço de venda — atualiza o cadastro do produto ao confirmar a entrada"
                                     inputMode="decimal"
@@ -2273,7 +2294,9 @@ function EditReceiptModal({
                         <td className="num">{it.quantity}</td>
                         <td className="num">R$ {it.unitCost}</td>
                         <td className="num">
-                          {it.variant.retailPrice != null ? `R$ ${it.variant.retailPrice}` : '—'}
+                          {parseMoneyInput(it.variant.retailPrice) != null
+                            ? formatBRL(parseMoneyInput(it.variant.retailPrice))
+                            : '—'}
                         </td>
                         <td className="num">
                           R$ {(Number(it.quantity) * Number(it.unitCost)).toFixed(2)}
