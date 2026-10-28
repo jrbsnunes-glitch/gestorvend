@@ -7,7 +7,8 @@ import './cash-print.css';
 import { api } from '../lib/api';
 import { PAYMENT_LABELS } from '../lib/finance-bills';
 import { formatBRL, formatCpfCnpj, formatDate } from '../lib/format';
-import { printCurrentPage, scheduleAutoPrint } from '../lib/print-page';
+import { PrintActions } from '../components/PrintActions';
+import { scheduleAutoPrint } from '../lib/print-page';
 
 type CreditLimitsReport = {
   title: string;
@@ -135,9 +136,7 @@ export function CustomerReportsPrintPage() {
           ← Voltar aos clientes
         </Link>
         <div style={{ flex: 1 }} />
-        <button type="button" className="btn btn-primary" onClick={printCurrentPage}>
-          Imprimir
-        </button>
+        <PrintActions />
       </div>
       {err && (
         <div className="alert alert-error no-print" style={{ width: '210mm', maxWidth: '100%', margin: '0 auto 0.75rem' }}>

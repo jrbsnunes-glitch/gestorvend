@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { printCurrentPage } from '../lib/print-page';
+import { saveCurrentPagePdf } from '../lib/save-page-pdf';
 import './crud-toolbar.css';
 
 export type CrudToolbarProps = {
@@ -23,6 +24,20 @@ export function CrudToolbar({
   includeLabel = 'Incluir',
   trailingExtra,
 }: CrudToolbarProps) {
+  const [pdfBusy, setPdfBusy] = useState(false);
+
+  async function onSavePdf() {
+    setPdfBusy(true);
+    try {
+      await saveCurrentPagePdf();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Não foi possível gerar o PDF.';
+      window.alert(msg);
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
   return (
     <div className="crud-toolbar no-print">
       <div className="crud-toolbar-group crud-toolbar-primary-slot">
@@ -37,9 +52,19 @@ export function CrudToolbar({
       </div>
       <div className="crud-toolbar-group">
         {onPrint != null ? (
-          <button type="button" className="btn btn-secondary" onClick={printCurrentPage}>
-            Imprimir
-          </button>
+          <>
+            <button type="button" className="btn btn-secondary" onClick={printCurrentPage}>
+              Imprimir
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={pdfBusy}
+              onClick={() => void onSavePdf()}
+            >
+              {pdfBusy ? 'Gerando PDF…' : 'Salvar PDF'}
+            </button>
+          </>
         ) : null}
         {trailingExtra}
         <button type="button" className="btn btn-secondary" onClick={onReports}>

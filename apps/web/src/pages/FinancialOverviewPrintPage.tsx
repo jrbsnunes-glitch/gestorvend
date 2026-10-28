@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { SalesRevenueBreakdown } from '../components/SalesRevenueBreakdown';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
-import { printCurrentPage } from '../lib/print-page';
+import { PrintActions } from '../components/PrintActions';
 import { formatBRL, formatDate } from '../lib/format';
 import { ledgerDirectionLabel, ledgerKindLabel } from '../lib/financial-overview-ledger-labels';
 import { monthRangeLocal } from '../lib/list-filters';
@@ -101,9 +101,7 @@ export function FinancialOverviewPrintPage() {
           ← Voltar ao balanço
         </Link>
         <div style={{ flex: 1 }} />
-        <button type="button" className="btn btn-primary" onClick={printCurrentPage}>
-          Imprimir
-        </button>
+        <PrintActions />
       </div>
 
       <div className="print-doc gv-finance-print-root">

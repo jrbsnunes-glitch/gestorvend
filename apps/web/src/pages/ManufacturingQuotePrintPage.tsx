@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { CompanyHeader, type CompanyHeaderData } from '../components/CompanyHeader';
 import { api } from '../lib/api';
-import { printCurrentPage } from '../lib/print-page';
+import { PrintActions } from '../components/PrintActions';
 import { formatBRL, formatCalendarDate } from '../lib/format';
 import type { MfgProjectDetail } from '../lib/manufacturing-types';
 import './cash-print.css';
@@ -114,9 +114,7 @@ export function ManufacturingQuotePrintPage() {
   return (
     <div className="print-page">
       <div className="no-print print-toolbar">
-        <button type="button" className="btn btn-primary" onClick={printCurrentPage}>
-          Imprimir / PDF
-        </button>
+        <PrintActions />
       </div>
 
       {!id ? <p>Informe o parâmetro id na URL.</p> : null}

@@ -198,6 +198,24 @@
   display: none !important;
 }
 
+/* Captura de PDF no PWA: esconde chrome e mostra o cabeçalho de impressão. */
+html.gv-saving-pdf .sidebar,
+html.gv-saving-pdf .mobile-tabbar,
+html.gv-saving-pdf .main-topbar,
+html.gv-saving-pdf .sidebar-backdrop,
+html.gv-saving-pdf .sidebar-hamburger,
+html.gv-saving-pdf .no-print,
+html.gv-saving-pdf .crud-toolbar,
+html.gv-saving-pdf .print-toolbar,
+html.gv-saving-pdf .gv-print-fallback-banner {
+  display: none !important;
+}
+
+html.gv-saving-pdf .gv-report-print-only,
+html.gv-saving-pdf .print-only {
+  display: block !important;
+}
+
 .print-only {
   display: none !important;
 }

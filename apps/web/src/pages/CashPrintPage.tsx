@@ -3,7 +3,7 @@ import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
-import { printCurrentPage } from '../lib/print-page';
+import { PrintActions } from '../components/PrintActions';
 import { SalesRevenueBreakdown } from '../components/SalesRevenueBreakdown';
 import { PAYMENT_LABELS } from '../lib/finance-bills';
 import { formatBRL } from '../lib/format';
@@ -329,9 +329,7 @@ export function CashPrintPage() {
           ← Voltar
         </button>
         <div style={{ flex: 1 }} />
-        <button type="button" className="btn btn-primary" onClick={printCurrentPage}>
-          Imprimir
-        </button>
+        <PrintActions />
       </div>
 
       <div className="print-doc">

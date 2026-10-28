@@ -18,7 +18,8 @@ import {
   mfgProjectReportQueryString,
   mfgReportsModalSearch,
 } from '../lib/manufacturing-project-reports';
-import { printCurrentPage, scheduleAutoPrint } from '../lib/print-page';
+import { PrintActions } from '../components/PrintActions';
+import { scheduleAutoPrint } from '../lib/print-page';
 import './cash-print.css';
 import './manufacturing-reports.css';
 
@@ -207,9 +208,7 @@ export function ManufacturingProjectReportsPrintPage() {
           ← Voltar aos filtros
         </Link>
         <div style={{ flex: 1 }} />
-        <button type="button" className="btn btn-primary" onClick={printCurrentPage}>
-          Imprimir
-        </button>
+        <PrintActions />
       </div>
       {err && (
         <div className="alert alert-error no-print" style={{ width: '210mm', maxWidth: '100%', margin: '0 auto 0.75rem' }}>
