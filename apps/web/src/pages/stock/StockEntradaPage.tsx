@@ -1598,76 +1598,62 @@ export function StockEntradaPage() {
                 </div>
               </details>
 
-              <div className="entrada-receipt-footer-split">
-              <details className="submenu-details" open>
-                <summary className="submenu-summary">Contas a pagar (opcional)</summary>
-                <div className="submenu-body">
-                  <label
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      fontSize: '0.92rem',
-                      marginBottom: '0.75rem',
-                    }}
-                  >
+            </div>
+
+            <div className="entrada-payable-dock">
+              <label className="entrada-payable-dock__toggle">
+                <input
+                  type="checkbox"
+                  checked={genPayable}
+                  onChange={(e) => setGenPayable(e.target.checked)}
+                />
+                <span>
+                  <strong>Gerar contas a pagar</strong>
+                  <span className="entrada-payable-dock__hint">
+                    {' '}
+                    — título em Financeiro → A pagar, vinculado ao fornecedor e a esta entrada
+                  </span>
+                </span>
+              </label>
+              {genPayable && (
+                <div className="entrada-payable-dock__fields">
+                  <div className="field">
+                    <label htmlFor="ent-pay-n">Parcelas</label>
                     <input
-                      type="checkbox"
-                      checked={genPayable}
-                      onChange={(e) => setGenPayable(e.target.checked)}
+                      id="ent-pay-n"
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={payInstallments}
+                      onChange={(e) =>
+                        setPayInstallments(Math.max(1, Math.min(60, Number(e.target.value) || 1)))
+                      }
                     />
-                    <span>
-                      <strong>Gerar contas a pagar a partir desta entrada</strong>
-                    </span>
-                  </label>
-                  {genPayable && (
-                    <>
-                      <p style={{ margin: '0 0 0.75rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-                        Será criado um título em <strong>Financeiro → A pagar</strong> vinculado ao fornecedor e à
-                        entrada, com o valor total dividido em parcelas iguais.
-                      </p>
-                      <div className="form-row">
-                        <div className="field">
-                          <label htmlFor="ent-pay-n">Parcelas</label>
-                          <input
-                            id="ent-pay-n"
-                            type="number"
-                            min={1}
-                            max={60}
-                            value={payInstallments}
-                            onChange={(e) =>
-                              setPayInstallments(Math.max(1, Math.min(60, Number(e.target.value) || 1)))
-                            }
-                          />
-                        </div>
-                        <div className="field">
-                          <label htmlFor="ent-pay-int">Intervalo (dias)</label>
-                          <input
-                            id="ent-pay-int"
-                            type="number"
-                            min={1}
-                            max={180}
-                            value={payIntervalDays}
-                            onChange={(e) =>
-                              setPayIntervalDays(Math.max(1, Math.min(180, Number(e.target.value) || 30)))
-                            }
-                          />
-                        </div>
-                        <div className="field">
-                          <label htmlFor="ent-pay-due">Primeiro vencimento</label>
-                          <input
-                            id="ent-pay-due"
-                            type="date"
-                            value={payFirstDue}
-                            onChange={(e) => setPayFirstDue(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    </>
-                  )}
+                  </div>
+                  <div className="field">
+                    <label htmlFor="ent-pay-int">Intervalo (dias)</label>
+                    <input
+                      id="ent-pay-int"
+                      type="number"
+                      min={1}
+                      max={180}
+                      value={payIntervalDays}
+                      onChange={(e) =>
+                        setPayIntervalDays(Math.max(1, Math.min(180, Number(e.target.value) || 30)))
+                      }
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="ent-pay-due">Primeiro vencimento</label>
+                    <input
+                      id="ent-pay-due"
+                      type="date"
+                      value={payFirstDue}
+                      onChange={(e) => setPayFirstDue(e.target.value)}
+                    />
+                  </div>
                 </div>
-              </details>
-              </div>
+              )}
             </div>
 
             <div className="modal-actions">
