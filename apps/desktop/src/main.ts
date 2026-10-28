@@ -70,18 +70,28 @@ function forceShowWindow(win: BrowserWindow | null) {
   win.focus();
 }
 
-function attachWindowLifecycle(win: BrowserWindow) {
-  const reveal = () => forceShowWindow(win);
-  win.once('ready-to-show', reveal);
-  win.webContents.on('did-finish-load', () => {
-    if (!win.isDestroyed()) win.webContents.focus();
-  });
-  // Impede o menu Alt do Windows de “engolir” o teclado após um campo de pesquisa.
+function guardAgainstMenuKeyCapture(win: BrowserWindow) {
+  // Atalhos do menu nativo (Alt + letra, Ctrl+C via role) roubam teclas
+  // depois do primeiro <input>. Chromium ainda trata copiar/colar no campo.
   try {
     win.webContents.setIgnoreMenuShortcuts(true);
   } catch {
     /* ignore */
   }
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    // Alt sozinho foca a barra de menu do Windows; as teclas seguintes
+    // vão para GestorVend/Editar/Exibir em vez do campo de pesquisa.
+    if (input.key === 'Alt' && !input.control && !input.meta && !input.shift) {
+      event.preventDefault();
+    }
+  });
+}
+
+function attachWindowLifecycle(win: BrowserWindow) {
+  const reveal = () => forceShowWindow(win);
+  win.once('ready-to-show', reveal);
+  guardAgainstMenuKeyCapture(win);
   // ready-to-show às vezes não dispara após loadURL remoto / troca de partition.
   setTimeout(reveal, 2500);
 
@@ -843,8 +853,9 @@ function registerIpc() {
   ipcMain.on('desktop:focus-window', (ev) => {
     const win = BrowserWindow.fromWebContents(ev.sender);
     if (!win || win.isDestroyed()) return;
-    if (!win.isFocused()) win.focus();
-    ev.sender.focus();
+    // Só restaura a janela se estiver atrás. webContents.focus() tira o
+    // teclado do <input> e entrega para a barra de menu.
+    if (win.isMinimized()) win.restore();
   });
 
   ipcMain.handle('config:get', () => readConfig());

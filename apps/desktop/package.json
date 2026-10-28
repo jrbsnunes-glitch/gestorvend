@@ -1,6 +1,6 @@
 {
   "name": "@gestorvend/desktop",
-  "version": "1.0.68",
+  "version": "1.0.70",
   "private": true,
   "description": "Cliente desktop GestorVend (Electron) — janela própria apontando para o servidor do cliente",
   "author": "GestorVend",
@@ -54,10 +54,12 @@
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "GestorVend",
+      "include": "installer.nsh",
       "installerIcon": "resources/icon.ico",
       "uninstallerIcon": "resources/icon.ico"
     }

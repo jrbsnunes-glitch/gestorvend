@@ -1,4 +1,4 @@
-import { getDesktopApi, isGestorVendDesktop } from './desktop-bridge';
+import { isGestorVendDesktop } from './desktop-bridge';
 
 function isEditableField(
   el: EventTarget | null,
@@ -10,85 +10,117 @@ function isEditableField(
   );
 }
 
+function blurIfDetached(): void {
+  const ae = document.activeElement;
+  if (!(ae instanceof HTMLElement) || ae.isConnected) return;
+  try {
+    ae.blur();
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
- * Após fechar um modal de pesquisa o Electron/Windows deixa o foco num nó
- * desconectado ou no menu Alt — o campo “acende” mas a tecla some até F5.
+ * Depois de um modal de pesquisa o Chromium no Electron pode deixar o foco
+ * num nó já desmontado. Só tira esse foco zumbi — não chama win/webContents.focus(),
+ * senão o teclado vai para a barra de menu e o próximo campo “acende” sem digitação.
  */
 export function restoreDesktopKeyboard(): void {
   if (typeof document === 'undefined' || !isGestorVendDesktop()) return;
+  blurIfDetached();
   const ae = document.activeElement;
-  if (ae instanceof HTMLElement && !ae.isConnected) {
+  if (
+    !(ae instanceof HTMLElement) ||
+    !ae.isConnected ||
+    ae === document.documentElement
+  ) {
+    if (!document.body.hasAttribute('tabindex')) {
+      document.body.setAttribute('tabindex', '-1');
+    }
+    document.body.focus({ preventScroll: true });
+  }
+}
+
+function neutralizeSearchInput(el: HTMLInputElement): void {
+  if (el.type !== 'search') return;
+  const hadFocus = document.activeElement === el;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  el.type = 'text';
+  el.setAttribute('inputmode', 'search');
+  el.setAttribute('autocomplete', 'off');
+  el.setAttribute('spellcheck', 'false');
+  if (hadFocus) {
+    el.focus({ preventScroll: true });
     try {
-      ae.blur();
+      if (start != null && end != null) el.setSelectionRange(start, end);
     } catch {
       /* ignore */
     }
   }
-  const alive = document.activeElement;
-  if (
-    alive instanceof HTMLElement &&
-    alive !== document.body &&
-    alive !== document.documentElement &&
-    !isEditableField(alive) &&
-    !alive.isConnected
-  ) {
-    document.body.focus();
-  }
-  getDesktopApi()?.focusWindow?.();
+}
+
+function neutralizeSearchTree(root: ParentNode): void {
+  if (root instanceof HTMLInputElement) neutralizeSearchInput(root);
+  root.querySelectorAll?.('input[type="search"]').forEach((node) => {
+    if (node instanceof HTMLInputElement) neutralizeSearchInput(node);
+  });
 }
 
 /**
- * Electron/Windows: recoloca o teclado no campo clicado e recupera após modal.
+ * Electron/Windows: o teclado some após a 1ª pesquisa porque o foco fica
+ * num input desmontado ou na barra Alt. Recoloca no campo clicado e limpa zumbis.
  */
 export function installDesktopInputUnlock(): void {
   if (typeof document === 'undefined' || !isGestorVendDesktop()) return;
 
   document.documentElement.classList.add('gv-desktop');
-
-  let lastField: HTMLElement | null = null;
-
-  const unlock = (target: EventTarget | null) => {
-    const field = target instanceof HTMLElement ? target.closest('input, textarea, select') : null;
-    if (!isEditableField(field) || field.disabled) return;
-    if (field instanceof HTMLInputElement && field.readOnly) return;
-    lastField = field;
-    if (document.activeElement !== field) {
-      field.focus({ preventScroll: true });
-    }
-  };
-
-  document.addEventListener('pointerdown', (e) => unlock(e.target), true);
+  document.body.setAttribute('tabindex', '-1');
+  neutralizeSearchTree(document);
 
   document.addEventListener(
-    'keydown',
+    'pointerdown',
     (e) => {
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const ae = document.activeElement;
-      if (ae instanceof HTMLElement && !ae.isConnected) {
-        restoreDesktopKeyboard();
-        if (lastField?.isConnected && isEditableField(lastField) && !lastField.disabled) {
-          lastField.focus({ preventScroll: true });
-        }
-        return;
-      }
-      if (isEditableField(ae) && ae.isConnected) return;
-      if (lastField?.isConnected && isEditableField(lastField) && !lastField.disabled) {
-        if (e.key.length === 1 || e.key === 'Backspace') {
-          lastField.focus({ preventScroll: true });
-        }
+      blurIfDetached();
+      const field = e.target instanceof HTMLElement ? e.target.closest('input, textarea, select') : null;
+      if (!isEditableField(field) || field.disabled) return;
+      if (field instanceof HTMLInputElement && field.readOnly) return;
+      if (document.activeElement !== field) {
+        field.focus({ preventScroll: true });
       }
     },
     true,
   );
 
-  let hadBackdrop = document.querySelector('.modal-backdrop') != null;
-  const observer = new MutationObserver(() => {
-    const has = document.querySelector('.modal-backdrop') != null;
-    if (hadBackdrop && !has) {
-      lastField = null;
-      restoreDesktopKeyboard();
+  document.addEventListener(
+    'focusin',
+    () => {
+      blurIfDetached();
+    },
+    true,
+  );
+
+  document.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.key === 'Alt' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        e.preventDefault();
+      }
+      blurIfDetached();
+    },
+    true,
+  );
+
+  const observer = new MutationObserver((mutations) => {
+    const ae = document.activeElement;
+    if (ae instanceof HTMLElement && !ae.isConnected) restoreDesktopKeyboard();
+    for (const m of mutations) {
+      m.addedNodes.forEach((node) => {
+        if (node instanceof HTMLElement || node instanceof DocumentFragment) {
+          neutralizeSearchTree(node);
+        }
+      });
     }
-    hadBackdrop = has;
   });
-  observer.observe(document.body, { childList: true, subtree: false });
+  observer.observe(document.body, { childList: true, subtree: true });
 }
