@@ -75,6 +75,18 @@ export class GoodsReceiptController {
               location: { select: { id: true, code: true, name: true } },
             },
           },
+          payables: {
+            orderBy: { dueDate: 'asc' },
+            select: {
+              id: true,
+              description: true,
+              amount: true,
+              dueDate: true,
+              status: true,
+              recurrenceIndex: true,
+              recurrenceCount: true,
+            },
+          },
         },
       });
     } catch (e) {
@@ -96,6 +108,18 @@ export class GoodsReceiptController {
             take: 1,
             select: {
               location: { select: { id: true, code: true, name: true } },
+            },
+          },
+          payables: {
+            orderBy: { dueDate: 'asc' },
+            select: {
+              id: true,
+              description: true,
+              amount: true,
+              dueDate: true,
+              status: true,
+              recurrenceIndex: true,
+              recurrenceCount: true,
             },
           },
         },
@@ -153,6 +177,7 @@ export class GoodsReceiptController {
       issueDate?: string | null;
       natureOperation?: string | null;
       notes?: string | null;
+      payable?: PayableOptionsDto | null;
       managerPassword?: string;
     },
   ) {
@@ -173,7 +198,7 @@ export class GoodsReceiptController {
       if (current.status === GoodsReceiptStatus.CANCELLED) {
         throw new BadRequestException('Entrada cancelada não pode ser editada.');
       }
-      return await db.goodsReceipt.update({
+      await db.goodsReceipt.update({
         where: { id },
         data: {
           supplierId: body.supplierId ?? null,
@@ -183,6 +208,12 @@ export class GoodsReceiptController {
           natureOperation: body.natureOperation ?? null,
           notes: body.notes ?? null,
         },
+      });
+      if (body.payable?.enabled) {
+        return await this.goodsReceipts.generatePayables(user.tenantSlug, id, body.payable);
+      }
+      return await db.goodsReceipt.findUniqueOrThrow({
+        where: { id },
         include: {
           supplier: true,
           items: { include: { variant: { include: { product: true } } } },
@@ -190,6 +221,18 @@ export class GoodsReceiptController {
             take: 1,
             select: {
               location: { select: { id: true, code: true, name: true } },
+            },
+          },
+          payables: {
+            orderBy: { dueDate: 'asc' },
+            select: {
+              id: true,
+              description: true,
+              amount: true,
+              dueDate: true,
+              status: true,
+              recurrenceIndex: true,
+              recurrenceCount: true,
             },
           },
         },

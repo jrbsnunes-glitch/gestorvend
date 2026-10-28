@@ -8,7 +8,7 @@ import { RecordViewModal } from '../../components/RecordViewModal';
 import { SupplierSearchCombo } from '../../components/ProductCatalogCombos';
 import { ProductSearchModal, type ProductSearchRow } from '../../components/ProductSearchModal';
 import { api, apiUpload, ApiHttpError } from '../../lib/api';
-import { formatCnpj } from '../../lib/format';
+import { formatBRL, formatCnpj } from '../../lib/format';
 import { digitsNfeAccessKey, nfeAccessKeyFromClipboard } from '../../lib/nfe-access-key';
 import { openPortalNfeConsulta, shouldOfferPortalXmlFallback } from '../../lib/portal-nfe';
 import { formatConversionHint, isPackInvoiceUnit, suggestPackItemQtyFromText } from '../../lib/product-conversion';
@@ -84,6 +84,15 @@ type GoodsReceiptRow = {
     invoiceUnit?: string | null;
     variant: { sku: string; product: { name: string }; retailPrice?: string };
   }>;
+  payables?: Array<{
+    id: string;
+    description: string;
+    amount: string;
+    dueDate: string;
+    status: string;
+    recurrenceIndex?: number | null;
+    recurrenceCount?: number | null;
+  }>;
 };
 
 type InboundFetchResponse = {
@@ -149,6 +158,111 @@ function statusLabel(status?: string): string {
 
 function isReceiptCancelled(r: { status?: string }): boolean {
   return r.status === 'CANCELLED';
+}
+
+function payableStatusLabel(status: string): string {
+  if (status === 'PAID') return 'Pago';
+  if (status === 'OVERDUE') return 'Vencido';
+  if (status === 'CANCELLED') return 'Cancelado';
+  return 'Aberto';
+}
+
+function activeReceiptPayables(receipt: GoodsReceiptRow) {
+  return (receipt.payables ?? []).filter((p) => p.status !== 'CANCELLED');
+}
+
+function EntradaPayableDock({
+  idPrefix,
+  genPayable,
+  onToggle,
+  installments,
+  onInstallments,
+  intervalDays,
+  onIntervalDays,
+  firstDue,
+  onFirstDue,
+  existing,
+  disabled,
+}: {
+  idPrefix: string;
+  genPayable: boolean;
+  onToggle: (next: boolean) => void;
+  installments: number;
+  onInstallments: (n: number) => void;
+  intervalDays: number;
+  onIntervalDays: (n: number) => void;
+  firstDue: string;
+  onFirstDue: (v: string) => void;
+  existing?: GoodsReceiptRow['payables'];
+  disabled?: boolean;
+}) {
+  const live = (existing ?? []).filter((p) => p.status !== 'CANCELLED');
+  if (live.length > 0) {
+    return (
+      <div className="entrada-payable-dock">
+        <strong>Contas a pagar desta entrada</strong>
+        <span className="entrada-payable-dock__hint"> — títulos em Financeiro → A pagar</span>
+        <ul className="entrada-payable-dock__list">
+          {live.map((p) => (
+            <li key={p.id}>
+              {p.description} · {formatBRL(p.amount)} · vence{' '}
+              {new Date(p.dueDate).toLocaleDateString('pt-BR')} · {payableStatusLabel(p.status)}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+  if (disabled) return null;
+  return (
+    <div className="entrada-payable-dock">
+      <label className="entrada-payable-dock__toggle">
+        <input type="checkbox" checked={genPayable} onChange={(e) => onToggle(e.target.checked)} />
+        <span>
+          <strong>Gerar contas a pagar</strong>
+          <span className="entrada-payable-dock__hint">
+            {' '}
+            — título em Financeiro → A pagar, vinculado ao fornecedor e a esta entrada
+          </span>
+        </span>
+      </label>
+      {genPayable && (
+        <div className="entrada-payable-dock__fields">
+          <div className="field">
+            <label htmlFor={`${idPrefix}-pay-n`}>Parcelas</label>
+            <input
+              id={`${idPrefix}-pay-n`}
+              type="number"
+              min={1}
+              max={60}
+              value={installments}
+              onChange={(e) => onInstallments(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`${idPrefix}-pay-int`}>Intervalo (dias)</label>
+            <input
+              id={`${idPrefix}-pay-int`}
+              type="number"
+              min={1}
+              max={180}
+              value={intervalDays}
+              onChange={(e) => onIntervalDays(Math.max(1, Math.min(180, Number(e.target.value) || 30)))}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`${idPrefix}-pay-due`}>Primeiro vencimento</label>
+            <input
+              id={`${idPrefix}-pay-due`}
+              type="date"
+              value={firstDue}
+              onChange={(e) => onFirstDue(e.target.value)}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function StockEntradaPage() {
@@ -597,6 +711,12 @@ export function StockEntradaPage() {
       issueDate: string | null;
       natureOperation: string | null;
       notes: string | null;
+      payable?: {
+        enabled: true;
+        installments: number;
+        intervalDays: number;
+        firstDueDate: string | null;
+      } | null;
     }) =>
       api(`/goods-receipts/${payload.id}`, {
         method: 'PATCH',
@@ -607,11 +727,19 @@ export function StockEntradaPage() {
           issueDate: payload.issueDate,
           natureOperation: payload.natureOperation,
           notes: payload.notes,
+          payable: payload.payable ?? null,
         },
       }),
-    onSuccess: () => {
+    onSuccess: (_data, payload) => {
       qc.invalidateQueries({ queryKey: ['goods-receipts'] });
+      qc.invalidateQueries({ queryKey: ['payables'] });
       setEditing(null);
+      if (payload.payable?.enabled) {
+        alert('Alterações salvas. Contas a pagar geradas em Financeiro → A pagar.');
+      }
+    },
+    onError: (e: Error) => {
+      alert(e.message);
     },
   });
 
@@ -995,6 +1123,22 @@ export function StockEntradaPage() {
                     it.quantity,
                     `R$ ${it.unitCost}`,
                     `R$ ${(Number(it.quantity) * Number(it.unitCost)).toFixed(2)}`,
+                  ]),
+                },
+                {
+                  title: 'Contas a pagar',
+                  empty: 'Nenhum título gerado nesta entrada. Use Editar para criar.',
+                  columns: [
+                    'Descrição',
+                    { label: 'Valor', num: true },
+                    'Vencimento',
+                    'Status',
+                  ],
+                  rows: activeReceiptPayables(viewing).map((p) => [
+                    p.description,
+                    formatBRL(p.amount),
+                    new Date(p.dueDate).toLocaleDateString('pt-BR'),
+                    payableStatusLabel(p.status),
                   ]),
                 },
               ]
@@ -1600,61 +1744,17 @@ export function StockEntradaPage() {
 
             </div>
 
-            <div className="entrada-payable-dock">
-              <label className="entrada-payable-dock__toggle">
-                <input
-                  type="checkbox"
-                  checked={genPayable}
-                  onChange={(e) => setGenPayable(e.target.checked)}
-                />
-                <span>
-                  <strong>Gerar contas a pagar</strong>
-                  <span className="entrada-payable-dock__hint">
-                    {' '}
-                    — título em Financeiro → A pagar, vinculado ao fornecedor e a esta entrada
-                  </span>
-                </span>
-              </label>
-              {genPayable && (
-                <div className="entrada-payable-dock__fields">
-                  <div className="field">
-                    <label htmlFor="ent-pay-n">Parcelas</label>
-                    <input
-                      id="ent-pay-n"
-                      type="number"
-                      min={1}
-                      max={60}
-                      value={payInstallments}
-                      onChange={(e) =>
-                        setPayInstallments(Math.max(1, Math.min(60, Number(e.target.value) || 1)))
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="ent-pay-int">Intervalo (dias)</label>
-                    <input
-                      id="ent-pay-int"
-                      type="number"
-                      min={1}
-                      max={180}
-                      value={payIntervalDays}
-                      onChange={(e) =>
-                        setPayIntervalDays(Math.max(1, Math.min(180, Number(e.target.value) || 30)))
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="ent-pay-due">Primeiro vencimento</label>
-                    <input
-                      id="ent-pay-due"
-                      type="date"
-                      value={payFirstDue}
-                      onChange={(e) => setPayFirstDue(e.target.value)}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
+            <EntradaPayableDock
+              idPrefix="ent"
+              genPayable={genPayable}
+              onToggle={setGenPayable}
+              installments={payInstallments}
+              onInstallments={setPayInstallments}
+              intervalDays={payIntervalDays}
+              onIntervalDays={setPayIntervalDays}
+              firstDue={payFirstDue}
+              onFirstDue={setPayFirstDue}
+            />
 
             <div className="modal-actions">
               <button
@@ -1765,6 +1865,12 @@ type EditValues = {
   issueDate: string | null;
   natureOperation: string | null;
   notes: string | null;
+  payable?: {
+    enabled: true;
+    installments: number;
+    intervalDays: number;
+    firstDueDate: string | null;
+  } | null;
 };
 
 function PackFromInboundModal({
@@ -1951,6 +2057,13 @@ function EditReceiptModal({
   const [natureOperation, setNatureOperation] = useState(receipt.natureOperation ?? '');
   const [notes, setNotes] = useState(receipt.notes ?? '');
   const [totalValue] = useState(receipt.totalValue ?? '');
+  const [genPayable, setGenPayable] = useState(false);
+  const [payInstallments, setPayInstallments] = useState(1);
+  const [payIntervalDays, setPayIntervalDays] = useState(30);
+  const [payFirstDue, setPayFirstDue] = useState(() =>
+    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+  );
+  const existingPayables = activeReceiptPayables(receipt);
 
   return (
     <FormModalBackdrop className="modal-backdrop--wide no-print" onClose={onCancel}>
@@ -2174,6 +2287,20 @@ function EditReceiptModal({
           </details>
         </div>
 
+        <EntradaPayableDock
+          idPrefix="edit"
+          genPayable={genPayable}
+          onToggle={setGenPayable}
+          installments={payInstallments}
+          onInstallments={setPayInstallments}
+          intervalDays={payIntervalDays}
+          onIntervalDays={setPayIntervalDays}
+          firstDue={payFirstDue}
+          onFirstDue={setPayFirstDue}
+          existing={receipt.payables}
+          disabled={cancelled}
+        />
+
         <div className="modal-actions" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div>
             {!cancelled && (
@@ -2205,10 +2332,23 @@ function EditReceiptModal({
                     issueDate: issueDate ? new Date(issueDate).toISOString() : null,
                     natureOperation: natureOperation || null,
                     notes: notes || null,
+                    payable:
+                      genPayable && existingPayables.length === 0
+                        ? {
+                            enabled: true,
+                            installments: payInstallments,
+                            intervalDays: payIntervalDays,
+                            firstDueDate: payFirstDue ? new Date(payFirstDue).toISOString() : null,
+                          }
+                        : null,
                   })
                 }
               >
-                {isPending ? 'Salvando…' : 'Salvar alterações'}
+                {isPending
+                  ? 'Salvando…'
+                  : genPayable && existingPayables.length === 0
+                    ? 'Salvar e gerar contas a pagar'
+                    : 'Salvar alterações'}
               </button>
             )}
           </div>

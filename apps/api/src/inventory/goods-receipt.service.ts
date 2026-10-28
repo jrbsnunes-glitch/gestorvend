@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   BillStatus,
   GoodsReceiptMode,
@@ -320,53 +320,18 @@ export class GoodsReceiptService {
         }
 
         if (body.payable?.enabled) {
-          const installments = Math.max(1, Math.min(60, Number(body.payable.installments ?? 1) | 0));
-          const intervalDays = Math.max(
-            1,
-            Math.min(180, Number(body.payable.intervalDays ?? 30) | 0),
-          );
-          const firstDue = body.payable.firstDueDate
-            ? new Date(body.payable.firstDueDate)
-            : new Date(Date.now() + intervalDays * 24 * 60 * 60 * 1000);
-
           const total =
             body.totalValue != null
               ? Number(body.totalValue)
               : body.items.reduce((sum, it) => sum + Number(it.quantity) * Number(it.unitCost), 0);
-
-          const installmentAmount = total / installments;
-          const supplierName = body.supplierId
-            ? ((await tx.supplier.findUnique({ where: { id: body.supplierId } }))?.legalName ?? '')
-            : '';
-          const docLabel = body.documentNumber
-            ? `NF ${body.documentNumber}`
-            : `Entrada #${receipt.controlNumber}`;
-
-          let parentId: string | null = null;
-          for (let i = 0; i < installments; i++) {
-            const due = new Date(firstDue.getTime());
-            due.setDate(due.getDate() + intervalDays * i);
-            const description =
-              installments > 1
-                ? `${docLabel} (${i + 1}/${installments})${supplierName ? ' - ' + supplierName : ''}`
-                : `${docLabel}${supplierName ? ' - ' + supplierName : ''}`;
-            const instStr = installmentAmount.toFixed(2);
-            const created: { id: string } = await tx.accountPayable.create({
-              data: {
-                supplierId: body.supplierId ?? null,
-                description,
-                amount: instStr,
-                amountRemaining: instStr,
-                dueDate: due,
-                status: BillStatus.OPEN,
-                goodsReceiptId: receipt.id,
-                recurrenceIndex: installments > 1 ? i + 1 : null,
-                recurrenceCount: installments > 1 ? installments : null,
-                parentRecurringId: parentId,
-              },
-            });
-            if (i === 0) parentId = created.id;
-          }
+          await insertReceiptPayables(tx, {
+            receiptId: receipt.id,
+            controlNumber: receipt.controlNumber,
+            supplierId: body.supplierId ?? null,
+            documentNumber: body.documentNumber ?? null,
+            total,
+            payable: body.payable,
+          });
         }
 
         return tx.goodsReceipt.findUniqueOrThrow({
@@ -391,6 +356,61 @@ export class GoodsReceiptService {
         }
         return result;
       });
+  }
+
+  /**
+   * Gera contas a pagar para uma entrada já lançada (quando não foram criadas no recebimento).
+   */
+  async generatePayables(tenantSlug: string, receiptId: string, payable: PayableOptionsDto) {
+    if (!payable?.enabled) {
+      throw new BadRequestException('Informe os dados das contas a pagar.');
+    }
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    return db.$transaction(async (tx) => {
+      const receipt = await tx.goodsReceipt.findUnique({
+        where: { id: receiptId },
+        include: { items: true, payables: true },
+      });
+      if (!receipt) {
+        throw new NotFoundException('Entrada não encontrada.');
+      }
+      if (receipt.status === GoodsReceiptStatus.CANCELLED) {
+        throw new BadRequestException('Entrada cancelada não gera contas a pagar.');
+      }
+      const active = receipt.payables.filter((p) => p.status !== BillStatus.CANCELLED);
+      if (active.length > 0) {
+        throw new BadRequestException('Esta entrada já possui contas a pagar.');
+      }
+      const total =
+        receipt.totalValue != null
+          ? Number(receipt.totalValue)
+          : receipt.items.reduce((sum, it) => sum + Number(it.quantity) * Number(it.unitCost), 0);
+      if (!Number.isFinite(total) || total <= 0) {
+        throw new BadRequestException('Valor da entrada inválido para gerar contas a pagar.');
+      }
+      await insertReceiptPayables(tx, {
+        receiptId: receipt.id,
+        controlNumber: receipt.controlNumber,
+        supplierId: receipt.supplierId,
+        documentNumber: receipt.documentNumber,
+        total,
+        payable,
+      });
+      return tx.goodsReceipt.findUniqueOrThrow({
+        where: { id: receipt.id },
+        include: {
+          supplier: true,
+          items: { include: { variant: { include: { product: true } } } },
+          payables: true,
+          movements: {
+            take: 1,
+            select: {
+              location: { select: { id: true, code: true, name: true } },
+            },
+          },
+        },
+      });
+    });
   }
 
   /**
@@ -588,6 +608,61 @@ export class GoodsReceiptService {
         },
       });
     });
+  }
+}
+
+async function insertReceiptPayables(
+  tx: Prisma.TransactionClient,
+  input: {
+    receiptId: string;
+    controlNumber: number;
+    supplierId: string | null;
+    documentNumber: string | null;
+    total: number;
+    payable: PayableOptionsDto;
+  },
+) {
+  const installments = Math.max(1, Math.min(60, Number(input.payable.installments ?? 1) | 0));
+  const intervalDays = Math.max(1, Math.min(180, Number(input.payable.intervalDays ?? 30) | 0));
+  const firstDue = input.payable.firstDueDate
+    ? new Date(input.payable.firstDueDate)
+    : new Date(Date.now() + intervalDays * 24 * 60 * 60 * 1000);
+  if (!Number.isFinite(input.total) || input.total <= 0) {
+    throw new BadRequestException('Valor da entrada inválido para gerar contas a pagar.');
+  }
+
+  const installmentAmount = input.total / installments;
+  const supplierName = input.supplierId
+    ? ((await tx.supplier.findUnique({ where: { id: input.supplierId } }))?.legalName ?? '')
+    : '';
+  const docLabel = input.documentNumber
+    ? `NF ${input.documentNumber}`
+    : `Entrada #${input.controlNumber}`;
+
+  let parentId: string | null = null;
+  for (let i = 0; i < installments; i++) {
+    const due = new Date(firstDue.getTime());
+    due.setDate(due.getDate() + intervalDays * i);
+    const description =
+      installments > 1
+        ? `${docLabel} (${i + 1}/${installments})${supplierName ? ' - ' + supplierName : ''}`
+        : `${docLabel}${supplierName ? ' - ' + supplierName : ''}`;
+    const instStr = installmentAmount.toFixed(2);
+    const created: { id: string } = await tx.accountPayable.create({
+      data: {
+        supplierId: input.supplierId ?? null,
+        description,
+        amount: instStr,
+        amountRemaining: instStr,
+        dueDate: due,
+        status: BillStatus.OPEN,
+        goodsReceiptId: input.receiptId,
+        recurrenceIndex: installments > 1 ? i + 1 : null,
+        recurrenceCount: installments > 1 ? installments : null,
+        parentRecurringId: parentId,
+      },
+    });
+    if (i === 0) parentId = created.id;
   }
 }
 
