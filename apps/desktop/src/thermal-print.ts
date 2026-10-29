@@ -169,7 +169,7 @@ export async function prepareSaleReceiptForThermalPrint(wc: WebContents): Promis
           width: 80mm !important;
           max-width: 80mm !important;
           margin: 0 !important;
-          padding: 1mm 1.5mm 3mm !important;
+          padding: 1mm 0.6mm 3mm !important;
           box-sizing: border-box !important;
           box-shadow: none !important;
           height: auto !important;
@@ -194,7 +194,7 @@ export async function prepareSaleReceiptForThermalPrint(wc: WebContents): Promis
         .sale-receipt-doc--nfce {
           font-size: 11px !important;
           line-height: 1.15 !important;
-          padding: 1mm 1.5mm 2mm !important;
+          padding: 1mm 0.6mm 2mm !important;
         }
         .sale-receipt-doc--nfce .nfce-qr,
         .sale-receipt-doc--nfce .sale-receipt-nfce-qr img {

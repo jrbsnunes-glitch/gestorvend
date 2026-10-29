@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
+import { NumericInput } from '../components/NumericInput';
 import { api } from '../lib/api';
 import { paymentProviderLabel, type PaymentPspProvider, type PaymentSettings } from '../lib/payments';
 
@@ -185,14 +186,15 @@ export function PaymentSettingsPage() {
               </label>
               <label className="field" style={{ flex: '1 1 120px' }}>
                 Timeout PIX (s)
-                <input
-                  type="number"
+                <NumericInput
+                  integer
                   min={60}
                   max={3600}
+                  blurEmpty={900}
                   value={form.pixTimeoutSeconds}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, pixTimeoutSeconds: Number(e.target.value) || 900 }))
-                  }
+                  onChange={(_raw, n) => {
+                    if (n != null) setForm((f) => ({ ...f, pixTimeoutSeconds: n }));
+                  }}
                 />
               </label>
             </div>

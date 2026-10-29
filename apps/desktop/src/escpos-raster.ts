@@ -5,8 +5,8 @@
  */
 
 export const ESCPOS_DOTS_80MM = 512;
-/** ~2 mm de cada lado @ 203 dpi — folga da NFC-e, sem espremer o cupom. */
-export const ESCPOS_RASTER_SIDE_PAD = 16;
+/** ~1 mm de cada lado @ 203 dpi — usa a largura da bobina sem cortar a borda. */
+export const ESCPOS_RASTER_SIDE_PAD = 8;
 
 function luminance(bgra: Buffer, offset: number): number {
   return 0.114 * bgra[offset] + 0.587 * bgra[offset + 1] + 0.299 * bgra[offset + 2];

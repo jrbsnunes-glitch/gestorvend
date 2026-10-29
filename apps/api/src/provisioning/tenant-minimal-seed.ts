@@ -78,6 +78,17 @@ export async function seedTenantMinimal(
       update: { isDefault: true },
     });
 
+    await tenant.stockLocation.upsert({
+      where: { code: 'RESERVA' },
+      create: {
+        code: 'RESERVA',
+        name: 'Reserva',
+        isDefault: false,
+        kind: 'SALES_RESERVATION',
+      },
+      update: { kind: 'SALES_RESERVATION', isDefault: false },
+    });
+
     const fc = await tenant.fiscalConfig.findFirst();
     if (!fc) {
       await tenant.fiscalConfig.create({

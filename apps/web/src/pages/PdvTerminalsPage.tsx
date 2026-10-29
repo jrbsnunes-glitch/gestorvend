@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
+import { NumericInput } from '../components/NumericInput';
 import { api } from '../lib/api';
 
 type PdvTerminalRole = 'PRIMARY' | 'SATELLITE';
@@ -256,12 +257,12 @@ export function PdvTerminalsPage() {
         <div className="form-grid" style={{ maxWidth: 520 }}>
           <div className="field">
             <label htmlFor="pdv-num">Número (opcional)</label>
-            <input
+            <NumericInput
               id="pdv-num"
-              type="number"
+              integer
               min={1}
               value={number}
-              onChange={(e) => setNumber(e.target.value)}
+              onChange={(raw) => setNumber(raw)}
               placeholder="Auto (próximo livre)"
             />
           </div>

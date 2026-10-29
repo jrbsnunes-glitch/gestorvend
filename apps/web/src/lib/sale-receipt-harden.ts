@@ -33,7 +33,7 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
       'max-width': `${RECEIPT_PRINT_WIDTH_MM}mm`,
       'min-width': '0',
       'box-sizing': 'border-box',
-      padding: '1mm 1.5mm 3mm',
+      padding: '1mm 0.6mm 3mm',
       margin: '0',
       // A escala é tipográfica: `zoom`/`transform` alargariam a caixa e voltariam a cortar.
       zoom: '1',
@@ -299,7 +299,7 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
     decls: {
       'font-size': '11px',
       'line-height': '1.15',
-      padding: '1.5mm 2mm 3mm',
+      padding: '1.5mm 0.8mm 3mm',
     },
   },
   {

@@ -5,6 +5,7 @@ import { CrudToolbar, RowRecordActions } from '../../components/CrudToolbar';
 import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../../components/ModuleReportsModal';
 import { RecordViewModal } from '../../components/RecordViewModal';
+import { NumericInput } from '../../components/NumericInput';
 import { api } from '../../lib/api';
 
 type Movement = {
@@ -419,24 +420,24 @@ export function StockMovimentosPage() {
               <div className="form-row">
                 <div className="field">
                   <label htmlFor="pr-cf">Controle mínimo</label>
-                  <input
+                  <NumericInput
                     id="pr-cf"
-                    type="number"
+                    integer
                     min={1}
                     value={printControlFrom}
                     placeholder={controlRange.data?.min != null ? String(controlRange.data.min) : ''}
-                    onChange={(e) => setPrintControlFrom(e.target.value)}
+                    onChange={(raw) => setPrintControlFrom(raw)}
                   />
                 </div>
                 <div className="field">
                   <label htmlFor="pr-ct">Controle máximo</label>
-                  <input
+                  <NumericInput
                     id="pr-ct"
-                    type="number"
+                    integer
                     min={1}
                     value={printControlTo}
                     placeholder={controlRange.data?.max != null ? String(controlRange.data.max) : ''}
-                    onChange={(e) => setPrintControlTo(e.target.value)}
+                    onChange={(raw) => setPrintControlTo(raw)}
                   />
                 </div>
               </div>

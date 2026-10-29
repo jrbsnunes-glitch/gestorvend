@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { NumericInput } from '../components/NumericInput';
 import { api } from '../lib/api';
 import { isManager } from '../lib/auth';
 
@@ -126,32 +127,30 @@ export function ManufacturingSettingsPage() {
         <div className="form-row form-row--2">
           <div className="field">
             <label htmlFor="mfg-set-pct-start">Início (% do BOM com scrap)</label>
-            <input
+            <NumericInput
               id="mfg-set-pct-start"
-              type="number"
               min={0}
               max={100}
-              step="0.01"
+              blurEmpty={0}
               disabled={!canEdit}
               value={factoryIssuePctAtStart}
-              onChange={(e) =>
-                setFactoryIssuePctAtStart(parseFloat(e.target.value.replace(',', '.')) || 0)
-              }
+              onChange={(_raw, n) => {
+                if (n != null) setFactoryIssuePctAtStart(n);
+              }}
             />
           </div>
           <div className="field">
             <label htmlFor="mfg-set-pct-dev">Em desenvolvimento (% do BOM)</label>
-            <input
+            <NumericInput
               id="mfg-set-pct-dev"
-              type="number"
               min={0}
               max={100}
-              step="0.01"
+              blurEmpty={0}
               disabled={!canEdit}
               value={factoryIssuePctDevelopment}
-              onChange={(e) =>
-                setFactoryIssuePctDevelopment(parseFloat(e.target.value.replace(',', '.')) || 0)
-              }
+              onChange={(_raw, n) => {
+                if (n != null) setFactoryIssuePctDevelopment(n);
+              }}
             />
           </div>
         </div>

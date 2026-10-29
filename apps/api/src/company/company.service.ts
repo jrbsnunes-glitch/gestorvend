@@ -194,6 +194,11 @@ export class CompanyService {
       if (locId) {
         const loc = await db.stockLocation.findUnique({ where: { id: locId } });
         if (!loc) throw new BadRequestException('Local de estoque da Fábrica inválido.');
+        if (loc.kind === 'SALES_RESERVATION') {
+          throw new BadRequestException(
+            'O local Reserva é exclusivo das reservas de venda e não pode ser usado na Fábrica.',
+          );
+        }
         data.factoryStockLocation = { connect: { id: locId } };
       } else {
         data.factoryStockLocation = { disconnect: true };

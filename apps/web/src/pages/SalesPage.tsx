@@ -11,6 +11,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { PermissionPasswordModal } from '../components/PermissionPasswordModal';
+import { NumericInput } from '../components/NumericInput';
 import { PdvProceduresOverlay } from '../components/PdvProceduresOverlay';
 import { api } from '../lib/api';
 import {
@@ -3393,13 +3394,11 @@ function PosScreen({
                       Desconto <span className="pos-shortcut-key">F8</span>
                     </span>
                     <div className="pos-discount-row" style={{ width: 160 }}>
-                      <input
-                        type="number"
+                      <NumericInput
                         min={0}
-                        step="0.01"
                         value={discount || ''}
                         placeholder="0,00"
-                        onChange={(e) => applyDiscount(parseDecimal(e.target.value))}
+                        onChange={(_raw, n) => applyDiscount(n ?? 0)}
                         disabled={!canApplyDiscount}
                         title={
                           canApplyDiscount
@@ -3441,13 +3440,11 @@ function PosScreen({
                         Acréscimo <span className="pos-shortcut-key">F9</span>
                       </span>
                       <div className="pos-discount-row" style={{ width: 160 }}>
-                        <input
-                          type="number"
+                        <NumericInput
                           min={0}
-                          step="0.01"
                           value={surcharge || ''}
                           placeholder="0,00"
-                          onChange={(e) => applySurcharge(parseDecimal(e.target.value))}
+                          onChange={(_raw, n) => applySurcharge(n ?? 0)}
                           title="Outras despesas / acréscimo no total (+ vOutro)"
                         />
                       </div>
@@ -4366,14 +4363,12 @@ function PosScreen({
                   </div>
                   <div className="field" style={{ flex: 1 }}>
                     <label>Valor</label>
-                    <input
-                      type="number"
+                    <NumericInput
                       min={0}
-                      step="0.01"
                       autoFocus
                       value={itemDiscountDraft.value}
-                      onChange={(e) =>
-                        setItemDiscountDraft((d) => (d ? { ...d, value: e.target.value } : d))
+                      onChange={(raw) =>
+                        setItemDiscountDraft((d) => (d ? { ...d, value: raw } : d))
                       }
                       onKeyDown={(e) => {
                         if (e.key !== 'Enter') return;
@@ -5126,13 +5121,14 @@ function PaymentOverlay({
             {showInstallments && (
               <div className="pos-payment-field pos-payment-field--inst">
                 <label htmlFor="pay-overlay-inst">Parcelas</label>
-                <input
+                <NumericInput
                   id="pay-overlay-inst"
-                  type="number"
+                  integer
                   min={1}
                   max={selected?.form?.maxInstallments ?? 48}
+                  blurEmpty={1}
                   value={installments}
-                  onChange={(e) => setInstallments(e.target.value)}
+                  onChange={(raw) => setInstallments(raw)}
                 />
               </div>
             )}

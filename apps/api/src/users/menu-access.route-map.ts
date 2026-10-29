@@ -22,6 +22,7 @@ const SKIP_PREFIXES = [
   'wachat',
   'webhooks',
   'sales',
+  'sales-reservations',
   /** Caixa PDV: abertura/fechamento/movimento — operacional, não matriz. */
   'cash',
   /** Agent de impressão / fila. */

@@ -11,6 +11,7 @@ import {
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { validateNfeAccessKey } from '../fiscal/utils/nfe-access-key';
 import { resolveStockFromInvoice } from '../common/product-conversion.util';
+import { assertOperationalStockLocation } from './stock-location.util';
 
 export type ReceiptItemDto = {
   variantId: string;
@@ -85,6 +86,10 @@ export class GoodsReceiptService {
     }
 
     const db = await this.tenantPrisma.getClient(tenantSlug);
+    const receiptLoc = await db.stockLocation.findUnique({
+      where: { id: body.locationId.trim() },
+    });
+    assertOperationalStockLocation(receiptLoc);
 
     if (nfeAccessKey) {
       const existing = await db.goodsReceipt.findFirst({

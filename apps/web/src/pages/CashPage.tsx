@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { ListPagination } from '../components/ListPagination';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
+import { NumericInput } from '../components/NumericInput';
 import '../components/crud-toolbar.css';
 import { api } from '../lib/api';
 import { queueCashMovementAutoPrint } from '../lib/cash-movement-print';
@@ -1142,24 +1143,24 @@ export function CashPage() {
               <div className="form-row" style={{ alignItems: 'flex-end' }}>
                 <div className="field" style={{ flex: 1, marginBottom: 0 }}>
                   <label htmlFor="print-control-from">Controle mín.</label>
-                  <input
+                  <NumericInput
                     id="print-control-from"
-                    type="number"
+                    integer
                     min={1}
                     placeholder={controlRange.data?.min ? `#${controlRange.data.min}` : '#1'}
                     value={printControlFrom}
-                    onChange={(e) => setPrintControlFrom(e.target.value)}
+                    onChange={(raw) => setPrintControlFrom(raw)}
                   />
                 </div>
                 <div className="field" style={{ flex: 1, marginBottom: 0 }}>
                   <label htmlFor="print-control-to">Controle máx.</label>
-                  <input
+                  <NumericInput
                     id="print-control-to"
-                    type="number"
+                    integer
                     min={1}
                     placeholder={controlRange.data?.max ? `#${controlRange.data.max}` : '#999'}
                     value={printControlTo}
-                    onChange={(e) => setPrintControlTo(e.target.value)}
+                    onChange={(raw) => setPrintControlTo(raw)}
                   />
                 </div>
               </div>
@@ -1408,11 +1409,10 @@ export function CashPage() {
               )}
               <div className="field">
                 <label>Valor (R$)</label>
-                <input
+                <NumericInput
                   value={movAmount}
-                  onChange={(e) => setMovAmount(e.target.value)}
-                  type="number"
-                  step="0.01"
+                  onChange={(raw) => setMovAmount(raw)}
+                  min={0}
                   autoFocus
                 />
               </div>

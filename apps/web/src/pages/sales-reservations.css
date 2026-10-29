@@ -1,0 +1,339 @@
+.gv-reservation-page {
+  max-width: 1280px;
+}
+
+.gv-reservation-page > .page-title {
+  font-size: 1.35rem;
+  margin-bottom: 0.15rem;
+}
+
+.gv-reservation-page > .page-desc {
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+  max-width: none;
+}
+
+.gv-reservation-page .card {
+  padding: 0.85rem 1rem;
+}
+
+.gv-reservation-page .card + .card {
+  margin-top: 0.75rem;
+}
+
+.gv-reservation-page .field {
+  margin-bottom: 0.55rem;
+}
+
+.gv-reservation-page .field label,
+.gv-reservation-page .field .field-label-text {
+  font-size: 0.75rem;
+}
+
+.gv-reservation-page .field input:not([type='checkbox']),
+.gv-reservation-page .field select,
+.gv-reservation-page .field textarea {
+  padding: 0.4rem 0.65rem;
+  min-height: 2.2rem;
+  height: 2.2rem;
+}
+
+.gv-reservation-page .field textarea {
+  height: auto;
+  min-height: 2.4rem;
+}
+
+.gv-reservation-page .form-row {
+  gap: 0 0.75rem;
+}
+
+.gv-reservation-page h2.page-title {
+  font-size: 0.95rem;
+  margin-bottom: 0.35rem;
+}
+
+.gv-reservation-suggest {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  max-height: 10rem;
+  overflow: auto;
+  margin: -0.35rem 0 0.55rem;
+  background: var(--color-surface);
+}
+
+.gv-reservation-suggest button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.05rem;
+  padding: 0.4rem 0.7rem;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  width: 100%;
+}
+
+.gv-reservation-suggest button:last-child {
+  border-bottom: 0;
+}
+
+.gv-reservation-suggest button:hover {
+  background: var(--color-surface-elevated);
+}
+
+.gv-reservation-suggest span {
+  font-size: 0.76rem;
+  color: var(--color-text-muted);
+}
+
+.gv-reservation-picked {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.gv-reservation-picked input {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.gv-rsv-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.45rem;
+  margin: 0.15rem 0 0.45rem;
+}
+
+.gv-rsv-toolbar .field {
+  flex: 1 1 12rem;
+  margin-bottom: 0;
+  min-width: 0;
+}
+
+.gv-rsv-toolbar .btn {
+  height: 2.2rem;
+  padding: 0 0.85rem;
+  flex: 0 0 auto;
+}
+
+.gv-rsv-cart {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: auto;
+  max-height: 16rem;
+  background: var(--color-surface);
+}
+
+.gv-rsv-cart-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.gv-rsv-cart-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--color-surface-elevated);
+  text-align: left;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  padding: 0.4rem 0.55rem;
+  border-bottom: 1px solid var(--color-border);
+  font-weight: 600;
+}
+
+.gv-rsv-cart-table tbody tr {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.gv-rsv-cart-table tbody tr:last-child {
+  border-bottom: 0;
+}
+
+.gv-rsv-cart-table tbody tr:hover {
+  background: var(--color-surface-elevated);
+}
+
+.gv-rsv-cart-table td {
+  padding: 0.45rem 0.55rem;
+  vertical-align: middle;
+  font-size: 0.88rem;
+}
+
+.gv-rsv-item-name {
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1.25;
+}
+
+.gv-rsv-item-sku {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.gv-rsv-qty {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.gv-rsv-qty-btn {
+  width: 1.85rem;
+  height: 1.85rem;
+  border: 0;
+  background: transparent;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.gv-rsv-qty-btn:hover {
+  background: var(--color-surface-elevated);
+  color: var(--color-text);
+}
+
+.gv-rsv-qty .numeric-input {
+  width: 2.85rem;
+  height: 1.85rem;
+  padding: 0 0.15rem;
+  border: 0;
+  border-left: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
+  border-radius: 0;
+  text-align: center;
+  font-weight: 700;
+  background: transparent;
+}
+
+.gv-rsv-qty .numeric-input:focus {
+  outline: none;
+  background: var(--color-primary-muted);
+}
+
+.gv-rsv-money {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.gv-rsv-unit {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  text-align: right;
+}
+
+.gv-rsv-remove {
+  background: transparent;
+  border: 1px solid transparent;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 8px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.gv-rsv-remove:hover {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.gv-rsv-cart-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  padding: 0.85rem 0.75rem;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.gv-rsv-cart-empty strong {
+  color: var(--color-text-secondary);
+  font-size: 0.88rem;
+}
+
+.gv-reservation-totals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin: 0.55rem 0 0.65rem;
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.gv-reservation-totals strong {
+  color: var(--color-text);
+  font-size: 1.05rem;
+}
+
+.gv-reservation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.gv-reservation-row-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.3rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.gv-reservation-row-actions .btn,
+.gv-reservation-row-actions .btn-compact {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  padding: 0.28rem 0.55rem;
+  line-height: 1.2;
+  min-height: 0;
+}
+
+.gv-reservation-alert-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.gv-reservation-page .data-table th,
+.gv-reservation-page .data-table td {
+  padding: 0.45rem 0.7rem;
+}
+
+.gv-reservation-page .data-table th.col-actions,
+.gv-reservation-page .data-table td.col-actions {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.gv-reservation-page .alert {
+  margin-bottom: 0.65rem;
+  padding: 0.5rem 0.7rem;
+}

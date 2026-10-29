@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { Prisma } from '../generated/tenant-client';
+import { Prisma, StockLocationKind } from '../generated/tenant-client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -293,6 +293,7 @@ export class ProductsController {
 
     const [locations, balances] = await Promise.all([
       db.stockLocation.findMany({
+        where: { NOT: { kind: StockLocationKind.SALES_RESERVATION } },
         orderBy: [{ isDefault: 'desc' }, { code: 'asc' }],
         select: { id: true, code: true, name: true },
       }),

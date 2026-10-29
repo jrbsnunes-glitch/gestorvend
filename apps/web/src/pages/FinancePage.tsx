@@ -9,6 +9,7 @@ import '../components/crud-toolbar.css';
 import { monthRangeLocal, validateFilterPeriodRange } from '../lib/list-filters';
 import { matchesListSearch } from '../lib/list-search';
 import { CostCenterSelect } from '../components/CostCenterSelect';
+import { NumericInput } from '../components/NumericInput';
 import { BillPaymentsButton } from '../components/BillSettlementsModal';
 import { api } from '../lib/api';
 import { syncDataTableCardLabels } from '../lib/responsive-tables';
@@ -1565,14 +1566,12 @@ export function FinancePage() {
                 <label htmlFor="fp-amt">
                   {form.recurrence === 'NONE' && form.recurrenceCount > 1 ? 'Valor total *' : 'Valor *'}
                 </label>
-                <input
+                <NumericInput
                   id="fp-amt"
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  min={0}
                   disabled={editRequisitionTitle}
                   value={form.amount}
-                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                  onChange={(raw) => setForm({ ...form, amount: raw })}
                 />
               </div>
               <div className="field">
@@ -1587,18 +1586,16 @@ export function FinancePage() {
               {!editingId && (
                 <div className="field">
                   <label htmlFor="fp-rec-n">Qtd. de parcelas</label>
-                  <input
+                  <NumericInput
                     id="fp-rec-n"
-                    type="number"
+                    integer
                     min={1}
                     max={120}
+                    blurEmpty={1}
                     value={form.recurrenceCount}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        recurrenceCount: Math.max(1, Math.min(120, Number(e.target.value) || 1)),
-                      })
-                    }
+                    onChange={(_raw, n) => {
+                      if (n != null) setForm({ ...form, recurrenceCount: n });
+                    }}
                   />
                 </div>
               )}
@@ -1819,13 +1816,11 @@ export function FinancePage() {
             {settleErr && <div className="alert alert-error">{settleErr}</div>}
             <div className="field">
               <label htmlFor="st-amt">Valor deste pagamento / recebimento *</label>
-              <input
+              <NumericInput
                 id="st-amt"
-                type="number"
-                step="0.01"
-                min="0"
+                min={0}
                 value={settleForm.amount}
-                onChange={(e) => setSettleForm({ ...settleForm, amount: e.target.value })}
+                onChange={(raw) => setSettleForm({ ...settleForm, amount: raw })}
               />
               <small style={{ color: 'var(--color-text-muted)' }}>
                 Use até o saldo em aberto. Igual ao saldo quita o título; valor menor deixa o restante em aberto.

@@ -5,6 +5,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { NumericInput } from '../components/NumericInput';
 import { api } from '../lib/api';
 import { validateDocumentIfCpf } from '../lib/cpf';
 import { formatBRL, formatCpfCnpj } from '../lib/format';
@@ -637,11 +638,13 @@ export function NfeFormPage() {
                     <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{l.sku}</div>
                   </td>
                   <td className="num">
-                    <input
+                    <NumericInput
                       style={{ width: '4.5rem', textAlign: 'right' }}
+                      min={0.001}
+                      blurEmpty={1}
                       value={l.quantity}
-                      onChange={(e) => {
-                        const n = Number(String(e.target.value).replace(',', '.')) || 0;
+                      onChange={(_raw, n) => {
+                        if (n == null) return;
                         setLines((prev) =>
                           prev.map((x) => (x.key === l.key ? { ...x, quantity: n } : x)),
                         );
@@ -649,11 +652,13 @@ export function NfeFormPage() {
                     />
                   </td>
                   <td className="num">
-                    <input
+                    <NumericInput
                       style={{ width: '6rem', textAlign: 'right' }}
+                      min={0}
+                      blurEmpty={0}
                       value={l.unitPrice}
-                      onChange={(e) => {
-                        const n = Number(String(e.target.value).replace(',', '.')) || 0;
+                      onChange={(_raw, n) => {
+                        if (n == null) return;
                         setLines((prev) =>
                           prev.map((x) => (x.key === l.key ? { ...x, unitPrice: n } : x)),
                         );

@@ -21,6 +21,7 @@ import { ProductReportsPanel } from '../components/ProductReportsPanel';
 import { RecordViewModal, type RecordViewSection } from '../components/RecordViewModal';
 import { ProductSearchModal, type ProductSearchRow as SearchPickRow } from '../components/ProductSearchModal';
 import { StockLocationBalancesPopover } from '../components/StockLocationBalancesPopover';
+import { NumericInput } from '../components/NumericInput';
 import { api, apiUpload } from '../lib/api';
 import { prepareImageUpload } from '../lib/prepare-image-upload';
 import { getIdentity, hasFactoryModule } from '../lib/auth';
@@ -334,13 +335,12 @@ function ManufacturingProductFields(props: {
         <>
           <div className="field">
             <label htmlFor="p-mfg-lead">Prazo sugerido (dias)</label>
-            <input
+            <NumericInput
               id="p-mfg-lead"
-              type="number"
+              integer
               min={0}
-              step={1}
               value={props.leadDays}
-              onChange={(e) => props.onLeadDaysChange(e.target.value)}
+              onChange={(raw) => props.onLeadDaysChange(raw)}
               placeholder="Opcional — ex.: 15"
             />
           </div>
@@ -1509,24 +1509,20 @@ export function ProductsPage() {
                     <div className="product-form__grid product-form__grid--4">
                       <div className="field">
                         <label htmlFor="p-price">Preço de venda (varejo) *</label>
-                        <input
+                        <NumericInput
                           id="p-price"
-                          type="number"
-                          step="0.01"
-                          min="0"
+                          min={0}
                           value={retailPrice}
-                          onChange={(e) => setRetailPrice(e.target.value)}
+                          onChange={(raw) => setRetailPrice(raw)}
                         />
                       </div>
                       <div className="field">
                         <label htmlFor="p-cost">Preço de custo</label>
-                        <input
+                        <NumericInput
                           id="p-cost"
-                          type="number"
-                          step="0.01"
-                          min="0"
+                          min={0}
                           value={costPrice}
-                          onChange={(e) => setCostPrice(e.target.value)}
+                          onChange={(raw) => setCostPrice(raw)}
                         />
                       </div>
                       <div className="field">
@@ -1540,13 +1536,12 @@ export function ProductsPage() {
                       </div>
                       <div className="field">
                         <label htmlFor="p-minstock">Estoque mínimo (ponto de reposição)</label>
-                        <input
+                        <NumericInput
                           id="p-minstock"
-                          type="number"
-                          step="1"
+                          integer
                           min={isServiceTaxUnit(taxUnit) ? 0 : 1}
                           value={minStockInput}
-                          onChange={(e) => setMinStockInput(e.target.value)}
+                          onChange={(raw) => setMinStockInput(raw)}
                           disabled={isServiceTaxUnit(taxUnit)}
                         />
                         <span className="product-form__field-hint">
@@ -1708,17 +1703,13 @@ export function ProductsPage() {
                     </div>
                     <div className="field">
                       <label htmlFor="p-pack-qty">Itens por produto composto</label>
-                      <input
+                      <NumericInput
                         id="p-pack-qty"
-                        type="number"
                         min={1}
-                        step="1"
-                        inputMode="decimal"
                         value={packItemQty}
-                        onChange={(e) => {
-                          const next = e.target.value;
-                          setPackItemQty(next);
-                          if (resolveConversionFactor(conversion, next) <= 1) {
+                        onChange={(raw) => {
+                          setPackItemQty(raw);
+                          if (resolveConversionFactor(conversion, raw) <= 1) {
                             setStockComponentVariantId(null);
                             setStockComponentLabel('');
                           }
@@ -1991,49 +1982,44 @@ export function ProductsPage() {
                             </div>
                             <div className="field">
                               <label htmlFor={`pe-r-${v.id}`}>Preço de venda</label>
-                              <input
+                              <NumericInput
                                 id={`pe-r-${v.id}`}
-                                type="number"
-                                step="0.01"
-                                min="0"
+                                min={0}
                                 value={row.retail}
-                                onChange={(e) =>
+                                onChange={(raw) =>
                                   setVariantPrices((st) => ({
                                     ...st,
-                                    [v.id]: { ...row, retail: e.target.value },
+                                    [v.id]: { ...row, retail: raw },
                                   }))
                                 }
                               />
                             </div>
                             <div className="field">
                               <label htmlFor={`pe-c-${v.id}`}>Preço de custo</label>
-                              <input
+                              <NumericInput
                                 id={`pe-c-${v.id}`}
-                                type="number"
-                                step="0.01"
-                                min="0"
+                                min={0}
                                 value={row.cost}
-                                onChange={(e) =>
+                                onChange={(raw) =>
                                   setVariantPrices((st) => ({
                                     ...st,
-                                    [v.id]: { ...row, cost: e.target.value },
+                                    [v.id]: { ...row, cost: raw },
                                   }))
                                 }
                               />
                             </div>
                             <div className="field">
                               <label htmlFor={`pe-m-${v.id}`}>Estoque mínimo</label>
-                              <input
+                              <NumericInput
                                 id={`pe-m-${v.id}`}
-                                type="number"
-                                step="1"
+                                integer
                                 min={isServiceTaxUnit(taxUnit) ? 0 : 1}
                                 value={isServiceTaxUnit(taxUnit) ? '0' : row.minStock}
                                 disabled={isServiceTaxUnit(taxUnit)}
-                                onChange={(e) =>
+                                onChange={(raw) =>
                                   setVariantPrices((st) => ({
                                     ...st,
-                                    [v.id]: { ...row, minStock: e.target.value },
+                                    [v.id]: { ...row, minStock: raw },
                                   }))
                                 }
                               />
@@ -2212,17 +2198,13 @@ export function ProductsPage() {
                     </div>
                     <div className="field">
                       <label htmlFor="pe-pack-qty">Itens por produto composto</label>
-                      <input
+                      <NumericInput
                         id="pe-pack-qty"
-                        type="number"
                         min={1}
-                        step="1"
-                        inputMode="decimal"
                         value={packItemQty}
-                        onChange={(e) => {
-                          const next = e.target.value;
-                          setPackItemQty(next);
-                          if (resolveConversionFactor(conversion, next) <= 1) {
+                        onChange={(raw) => {
+                          setPackItemQty(raw);
+                          if (resolveConversionFactor(conversion, raw) <= 1) {
                             setStockComponentVariantId(null);
                             setStockComponentLabel('');
                           }

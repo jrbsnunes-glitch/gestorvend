@@ -398,7 +398,31 @@ export function SaleReceiptPrintPage() {
   useEffect(() => {
     document.documentElement.classList.add('gv-sale-receipt-print');
     document.body.classList.add('gv-sale-receipt-print');
+    document.getElementById('gv-sale-print-override')?.remove();
+    const style = document.createElement('style');
+    style.id = 'gv-sale-print-override';
+    style.textContent = `
+      @page { size: 80mm 297mm !important; margin: 0 !important; }
+      @media print {
+        html, body {
+          width: 80mm !important;
+          max-width: 80mm !important;
+          height: auto !important;
+          min-height: 0 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    const onBeforePrint = () => {
+      if (document.documentElement.classList.contains('gv-receipt-save-pdf')) return;
+      document.head.appendChild(style);
+    };
+    window.addEventListener('beforeprint', onBeforePrint);
     return () => {
+      window.removeEventListener('beforeprint', onBeforePrint);
+      style.remove();
       document.documentElement.classList.remove('gv-sale-receipt-print');
       document.body.classList.remove('gv-sale-receipt-print');
     };

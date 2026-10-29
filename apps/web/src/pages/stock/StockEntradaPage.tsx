@@ -7,6 +7,7 @@ import { ModuleReportsModal } from '../../components/ModuleReportsModal';
 import { RecordViewModal } from '../../components/RecordViewModal';
 import { SupplierSearchCombo } from '../../components/ProductCatalogCombos';
 import { ProductSearchModal, type ProductSearchRow } from '../../components/ProductSearchModal';
+import { NumericInput } from '../../components/NumericInput';
 import { api, apiUpload, ApiHttpError } from '../../lib/api';
 import { formatBRL, formatCnpj } from '../../lib/format';
 import { digitsNfeAccessKey, nfeAccessKeyFromClipboard } from '../../lib/nfe-access-key';
@@ -248,24 +249,30 @@ function EntradaPayableDock({
         <div className="entrada-payable-dock__fields">
           <div className="field">
             <label htmlFor={`${idPrefix}-pay-n`}>Parcelas</label>
-            <input
+            <NumericInput
               id={`${idPrefix}-pay-n`}
-              type="number"
+              integer
               min={1}
               max={60}
+              blurEmpty={1}
               value={installments}
-              onChange={(e) => onInstallments(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
+              onChange={(_raw, n) => {
+                if (n != null) onInstallments(n);
+              }}
             />
           </div>
           <div className="field">
             <label htmlFor={`${idPrefix}-pay-int`}>Intervalo (dias)</label>
-            <input
+            <NumericInput
               id={`${idPrefix}-pay-int`}
-              type="number"
+              integer
               min={1}
               max={180}
+              blurEmpty={30}
               value={intervalDays}
-              onChange={(e) => onIntervalDays(Math.max(1, Math.min(180, Number(e.target.value) || 30)))}
+              onChange={(_raw, n) => {
+                if (n != null) onIntervalDays(n);
+              }}
             />
           </div>
           <div className="field">
@@ -1479,12 +1486,11 @@ export function StockEntradaPage() {
                   <div className="submenu-body">
                     <div className="field">
                       <label htmlFor="ent-tot">Valor total do documento (opc.)</label>
-                      <input
+                      <NumericInput
                         id="ent-tot"
+                        min={0}
                         value={totalValue}
-                        onChange={(e) => setTotalValue(e.target.value)}
-                        type="number"
-                        step="0.01"
+                        onChange={(raw) => setTotalValue(raw)}
                       />
                     </div>
                     <div className="field">
@@ -1947,14 +1953,11 @@ function PackFromInboundModal({
           </div>
           <div className="field">
             <label htmlFor="pack-qty">Itens por embalagem</label>
-            <input
+            <NumericInput
               id="pack-qty"
-              type="number"
               min={2}
-              step="1"
-              inputMode="decimal"
               value={packItemQty}
-              onChange={(e) => setPackItemQty(e.target.value)}
+              onChange={(raw) => setPackItemQty(raw)}
               placeholder="Ex.: 12, 50"
             />
             <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>

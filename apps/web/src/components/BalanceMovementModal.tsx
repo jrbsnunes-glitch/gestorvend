@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { CostCenterSelect } from './CostCenterSelect';
 import { FormModalBackdrop } from './FormModalBackdrop';
+import { NumericInput } from './NumericInput';
 import { api } from '../lib/api';
 
 const PAYMENT_IN_LABELS: Record<string, string> = {
@@ -125,13 +126,11 @@ export function BalanceMovementModal({ open, onClose }: Props) {
 
         <div className="field">
           <label htmlFor="bal-mov-amt">Valor *</label>
-          <input
+          <NumericInput
             id="bal-mov-amt"
-            type="number"
-            step="0.01"
-            min="0"
+            min={0}
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(raw) => setAmount(raw)}
           />
         </div>
 

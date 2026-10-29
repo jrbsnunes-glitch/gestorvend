@@ -119,6 +119,22 @@
   pointer-events: auto;
 }
 
+.numeric-input {
+  font-variant-numeric: tabular-nums;
+}
+
+td .numeric-input {
+  width: 5.75rem;
+  max-width: 100%;
+  text-align: right;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-sizing: border-box;
+}
+
 .field input::placeholder,
 .field textarea::placeholder {
   color: var(--color-text-muted);

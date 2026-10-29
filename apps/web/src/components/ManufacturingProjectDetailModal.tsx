@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FormCadastroModal } from './FormCadastroModal';
+import { NumericInput } from './NumericInput';
 import { FormModalBackdrop } from './FormModalBackdrop';
 import { ManufacturingStatusChip } from './ManufacturingStatusChip';
 import { api } from '../lib/api';
@@ -428,16 +429,15 @@ export function ManufacturingProjectDetailModal({
                   <td className="num">{l.consumedQty}</td>
                   <td className="num">
                     {editable ? (
-                      <input
-                        type="number"
+                      <NumericInput
                         min={0}
                         max={100}
-                        step="0.01"
                         className="input-compact"
                         style={{ width: '4.5rem' }}
-                        defaultValue={l.scrapPct}
+                        value={l.scrapPct}
+                        onChange={() => undefined}
                         onBlur={(e) => {
-                          const v = e.target.value;
+                          const v = e.currentTarget.value;
                           if (v !== l.scrapPct) {
                             bomLineMut.mutate({ lineId: l.id, scrapPct: v });
                           }

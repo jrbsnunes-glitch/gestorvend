@@ -11,6 +11,7 @@ import {
 } from '../generated/tenant-client';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { assertOperationalStockLocation } from './stock-location.util';
 
 export type StockExitItemInput = {
   variantId: string;
@@ -151,6 +152,7 @@ export class StockExitsService {
       });
       if (!location)
         throw new BadRequestException('Local de estoque não encontrado.');
+      assertOperationalStockLocation(location);
 
       const exit = await tx.stockExit.create({
         data: {

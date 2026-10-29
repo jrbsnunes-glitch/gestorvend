@@ -12,7 +12,7 @@ import {
   getToken,
   scheduleAccessTokenRefresh,
 } from './lib/api';
-import { hasFactoryModule, hasRestaurantPlan, hasServiceOrderModule, isAdmin, isTechnician, isWaiter } from './lib/auth';
+import { hasFactoryModule, hasRestaurantPlan, hasSalesReservationModule, hasServiceOrderModule, isAdmin, isTechnician, isWaiter } from './lib/auth';
 import { isGestorVendDesktop } from './lib/desktop-bridge';
 import { setPdvTerminalNumber } from './lib/pdv-terminal-context';
 import { BusinessTimezoneProvider } from './context/BusinessTimezoneProvider';
@@ -199,6 +199,14 @@ const SaleReceiptPrintPage = lazy(() =>
   import('./pages/SaleReceiptPrintPage').then((m) => ({ default: m.SaleReceiptPrintPage })),
 );
 const SalesPage = lazy(() => import('./pages/SalesPage').then((m) => ({ default: m.SalesPage })));
+const SalesReservationsPage = lazy(() =>
+  import('./pages/SalesReservationsPage').then((m) => ({ default: m.SalesReservationsPage })),
+);
+const SaleReservationPrintPage = lazy(() =>
+  import('./pages/SaleReservationPrintPage').then((m) => ({
+    default: m.SaleReservationPrintPage,
+  })),
+);
 const KioskSalesPage = lazy(() =>
   import('./pages/KioskSalesPage').then((m) => ({ default: m.KioskSalesPage })),
 );
@@ -303,6 +311,12 @@ function RequireServiceOrder({ children }: { children: ReactNode }) {
 
 function RequireFactory({ children }: { children: ReactNode }) {
   const allowed = useMemo(() => hasFactoryModule(), []);
+  if (!allowed) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+function RequireSalesReservation({ children }: { children: ReactNode }) {
+  const allowed = useMemo(() => hasSalesReservationModule(), []);
   if (!allowed) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
@@ -436,6 +450,7 @@ function AppInner() {
             }
           />
           <Route path="vendas/impressao" element={<SaleReceiptPrintPage />} />
+          <Route path="reservas-venda/impressao" element={<SaleReservationPrintPage />} />
           <Route path="auto-atendimento" element={<KioskSalesPage />} />
           <Route
             path="salao/comanda/:tabId/cozinha"
@@ -529,6 +544,16 @@ function AppInner() {
               <Route path="movimentos" element={<StockMovimentosPage />} />
               <Route path="fechamento" element={<StockFechamentoPage />} />
             </Route>
+            <Route
+              path="reservas-venda"
+              element={
+                <BlockWaiterFromPdv>
+                  <RequireSalesReservation>
+                    <SalesReservationsPage />
+                  </RequireSalesReservation>
+                </BlockWaiterFromPdv>
+              }
+            />
             <Route path="requisicoes" element={<RequisicoesPage />} />
             <Route
               path="ordens-servico"

@@ -7,6 +7,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { CrudToolbar } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
+import { NumericInput } from '../components/NumericInput';
 import { ListPagination, LIST_PAGE_SIZE } from '../components/ListPagination';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
 import { ReportPrintSticker } from '../components/ReportPrintSticker';
@@ -769,22 +770,22 @@ export function FiscalNotesPage() {
               </div>
               <div className="field">
                 <label htmlFor="fn-cmin">Controle mín.</label>
-                <input
+                <NumericInput
                   id="fn-cmin"
-                  type="number"
+                  integer
                   min={1}
                   value={filters.controlMin}
-                  onChange={(e) => setFilters((f) => ({ ...f, controlMin: e.target.value }))}
+                  onChange={(raw) => setFilters((f) => ({ ...f, controlMin: raw }))}
                 />
               </div>
               <div className="field">
                 <label htmlFor="fn-cmax">Controle máx.</label>
-                <input
+                <NumericInput
                   id="fn-cmax"
-                  type="number"
+                  integer
                   min={1}
                   value={filters.controlMax}
-                  onChange={(e) => setFilters((f) => ({ ...f, controlMax: e.target.value }))}
+                  onChange={(raw) => setFilters((f) => ({ ...f, controlMax: raw }))}
                 />
               </div>
             </div>
@@ -870,22 +871,22 @@ export function FiscalNotesPage() {
             <div className="form-row form-row--2">
               <div className="field">
                 <label htmlFor="ex-nmin">Número inicial</label>
-                <input
+                <NumericInput
                   id="ex-nmin"
-                  type="number"
+                  integer
                   min={1}
                   value={exportForm.controlMin}
-                  onChange={(e) => setExportForm((f) => ({ ...f, controlMin: e.target.value }))}
+                  onChange={(raw) => setExportForm((f) => ({ ...f, controlMin: raw }))}
                 />
               </div>
               <div className="field">
                 <label htmlFor="ex-nmax">Número final</label>
-                <input
+                <NumericInput
                   id="ex-nmax"
-                  type="number"
+                  integer
                   min={1}
                   value={exportForm.controlMax}
-                  onChange={(e) => setExportForm((f) => ({ ...f, controlMax: e.target.value }))}
+                  onChange={(raw) => setExportForm((f) => ({ ...f, controlMax: raw }))}
                 />
               </div>
             </div>

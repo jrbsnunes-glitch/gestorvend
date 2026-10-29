@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { NumericInput } from '../components/NumericInput';
 
 import { api, apiUpload } from '../lib/api';
 import { prepareImageUpload } from '../lib/prepare-image-upload';
@@ -456,46 +457,58 @@ function IssuerEmissorCard() {
           <div className="form-row form-row--4-eq">
             <div className="field">
               <label htmlFor="iss-serie-nfce">Série NFC-e</label>
-              <input
+              <NumericInput
                 id="iss-serie-nfce"
-                type="number"
+                integer
                 min={1}
                 max={999}
+                blurEmpty={1}
                 value={nfceSerie}
-                onChange={(e) => setNfceSerie(Number(e.target.value) || 1)}
+                onChange={(_raw, n) => {
+                  if (n != null) setNfceSerie(n);
+                }}
               />
             </div>
             <div className="field">
               <label htmlFor="iss-num-nfce">Número inicial NFC-e</label>
-              <input
+              <NumericInput
                 id="iss-num-nfce"
-                type="number"
+                integer
                 min={1}
                 max={999999999}
+                blurEmpty={1}
                 value={nfceInitialNumber}
-                onChange={(e) => setNfceInitialNumber(Number(e.target.value) || 1)}
+                onChange={(_raw, n) => {
+                  if (n != null) setNfceInitialNumber(n);
+                }}
               />
             </div>
             <div className="field">
               <label htmlFor="iss-serie-nfe">Série NF-e</label>
-              <input
+              <NumericInput
                 id="iss-serie-nfe"
-                type="number"
+                integer
                 min={1}
                 max={999}
+                blurEmpty={1}
                 value={nfeSerie}
-                onChange={(e) => setNfeSerie(Number(e.target.value) || 1)}
+                onChange={(_raw, n) => {
+                  if (n != null) setNfeSerie(n);
+                }}
               />
             </div>
             <div className="field">
               <label htmlFor="iss-num-nfe">Número inicial NF-e</label>
-              <input
+              <NumericInput
                 id="iss-num-nfe"
-                type="number"
+                integer
                 min={1}
                 max={999999999}
+                blurEmpty={1}
                 value={nfeInitialNumber}
-                onChange={(e) => setNfeInitialNumber(Number(e.target.value) || 1)}
+                onChange={(_raw, n) => {
+                  if (n != null) setNfeInitialNumber(n);
+                }}
               />
             </div>
           </div>
@@ -604,18 +617,17 @@ function IssuerEmissorCard() {
               </label>
               <div className="field" style={{ maxWidth: '12rem', marginTop: '0.35rem' }}>
                 <label htmlFor="iss-auto-match">Match mínimo (%)</label>
-                <input
+                <NumericInput
                   id="iss-auto-match"
-                  type="number"
+                  integer
                   min={0}
                   max={100}
+                  blurEmpty={0}
                   disabled={!inboundAutoReceiptEnabled}
                   value={inboundAutoReceiptMinMatchPercent}
-                  onChange={(e) =>
-                    setInboundAutoReceiptMinMatchPercent(
-                      Math.max(0, Math.min(100, Number(e.target.value) || 0)),
-                    )
-                  }
+                  onChange={(_raw, n) => {
+                    if (n != null) setInboundAutoReceiptMinMatchPercent(n);
+                  }}
                 />
               </div>
             </div>
@@ -1320,33 +1332,28 @@ export function CompanyPage() {
                 <div className="form-row form-row--2" style={{ marginTop: '0.75rem' }}>
                   <div className="field">
                     <label htmlFor="c-factory-pct-start">Baixa automática na fase Início (% do BOM)</label>
-                    <input
+                    <NumericInput
                       id="c-factory-pct-start"
-                      type="number"
                       min={0}
                       max={100}
-                      step="0.01"
+                      blurEmpty={0}
                       value={form.factoryIssuePctAtStart ?? 0}
-                      onChange={(e) =>
-                        update('factoryIssuePctAtStart', parseFloat(e.target.value.replace(',', '.')) || 0)
-                      }
+                      onChange={(_raw, n) => {
+                        if (n != null) update('factoryIssuePctAtStart', n);
+                      }}
                     />
                   </div>
                   <div className="field">
                     <label htmlFor="c-factory-pct-dev">Baixa na fase Em desenvolvimento (% do BOM)</label>
-                    <input
+                    <NumericInput
                       id="c-factory-pct-dev"
-                      type="number"
                       min={0}
                       max={100}
-                      step="0.01"
+                      blurEmpty={0}
                       value={form.factoryIssuePctDevelopment ?? 0}
-                      onChange={(e) =>
-                        update(
-                          'factoryIssuePctDevelopment',
-                          parseFloat(e.target.value.replace(',', '.')) || 0,
-                        )
-                      }
+                      onChange={(_raw, n) => {
+                        if (n != null) update('factoryIssuePctDevelopment', n);
+                      }}
                     />
                   </div>
                 </div>
@@ -1590,13 +1597,16 @@ export function CompanyPage() {
               </div>
               <div className="field">
                 <label htmlFor="c-scale-ms">Auto-confirmar peso estável (ms)</label>
-                <input
+                <NumericInput
                   id="c-scale-ms"
-                  type="number"
+                  integer
                   min={0}
                   max={30000}
+                  blurEmpty={0}
                   value={form.scaleAutoConfirmMs ?? 700}
-                  onChange={(e) => update('scaleAutoConfirmMs', Number(e.target.value) || 0)}
+                  onChange={(_raw, n) => {
+                    if (n != null) update('scaleAutoConfirmMs', n);
+                  }}
                 />
               </div>
             </div>
@@ -1713,13 +1723,14 @@ export function CompanyPage() {
                           ? ' / pessoa'
                           : ''}
                       </label>
-                      <input
-                        type="number"
+                      <NumericInput
                         min={0}
-                        step="0.01"
+                        blurEmpty={0}
                         disabled={!form[block.enabled]}
                         value={Number(form[block.value] ?? 0)}
-                        onChange={(e) => update(block.value, Number(e.target.value) || 0)}
+                        onChange={(_raw, n) => {
+                          if (n != null) update(block.value, n);
+                        }}
                       />
                     </div>
                   </div>

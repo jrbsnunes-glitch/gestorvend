@@ -12,6 +12,7 @@ import {
   getIdentity,
   hasFactoryModule,
   hasRestaurantPlan,
+  hasSalesReservationModule,
   hasServiceOrderModule,
   isAdmin,
   isTechnician,
@@ -147,6 +148,9 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
     ? serverModules.includes('SERVICE_ORDER')
     : hasServiceOrderModule();
   const factoryOk = serverModules ? serverModules.includes('FACTORY') : hasFactoryModule();
+  const salesReservationOk = serverModules
+    ? serverModules.includes('SALES_RESERVATION')
+    : hasSalesReservationModule();
 
   // Guardas de rota e páginas leem de `lib/auth`; manter o cache alinhado ao servidor.
   useEffect(() => {
@@ -412,15 +416,28 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
         </div>
 
         {showNovaVenda ? (
-          <Link
-            to="/vendas"
-            className="sidebar-cta"
-            title="VENDA - PDV"
-            onClick={closeMobileNav}
-          >
-            <NavIcon name="sales" />
-            <span className="sidebar-link-label">VENDA - PDV</span>
-          </Link>
+          <div className="sidebar-cta-stack">
+            <Link
+              to="/vendas"
+              className="sidebar-cta"
+              title="VENDA - PDV"
+              onClick={closeMobileNav}
+            >
+              <NavIcon name="sales" />
+              <span className="sidebar-link-label">VENDA - PDV</span>
+            </Link>
+            {salesReservationOk ? (
+              <Link
+                to="/reservas-venda"
+                className="sidebar-cta sidebar-cta--secondary"
+                title="Reserva de Vendas"
+                onClick={closeMobileNav}
+              >
+                <NavIcon name="sales" />
+                <span className="sidebar-link-label">Reserva de Vendas</span>
+              </Link>
+            ) : null}
+          </div>
         ) : null}
 
         <nav id="sidebar-nav" className="sidebar-nav">

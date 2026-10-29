@@ -29,6 +29,7 @@ enum PlanCode {
 enum TenantModuleAddon {
   SERVICE_ORDER
   FACTORY
+  SALES_RESERVATION
 }
 
 /// Estado do provisionamento físico (PostgreSQL + migrações + seed mínimo).

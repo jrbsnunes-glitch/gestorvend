@@ -10,6 +10,7 @@ import {
   StockMovementType,
 } from '../generated/tenant-client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { assertOperationalStockLocation } from './stock-location.util';
 
 const inventoryInclude = {
   location: { select: { id: true, code: true, name: true } },
@@ -90,6 +91,7 @@ export class StockInventoryService {
     const db = await this.tenantPrisma.getClient(tenantSlug);
     const loc = await db.stockLocation.findUnique({ where: { id: locationId } });
     if (!loc) throw new BadRequestException('Local de estoque inválido.');
+    assertOperationalStockLocation(loc);
 
     return db.stockInventory.create({
       data: {

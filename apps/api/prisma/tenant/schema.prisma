@@ -308,6 +308,7 @@ model User {
   manufacturingTechnical ManufacturingProject[] @relation("ManufacturingTechnical")
   manufacturingCommercial ManufacturingProject[] @relation("ManufacturingCommercial")
   pdvTerminalsOperated PdvTerminal[] @relation("PdvTerminalOperator")
+  saleReservations SaleReservation[]
 }
 
 /// Permissões operacionais concedidas pelo administrador (com senha de autorização).
@@ -417,6 +418,7 @@ model Customer {
   equipment    CustomerEquipment[]
   serviceOrders ServiceOrder[]
   manufacturingProjects ManufacturingProject[]
+  saleReservations SaleReservation[]
 }
 
 /// Histórico de inclusão/atualização de saldo de crédito ou valor de requisição.
@@ -614,6 +616,7 @@ model ProductVariant {
   manufacturingIssues ManufacturingMaterialIssue[] @relation("ManufacturingIssueIngredient")
   priceHistory       ProductVariantPriceHistory[]
   supplierLinks      SupplierProductLink[]
+  saleReservationItems SaleReservationItem[]
 
   @@index([productId])
   @@index([barcode])
@@ -655,11 +658,18 @@ model ProductVariantPriceHistory {
 
 // --- Estoque ---
 
+enum StockLocationKind {
+  NORMAL
+  /// Local sistema exclusivo das reservas de venda — oculto das operações.
+  SALES_RESERVATION
+}
+
 model StockLocation {
   id        String           @id @default(uuid())
   code      String           @unique
   name      String
   isDefault Boolean          @default(false)
+  kind      StockLocationKind @default(NORMAL)
   parentId  String?
   parent    StockLocation?   @relation("LocationHierarchy", fields: [parentId], references: [id])
   children  StockLocation[]  @relation("LocationHierarchy")
@@ -670,6 +680,8 @@ model StockLocation {
   factoryForCompanies Company[] @relation("CompanyFactoryStockLocation")
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
+
+  @@index([kind])
 }
 
 model StockBalance {
@@ -1059,6 +1071,7 @@ model Sale {
   manufacturingProject   ManufacturingProject?
   manufacturingDeposit   ManufacturingProject? @relation("ManufacturingDepositSale")
   activeDraftForTerminal PdvTerminal?  @relation("PdvTerminalActiveDraft")
+  saleReservation        SaleReservation?
 
   @@index([operationNatureId])
   @@index([cashSessionId])
@@ -1173,6 +1186,7 @@ model PaymentForm {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   salePayments    SalePayment[]
+  saleReservationPayments SaleReservationPayment[]
 
   @@index([kind, isActive])
   @@index([sortOrder, name])
@@ -1264,6 +1278,69 @@ model SalePayment {
   @@index([externalTxnId])
   @@index([settlementStatus, expectedSettleAt])
   @@index([cardBrand])
+  @@index([paymentFormId])
+}
+
+enum SaleReservationStatus {
+  OPEN
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+}
+
+/// Reserva de venda: estoque no local sistema RESERVA até confirmar ou expirar (24h).
+model SaleReservation {
+  id          String                @id @default(uuid())
+  number      Int                   @unique @default(autoincrement())
+  status      SaleReservationStatus @default(OPEN)
+  customerId  String?
+  customer    Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  userId      String?
+  user        User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  saleId      String?               @unique
+  sale        Sale?                 @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  subtotal    Decimal               @db.Decimal(14, 2)
+  discount    Decimal               @default(0) @db.Decimal(14, 2)
+  total       Decimal               @db.Decimal(14, 2)
+  notes       String?
+  expiresAt   DateTime
+  confirmedAt DateTime?
+  cancelledAt DateTime?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  items       SaleReservationItem[]
+  payments    SaleReservationPayment[]
+
+  @@index([status, expiresAt])
+  @@index([customerId])
+}
+
+model SaleReservationItem {
+  id            String          @id @default(uuid())
+  reservationId String
+  reservation   SaleReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  variantId     String
+  variant       ProductVariant  @relation(fields: [variantId], references: [id])
+  quantity      Decimal         @db.Decimal(18, 4)
+  unitPrice     Decimal         @db.Decimal(14, 4)
+  discount      Decimal         @default(0) @db.Decimal(14, 2)
+  totalLine     Decimal         @db.Decimal(14, 2)
+
+  @@index([reservationId])
+  @@index([variantId])
+}
+
+model SaleReservationPayment {
+  id            String          @id @default(uuid())
+  reservationId String
+  reservation   SaleReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  method        PaymentMethod
+  amount        Decimal         @db.Decimal(14, 2)
+  installments  Int             @default(1)
+  paymentFormId String?
+  paymentForm   PaymentForm?    @relation(fields: [paymentFormId], references: [id], onDelete: SetNull)
+
+  @@index([reservationId])
   @@index([paymentFormId])
 }
 

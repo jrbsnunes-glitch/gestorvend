@@ -19,6 +19,7 @@ import {
   PaymentMethod,
 
   SaleStatus,
+  StockLocationKind,
 
 } from '../generated/tenant-client';
 
@@ -471,7 +472,11 @@ export class DashboardController {
 
       }),
 
-      db.stockBalance.groupBy({ by: ['variantId'], _sum: { quantity: true } }),
+      db.stockBalance.groupBy({
+        by: ['variantId'],
+        where: { location: { kind: { not: StockLocationKind.SALES_RESERVATION } } },
+        _sum: { quantity: true },
+      }),
 
     ]);
 

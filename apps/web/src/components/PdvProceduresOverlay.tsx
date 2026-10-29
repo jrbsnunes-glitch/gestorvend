@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { CostCenterSelect } from './CostCenterSelect';
+import { NumericInput } from './NumericInput';
 import { api } from '../lib/api';
 import { queueCashMovementAutoPrint } from '../lib/cash-movement-print';
 import '../pages/pos.css';
@@ -185,14 +186,12 @@ export function PdvProceduresOverlay({
             {err && <div className="alert alert-error">{err}</div>}
             <div className="field">
               <label htmlFor="pdv-proc-amt">Valor (R$) *</label>
-              <input
+              <NumericInput
                 ref={amountRef}
                 id="pdv-proc-amt"
-                type="number"
-                step="0.01"
-                min="0"
+                min={0}
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(raw) => setAmount(raw)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();

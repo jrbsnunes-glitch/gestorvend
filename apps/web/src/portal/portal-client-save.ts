@@ -1,6 +1,6 @@
 import { portalApi } from './portal-api';
 
-export type PortalClientAddon = 'SERVICE_ORDER' | 'FACTORY';
+export type PortalClientAddon = 'SERVICE_ORDER' | 'FACTORY' | 'SALES_RESERVATION';
 
 function onlyDigitsCnpj(s: string): string {
   return String(s ?? '').replace(/\D+/g, '');

@@ -12,7 +12,7 @@ export type UserProfile = 'manager' | 'cashier' | 'waiter' | 'technician' | 'sal
 
 export type PlanCode = 'STANDARD' | 'WHATSAPP' | 'RESTAURANT';
 
-export type TenantModuleAddon = 'SERVICE_ORDER' | 'FACTORY';
+export type TenantModuleAddon = 'SERVICE_ORDER' | 'FACTORY' | 'SALES_RESERVATION';
 
 export type JwtIdentity = {
   sub: string;
@@ -48,7 +48,8 @@ function decodeJwt(token: string): JwtIdentity | null {
           : undefined,
       enabledModules: Array.isArray(obj.enabledModules)
         ? obj.enabledModules.filter(
-            (m): m is TenantModuleAddon => m === 'SERVICE_ORDER' || m === 'FACTORY',
+            (m): m is TenantModuleAddon =>
+              m === 'SERVICE_ORDER' || m === 'FACTORY' || m === 'SALES_RESERVATION',
           )
         : undefined,
     };
@@ -140,7 +141,8 @@ function enabledModules(): TenantModuleAddon[] {
       const parsed = JSON.parse(raw) as unknown;
       if (Array.isArray(parsed)) {
         return parsed.filter(
-          (m): m is TenantModuleAddon => m === 'SERVICE_ORDER' || m === 'FACTORY',
+          (m): m is TenantModuleAddon =>
+            m === 'SERVICE_ORDER' || m === 'FACTORY' || m === 'SALES_RESERVATION',
         );
       }
     }
@@ -158,4 +160,9 @@ export function hasServiceOrderModule(): boolean {
 /** Addon Fábrica no portal. */
 export function hasFactoryModule(): boolean {
   return enabledModules().includes('FACTORY');
+}
+
+/** Addon Reserva de Vendas no portal. */
+export function hasSalesReservationModule(): boolean {
+  return enabledModules().includes('SALES_RESERVATION');
 }

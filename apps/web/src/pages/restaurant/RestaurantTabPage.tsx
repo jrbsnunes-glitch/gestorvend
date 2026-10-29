@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { NumericInput } from '../../components/NumericInput';
 import { api } from '../../lib/api';
 import { isWaiter } from '../../lib/auth';
 import { canPrintHere } from '../../lib/print-station';
@@ -407,16 +408,16 @@ export function RestaurantTabPage() {
             </div>
             <div className="field" style={{ maxWidth: 160, margin: 0 }}>
               <label htmlFor="tab-guest-count">Pessoas</label>
-              <input
+              <NumericInput
                 id="tab-guest-count"
-                type="number"
+                integer
                 min={1}
                 max={999}
+                blurEmpty={1}
                 value={guestCount}
                 disabled={patchTab.isPending}
-                onChange={(e) => {
-                  const n = Math.max(1, Math.min(999, Math.floor(Number(e.target.value)) || 1));
-                  patchTab.mutate({ guestCount: n });
+                onChange={(_raw, n) => {
+                  if (n != null) patchTab.mutate({ guestCount: n });
                 }}
               />
             </div>

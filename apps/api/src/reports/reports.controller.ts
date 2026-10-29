@@ -5,6 +5,7 @@ import {
   PrismaClient,
   SaleStatus,
   StockInventoryStatus,
+  StockLocationKind,
   StockMovementSource,
   StockMovementType,
 } from '../generated/tenant-client';
@@ -242,6 +243,7 @@ export class ReportsController {
 
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const balances = await db.stockBalance.findMany({
+      where: { location: { kind: { not: StockLocationKind.SALES_RESERVATION } } },
       include: {
         variant: { include: { product: true } },
         location: true,
@@ -318,7 +320,10 @@ export class ReportsController {
     end.setHours(23, 59, 59, 999);
 
     const balances = await db.stockBalance.findMany({
-      where: locationId ? { locationId } : undefined,
+      where: {
+        ...(locationId ? { locationId } : {}),
+        location: { kind: { not: StockLocationKind.SALES_RESERVATION } },
+      },
       include: {
         variant: { include: { product: true } },
         location: true,
@@ -870,7 +875,10 @@ export class ReportsController {
       variantIds.length === 0
         ? []
         : await db.stockBalance.findMany({
-            where: { variantId: { in: variantIds } },
+            where: {
+              variantId: { in: variantIds },
+              location: { kind: { not: StockLocationKind.SALES_RESERVATION } },
+            },
             select: { variantId: true, quantity: true },
           });
     const stockTotalByVariant = new Map<string, number>();
@@ -1066,7 +1074,10 @@ export class ReportsController {
     for (const vid of variantIds) result.set(vid, 0);
     if (!variantIds.length) return result;
 
-    const where: Prisma.StockBalanceWhereInput = { variantId: { in: variantIds } };
+    const where: Prisma.StockBalanceWhereInput = {
+      variantId: { in: variantIds },
+      location: { kind: { not: StockLocationKind.SALES_RESERVATION } },
+    };
     if (locationId) where.locationId = locationId;
 
     const balances = await db.stockBalance.findMany({

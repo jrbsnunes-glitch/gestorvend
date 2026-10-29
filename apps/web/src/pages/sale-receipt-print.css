@@ -47,7 +47,7 @@
   width: 80mm;
   max-width: 100%;
   margin: 0 auto;
-  padding: 3mm 2.5mm 5mm;
+  padding: 3mm 1mm 5mm;
   background: #fff;
   color: #000;
   font-family: Verdana, Tahoma, 'Segoe UI', Arial, sans-serif;
@@ -62,6 +62,42 @@
 
 .sale-receipt-doc strong {
   font-weight: 800;
+}
+
+/* Fechamento de caixa: mesma família, cupom um pouco maior na bobina. */
+.sale-receipt-doc.cash-close-doc--fechamento {
+  font-size: 20px;
+}
+
+.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-logo {
+  max-width: 68mm;
+  max-height: 32mm;
+}
+
+.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-title {
+  font-size: 20px;
+}
+
+.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-sub,
+.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-legal {
+  font-size: 15px;
+}
+
+.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-meta,
+.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-section-title,
+.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-totals,
+.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-payments,
+.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-foot {
+  font-size: 15px;
+}
+
+.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-totals-row.is-total,
+.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-totals-row.is-sold {
+  font-size: 19px;
+}
+
+.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-foot-muted {
+  font-size: 13px;
 }
 
 .sale-receipt-center {
@@ -296,7 +332,7 @@
 .sale-receipt-doc--nfce {
   font-size: 11px;
   line-height: 1.15;
-  padding: 1.5mm 2mm 3mm;
+  padding: 1.5mm 0.8mm 3mm;
 }
 
 .sale-receipt-doc--nfce .sale-receipt-logo {
@@ -415,9 +451,14 @@
    * gera A4 via printToPDF (preferCSSPageSize: false). No navegador o
    * estilo injetado redefine @page para A4.
    */
+  /*
+   * Chrome ignora a altura `auto` da bobina e pagina num pedaço curto:
+   * o cupom sai em 2 folhas (itens numa, pagamentos na outra). Uma via
+   * 80×297 mm cabe o comprovante inteiro sem fatiar.
+   */
   @page {
-    size: 80mm auto;
-    margin: 1.5mm;
+    size: 80mm 297mm;
+    margin: 0;
   }
 
   html.gv-sale-receipt-print,
@@ -476,14 +517,15 @@
 
   .sale-receipt-doc {
     box-shadow: none !important;
-    width: auto !important;
-    max-width: none !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
     margin: 0 !important;
-    padding: 1mm 1.5mm 3mm !important;
+    padding: 2mm 0.8mm 4mm !important;
     box-sizing: border-box !important;
     zoom: 1 !important;
     height: auto !important;
     min-height: 0 !important;
+    overflow: visible !important;
     font-family: Verdana, Tahoma, 'Segoe UI', Arial, sans-serif !important;
     font-size: 16px !important;
     font-weight: 700 !important;
@@ -678,5 +720,35 @@
     width: 80mm !important;
     max-width: 80mm !important;
     margin: 0 auto !important;
+  }
+
+  .sale-receipt-doc.cash-close-doc--fechamento {
+    font-size: 18px !important;
+  }
+
+  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-title {
+    font-size: 18px !important;
+  }
+
+  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-sub,
+  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-legal {
+    font-size: 14px !important;
+  }
+
+  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-meta,
+  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-section-title,
+  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-totals,
+  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-payments,
+  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-foot {
+    font-size: 14px !important;
+  }
+
+  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-totals-row.is-total,
+  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-totals-row.is-sold {
+    font-size: 17px !important;
+  }
+
+  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-foot-muted {
+    font-size: 12px !important;
   }
 }

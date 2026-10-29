@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
+import { NumericInput } from '../components/NumericInput';
 import { formatBRL } from '../lib/format';
 import { patchPortalClientModules } from './portal-client-save';
 import { portalApi } from './portal-api';
@@ -11,7 +12,7 @@ type Client = {
   cnpj: string;
   companyName: string;
   planCode: 'STANDARD' | 'WHATSAPP' | 'RESTAURANT';
-  enabledAddons?: Array<'SERVICE_ORDER' | 'FACTORY'>;
+  enabledAddons?: Array<'SERVICE_ORDER' | 'FACTORY' | 'SALES_RESERVATION'>;
   licenseStatus: 'trial' | 'active' | 'suspended' | 'expired';
   licenseValidFrom: string | null;
   licenseExpiresAt: string | null;
@@ -32,7 +33,7 @@ type CreateForm = {
   companyName: string;
   slug: string;
   planCode: Client['planCode'];
-  enabledAddons: Array<'SERVICE_ORDER' | 'FACTORY'>;
+  enabledAddons: Array<'SERVICE_ORDER' | 'FACTORY' | 'SALES_RESERVATION'>;
   licenseStatus: Client['licenseStatus'];
   licenseValidFrom: string;
   licenseExpiresAt: string;
@@ -41,7 +42,7 @@ type CreateForm = {
   monthlyFee: string;
 };
 
-type TenantAddon = 'SERVICE_ORDER' | 'FACTORY';
+type TenantAddon = 'SERVICE_ORDER' | 'FACTORY' | 'SALES_RESERVATION';
 
 function toggleAddon(list: TenantAddon[], addon: TenantAddon, on: boolean): TenantAddon[] {
   const set = new Set(list);
@@ -99,7 +100,7 @@ function statusColor(s: Client['licenseStatus'], days: number | null): { bg: str
 type EditForm = {
   companyName: string;
   planCode: Client['planCode'];
-  enabledAddons: Array<'SERVICE_ORDER' | 'FACTORY'>;
+  enabledAddons: Array<'SERVICE_ORDER' | 'FACTORY' | 'SALES_RESERVATION'>;
   licenseStatus: Client['licenseStatus'];
   licenseValidFrom: string;
   licenseExpiresAt: string;
@@ -501,6 +502,15 @@ export function PortalClientsPage() {
                           FAB
                         </span>
                       ) : null}
+                      {(c.enabledAddons ?? []).includes('SALES_RESERVATION') ? (
+                        <span
+                          className="badge"
+                          style={{ background: '#fef3c7', color: '#92400e', marginLeft: 4 }}
+                          title="Reserva de Vendas"
+                        >
+                          RSV
+                        </span>
+                      ) : null}
                     </td>
                     <td data-label="Mensalidade" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                       {c.monthlyFee != null ? formatBRL(c.monthlyFee) : '—'}
@@ -769,16 +779,39 @@ export function PortalClientsPage() {
                 </span>
               </label>
             </div>
+            <div className="field" style={{ marginBottom: '0.75rem' }}>
+              <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                <input
+                  type="checkbox"
+                  checked={form.enabledAddons.includes('SALES_RESERVATION')}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      enabledAddons: toggleAddon(
+                        form.enabledAddons,
+                        'SALES_RESERVATION',
+                        e.target.checked,
+                      ),
+                    })
+                  }
+                  style={{ marginTop: '0.15rem' }}
+                />
+                <span>
+                  Adicional: Reserva de Vendas
+                  <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>
+                    Libera o menu Reserva de Vendas e o estoque separado por 24h
+                  </span>
+                </span>
+              </label>
+            </div>
             <div className="form-row">
               <div className="field">
                 <label htmlFor="pc-monthly">Mensalidade (R$)</label>
-                <input
+                <NumericInput
                   id="pc-monthly"
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  min={0}
                   value={form.monthlyFee}
-                  onChange={(e) => setForm({ ...form, monthlyFee: e.target.value })}
+                  onChange={(raw) => setForm({ ...form, monthlyFee: raw })}
                   placeholder="0,00"
                 />
               </div>
@@ -957,16 +990,39 @@ export function PortalClientsPage() {
                 </span>
               </label>
             </div>
+            <div className="field" style={{ marginBottom: '0.75rem' }}>
+              <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                <input
+                  type="checkbox"
+                  checked={editForm.enabledAddons.includes('SALES_RESERVATION')}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      enabledAddons: toggleAddon(
+                        editForm.enabledAddons,
+                        'SALES_RESERVATION',
+                        e.target.checked,
+                      ),
+                    })
+                  }
+                  style={{ marginTop: '0.15rem' }}
+                />
+                <span>
+                  Adicional: Reserva de Vendas
+                  <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>
+                    Libera o menu Reserva de Vendas e o estoque separado por 24h
+                  </span>
+                </span>
+              </label>
+            </div>
             <div className="form-row">
               <div className="field">
                 <label htmlFor="pe-monthly">Mensalidade (R$)</label>
-                <input
+                <NumericInput
                   id="pe-monthly"
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  min={0}
                   value={editForm.monthlyFee}
-                  onChange={(e) => setEditForm({ ...editForm, monthlyFee: e.target.value })}
+                  onChange={(raw) => setEditForm({ ...editForm, monthlyFee: raw })}
                   placeholder="0,00"
                 />
               </div>
@@ -1146,13 +1202,16 @@ export function PortalClientsPage() {
             </p>
             <div className="field">
               <label htmlFor="pr-days">Adicionar dias</label>
-              <input
+              <NumericInput
                 id="pr-days"
-                type="number"
+                integer
                 min={1}
                 max={3650}
+                blurEmpty={30}
                 value={renewDays}
-                onChange={(e) => setRenewDays(Math.max(1, Math.min(3650, Number(e.target.value) || 30)))}
+                onChange={(_raw, n) => {
+                  if (n != null) setRenewDays(n);
+                }}
               />
             </div>
             <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.4rem' }}>

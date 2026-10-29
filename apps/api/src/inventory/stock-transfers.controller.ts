@@ -9,6 +9,7 @@ import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { MenuAccessService } from '../users/menu-access.service';
+import { assertOperationalStockLocation } from './stock-location.util';
 
 /** Transferência interna entre locais: saída no origem + entrada no destino (mesmo ID de referência). */
 @Controller('stock-transfers')
@@ -101,6 +102,8 @@ export class StockTransfersController {
       ]);
       if (!fromLoc) throw new BadRequestException('Local de origem não encontrado.');
       if (!toLoc) throw new BadRequestException('Local de destino não encontrado.');
+      assertOperationalStockLocation(fromLoc, 'Local de origem');
+      assertOperationalStockLocation(toLoc, 'Local de destino');
 
       const baseRef = `${refKey} | ${fromLoc.code} → ${toLoc.code}${noteSuffix}`;
       const movements: Array<{ variantId: string; outId: string; inId: string; quantity: number }> =

@@ -174,21 +174,24 @@ export function CashCloseThermalPage() {
 
       <div className="sale-receipt-preview">
         {!sessionId ? (
-          <article className="sale-receipt-doc cash-close-doc">
+          <article className="sale-receipt-doc cash-close-doc cash-close-doc--fechamento">
             <p className="sale-receipt-center">Sessão de caixa não informada.</p>
           </article>
         ) : reportQ.isLoading || companyQ.isLoading ? (
-          <article className="sale-receipt-doc cash-close-doc">
+          <article className="sale-receipt-doc cash-close-doc cash-close-doc--fechamento">
             <p className="sale-receipt-center">Carregando fechamento…</p>
           </article>
         ) : reportQ.isError || !session || !c ? (
-          <article className="sale-receipt-doc cash-close-doc">
+          <article className="sale-receipt-doc cash-close-doc cash-close-doc--fechamento">
             <p className="sale-receipt-center">
               {(reportQ.error as Error | undefined)?.message || 'Caixa não encontrado.'}
             </p>
           </article>
         ) : (
-          <article className="sale-receipt-doc cash-close-doc" data-receipt-ready={receiptReady ? '1' : '0'}>
+          <article
+            className="sale-receipt-doc cash-close-doc cash-close-doc--fechamento"
+            data-receipt-ready={receiptReady ? '1' : '0'}
+          >
             <header className="sale-receipt-center sale-receipt-company">
               <CompanyLogo className="sale-receipt-logo" company={c} alt={c.tradeName || c.legalName} />
               <p className="sale-receipt-title">{c.tradeName || c.legalName}</p>
@@ -200,7 +203,7 @@ export function CashCloseThermalPage() {
             </header>
 
             <hr className="sale-receipt-line" />
-            <p className="sale-receipt-center sale-receipt-title" style={{ fontSize: '0.95rem' }}>
+            <p className="sale-receipt-center sale-receipt-title">
               FECHAMENTO DE CAIXA
             </p>
             <p className="sale-receipt-center sale-receipt-sub">

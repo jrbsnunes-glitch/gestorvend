@@ -6,6 +6,11 @@ import { Roles } from '../auth/roles.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { MenuAccessService } from '../users/menu-access.service';
+import {
+  assertOperationalStockLocation,
+  isReservationLocationKind,
+  OPERATIONAL_LOCATION_WHERE,
+} from './stock-location.util';
 
 @Controller('stock-locations')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -20,14 +25,19 @@ export class LocationsController {
   async list(@CurrentUser() user: JwtPayload) {
     // Locais são usados em PDV/financeiro/relatórios — sem gate de menu na listagem.
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
-    return db.stockLocation.findMany({ orderBy: { name: 'asc' } });
+    return db.stockLocation.findMany({
+      where: OPERATIONAL_LOCATION_WHERE,
+      orderBy: { name: 'asc' },
+    });
   }
 
   @Get(':id')
   @Roles('admin', 'manager', 'seller', 'finance')
   async get(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
-    return db.stockLocation.findUniqueOrThrow({ where: { id } });
+    const loc = await db.stockLocation.findUniqueOrThrow({ where: { id } });
+    assertOperationalStockLocation(loc);
+    return loc;
   }
 
   @Post()
@@ -52,6 +62,9 @@ export class LocationsController {
       body.managerPassword,
     );
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    if (String(body.code ?? '').trim().toUpperCase() === 'RESERVA') {
+      throw new BadRequestException('O código RESERVA é exclusivo do módulo Reserva de Vendas.');
+    }
     if (body.isDefault) {
       await db.stockLocation.updateMany({ data: { isDefault: false } });
     }
@@ -88,6 +101,8 @@ export class LocationsController {
       body.managerPassword,
     );
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const current = await db.stockLocation.findUnique({ where: { id } });
+    assertOperationalStockLocation(current);
     if (body.isDefault) {
       await db.stockLocation.updateMany({ data: { isDefault: false } });
     }
@@ -118,6 +133,12 @@ export class LocationsController {
       body?.managerPassword,
     );
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
+    const current = await db.stockLocation.findUnique({ where: { id } });
+    if (current && isReservationLocationKind(current.kind)) {
+      throw new BadRequestException(
+        'O local Reserva é do sistema e não pode ser excluído.',
+      );
+    }
     const mv = await db.stockMovement.count({ where: { locationId: id } });
     if (mv > 0) throw new BadRequestException('Local possui movimentações');
     const balances = await db.stockBalance.findMany({ where: { locationId: id } });

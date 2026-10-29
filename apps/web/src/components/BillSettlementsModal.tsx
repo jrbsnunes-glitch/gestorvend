@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import { FormModalBackdrop } from './FormModalBackdrop';
+import { NumericInput } from './NumericInput';
 import { CostCenterSelect } from './CostCenterSelect';
 import { api } from '../lib/api';
 import {
@@ -238,13 +239,11 @@ export function BillSettlementsModal({ kind, billId, description, onClose }: Bil
             <div className="form-row">
               <div className="field">
                 <label htmlFor="ed-amt">Valor *</label>
-                <input
+                <NumericInput
                   id="ed-amt"
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  min={0}
                   value={editForm.amount}
-                  onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })}
+                  onChange={(raw) => setEditForm({ ...editForm, amount: raw })}
                 />
               </div>
               <div className="field">

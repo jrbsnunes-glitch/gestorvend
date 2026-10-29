@@ -1,0 +1,347 @@
+/**
+ * Comprovante de reserva — documento de página inteira (A4).
+ * Não é cupom térmico de 80 mm: no Chrome isso virava uma coluna minúscula.
+ */
+
+.gv-rsv-print-page {
+  min-height: 100vh;
+  background: #e8e8e8;
+  padding: 1rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.gv-rsv-print-toolbar {
+  width: min(100%, 210mm);
+  margin: 0 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.gv-rsv-print-toolbar-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.gv-rsv-print-hint {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.gv-rsv-doc {
+  width: 100%;
+  max-width: 210mm;
+  margin: 0 auto;
+  padding: 12mm 14mm 14mm;
+  background: #fff;
+  color: #000;
+  /* Traço grosso, x-alto: na térmica 1-bit o Segoe/Courier some (cinza). */
+  font-family: Tahoma, Verdana, 'Arial Black', Arial, sans-serif;
+  font-size: 20pt;
+  font-weight: 800;
+  line-height: 1.32;
+  letter-spacing: 0.02em;
+  box-sizing: border-box;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+}
+
+.gv-rsv-doc * {
+  color: #000;
+  box-sizing: border-box;
+}
+
+.gv-rsv-center {
+  text-align: center;
+}
+
+.gv-rsv-logo {
+  display: block;
+  margin: 0 auto 8px;
+  max-width: 70mm;
+  max-height: 32mm;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.gv-rsv-company {
+  font-family: Tahoma, Verdana, 'Arial Black', Arial, sans-serif;
+  font-size: 28pt;
+  font-weight: 800;
+  line-height: 1.12;
+  margin: 0 0 4px;
+  text-transform: uppercase;
+}
+
+.gv-rsv-legal {
+  font-size: 15pt;
+  font-weight: 800;
+  margin: 0 0 3px;
+}
+
+.gv-rsv-headline {
+  font-size: 24pt;
+  font-weight: 800;
+  text-transform: uppercase;
+  margin: 14px 0 4px;
+}
+
+.gv-rsv-note {
+  font-size: 15pt;
+  font-weight: 800;
+  margin: 0 0 8px;
+}
+
+.gv-rsv-banner {
+  display: inline-block;
+  font-weight: 800;
+  font-size: 16pt;
+  text-transform: uppercase;
+  margin: 6px 0;
+  padding: 4px 12px;
+  background: #fecaca;
+  color: #450a0a;
+}
+
+.gv-rsv-line {
+  border: none;
+  border-top: 2px solid #000;
+  margin: 12px 0;
+}
+
+.gv-rsv-meta {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 18pt;
+  font-weight: 800;
+  margin: 8px 0;
+}
+
+.gv-rsv-meta th {
+  text-align: left;
+  font-weight: 800;
+  padding: 5px 12px 5px 0;
+  width: 38%;
+  vertical-align: top;
+}
+
+.gv-rsv-meta td {
+  text-align: right;
+  font-weight: 800;
+  padding: 4px 0;
+  vertical-align: top;
+}
+
+.gv-rsv-items {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 17pt;
+  font-weight: 800;
+  margin: 8px 0;
+}
+
+.gv-rsv-items th {
+  text-align: left;
+  font-size: 14pt;
+  font-weight: 800;
+  text-transform: uppercase;
+  border-bottom: 2px solid #000;
+  padding: 6px 8px 6px 0;
+}
+
+.gv-rsv-items th.num,
+.gv-rsv-items td.num {
+  text-align: right;
+  white-space: nowrap;
+  padding-right: 0;
+}
+
+.gv-rsv-items td {
+  padding: 10px 8px 10px 0;
+  border-bottom: 1px solid #000;
+  vertical-align: top;
+}
+
+.gv-rsv-doc .gv-rsv-item-name {
+  display: block;
+  font-size: 18pt;
+  font-weight: 800;
+}
+
+.gv-rsv-doc .gv-rsv-item-sku {
+  display: block;
+  font-size: 14pt;
+  font-weight: 800;
+}
+
+.gv-rsv-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 32pt;
+  font-weight: 800;
+  margin: 16px 0 8px;
+  padding-top: 10px;
+  border-top: 3px solid #000;
+}
+
+.gv-rsv-pay {
+  display: flex;
+  justify-content: space-between;
+  font-size: 18pt;
+  font-weight: 800;
+  margin: 6px 0;
+}
+
+.gv-rsv-foot {
+  text-align: center;
+  font-size: 16pt;
+  font-weight: 800;
+  margin: 18px 0 0;
+}
+
+.gv-rsv-foot small {
+  display: block;
+  font-size: 14pt;
+  font-weight: 800;
+  margin-top: 8px;
+}
+
+html.gv-rsv-receipt-print,
+html.gv-rsv-receipt-print body {
+  background: #e8e8e8;
+}
+
+@media print {
+  /* Sem @page aqui: vaza para o cupom de venda (bobina 80 mm) depois que esta folha carrega. */
+
+  html.gv-rsv-receipt-print,
+  html.gv-rsv-receipt-print body {
+    width: auto !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    overflow: visible !important;
+    font-size: 20pt !important;
+    font-family: Tahoma, Verdana, 'Arial Black', Arial, sans-serif !important;
+    -webkit-font-smoothing: none;
+    font-smooth: never;
+  }
+
+  .gv-rsv-print-page {
+    background: #fff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    height: auto !important;
+    display: block !important;
+  }
+
+  html.gv-rsv-receipt-print .gv-rsv-print-toolbar,
+  html.gv-rsv-receipt-print .no-print {
+    display: none !important;
+  }
+
+  html.gv-rsv-receipt-print .gv-rsv-doc {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    font-size: 20pt !important;
+    font-family: Tahoma, Verdana, 'Arial Black', Arial, sans-serif !important;
+    font-weight: 800 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    -webkit-font-smoothing: none;
+    font-smooth: never;
+  }
+
+  html.gv-rsv-receipt-print .gv-rsv-company {
+    font-size: 28pt !important;
+  }
+
+  html.gv-rsv-receipt-print .gv-rsv-legal,
+  html.gv-rsv-receipt-print .gv-rsv-note {
+    font-size: 15pt !important;
+  }
+
+  html.gv-rsv-receipt-print .gv-rsv-headline {
+    font-size: 24pt !important;
+  }
+
+  html.gv-rsv-receipt-print .gv-rsv-meta,
+  html.gv-rsv-receipt-print .gv-rsv-pay {
+    font-size: 18pt !important;
+  }
+
+  html.gv-rsv-receipt-print .gv-rsv-items {
+    font-size: 17pt !important;
+  }
+
+  html.gv-rsv-receipt-print .gv-rsv-item-name {
+    font-size: 18pt !important;
+  }
+
+  html.gv-rsv-receipt-print .gv-rsv-item-sku,
+  html.gv-rsv-receipt-print .gv-rsv-items th,
+  html.gv-rsv-receipt-print .gv-rsv-foot small {
+    font-size: 14pt !important;
+  }
+
+  html.gv-rsv-receipt-print .gv-rsv-total {
+    font-size: 32pt !important;
+  }
+
+  html.gv-rsv-receipt-print .gv-rsv-foot {
+    font-size: 16pt !important;
+  }
+}
+
+/* Desktop / térmica: o shell captura o article em 80 mm. */
+html.gv-rsv-thermal .gv-rsv-doc {
+  width: 80mm;
+  max-width: 80mm;
+  padding: 3mm 2.5mm 5mm;
+  font-size: 18px;
+  font-family: Tahoma, Verdana, 'Arial Black', Arial, sans-serif;
+}
+
+html.gv-rsv-thermal .gv-rsv-company {
+  font-size: 22px;
+}
+
+html.gv-rsv-thermal .gv-rsv-legal,
+html.gv-rsv-thermal .gv-rsv-item-sku,
+html.gv-rsv-thermal .gv-rsv-note {
+  font-size: 14px;
+}
+
+html.gv-rsv-thermal .gv-rsv-headline {
+  font-size: 20px;
+}
+
+html.gv-rsv-thermal .gv-rsv-meta,
+html.gv-rsv-thermal .gv-rsv-items,
+html.gv-rsv-thermal .gv-rsv-pay {
+  font-size: 16px;
+}
+
+html.gv-rsv-thermal .gv-rsv-item-name {
+  font-size: 17px;
+}
+
+html.gv-rsv-thermal .gv-rsv-total {
+  font-size: 24px;
+}

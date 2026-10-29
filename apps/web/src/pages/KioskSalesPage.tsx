@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PixQrPaymentModal } from '../components/payments/PixQrPaymentModal';
+import { NumericInput } from '../components/NumericInput';
 import type { PaymentIntent } from '../lib/payments';
 import { formatBRL } from '../lib/format';
 import { api } from '../lib/api';
@@ -92,11 +93,11 @@ function KioskPairing({
         </label>
         <label>
           Número do PDV
-          <input
-            type="number"
+          <NumericInput
+            integer
             min={1}
             value={terminalNumber}
-            onChange={(e) => setTerminalNumber(e.target.value)}
+            onChange={(raw) => setTerminalNumber(raw)}
           />
         </label>
         <label>
