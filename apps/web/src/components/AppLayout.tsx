@@ -411,8 +411,8 @@ export function AppLayout({ onLogout }: { onLogout: () => void }) {
                 {me.data.name}
               </span>
             ) : null}
+            <span className="sidebar-tag">{profileLabel(profile)}</span>
           </div>
-          <span className="sidebar-tag">{profileLabel(profile)}</span>
         </div>
 
         {showNovaVenda ? (

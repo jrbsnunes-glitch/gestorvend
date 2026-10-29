@@ -34,17 +34,19 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 2.25rem;
+  height: 9rem;
+  min-height: 9rem;
 }
 
 .sidebar-brand-mark {
   display: block;
-  width: auto;
-  max-width: calc(100% - 2.6rem);
-  max-height: 56px;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 9rem;
   margin-inline: auto;
   object-fit: contain;
-  object-position: center;
+  object-position: center center;
 }
 
 .sidebar-brand-top .sidebar-toggle {
@@ -102,7 +104,14 @@
   background: rgba(74, 222, 159, 0.28);
   border-radius: var(--radius-pill);
   padding: 0.18rem 0.65rem;
-  margin-top: 0.15rem;
+  margin-top: 0.2rem;
+}
+
+.sidebar-cta-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0 0.85rem 0.85rem;
 }
 
 .sidebar-cta {
@@ -110,7 +119,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
-  margin: 0 0.85rem 0.85rem;
+  margin: 0;
   padding: 0.7rem 0.9rem;
   border-radius: var(--radius-md);
   background: var(--color-accent);
@@ -126,6 +135,17 @@
   filter: brightness(1.05);
   text-decoration: none;
   transform: translateY(-1px);
+}
+
+.sidebar-cta--secondary {
+  background: transparent;
+  color: #ecfdf5;
+  border: 1px solid rgba(236, 253, 245, 0.38);
+  box-shadow: none;
+}
+
+.sidebar-cta--secondary:hover {
+  background: rgba(236, 253, 245, 0.12);
 }
 
 .sidebar-nav {
@@ -605,9 +625,13 @@ html.gv-desktop .main-topbar {
   .sidebar--collapsed .sidebar-brand-top {
     flex-direction: column;
     align-items: center;
+    height: 2.5rem;
+    min-height: 2.5rem;
   }
 
   .sidebar--collapsed .sidebar-brand-mark {
+    width: auto;
+    height: auto;
     max-height: 36px;
     max-width: 40px;
     object-position: center;
@@ -621,8 +645,12 @@ html.gv-desktop .main-topbar {
     display: none;
   }
 
-  .sidebar--collapsed .sidebar-cta {
+  .sidebar--collapsed .sidebar-cta-stack {
     margin: 0 0.4rem 0.65rem;
+  }
+
+  .sidebar--collapsed .sidebar-cta {
+    margin: 0;
     padding: 0.55rem;
     border-radius: var(--radius-md);
   }
@@ -704,7 +732,7 @@ html.gv-desktop .main-topbar {
   }
 
   .sidebar-brand-mark {
-    max-height: 48px;
+    max-height: 9rem;
   }
 
   .sidebar-hamburger {
@@ -835,8 +863,12 @@ html.gv-desktop .main-topbar {
     width: 100%;
   }
 
-  .sidebar--collapsed .sidebar-cta {
+  .sidebar--collapsed .sidebar-cta-stack {
     margin: 0 0.85rem 0.85rem;
+  }
+
+  .sidebar--collapsed .sidebar-cta {
+    margin: 0;
     padding: 0.7rem 0.9rem;
   }
 }

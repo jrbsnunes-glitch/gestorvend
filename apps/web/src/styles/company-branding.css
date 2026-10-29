@@ -7,17 +7,15 @@
 }
 
 /* Sidebar */
-.sidebar-brand-mark.company-logo--tenant {
-  max-height: 52px;
-  max-width: calc(100% - 2.6rem);
-  width: auto;
-  margin-inline: auto;
-  object-position: center;
-}
-
+.sidebar-brand-mark.company-logo--tenant,
 .sidebar-brand-mark.company-logo--default {
   width: 100%;
-  max-height: 64px;
+  height: 100%;
+  max-width: 100%;
+  max-height: 9rem;
+  margin-inline: auto;
+  object-fit: contain;
+  object-position: center center;
 }
 
 .sidebar-brand-name {
