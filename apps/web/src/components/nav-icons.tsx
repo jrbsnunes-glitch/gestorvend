@@ -18,6 +18,9 @@ export type NavIconName =
   | 'balance'
   | 'registers'
   | 'company'
+  | 'payments'
+  | 'pdvTerminals'
+  | 'print'
   | 'users'
   | 'logs'
   | 'restaurant'
@@ -188,6 +191,32 @@ export function NavIcon({ name, title }: { name: NavIconName; title?: string }) 
           <path d="M4 21V7l8-4 8 4v14" />
           <path d="M9 21v-6h6v6" />
           <path d="M9 11h.01M15 11h.01M9 15h.01M15 15h.01" />
+        </Svg>
+      );
+    case 'payments':
+      return (
+        <Svg title={title}>
+          <path d="M4 8h16a1 1 0 0 1 1 1v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a1 1 0 0 1 1-1Z" />
+          <path d="M6 8V6.5A2.5 2.5 0 0 1 8.5 4H18" />
+          <path d="M16 13.5h3.5v3H16a1.5 1.5 0 0 1 0-3Z" />
+        </Svg>
+      );
+    case 'pdvTerminals':
+      return (
+        <Svg title={title}>
+          <rect x="3" y="3.5" width="18" height="12" rx="2" />
+          <path d="M8 20.5h8" />
+          <path d="M12 15.5v5" />
+          <path d="M7 8h4M7 11h6" />
+        </Svg>
+      );
+    case 'print':
+      return (
+        <Svg title={title}>
+          <path d="M7 8V4h10v4" />
+          <path d="M6 16H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-1" />
+          <rect x="7" y="13" width="10" height="7" rx="1" />
+          <path d="M17 12h.01" />
         </Svg>
       );
     case 'users':
