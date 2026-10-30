@@ -14,13 +14,17 @@
  *   npm run tenant:duplicate-products -w @gestorvend/api -- --slug balby --by barcode
  *   npm run tenant:duplicate-products -w @gestorvend/api -- --slug balby --csv
  *   npm run tenant:duplicate-products -w @gestorvend/api -- --slug balby --confirm balby
+ *   npm run tenant:duplicate-products -w @gestorvend/api -- --slug str --force --controls 557,810 --confirm str
  *
  * Opções:
  *   --slug <tenant>     (obrigatório) um único tenant do banco central.
  *   --by name|barcode   chave de agrupamento (default: name).
  *   --only-zero         lista só grupos que têm ao menos um extra sem uso.
+ *   --controls 1,2,3    só estes controlNumber (EXTRA). Exige --force para `revisar`.
+ *   --force             também processa `revisar`: transfere saldo ao KEEP e tenta apagar;
+ *                       se houver venda/FK, inativa.
  *   --csv [path]        CSV da listagem (default: apps/api/data/duplicados-<slug>-<by>.csv).
- *   --confirm <tenant>  repete o slug para apagar só os `candidato_exclusao`.
+ *   --confirm <tenant>  repete o slug para apagar.
  *   --dry-run           só lista (default se não houver --confirm).
  *
  * Variáveis: CENTRAL_DATABASE_URL, TENANT_DATABASE_URL (modelo; troca só o nome do DB).
@@ -28,7 +32,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import * as path from 'path';
 import { PrismaClient as CentralClient } from '../src/generated/central-client';
-import { PrismaClient as TenantClient } from '../src/generated/tenant-client';
+import { Prisma, PrismaClient as TenantClient } from '../src/generated/tenant-client';
 import { buildTenantDatabaseUrl } from '../src/provisioning/tenant-database-name';
 
 /* eslint-disable no-console */
@@ -315,6 +319,49 @@ function barcodeOf(p: ProductRow): string {
   return [...new Set(codes)].join('|');
 }
 
+function parseControlList(raw: string): Set<number> {
+  const set = new Set<number>();
+  for (const part of raw.split(/[,\s]+/)) {
+    const n = Number(part.trim());
+    if (Number.isInteger(n) && n > 0) set.add(n);
+  }
+  return set;
+}
+
+/** Soma o saldo do extra no KEEP (mesmos locais) e zera o extra. */
+async function mergeStockToKeeper(db: TenantClient, extra: ProductRow, keeper: ProductRow) {
+  const keeperVariantId = keeper.variants[0]?.id;
+  if (!keeperVariantId) return 0;
+  const extraIds = extra.variants.map((v) => v.id);
+  const bals = await db.stockBalance.findMany({
+    where: { variantId: { in: extraIds } },
+  });
+  let moved = 0;
+  for (const b of bals) {
+    const qty = Number(b.quantity);
+    if (Math.abs(qty) < 1e-9) continue;
+    await db.stockBalance.upsert({
+      where: {
+        variantId_locationId: { variantId: keeperVariantId, locationId: b.locationId },
+      },
+      create: {
+        variantId: keeperVariantId,
+        locationId: b.locationId,
+        quantity: new Prisma.Decimal(qty),
+      },
+      update: { quantity: { increment: qty } },
+    });
+    await db.stockBalance.update({
+      where: {
+        variantId_locationId: { variantId: b.variantId, locationId: b.locationId },
+      },
+      data: { quantity: 0 },
+    });
+    moved += qty;
+  }
+  return moved;
+}
+
 async function main() {
   const apiRoot = path.join(__dirname, '..');
   const repoRoot = path.join(apiRoot, '..', '..');
@@ -331,6 +378,8 @@ async function main() {
   const confirm = String(args.confirm ?? '').trim();
   const dryRun = args['dry-run'] === true || confirm === '';
   const onlyZero = args['only-zero'] === true;
+  const force = args.force === true;
+  const controlSet = parseControlList(String(args.controls ?? ''));
 
   if (!slug) throw new Error('Informe --slug (ex.: --slug balby). O script roda em um único tenant.');
   if (!dryRun && confirm !== slug) {
@@ -426,6 +475,21 @@ async function main() {
   const candidates = extras.filter((r) => r.decision === 'candidato_exclusao');
   const review = extras.filter((r) => r.decision === 'revisar');
 
+  let targets = candidates;
+  if (controlSet.size > 0) {
+    targets = extras.filter((r) => controlSet.has(r.product.controlNumber));
+    const missing = [...controlSet].filter((n) => !targets.some((r) => r.product.controlNumber === n));
+    if (missing.length) {
+      console.log(`Controles não encontrados como EXTRA duplicado: ${missing.join(', ')}`);
+    }
+    const needForce = targets.filter((r) => r.decision !== 'candidato_exclusao');
+    if (needForce.length && !force) {
+      throw new Error(
+        `Controles ${needForce.map((r) => r.product.controlNumber).join(', ')} são 'revisar'. Use --force.`,
+      );
+    }
+  }
+
   console.log(`Tenant .............. ${slug} (${tenant.companyName})`);
   console.log(`Banco ............... ${tenant.databaseName}`);
   console.log(`Agrupar por ......... ${by === 'name' ? 'nome normalizado' : 'código de barras'}`);
@@ -433,16 +497,19 @@ async function main() {
   console.log(`Grupos duplicados ... ${groupCount}`);
   console.log(`Extras (duplicatas) . ${extras.length}`);
   console.log(`  sem movimentação .. ${candidates.length}  → candidato_exclusao`);
-  console.log(`  com alguma uso .... ${review.length}  → revisar (não apaga)`);
-  console.log(`Modo ................ ${dryRun ? 'DRY-RUN (só lista)' : 'EXCLUSÃO dos candidatos sem uso'}`);
+  console.log(`  com alguma uso .... ${review.length}  → revisar`);
+  if (controlSet.size > 0) {
+    console.log(`Alvo (--controls) ... ${targets.map((r) => '#' + r.product.controlNumber).join(', ')}`);
+  }
+  console.log(`Modo ................ ${dryRun ? 'DRY-RUN (só lista)' : force ? 'EXCLUSÃO/INATIVAÇÃO (--force)' : 'EXCLUSÃO dos candidatos sem uso'}`);
   console.log('');
 
+  const printRows = controlSet.size > 0 ? listed.filter((r) => controlSet.has(r.product.controlNumber) || (r.role === 'KEEP' && targets.some((t) => t.groupKey === r.groupKey))) : listed;
   let current = '';
-  for (const row of listed) {
+  for (const row of printRows) {
     if (row.groupKey !== current) {
       current = row.groupKey;
-      const size = listed.filter((r) => r.groupKey === current).length;
-      console.log(`=== ${current}  (${size} produtos) ===`);
+      console.log(`=== ${current} ===`);
     }
     const u = row.usage;
     const flag = row.product.isActive ? 'ativo  ' : 'inativo';
@@ -454,11 +521,11 @@ async function main() {
     console.log(`        ${row.product.name}`);
   }
 
-  const csvPath =
-    typeof args.csv === 'string' && args.csv.trim()
-      ? path.resolve(String(args.csv).trim())
-      : path.join(apiRoot, 'data', `duplicados-${slug}-${by}.csv`);
-  {
+  if (controlSet.size === 0) {
+    const csvPath =
+      typeof args.csv === 'string' && args.csv.trim()
+        ? path.resolve(String(args.csv).trim())
+        : path.join(apiRoot, 'data', `duplicados-${slug}-${by}.csv`);
     const header = [
       'grupo',
       'papel',
@@ -528,23 +595,39 @@ async function main() {
   }
 
   console.log('');
-  console.log(`Excluindo ${candidates.length} produto(s) sem movimentação...`);
+  console.log(`Processando ${targets.length} produto(s)...`);
   let ok = 0;
+  let deactivated = 0;
   let fail = 0;
-  for (const row of candidates) {
+  for (const row of targets) {
+    const keeper = listed.find((r) => r.groupKey === row.groupKey && r.role === 'KEEP');
     try {
+      if (keeper && Math.abs(row.usage.saldo) >= 1e-9) {
+        const moved = await mergeStockToKeeper(db, row.product, keeper.product);
+        console.log(
+          `  saldo ${moved} de #${row.product.controlNumber} → KEEP #${keeper.product.controlNumber}`,
+        );
+      }
       await db.product.delete({ where: { id: row.product.id } });
       ok += 1;
-      console.log(`  OK  #${row.product.controlNumber}  ${row.product.name}`);
+      console.log(`  OK excluído  #${row.product.controlNumber}  ${row.product.name}`);
     } catch (err) {
-      fail += 1;
-      const msg = err instanceof Error ? err.message : String(err);
-      console.log(`  FALHOU  #${row.product.controlNumber}  ${row.product.name}  (${msg})`);
+      try {
+        await db.product.update({ where: { id: row.product.id }, data: { isActive: false } });
+        deactivated += 1;
+        console.log(
+          `  INATIVADO  #${row.product.controlNumber}  ${row.product.name}  (há venda/FK; saldo já foi ao KEEP)`,
+        );
+      } catch (err2) {
+        fail += 1;
+        const msg = err2 instanceof Error ? err2.message : String(err);
+        console.log(`  FALHOU  #${row.product.controlNumber}  ${row.product.name}  (${msg})`);
+      }
     }
   }
   await db.$disconnect();
   console.log('');
-  console.log(`Excluídos: ${ok}  |  falhas: ${fail}  |  revisões pendentes (não tocadas): ${review.length}`);
+  console.log(`Excluídos: ${ok}  |  inativados: ${deactivated}  |  falhas: ${fail}`);
 }
 
 main().catch((e) => {
