@@ -30,6 +30,7 @@
     "tenant:reset-admin": "ts-node -r tsconfig-paths/register scripts/reset-tenant-admin.ts",
     "tenant:set-tax-unit": "ts-node -r tsconfig-paths/register scripts/set-product-tax-unit.ts",
     "tenant:reset-operacional": "ts-node -r tsconfig-paths/register scripts/reset-operacional-tenant.ts",
+    "tenant:duplicate-products": "ts-node -r tsconfig-paths/register scripts/find-duplicate-products.ts",
     "tenant:transfer-cash-sales": "ts-node -r tsconfig-paths/register scripts/transfer-cash-session-sales.ts",
     "tenant:reassign-cash-sales": "ts-node -r tsconfig-paths/register scripts/reassign-cash-session-by-sale-numbers.ts",
     "tenant:import-balby-products": "ts-node -r tsconfig-paths/register scripts/import-balby-products.ts",
