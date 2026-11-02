@@ -301,7 +301,7 @@ const PANEL_MODAL_TITLES: Record<DashPanelKey, string> = {
 export function DashboardPage() {
   const navigate = useNavigate();
   const company = useCompanyBranding();
-  const showMonthRevenue = isManager();
+  const managerView = isManager();
   const [expandedPanel, setExpandedPanel] = useState<DashPanelKey | null>(null);
   const turnoverReportPath = buildProductTurnoverLastDaysPath(30, '/');
   const overview = useQuery({
@@ -327,6 +327,7 @@ export function DashboardPage() {
       const res = await api<{ points: Overview['salesTrendMonth'] }>('/dashboard/sales-trend-month');
       return res.points;
     },
+    enabled: managerView,
     staleTime: 0,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
@@ -340,11 +341,11 @@ export function DashboardPage() {
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return;
       void overview.refetch();
-      void salesTrendMonth.refetch();
+      if (managerView) void salesTrendMonth.refetch();
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [overview, salesTrendMonth]);
+  }, [overview, salesTrendMonth, managerView]);
 
   const salesTrendPoints = useMemo(
     () => mergeTrendIntoMonthAxis(monthAxis, salesTrendMonth.data ?? data?.salesTrendMonth),
@@ -412,7 +413,7 @@ export function DashboardPage() {
         <div className="company-page-head__text">
           <h1 className="page-title">Início</h1>
           <p className="page-desc">
-            Resumo do dia e da operação.
+            {managerView ? 'Resumo do dia e da operação.' : 'Caixas abertos no momento.'}
             {overview.dataUpdatedAt ? (
               <>
                 {' '}
@@ -438,6 +439,7 @@ export function DashboardPage() {
         </div>
       )}
 
+      {managerView ? (
       <section className="dash-hero">
         <article className="dash-hero-card dash-hero-today">
           <span className="dash-hero-label">Faturamento de hoje</span>
@@ -466,7 +468,7 @@ export function DashboardPage() {
             </span>
           ) : null}
         </article>
-        {showMonthRevenue && (
+        {managerView && (
           <article className="dash-hero-card dash-hero-month">
             <span className="dash-hero-label">Faturamento do mês</span>
             <strong className="dash-hero-value">
@@ -527,7 +529,9 @@ export function DashboardPage() {
           )}
         </article>
       </section>
+      ) : null}
 
+      {managerView ? (
       <section className="dash-grid dash-grid--row2">
         <article className="card dash-block dash-block--payables">
           <header className="dash-block-head">
@@ -589,6 +593,7 @@ export function DashboardPage() {
           ) : null}
         </article>
       </section>
+      ) : null}
 
       <section className="dash-row-sessions">
         <article className="card dash-block dash-block--sessions">
@@ -604,9 +609,20 @@ export function DashboardPage() {
           {!overview.isLoading && !openSessions.length ? (
             <p className="dash-empty">Nenhum operador em caixa no momento.</p>
           ) : null}
+          {openSessions.length ? (
+            <ul className="dash-session-list">
+              {openSessions.map((s) => (
+                <li key={s.id}>
+                  <strong className="dash-session-op">{s.operator}</strong>
+                  <span className="dash-session-date">{formatDate(s.openedAt)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </article>
       </section>
 
+      {managerView ? (
       <section className="dash-row-sales-chart">
         <article className="card dash-block dash-block--sales-trend">
           <header className="dash-block-head">
@@ -619,8 +635,9 @@ export function DashboardPage() {
           />
         </article>
       </section>
+      ) : null}
 
-      {expandedPanel && (
+      {expandedPanel && managerView && (
         <FormModalBackdrop className="modal-backdrop--wide" onClose={() => setExpandedPanel(null)}>
           <div
             className="modal modal--wide dash-panel-modal"
