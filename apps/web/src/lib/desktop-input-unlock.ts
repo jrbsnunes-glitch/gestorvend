@@ -67,6 +67,23 @@ function neutralizeSearchTree(root: ParentNode): void {
   });
 }
 
+function editableFromEvent(e: Event): HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null {
+  const t = e.target;
+  const field = t instanceof HTMLElement ? t.closest('input, textarea, select') : null;
+  if (!isEditableField(field) || field.disabled) return null;
+  if (field instanceof HTMLInputElement && field.readOnly) return null;
+  return field;
+}
+
+function focusField(field: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): void {
+  if (!field.isConnected) return;
+  try {
+    field.focus({ preventScroll: true });
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Electron/Windows: o teclado some após a 1ª pesquisa porque o foco fica
  * num input desmontado ou na barra Alt. Recoloca no campo clicado e limpa zumbis.
@@ -82,12 +99,22 @@ export function installDesktopInputUnlock(): void {
     'pointerdown',
     (e) => {
       blurIfDetached();
-      const field = e.target instanceof HTMLElement ? e.target.closest('input, textarea, select') : null;
-      if (!isEditableField(field) || field.disabled) return;
-      if (field instanceof HTMLInputElement && field.readOnly) return;
-      if (document.activeElement !== field) {
-        field.focus({ preventScroll: true });
-      }
+      const field = editableFromEvent(e);
+      if (!field) return;
+      if (document.activeElement !== field) focusField(field);
+      requestAnimationFrame(() => {
+        if (document.activeElement !== field) focusField(field);
+      });
+    },
+    true,
+  );
+
+  document.addEventListener(
+    'click',
+    (e) => {
+      const field = editableFromEvent(e);
+      if (!field) return;
+      if (document.activeElement !== field) focusField(field);
     },
     true,
   );
@@ -99,6 +126,10 @@ export function installDesktopInputUnlock(): void {
     },
     true,
   );
+
+  window.addEventListener('focus', () => {
+    restoreDesktopKeyboard();
+  });
 
   document.addEventListener(
     'keydown',

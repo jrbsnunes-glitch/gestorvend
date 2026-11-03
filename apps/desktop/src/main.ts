@@ -48,9 +48,10 @@ if (!app.isReady()) {
   app.commandLine.appendSwitch('disable-renderer-backgrounding');
   app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
-  // Sem cache HTTP: o front muda no servidor (update.sh) e o atalho antigo
-  // continuava mostrando v1.1.25 / CSS velho.
-  app.commandLine.appendSwitch('disable-http-cache');
+  // Não desligar o cache HTTP: o Vite gera /assets/* com hash + nginx
+  // Cache-Control immutable. index.html já vai no-store no servidor, e
+  // loadURL usa ?_gv= para não reabrir HTML velho. Sem cache o PDV
+  // rebaixa JS/CSS a cada abertura e a digitação trava.
 }
 
 const gotSingleInstance = app.requestSingleInstanceLock();
@@ -649,7 +650,6 @@ async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
     );
   }
 
-  await refreshRemoteCache(win);
   void win.loadURL(withCacheBust(target));
   forceShowWindow(win);
 
@@ -828,6 +828,18 @@ function buildMenu() {
       label: 'Exibir',
       submenu: [
         { role: 'reload', label: 'Recarregar' },
+        {
+          label: 'Recarregar e limpar cache',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              void (async () => {
+                await refreshRemoteCache(mainWindow!);
+                mainWindow!.webContents.reloadIgnoringCache();
+              })();
+            }
+          },
+        },
         { role: 'toggleDevTools', label: 'Ferramentas de desenvolvedor' },
         { type: 'separator' },
         { role: 'resetZoom', label: 'Zoom padrão' },

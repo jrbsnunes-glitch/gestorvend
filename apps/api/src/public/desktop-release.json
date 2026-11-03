@@ -1,5 +1,5 @@
 {
-  "version": "1.0.71",
+  "version": "1.0.72",
   "downloadUrl": "",
-  "notes": "Cupom térmico usa melhor a largura da bobina; fechamento de caixa um pouco maior."
+  "notes": "Abre mais rápido (cache dos arquivos do sistema) e teclado mais estável nos campos."
 }
