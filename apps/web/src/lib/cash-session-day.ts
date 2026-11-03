@@ -14,3 +14,6 @@ export function cashSessionFromPreviousDay(
   if (Number.isNaN(opened.getTime())) return false;
   return calendarDayFromInstant(opened, timeZone) !== calendarDayNow(timeZone);
 }
+
+export const STALE_CASH_SALE_BLOCK_MESSAGE =
+  'Caixa aberto em outro dia. Feche o caixa atual e abra um novo para registrar as vendas de hoje.';

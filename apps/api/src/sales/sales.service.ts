@@ -25,6 +25,8 @@ import { CompanyService } from '../company/company.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { UserPermissionsService } from '../users/user-permissions.service';
 import { calendarDateAtLocalNoon, parseQueryDate } from '../common/date-range.util';
+import { calendarDayFromInstant, calendarDayNow } from '../common/iana-timezone.util';
+import { getActiveTimezone } from '../common/tenant-timezone.context';
 import { resolveSaleStockQuantity } from '../common/product-conversion.util';
 import { PaymentsService } from '../payments/payments.service';
 import { calcRestaurantFees } from '../restaurant/restaurant-fees';
@@ -1045,14 +1047,25 @@ export class SalesService {
           'Somente gerente pode operar o caixa aberto de outro operador.',
         );
       }
+      this.assertCashSessionIsToday(session.openedAt);
       return session.id;
     }
 
     const own = await db.cashRegisterSession.findFirst({
       where: { userId, status: CashSessionStatus.OPEN },
-      select: { id: true },
+      select: { id: true, openedAt: true },
     });
+    if (own) this.assertCashSessionIsToday(own.openedAt);
     return own?.id ?? null;
+  }
+
+  private assertCashSessionIsToday(openedAt: Date): void {
+    const tz = getActiveTimezone();
+    if (calendarDayFromInstant(openedAt, tz) !== calendarDayNow(tz)) {
+      throw new BadRequestException(
+        'Caixa aberto em outro dia. Feche o caixa atual e abra um novo para registrar as vendas de hoje.',
+      );
+    }
   }
 
   async findById(tenantSlug: string, saleId: string) {

@@ -15,6 +15,7 @@ import { api } from '../lib/api';
 import { queueCashMovementAutoPrint } from '../lib/cash-movement-print';
 import { isManager } from '../lib/auth';
 import { cashSessionFromPreviousDay } from '../lib/cash-session-day';
+import { restoreDesktopKeyboard } from '../lib/desktop-input-unlock';
 import { formatBRL, formatDate } from '../lib/format';
 import {
   analyzeCashExpenseDiff,
@@ -1567,17 +1568,6 @@ function ManagerCashReconciliation({
 
   const declJson = useMemo(() => JSON.stringify(session.closingByMethod ?? {}), [session.closingByMethod]);
 
-  const expectedSig = useMemo(() => JSON.stringify(expected), [expected]);
-
-  const visibleKeysSig = useMemo(
-    () =>
-      buildCashReconciliationRows(session, expected)
-        .map((r) => r.key)
-        .sort()
-        .join('|'),
-    [session.id, declJson, expectedSig, session.openingBalance],
-  );
-
   const opening = useMemo(() => parseFloat(session.openingBalance) || 0, [session.openingBalance]);
 
   const mergedKeys = useMemo(
@@ -1711,7 +1701,7 @@ function ManagerCashReconciliation({
     return { closingByMethod, reconciliationExpenseDetails };
   }
 
-  /** Declarado oficial no servidor ou após salvar — resincroniza o rascunho e limpa inclusões só locais. */
+  /** Declarado oficial no servidor — não ressincroniza a cada recálculo do esperado (apaga a digitação). */
   useEffect(() => {
     const decl = session.closingByMethod;
     const keys = mergeManagerReconciliationKeys(
@@ -1726,7 +1716,10 @@ function ManagerCashReconciliation({
     }
     setDraft(next);
     setAddedMethodKeys([]);
-  }, [session.id, session.reconciledAt, declJson, expectedSig, session.openingBalance, visibleKeysSig]);
+    // expected/abertura ficam de fora de propósito: o rascunho local não pode
+    // ser zerado enquanto o gerente ainda está digitando os apresentados.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só o declarado oficial
+  }, [session.id, session.reconciledAt, declJson]);
 
   useEffect(() => {
     const raw = session.reconciliationExpenseDetails;
@@ -1943,12 +1936,14 @@ function ManagerCashReconciliation({
                   Remover
                 </button>
               ) : null}
-              <input
+              <NumericInput
                 aria-label={`Apresentado ${PAYMENT_LABELS[key] ?? key}`}
-                inputMode="decimal"
+                min={0}
                 value={draft[key] ?? ''}
-                onChange={(e) => setDraft((prev) => ({ ...prev, [key]: e.target.value }))}
+                onChange={(raw) => setDraft((prev) => ({ ...prev, [key]: raw }))}
+                onFocus={() => restoreDesktopKeyboard()}
                 placeholder="0"
+                selectOnFocus
                 style={{
                   padding: '0.4rem 0.5rem',
                   textAlign: 'right',
@@ -2030,15 +2025,17 @@ function ManagerCashReconciliation({
                   alignItems: 'center',
                 }}
               >
-                <input
-                  inputMode="decimal"
+                <NumericInput
+                  min={0}
                   value={row.amount}
-                  onChange={(e) =>
+                  onChange={(raw) =>
                     setExpenseLineDrafts((prev) =>
-                      prev.map((r) => (r.uid === row.uid ? { ...r, amount: e.target.value } : r)),
+                      prev.map((r) => (r.uid === row.uid ? { ...r, amount: raw } : r)),
                     )
                   }
+                  onFocus={() => restoreDesktopKeyboard()}
                   placeholder="0"
+                  selectOnFocus
                   disabled={patchDeclared.isPending}
                   style={{
                     padding: '0.38rem 0.45rem',
@@ -2257,6 +2254,10 @@ function SessionDetailDrawer({
     setSalesOpen(!salesCollapsible);
     setExpandedSale(null);
   }, [s?.id, salesCollapsible]);
+
+  useEffect(() => {
+    restoreDesktopKeyboard();
+  }, [s?.id]);
 
   return (
     <div className="pos-history-drawer" role="presentation" onClick={onClose}>

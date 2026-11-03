@@ -453,10 +453,10 @@
   margin: 0 auto 1.5rem;
   max-width: 640px;
   padding: 0.85rem 1rem;
-  background: rgba(217, 119, 6, 0.2);
-  border: 1px solid rgba(251, 191, 36, 0.55);
+  background: rgba(185, 28, 28, 0.32);
+  border: 1px solid rgba(248, 113, 113, 0.7);
   border-radius: 12px;
-  color: #fde68a;
+  color: #fecaca;
   font-size: 0.92rem;
   line-height: 1.45;
   text-align: left;
@@ -485,6 +485,12 @@
   border-bottom: 1px solid #fdba74;
   font-size: 0.88rem;
   color: #9a3412;
+}
+
+.pos-stale-cash-banner--block {
+  background: #fef2f2;
+  border-bottom-color: #fca5a5;
+  color: #991b1b;
 }
 
 /* === Lista de caixas abertos (visão de gerente) ====================== */

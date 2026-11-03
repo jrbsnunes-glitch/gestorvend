@@ -61,7 +61,10 @@ import {
   withDesktopCashierLimits,
   type PdvTerminalCapabilities,
 } from '../lib/pdv-terminal-context';
-import { cashSessionFromPreviousDay } from '../lib/cash-session-day';
+import {
+  cashSessionFromPreviousDay,
+  STALE_CASH_SALE_BLOCK_MESSAGE,
+} from '../lib/cash-session-day';
 import { parseBarcodeWeight, type ScaleMode } from '../lib/pos-scale';
 import { usePosScale } from '../lib/use-pos-scale';
 import {
@@ -884,13 +887,14 @@ function PosGateway({
 
           {staleOpenCash && (
             <div className="pos-gateway-stale-cash" role="alert">
-              <strong>Caixa de outro dia ainda aberto</strong>
+              <strong>Caixa de outro dia ainda aberto — vendas bloqueadas</strong>
               <p>
-                Este caixa foi aberto em <strong>{formatDate(session.openedAt)}</strong>. Feche o
-                caixa em aberto para começar as vendas do dia de hoje
+                Este caixa foi aberto em <strong>{formatDate(session.openedAt)}</strong>. O sistema
+                não aceita vendas neste caixa. Feche o caixa em aberto e abra um novo para o dia de
+                hoje
                 {pdvCapabilities.isSatellite
                   ? ' — o fechamento é feito no PDV mestre.'
-                  : ' (use Fechar caixa no PDV e depois abra um caixa novo).'}
+                  : ' (entre no PDV, use Fechar caixa e depois abra um caixa novo).'}
               </p>
             </div>
           )}
@@ -1229,6 +1233,7 @@ function PosScreen({
   const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
   const productSearchStaleMs = isGestorVendDesktop() ? 120_000 : 0;
+  const staleCashBlocksSales = cashSessionFromPreviousDay(session.openedAt);
 
   /* --- estado do carrinho atual --- */
   const [lines, setLines] = useState<CartLine[]>([]);
@@ -1402,6 +1407,11 @@ function PosScreen({
   }
 
   async function requestFinalizeSale() {
+    if (cashSessionFromPreviousDay(session.openedAt)) {
+      setToast({ kind: 'err', text: STALE_CASH_SALE_BLOCK_MESSAGE });
+      setPaymentMenuOpen(false);
+      return;
+    }
     const creditPays = payments.filter((p) => isCustomerCreditKind(p.method));
     if (creditPays.length) {
       if (!customer?.id) {
@@ -1582,6 +1592,10 @@ function PosScreen({
 
   const openPaymentMenu = useCallback(async () => {
     if (linesRef.current.length === 0) return;
+    if (cashSessionFromPreviousDay(session.openedAt)) {
+      setToast({ kind: 'err', text: STALE_CASH_SALE_BLOCK_MESSAGE });
+      return;
+    }
     await refreshCartStock();
     setPayments([]);
     setPendingCreditPayment(null);
@@ -1599,7 +1613,7 @@ function PosScreen({
       }
     }
     setPaymentMenuOpen(true);
-  }, [refreshCartStock]);
+  }, [refreshCartStock, session.openedAt]);
 
   /**
    * Detalhe da sessão (incluindo o `summary.byMethod` com o esperado para o
@@ -1912,8 +1926,11 @@ function PosScreen({
   /* --- mutações --- */
 
   const createSale = useMutation({
-    mutationFn: (permissionPassword?: string) =>
-      api<{ id: string; number: number }>('/sales', {
+    mutationFn: (permissionPassword?: string) => {
+      if (cashSessionFromPreviousDay(session.openedAt)) {
+        throw new Error(STALE_CASH_SALE_BLOCK_MESSAGE);
+      }
+      return api<{ id: string; number: number }>('/sales', {
         method: 'POST',
         json: {
           customerId: customer?.id ?? null,
@@ -1976,7 +1993,8 @@ function PosScreen({
             authCode: p.authCode ?? null,
           })),
         },
-      }),
+      });
+    },
     onSuccess: async (sale) => {
       sessionStorage.removeItem(GV_POS_CHECKOUT_FAILURE_KEY);
       setPermModal(null);
@@ -2847,11 +2865,12 @@ function PosScreen({
       />
 
       <DeliveryPendingBanner />
-      {cashSessionFromPreviousDay(session.openedAt) && (
-        <div className="pos-stale-cash-banner no-print" role="alert">
+      {staleCashBlocksSales && (
+        <div className="pos-stale-cash-banner pos-stale-cash-banner--block no-print" role="alert">
           <span>
             Este caixa foi aberto em <strong>{formatDate(session.openedAt)}</strong>, em outro dia.
-            Feche o caixa em aberto para começar as vendas de hoje
+            <strong> Vendas não são aceitas neste caixa.</strong> Feche o caixa em aberto e abra um
+            novo para o dia de hoje
             {pdvCapabilities.canCloseCash
               ? ' — use Fechar caixa na barra acima e depois abra um caixa novo.'
               : ' — o fechamento é feito no PDV mestre.'}
@@ -2925,7 +2944,7 @@ function PosScreen({
             <button
               type="button"
               className="pos-btn pos-btn-finish"
-              disabled={lines.length === 0}
+              disabled={lines.length === 0 || staleCashBlocksSales}
               onClick={() => void openPaymentMenu()}
             >
               Ir para pagamento (F2)
@@ -3607,9 +3626,14 @@ function PosScreen({
                   lines.length === 0 ||
                   total <= 0 ||
                   createSale.isPending ||
+                  staleCashBlocksSales ||
                   Boolean(serviceTab && !paymentMenuOpen)
                 }
-                title="Finalizar venda (F2)"
+                title={
+                  staleCashBlocksSales
+                    ? STALE_CASH_SALE_BLOCK_MESSAGE
+                    : 'Finalizar venda (F2)'
+                }
                 tabIndex={serviceTab && !paymentMenuOpen ? -1 : undefined}
               >
                 {createSale.isPending ? 'Salvando…' : 'Finalizar venda'}
