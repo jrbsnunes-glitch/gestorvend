@@ -1,4 +1,4 @@
-import { isGestorVendDesktop } from './desktop-bridge';
+import { getDesktopApi, isGestorVendDesktop } from './desktop-bridge';
 
 function isEditableField(
   el: EventTarget | null,
@@ -84,6 +84,59 @@ function focusField(field: HTMLInputElement | HTMLTextAreaElement | HTMLSelectEl
   }
 }
 
+let lastRefocusAt = 0;
+
+/** Janela sem foco do SO: só o processo principal (blur+focus) devolve o teclado. */
+function refocusWindowIfNeeded(field?: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null): void {
+  if (document.hasFocus()) return;
+  const api = getDesktopApi();
+  if (!api?.refocusKeyboard) return;
+  const now = Date.now();
+  if (now - lastRefocusAt < 250) return;
+  lastRefocusAt = now;
+  api.refocusKeyboard();
+  if (field) {
+    window.setTimeout(() => focusField(field), 30);
+    window.setTimeout(() => focusField(field), 160);
+  }
+}
+
+/**
+ * Substitui alert/confirm/prompt pelo diálogo do processo principal. O
+ * MessageBox do Chromium no Windows deixa os campos sem teclado depois de
+ * fechar; prompt() nem existe no Electron.
+ */
+function installDesktopDialogs(): void {
+  const api = getDesktopApi();
+  const dialogSync = api?.dialogSync;
+  if (!dialogSync) return;
+  const restoreAfter = () => {
+    window.setTimeout(() => {
+      blurIfDetached();
+      const ae = document.activeElement;
+      if (isEditableField(ae) && ae.isConnected) focusField(ae);
+    }, 60);
+  };
+  window.alert = (message?: unknown) => {
+    dialogSync('alert', message == null ? '' : String(message));
+    restoreAfter();
+  };
+  window.confirm = (message?: string) => {
+    const ok = dialogSync('confirm', message == null ? '' : String(message)) === true;
+    restoreAfter();
+    return ok;
+  };
+  window.prompt = (message?: string, defaultValue?: string) => {
+    const r = dialogSync(
+      'prompt',
+      message == null ? '' : String(message),
+      defaultValue == null ? '' : String(defaultValue),
+    );
+    restoreAfter();
+    return typeof r === 'string' ? r : null;
+  };
+}
+
 /**
  * Electron/Windows: o teclado some após a 1ª pesquisa porque o foco fica
  * num input desmontado ou na barra Alt. Recoloca no campo clicado e limpa zumbis.
@@ -94,13 +147,18 @@ export function installDesktopInputUnlock(): void {
   document.documentElement.classList.add('gv-desktop');
   document.body.setAttribute('tabindex', '-1');
   neutralizeSearchTree(document);
+  installDesktopDialogs();
 
   document.addEventListener(
     'pointerdown',
     (e) => {
       blurIfDetached();
       const field = editableFromEvent(e);
-      if (!field) return;
+      if (!field) {
+        refocusWindowIfNeeded(null);
+        return;
+      }
+      refocusWindowIfNeeded(field);
       if (document.activeElement !== field) focusField(field);
       requestAnimationFrame(() => {
         if (document.activeElement !== field) focusField(field);

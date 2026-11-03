@@ -1,5 +1,5 @@
 {
-  "version": "1.0.72",
+  "version": "1.0.73",
   "downloadUrl": "",
-  "notes": "Abre mais rápido (cache dos arquivos do sistema) e teclado mais estável nos campos."
+  "notes": "Corrige o teclado travado nos campos após avisos e confirmações (pesquisas, PDV). Atalho Ctrl+Shift+K destrava o teclado."
 }

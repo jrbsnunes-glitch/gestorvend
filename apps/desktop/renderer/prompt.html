@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GestorVend</title>
+    <style>
+      :root {
+        --navy: #1b2d78;
+        --text: #0f172a;
+        --muted: #64748b;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 1rem 1.1rem;
+        color: var(--text);
+        background: #fff;
+      }
+      p {
+        margin: 0 0 0.6rem;
+        font-size: 0.92rem;
+        line-height: 1.4;
+        white-space: pre-wrap;
+      }
+      input {
+        width: 100%;
+        padding: 0.55rem 0.65rem;
+        font-size: 1rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+      }
+      input:focus {
+        outline: 2px solid var(--navy);
+        outline-offset: 1px;
+      }
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        margin-top: 0.85rem;
+      }
+      button {
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        cursor: pointer;
+        border: 1px solid #cbd5e1;
+        background: #fff;
+        color: var(--text);
+      }
+      button.primary {
+        background: var(--navy);
+        border-color: var(--navy);
+        color: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <p id="message"></p>
+    <input id="value" type="text" autocomplete="off" spellcheck="false" />
+    <div class="actions">
+      <button type="button" id="cancel">Cancelar</button>
+      <button type="button" class="primary" id="ok">OK</button>
+    </div>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const input = document.getElementById('value');
+      document.getElementById('message').textContent = params.get('message') || '';
+      input.value = params.get('value') || '';
+
+      let sent = false;
+      function send(value) {
+        if (sent) return;
+        sent = true;
+        window.gestorvend.promptResult(value);
+      }
+
+      document.getElementById('ok').addEventListener('click', () => send(input.value));
+      document.getElementById('cancel').addEventListener('click', () => send(null));
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          send(input.value);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          send(null);
+        }
+      });
+
+      window.addEventListener('DOMContentLoaded', () => {
+        input.focus();
+        input.select();
+      });
+      setTimeout(() => {
+        input.focus();
+        input.select();
+      }, 50);
+    </script>
+  </body>
+</html>

@@ -122,4 +122,16 @@ contextBridge.exposeInMainWorld('gestorvend', {
   isDesktop: true,
   isKiosk: ipcRenderer.sendSync('shell:isKiosk') as boolean,
   focusWindow: () => ipcRenderer.send('desktop:focus-window'),
+  /** blur+focus na janela: devolve o teclado aos campos (bug do Windows). */
+  refocusKeyboard: () => ipcRenderer.send('desktop:refocus-keyboard'),
+  /**
+   * alert/confirm/prompt pelo processo principal. O diálogo nativo do
+   * Chromium deixa os <input> sem teclado no Windows; o main reativa a janela.
+   */
+  dialogSync: (kind: 'alert' | 'confirm' | 'prompt', message: string, defaultValue?: string) =>
+    ipcRenderer.sendSync('desktop:dialog-sync', { kind, message, defaultValue }) as
+      | boolean
+      | string
+      | null,
+  promptResult: (value: string | null) => ipcRenderer.send('desktop:prompt-result', value),
 });

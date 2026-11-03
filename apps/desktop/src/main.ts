@@ -71,6 +71,74 @@ function forceShowWindow(win: BrowserWindow | null) {
   win.focus();
 }
 
+/**
+ * Windows: depois de MessageBox nativo (alert/confirm) ou de um modal, o
+ * Chromium deixa a janela ativa mas sem foco de teclado nos <input>.
+ * blur()+focus() na BrowserWindow é o que devolve o teclado ao conteúdo.
+ */
+function refocusWindowKeyboard(win: BrowserWindow | null | undefined) {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  try {
+    win.blur();
+    win.focus();
+  } catch {
+    /* ignore */
+  }
+}
+
+function refocusSoon(win: BrowserWindow | null | undefined) {
+  setTimeout(() => refocusWindowKeyboard(win), 0);
+  setTimeout(() => refocusWindowKeyboard(win), 120);
+}
+
+function openPromptWindow(
+  parent: BrowserWindow | null | undefined,
+  message: string,
+  defaultValue: string,
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    const owner = parent && !parent.isDestroyed() ? parent : undefined;
+    const win = new BrowserWindow({
+      parent: owner,
+      modal: Boolean(owner),
+      width: 460,
+      height: 230,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      autoHideMenuBar: true,
+      show: false,
+      title: 'GestorVend',
+      icon: appIconPath(),
+      backgroundColor: '#ffffff',
+      webPreferences: appWebPrefs(),
+    });
+    win.setMenu(null);
+    let settled = false;
+    const finish = (value: string | null) => {
+      if (settled) return;
+      settled = true;
+      ipcMain.removeListener('desktop:prompt-result', onResult);
+      if (!win.isDestroyed()) win.destroy();
+      resolve(value);
+    };
+    const onResult = (ev: Electron.IpcMainEvent, value: unknown) => {
+      if (ev.sender.id !== win.webContents.id) return;
+      finish(typeof value === 'string' ? value : null);
+    };
+    ipcMain.on('desktop:prompt-result', onResult);
+    win.on('closed', () => finish(null));
+    win.once('ready-to-show', () => {
+      win.show();
+      win.focus();
+    });
+    const q = new URLSearchParams({ message: message.slice(0, 2000), value: defaultValue.slice(0, 500) });
+    void win.loadFile(rendererPath('prompt.html'), { search: q.toString() });
+  });
+}
+
 function guardAgainstMenuKeyCapture(win: BrowserWindow) {
   // Atalhos do menu nativo (Alt + letra, Ctrl+C via role) roubam teclas
   // depois do primeiro <input>. Chromium ainda trata copiar/colar no campo.
@@ -87,6 +155,7 @@ function guardAgainstMenuKeyCapture(win: BrowserWindow) {
       event.preventDefault();
     }
   });
+  win.on('restore', () => refocusSoon(win));
 }
 
 function attachWindowLifecycle(win: BrowserWindow) {
@@ -840,6 +909,11 @@ function buildMenu() {
             }
           },
         },
+        {
+          label: 'Destravar teclado',
+          accelerator: 'CmdOrCtrl+Shift+K',
+          click: () => refocusWindowKeyboard(mainWindow),
+        },
         { role: 'toggleDevTools', label: 'Ferramentas de desenvolvedor' },
         { type: 'separator' },
         { role: 'resetZoom', label: 'Zoom padrão' },
@@ -869,6 +943,52 @@ function registerIpc() {
     // teclado do <input> e entrega para a barra de menu.
     if (win.isMinimized()) win.restore();
   });
+
+  ipcMain.on('desktop:refocus-keyboard', (ev) => {
+    refocusWindowKeyboard(BrowserWindow.fromWebContents(ev.sender) ?? mainWindow);
+  });
+
+  ipcMain.on(
+    'desktop:dialog-sync',
+    (
+      ev,
+      payload: { kind?: 'alert' | 'confirm' | 'prompt'; message?: unknown; defaultValue?: unknown },
+    ) => {
+      const owner = BrowserWindow.fromWebContents(ev.sender) ?? mainWindow;
+      const kind = payload?.kind ?? 'alert';
+      const message = String(payload?.message ?? '').slice(0, 4000);
+
+      if (kind === 'prompt') {
+        void openPromptWindow(owner, message, String(payload?.defaultValue ?? '')).then((value) => {
+          ev.returnValue = value;
+          refocusSoon(owner);
+        });
+        return;
+      }
+
+      const isConfirm = kind === 'confirm';
+      const opts: Electron.MessageBoxSyncOptions = {
+        type: isConfirm ? 'question' : 'info',
+        title: 'GestorVend',
+        message,
+        buttons: isConfirm ? ['OK', 'Cancelar'] : ['OK'],
+        defaultId: 0,
+        cancelId: isConfirm ? 1 : 0,
+        noLink: true,
+      };
+      let response = 0;
+      try {
+        response =
+          owner && !owner.isDestroyed()
+            ? dialog.showMessageBoxSync(owner, opts)
+            : dialog.showMessageBoxSync(opts);
+      } catch {
+        response = isConfirm ? 1 : 0;
+      }
+      ev.returnValue = isConfirm ? response === 0 : true;
+      refocusSoon(owner);
+    },
+  );
 
   ipcMain.handle('config:get', () => readConfig());
 

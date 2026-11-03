@@ -94,6 +94,14 @@ export type GestorVendDesktopApi = {
   openExternal?: (url: string) => Promise<void> | void;
   /** Devolve o teclado à janela (campos de pesquisa no Windows). */
   focusWindow?: () => void;
+  /** Shell ≥ 1.0.73: blur+focus da janela no processo principal. */
+  refocusKeyboard?: () => void;
+  /** Shell ≥ 1.0.73: alert/confirm/prompt sem travar o teclado. */
+  dialogSync?: (
+    kind: 'alert' | 'confirm' | 'prompt',
+    message: string,
+    defaultValue?: string,
+  ) => boolean | string | null;
 };
 
 declare global {
