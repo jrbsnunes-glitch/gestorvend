@@ -135,6 +135,56 @@ describe('nfce-xml.builder', () => {
     expect(xml).toContain('<vCBS>0.01</vCBS>');
   });
 
+  it('IBSCBSTot/vCBS é a soma dos vCBS já arredondados dos itens (cStat 1091)', () => {
+    const line = {
+      ...item,
+      vUnCom: 1.56,
+      vProd: 1.56,
+      cstIbsCbs: '000',
+      cClassTrib: '000001',
+      ibsRate: 0.1,
+      cbsRate: 0.9,
+    };
+    const xml = buildNfceInfNFeXml({
+      chave44: '13261052604282000130650010000000011123456782',
+      cNF: '12345678',
+      natOp: 'VENDA',
+      tpAmb: 2,
+      dhEmiIso: '2026-10-23T10:00:00-04:00',
+      crt: 1,
+      codMunIbgeFg: '1302504',
+      modelo: 65,
+      serie: 1,
+      nNF: 1,
+      emit: {
+        cnpj: '52604282000130',
+        ie: '054612942',
+        xNome: 'NAUTICA BALBY LTDA',
+        xLgr: 'Rua Teste',
+        nro: '1',
+        xBairro: 'Centro',
+        cMun: '1302504',
+        xMun: 'Manacapuru',
+        uf: 'AM',
+        cep: '69400064',
+      },
+      items: [
+        { ...line, nItem: 1 },
+        { ...line, nItem: 2 },
+      ],
+      totals: { vNF: 3.12, vProd: 3.12, vDesc: 0, vOutro: 0 },
+      payments: [{ tPag: '01', vPag: 3.12 }],
+    }).xmlNfeEnvelope;
+    const itemCbs = [...xml.matchAll(/<gCBS><pCBS>[^<]*<\/pCBS><vCBS>([^<]+)<\/vCBS>/g)].map(
+      (m) => Number(m[1]),
+    );
+    const tot = xml.match(
+      /<gCBS><vDif>[\d.]+<\/vDif><vDevTrib>[\d.]+<\/vDevTrib><vCBS>([^<]+)<\/vCBS>/,
+    );
+    expect(itemCbs.length).toBe(2);
+    expect(tot?.[1]).toBe(itemCbs.reduce((s, n) => s + n, 0).toFixed(2));
+  });
+
   it('envia xPag só quando tPag é 99', () => {
     const withX = buildNfceInfNFeXml({
       chave44: '13261052604282000130650010000000011123456782',

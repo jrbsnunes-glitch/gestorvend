@@ -6,8 +6,12 @@ export { mapSalePaymentToNfcePag, paymentMethodToTPag } from './nfce-payment';
 
 const NS = 'http://www.portalfiscal.inf.br/nfe';
 
+function roundMoney2(n: number): number {
+  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+}
+
 function fmt2(n: number): string {
-  return n.toFixed(2);
+  return roundMoney2(n).toFixed(2);
 }
 
 function fmt4(n: number): string {
@@ -316,19 +320,21 @@ function computeIbsCbsBreakdown(
   const pIbsUf = Math.max(0, ibsRate);
   const pIbsMun = 0;
   const pCbs = Math.max(0, cbsRate);
-  const vIbsUf = vBc * (pIbsUf / 100);
+  const vBc2 = roundMoney2(vBc);
+  const vIbsUf = roundMoney2(vBc2 * (pIbsUf / 100));
   const vIbsMun = 0;
+  const vCbs = roundMoney2(vBc2 * (pCbs / 100));
   return {
     cst: onlyDigits(cst, 3).padStart(3, '0'),
     cClassTrib: onlyDigits(cClassTrib, 6).padStart(6, '0'),
-    vBc,
+    vBc: vBc2,
     pIbsUf,
     pIbsMun,
     pCbs,
     vIbsUf,
     vIbsMun,
-    vIbs: vIbsUf + vIbsMun,
-    vCbs: vBc * (pCbs / 100),
+    vIbs: roundMoney2(vIbsUf + vIbsMun),
+    vCbs,
   };
 }
 
@@ -372,11 +378,13 @@ function buildIbsCbsTotXml(items: NfceItemInput[], crt: number): string {
     .filter((r): r is IbsCbsBreakdown => r != null);
   if (!rows.length) return '';
   void crt;
-  const vBc = rows.reduce((s, r) => s + r.vBc, 0);
-  const vIbsUf = rows.reduce((s, r) => s + r.vIbsUf, 0);
-  const vIbsMun = rows.reduce((s, r) => s + r.vIbsMun, 0);
-  const vIbs = rows.reduce((s, r) => s + r.vIbs, 0);
-  const vCbs = rows.reduce((s, r) => s + r.vCbs, 0);
+  // Soma o que já foi arredondado no item — a SEFAZ (cStat 1091) compara
+  // IBSCBSTot/vCBS com a soma dos vCBS de cada det, não com o CBS “cheio”.
+  const vBc = roundMoney2(rows.reduce((s, r) => s + r.vBc, 0));
+  const vIbsUf = roundMoney2(rows.reduce((s, r) => s + r.vIbsUf, 0));
+  const vIbsMun = roundMoney2(rows.reduce((s, r) => s + r.vIbsMun, 0));
+  const vIbs = roundMoney2(rows.reduce((s, r) => s + r.vIbs, 0));
+  const vCbs = roundMoney2(rows.reduce((s, r) => s + r.vCbs, 0));
   return (
     `<IBSCBSTot>` +
     `<vBCIBSCBS>${fmt2(vBc)}</vBCIBSCBS>` +
