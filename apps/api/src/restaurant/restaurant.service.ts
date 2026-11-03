@@ -5,9 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  DeliveryOrderStatus,
+  DeliveryStockMode,
   DiningTableStatus,
   PaymentMethod,
   SaleSource,
+  ServiceTabFulfillment,
   ServiceTabItemStatus,
   ServiceTabStatus,
 } from '../generated/tenant-client';
@@ -318,7 +321,7 @@ export class RestaurantService {
   async listOpenTabs(tenantSlug: string) {
     const db = await this.db(tenantSlug);
     return db.serviceTab.findMany({
-      where: { status: ServiceTabStatus.OPEN },
+      where: { status: ServiceTabStatus.OPEN, fulfillment: ServiceTabFulfillment.SALON },
       orderBy: { number: 'asc' },
       include: {
         table: { include: { area: true } },
@@ -621,13 +624,16 @@ export class RestaurantService {
     const discount = parseQty(body.discount ?? 0);
     const totalLine = money(qty * unitPrice - discount);
 
-    // Baixa estoque no lançamento (comanda). A venda no PDV não baixa de novo.
-    await this.sales.consumeStockForLines(
-      tenantSlug,
-      userId,
-      [{ variantId: body.variantId, quantity: qty }],
-      `Comanda #${tab.number}`,
-    );
+    const skipStock = await this.isDeliverySaleOnly(db, tab);
+    if (!skipStock) {
+      // Baixa estoque no lançamento (comanda). A venda no PDV não baixa de novo.
+      await this.sales.consumeStockForLines(
+        tenantSlug,
+        userId,
+        [{ variantId: body.variantId, quantity: qty }],
+        `Comanda #${tab.number}`,
+      );
+    }
 
     const created = await db.serviceTabItem.create({
       data: {
@@ -659,12 +665,14 @@ export class RestaurantService {
       return item;
     }
     const tab = await db.serviceTab.findUnique({ where: { id: tabId } });
-    await this.sales.restoreStockForLines(
-      tenantSlug,
-      userId,
-      [{ variantId: item.variantId, quantity: Number(item.quantity) }],
-      `Comanda #${tab?.number ?? '?'} — cancelamento item`,
-    );
+    if (tab && !(await this.isDeliverySaleOnly(db, tab))) {
+      await this.sales.restoreStockForLines(
+        tenantSlug,
+        userId,
+        [{ variantId: item.variantId, quantity: Number(item.quantity) }],
+        `Comanda #${tab.number} — cancelamento item`,
+      );
+    }
     const updated = await db.serviceTabItem.update({
       where: { id: itemId },
       data: { status: ServiceTabItemStatus.CANCELLED },
@@ -685,7 +693,7 @@ export class RestaurantService {
     if (tab.status !== ServiceTabStatus.OPEN) {
       throw new BadRequestException('Só é possível cancelar comanda aberta.');
     }
-    if (tab.items.length) {
+    if (tab.items.length && !(await this.isDeliverySaleOnly(db, tab))) {
       await this.sales.restoreStockForLines(
         tenantSlug,
         userId,
@@ -760,8 +768,16 @@ export class RestaurantService {
                 label: tab.table.label,
                 area: tab.table.area ? { name: tab.table.area.name } : null,
               }
-            : null,
-          openedBy: tab.openedBy ? { name: tab.openedBy.name } : null,
+            : tab.fulfillment === ServiceTabFulfillment.DELIVERY
+              ? { code: 'DEL', label: 'Delivery', area: { name: 'Delivery' } }
+              : tab.fulfillment === ServiceTabFulfillment.PICKUP
+                ? { code: 'RET', label: 'Retirada', area: { name: 'Retirada' } }
+                : null,
+          openedBy: tab.openedBy
+            ? { name: tab.openedBy.name }
+            : tab.customer
+              ? { name: tab.customer.name }
+              : null,
         },
         pending.map((it) => ({
           id: it.id,
@@ -823,6 +839,11 @@ export class RestaurantService {
       throw new BadRequestException('Comanda sem itens para fechar.');
     }
 
+    const isDeliveryChannel =
+      tab.fulfillment === ServiceTabFulfillment.DELIVERY ||
+      tab.fulfillment === ServiceTabFulfillment.PICKUP;
+    const saleOnly = isDeliveryChannel && (await this.isDeliverySaleOnly(db, tab));
+
     const sale = await this.sales.create({
       tenantSlug,
       userId,
@@ -831,9 +852,9 @@ export class RestaurantService {
       customerId: tab.customerId,
       notes: body.notes ?? tab.notes,
       discount: body.discount ?? 0,
-      surcharge: body.surcharge ?? 0,
-      source: SaleSource.RESTAURANT,
-      deductStock: false,
+      surcharge: isDeliveryChannel ? Number(tab.deliveryFeeAmount ?? 0) : body.surcharge ?? 0,
+      source: isDeliveryChannel ? SaleSource.DELIVERY : SaleSource.RESTAURANT,
+      deductStock: saleOnly,
       externalRef: `tab:${tab.number}`,
       items: tab.items.map((it) => ({
         variantId: it.variantId,
@@ -850,6 +871,7 @@ export class RestaurantService {
         status: ServiceTabStatus.CLOSED,
         closedAt: new Date(),
         saleId: sale.id,
+        deliveryStatus: isDeliveryChannel ? DeliveryOrderStatus.COMPLETED : undefined,
       },
     });
 
@@ -883,12 +905,31 @@ export class RestaurantService {
         status: ServiceTabStatus.CLOSED,
         closedAt: new Date(),
         saleId: sale.id,
+        deliveryStatus:
+          tab.fulfillment === ServiceTabFulfillment.DELIVERY ||
+          tab.fulfillment === ServiceTabFulfillment.PICKUP
+            ? DeliveryOrderStatus.COMPLETED
+            : undefined,
       },
     });
 
     await this.syncDiningTableStatus(db, tab.tableId);
 
     return { tab: await this.getTab(tenantSlug, tabId), sale: updated };
+  }
+
+  private async isDeliverySaleOnly(
+    db: TenantDb,
+    tab: { fulfillment?: ServiceTabFulfillment | string | null },
+  ): Promise<boolean> {
+    if (
+      tab.fulfillment !== ServiceTabFulfillment.DELIVERY &&
+      tab.fulfillment !== ServiceTabFulfillment.PICKUP
+    ) {
+      return false;
+    }
+    const co = await db.company.findFirst({ select: { deliveryStockMode: true } });
+    return co?.deliveryStockMode === DeliveryStockMode.SALE_ONLY;
   }
 
   // --- Ficha técnica (BOM) ---

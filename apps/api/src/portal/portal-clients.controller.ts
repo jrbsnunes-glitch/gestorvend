@@ -28,7 +28,11 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { usernameFromEmail } from '../users/username.util';
 import { PortalAuthGuard } from './portal-auth.guard';
 import { TenantService } from '../tenant/tenant.service';
-import { normalizePortalModuleAddons } from '../common/tenant-module-addons.util';
+import {
+  normalizePortalModuleAddons,
+  sanitizeAddonsForPlan,
+  wantsDeliveryAddon,
+} from '../common/tenant-module-addons.util';
 import {
   CreatePortalClientBodyDto,
   UpdatePortalLicenseBodyDto,
@@ -138,10 +142,14 @@ export class PortalClientsController {
     const tenant = await this.central.tenant.findUnique({ where: { cnpj } });
     if (!tenant) throw new NotFoundException('Cliente não encontrado.');
     try {
+      const addons = normalizePortalModuleAddons(body.modules);
+      if (wantsDeliveryAddon(addons) && tenant.planCode !== PlanCode.RESTAURANT) {
+        throw new BadRequestException('O adicional Delivery requer plano Restaurante.');
+      }
       await this.tenantService.setEnabledModules(
         tenant.id,
         tenant.slug,
-        normalizePortalModuleAddons(body.modules),
+        sanitizeAddonsForPlan(tenant.planCode, addons),
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -329,10 +337,14 @@ export class PortalClientsController {
       adminUsername,
     });
     if (body.enabledAddons !== undefined) {
+      const addons = normalizePortalModuleAddons(body.enabledAddons);
+      if (wantsDeliveryAddon(addons) && created.planCode !== PlanCode.RESTAURANT) {
+        throw new BadRequestException('O adicional Delivery requer plano Restaurante.');
+      }
       await this.tenantService.setEnabledModules(
         created.id,
         created.slug,
-        normalizePortalModuleAddons(body.enabledAddons),
+        sanitizeAddonsForPlan(created.planCode, addons),
       );
     }
     return {
@@ -386,12 +398,17 @@ export class PortalClientsController {
       data.licenseValidFrom = data.licenseValidFrom ?? new Date();
     }
     const updated = await this.central.tenant.update({ where: { id: tenant.id }, data });
+    const nextPlan = updated.planCode;
     if (body.enabledAddons !== undefined) {
       try {
+        const addons = normalizePortalModuleAddons(body.enabledAddons);
+        if (wantsDeliveryAddon(addons) && nextPlan !== PlanCode.RESTAURANT) {
+          throw new BadRequestException('O adicional Delivery requer plano Restaurante.');
+        }
         await this.tenantService.setEnabledModules(
           tenant.id,
           tenant.slug,
-          normalizePortalModuleAddons(body.enabledAddons),
+          sanitizeAddonsForPlan(nextPlan, addons),
         );
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -404,6 +421,16 @@ export class PortalClientsController {
         throw e;
       }
     } else {
+      if (nextPlan !== PlanCode.RESTAURANT) {
+        const current = await this.tenantService.getEnabledModulesByTenantId(tenant.id);
+        if (wantsDeliveryAddon(current)) {
+          await this.tenantService.setEnabledModules(
+            tenant.id,
+            tenant.slug,
+            sanitizeAddonsForPlan(nextPlan, current),
+          );
+        }
+      }
       this.tenantService.invalidateCaches(tenant.slug);
     }
     return {

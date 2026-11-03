@@ -150,6 +150,7 @@ const SOURCE_LABELS: Record<string, string> = {
   WHATSAPP: 'WhatsApp',
   NFE_FORM: 'Formulário NF-e',
   RESTAURANT: 'Salão',
+  DELIVERY: 'Delivery',
 };
 
 const TITLE_STATUS_LABELS: Record<string, string> = {

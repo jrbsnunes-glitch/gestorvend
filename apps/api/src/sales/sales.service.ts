@@ -339,8 +339,13 @@ export class SalesService {
       }
     }
     // Comanda restaurante: estoque já baixa no lançamento do item (não no PDV).
+    // Delivery FULL segue o mesmo; SALE_ONLY baixa só no fechamento (deductStock true).
     const deductStock =
-      input.source === SaleSource.RESTAURANT ? false : input.deductStock !== false;
+      input.source === SaleSource.RESTAURANT
+        ? false
+        : input.source === SaleSource.DELIVERY
+          ? input.deductStock === true
+          : input.deductStock !== false;
 
     if (discount > 0) {
       await this.permissions.assertPermission(

@@ -31,6 +31,8 @@ import { RestaurantModule } from './restaurant/restaurant.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PdvTerminalsModule } from './pdv-terminals/pdv-terminals.module';
 import { PrintingModule } from './printing/printing.module';
+import { DeliveryModule } from './delivery/delivery.module';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 @Module({
   imports: [
@@ -42,6 +44,9 @@ import { PrintingModule } from './printing/printing.module';
       ],
     }),
     ScheduleModule.forRoot(),
+    ThrottlerModule.forRoot({
+      throttlers: [{ name: 'default', ttl: 60_000, limit: 120 }],
+    }),
     PrismaModule,
     TenantModule,
     AuthModule,
@@ -63,6 +68,7 @@ import { PrintingModule } from './printing/printing.module';
     UsersModule,
     WaChatModule,
     RestaurantModule,
+    DeliveryModule,
     PrintingModule,
     ActivityLogsModule,
     PaymentsModule,

@@ -24,7 +24,7 @@ import { StockLocationBalancesPopover } from '../components/StockLocationBalance
 import { NumericInput } from '../components/NumericInput';
 import { api, apiUpload } from '../lib/api';
 import { prepareImageUpload } from '../lib/prepare-image-upload';
-import { getIdentity, hasFactoryModule } from '../lib/auth';
+import { getIdentity, hasDeliveryModule, hasFactoryModule, hasRestaurantPlan } from '../lib/auth';
 import { formatBRL, formatDate } from '../lib/format';
 import {
   parseProductConversion,
@@ -229,6 +229,7 @@ type Product = {
   isManufacturedFinishedGood?: boolean;
   manufacturingLeadTimeDays?: number | null;
   showInPublicCatalog?: boolean;
+  availableForDelivery?: boolean;
   /** Itens unitários por caixa/pack (ex.: 12, 50). */
   packItemQty?: string | null;
   stockComponentVariantId?: string | null;
@@ -452,6 +453,8 @@ export function ProductsPage() {
   const [isManufacturedFinishedGood, setIsManufacturedFinishedGood] = useState(false);
   const [manufacturingLeadTimeDays, setManufacturingLeadTimeDays] = useState('');
   const [showInPublicCatalog, setShowInPublicCatalog] = useState(false);
+  const [availableForDelivery, setAvailableForDelivery] = useState(false);
+  const deliveryLicensed = hasRestaurantPlan() && hasDeliveryModule();
 
   const list = useQuery({
     queryKey: [
@@ -665,6 +668,7 @@ export function ProductsPage() {
     setIsManufacturedFinishedGood(false);
     setManufacturingLeadTimeDays('');
     setShowInPublicCatalog(false);
+    setAvailableForDelivery(false);
     setErr(null);
     setProductFormTab('identificacao');
   }
@@ -701,6 +705,7 @@ export function ProductsPage() {
       p.manufacturingLeadTimeDays != null ? String(p.manufacturingLeadTimeDays) : '',
     );
     setShowInPublicCatalog(Boolean(p.showInPublicCatalog));
+    setAvailableForDelivery(Boolean(p.availableForDelivery));
     const vp: Record<string, { retail: string; cost: string; minStock: string }> = {};
     for (const v of p.variants) {
       vp[v.id] = {
@@ -751,6 +756,7 @@ export function ProductsPage() {
             },
           ],
           supplierLinks: linksToCreatePayload(supplierLinks),
+          ...(deliveryLicensed ? { availableForDelivery } : {}),
           ...(factoryLicensed
             ? {
                 isManufacturedFinishedGood,
@@ -811,6 +817,7 @@ export function ProductsPage() {
                   ),
             };
           }),
+          ...(deliveryLicensed ? { availableForDelivery } : {}),
           ...(factoryLicensed
             ? {
                 isManufacturedFinishedGood,
@@ -1504,6 +1511,17 @@ export function ProductsPage() {
                     />
                   ) : null}
 
+                  {deliveryLicensed ? (
+                    <label className="product-form__mfg-check" style={{ marginTop: '0.75rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={availableForDelivery}
+                        onChange={(e) => setAvailableForDelivery(e.target.checked)}
+                      />
+                      <span>Disponível no cardápio delivery</span>
+                    </label>
+                  ) : null}
+
                   <section className="product-form__section" aria-label="Preços por variação">
                     <p className="product-form__section-title">Preços por variação</p>
                     <div className="product-form__grid product-form__grid--4">
@@ -1949,6 +1967,17 @@ export function ProductsPage() {
                     />
                   ) : null}
 
+                  {deliveryLicensed ? (
+                    <label className="product-form__mfg-check" style={{ marginTop: '0.75rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={availableForDelivery}
+                        onChange={(e) => setAvailableForDelivery(e.target.checked)}
+                      />
+                      <span>Disponível no cardápio delivery</span>
+                    </label>
+                  ) : null}
+
                   <section className="product-form__section" aria-label="Preços por variação">
                     <p className="product-form__section-title">Preços por variação</p>
                     <p
@@ -2354,6 +2383,16 @@ export function ProductsPage() {
                 <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
                 Ativo
               </label>
+              {deliveryLicensed ? (
+                <label style={{ flexDirection: 'row', alignItems: 'center', gap: '0.5rem', marginTop: '0.4rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={availableForDelivery}
+                    onChange={(e) => setAvailableForDelivery(e.target.checked)}
+                  />
+                  Disponível no cardápio delivery
+                </label>
+              ) : null}
             </div>
             </div>
             <div className="modal-actions">

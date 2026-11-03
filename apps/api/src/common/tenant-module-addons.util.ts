@@ -5,6 +5,7 @@ export const PORTAL_MODULE_ADDON_CODES = [
   'SERVICE_ORDER',
   'FACTORY',
   'SALES_RESERVATION',
+  'DELIVERY',
 ] as const;
 
 export type PortalModuleAddonCode = (typeof PORTAL_MODULE_ADDON_CODES)[number];
@@ -26,4 +27,17 @@ export function normalizePortalModuleAddons(raw: unknown): TenantModuleAddon[] {
 
 export function isPortalModuleAddonCode(s: string): s is PortalModuleAddonCode {
   return (PORTAL_MODULE_ADDON_CODES as readonly string[]).includes(s);
+}
+
+/** Delivery só existe com o plano RESTAURANT. */
+export function sanitizeAddonsForPlan(
+  plan: string | null | undefined,
+  modules: TenantModuleAddon[],
+): TenantModuleAddon[] {
+  if (plan === 'RESTAURANT') return modules;
+  return modules.filter((m) => String(m) !== 'DELIVERY');
+}
+
+export function wantsDeliveryAddon(modules: TenantModuleAddon[]): boolean {
+  return modules.some((m) => String(m) === 'DELIVERY');
 }

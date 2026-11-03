@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { PlanCode, TenantModuleAddon } from '../generated/central-client';
 import { timezoneFromBrazilUf } from '../common/br-uf-timezone.util';
 import { validateCnpj14 } from '../common/cnpj.util';
 import { normalizeIanaTimezone } from '../common/iana-timezone.util';
@@ -34,6 +35,18 @@ type CompanyInput = {
   scaleAutoConfirmMs?: number;
   scaleHint?: string | null;
   kitchenPrinterHint?: string | null;
+  deliveryEnabled?: boolean;
+  deliveryFeeEnabled?: boolean;
+  deliveryFeeValue?: number | string;
+  deliveryPrintMode?: 'DIRECT' | 'COUNTER_THEN_KITCHEN' | string;
+  deliveryStockMode?: 'FULL' | 'SALE_ONLY' | string;
+  deliveryHoursJson?: string | null;
+  deliveryAlwaysOpen?: boolean;
+  deliveryOpenFrom?: string | null;
+  deliveryOpenTo?: string | null;
+  deliveryPayPickup?: boolean;
+  deliveryPayPixDeliverer?: boolean;
+  deliveryPayPixOnline?: boolean;
   serviceFeeEnabled?: boolean;
   serviceFeeMode?: 'PERCENT' | 'FIXED' | string;
   serviceFeeValue?: number | string;
@@ -347,6 +360,63 @@ export class CompanyService {
     if (waiterTipMode !== undefined) data.waiterTipMode = waiterTipMode;
     const waiterTipValue = parseFeeValue(body.waiterTipValue, 'Valor da taxa do garçom');
     if (waiterTipValue !== undefined) data.waiterTipValue = String(waiterTipValue);
+
+    if (body.deliveryEnabled !== undefined) {
+      const on = Boolean(body.deliveryEnabled);
+      if (on) {
+        try {
+          await this.tenants.assertPlan(tenantSlug, [PlanCode.RESTAURANT]);
+          await this.tenants.assertModule(tenantSlug, TenantModuleAddon.DELIVERY);
+        } catch {
+          throw new ForbiddenException(
+            'Delivery não contratado. Ative o adicional no portal com o plano Restaurante.',
+          );
+        }
+      }
+      data.deliveryEnabled = on;
+    }
+    if (body.deliveryFeeEnabled !== undefined) {
+      data.deliveryFeeEnabled = Boolean(body.deliveryFeeEnabled);
+    }
+    const deliveryFeeValue = parseFeeValue(body.deliveryFeeValue, 'Taxa de entrega');
+    if (deliveryFeeValue !== undefined) data.deliveryFeeValue = String(deliveryFeeValue);
+    if (body.deliveryPrintMode !== undefined) {
+      const m = String(body.deliveryPrintMode).trim().toUpperCase();
+      if (m !== 'DIRECT' && m !== 'COUNTER_THEN_KITCHEN') {
+        throw new BadRequestException('Modo de impressão do delivery inválido.');
+      }
+      data.deliveryPrintMode = m;
+    }
+    if (body.deliveryStockMode !== undefined) {
+      const m = String(body.deliveryStockMode).trim().toUpperCase();
+      if (m !== 'FULL' && m !== 'SALE_ONLY') {
+        throw new BadRequestException('Modo de estoque do delivery inválido.');
+      }
+      data.deliveryStockMode = m;
+    }
+    if (body.deliveryHoursJson !== undefined) {
+      data.deliveryHoursJson = trimOrNull(body.deliveryHoursJson);
+    } else if (body.deliveryAlwaysOpen !== undefined || body.deliveryOpenFrom !== undefined) {
+      if (body.deliveryAlwaysOpen !== false) {
+        data.deliveryHoursJson = JSON.stringify({ alwaysOpen: true });
+      } else {
+        const from = String(body.deliveryOpenFrom ?? '').trim();
+        const to = String(body.deliveryOpenTo ?? '').trim();
+        if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(from) || !/^([01]\d|2[0-3]):([0-5]\d)$/.test(to)) {
+          throw new BadRequestException('Horário do delivery inválido (use HH:mm).');
+        }
+        data.deliveryHoursJson = JSON.stringify({ alwaysOpen: false, daily: [from, to] });
+      }
+    }
+    if (body.deliveryPayPickup !== undefined) {
+      data.deliveryPayPickup = Boolean(body.deliveryPayPickup);
+    }
+    if (body.deliveryPayPixDeliverer !== undefined) {
+      data.deliveryPayPixDeliverer = Boolean(body.deliveryPayPixDeliverer);
+    }
+    if (body.deliveryPayPixOnline !== undefined) {
+      data.deliveryPayPixOnline = Boolean(body.deliveryPayPixOnline);
+    }
 
     const updated = await db.company.update({ where: { id: current.id }, data });
     this.companyTimezone.invalidate(tenantSlug);

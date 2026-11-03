@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { randomUUID } from 'crypto';
 import { PaymentIntentMethod, PaymentIntentStatus, PaymentPspProvider, Prisma } from '../generated/tenant-client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
@@ -30,6 +31,7 @@ export class PaymentsService {
     private readonly credentials: PaymentCredentialsService,
     private readonly orchestrator: PaymentOrchestrator,
     private readonly mercadoPago: MercadoPagoProvider,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   toDto(row: {
@@ -67,7 +69,13 @@ export class PaymentsService {
 
   async createPixCharge(
     tenantSlug: string,
-    input: { amount: number; description?: string; payerEmail?: string; provider?: PaymentPspProvider },
+    input: {
+      amount: number;
+      description?: string;
+      payerEmail?: string;
+      provider?: PaymentPspProvider;
+      metadata?: Record<string, unknown>;
+    },
   ): Promise<PaymentIntentDto> {
     if (input.amount <= 0) throw new BadRequestException('Valor inválido.');
     const settings = await this.credentials.getOrCreateSettings(tenantSlug);
@@ -95,7 +103,10 @@ export class PaymentsService {
         orderReference,
         qrCode: result.qrCode,
         expiresAt: result.expiresAt,
-        metadata: (result.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+        metadata: {
+          ...((result.metadata as Record<string, unknown> | null) ?? {}),
+          ...(input.metadata ?? {}),
+        } as Prisma.InputJsonValue,
       },
     });
     return this.toDto(row);
@@ -322,7 +333,16 @@ export class PaymentsService {
       where: { id: intent.id },
       data: { webhookPayload: body as object },
     });
-    await this.syncIntentStatus(tenantSlug, intent.id);
+    const updated = await this.syncIntentStatus(tenantSlug, intent.id);
+    if (updated.status === PaymentIntentStatus.CONFIRMED) {
+      try {
+        const { DeliveryService } = await import('../delivery/delivery.service');
+        const delivery = this.moduleRef.get(DeliveryService, { strict: false });
+        if (delivery) await delivery.onPixConfirmed(tenantSlug, updated);
+      } catch {
+        /* módulo delivery ausente */
+      }
+    }
   }
 
   async assertIntentForSale(

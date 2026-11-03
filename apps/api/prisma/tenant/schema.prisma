@@ -56,6 +56,17 @@ model Company {
   scaleHint String?
   /// Texto livre (impressora de cozinha) — lembrete para TI.
   kitchenPrinterHint String?
+  /// Canal delivery operacional (só surte efeito com addon DELIVERY no portal + plano RESTAURANT).
+  deliveryEnabled Boolean @default(false)
+  deliveryFeeEnabled Boolean @default(false)
+  deliveryFeeValue Decimal @default(0) @db.Decimal(14, 4)
+  deliveryPrintMode DeliveryPrintMode @default(DIRECT)
+  deliveryStockMode DeliveryStockMode @default(FULL)
+  /// JSON: { "alwaysOpen": true } ou { "daily": ["18:00","23:00"] }.
+  deliveryHoursJson String? @db.Text
+  deliveryPayPickup Boolean @default(true)
+  deliveryPayPixDeliverer Boolean @default(true)
+  deliveryPayPixOnline Boolean @default(false)
   /// Taxa de serviço (salão/comanda).
   serviceFeeEnabled Boolean @default(false)
   serviceFeeMode    RestaurantFeeMode @default(PERCENT)
@@ -119,6 +130,45 @@ enum ServiceOrderBillingMode {
 enum RestaurantFeeMode {
   PERCENT
   FIXED
+}
+
+/// Impressão do pedido delivery: direto na cozinha ou alerta no PDV/salão primeiro.
+enum DeliveryPrintMode {
+  DIRECT
+  COUNTER_THEN_KITCHEN
+}
+
+/// Estoque no delivery: baixa receita na inclusão (como comanda) ou só na venda.
+enum DeliveryStockMode {
+  FULL
+  SALE_ONLY
+}
+
+/// Canal da comanda: salão (padrão), entrega ou retirada.
+enum ServiceTabFulfillment {
+  SALON
+  DELIVERY
+  PICKUP
+}
+
+enum DeliveryPaymentMode {
+  PICKUP
+  PIX_DELIVERER
+  PIX_ONLINE
+}
+
+enum DeliveryPrintStatus {
+  PENDING_COUNTER
+  SENT_KITCHEN
+}
+
+enum DeliveryOrderStatus {
+  AWAITING_PAYMENT
+  RECEIVED
+  PREPARING
+  OUT_FOR_DELIVERY
+  READY_PICKUP
+  COMPLETED
 }
 
 /// Comandas sem mesa: numeração sequencial automática ou slots fixos (cadastrados).
@@ -548,6 +598,8 @@ model Product {
   manufacturingLeadTimeDays Int?
   /// Exibir na loja pública /loja/:slug
   showInPublicCatalog Boolean @default(false)
+  /// Aparece no cardápio público /delivery/:slug
+  availableForDelivery Boolean @default(false)
   variants    ProductVariant[]
   recipe      ProductRecipe?
   createdAt   DateTime         @default(now())
@@ -556,6 +608,7 @@ model Product {
   @@index([stockComponentVariantId])
   @@index([isManufacturedFinishedGood])
   @@index([showInPublicCatalog])
+  @@index([availableForDelivery])
   @@index([isActive, controlNumber])
   @@index([categoryId])
 }
@@ -1006,6 +1059,8 @@ enum SaleSource {
   REQUISITION
   /// Faturamento de Ordem de Serviço.
   SERVICE_ORDER
+  /// Pedido delivery / retirada pelo celular.
+  DELIVERY
 }
 
 model Sale {
@@ -1673,6 +1728,15 @@ model ServiceTab {
   /// Número de pessoas (couvert por cabeça).
   guestCount  Int              @default(1)
   notes       String?
+  fulfillment ServiceTabFulfillment @default(SALON)
+  deliveryAddress String?      @db.VarChar(240)
+  deliveryNotes   String?      @db.VarChar(240)
+  deliveryPhone   String?      @db.VarChar(32)
+  deliveryFeeAmount Decimal    @default(0) @db.Decimal(14, 2)
+  publicToken     String?      @unique @db.VarChar(40)
+  paymentMode     DeliveryPaymentMode?
+  deliveryPrintStatus DeliveryPrintStatus?
+  deliveryStatus  DeliveryOrderStatus?
   saleId      String?          @unique
   sale        Sale?            @relation(fields: [saleId], references: [id], onDelete: SetNull)
   closedAt    DateTime?
@@ -1683,6 +1747,8 @@ model ServiceTab {
   @@index([status, createdAt])
   @@index([tableId])
   @@index([stationId])
+  @@index([fulfillment, status])
+  @@index([deliveryStatus, status])
 }
 
 model ServiceTabItem {

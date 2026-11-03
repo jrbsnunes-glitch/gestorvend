@@ -45,8 +45,8 @@ export class SalesController {
       deliveryDriverName?: string | null;
       deductStock?: boolean;
       permissionPassword?: string;
-      /** PDV | WHATSAPP | NFE_FORM | RESTAURANT */
-      source?: 'PDV' | 'WHATSAPP' | 'NFE_FORM' | 'RESTAURANT';
+      /** PDV | WHATSAPP | NFE_FORM | RESTAURANT | DELIVERY */
+      source?: 'PDV' | 'WHATSAPP' | 'NFE_FORM' | 'RESTAURANT' | 'DELIVERY';
       externalRef?: string | null;
       /** Sessão de caixa alvo (gerente pode usar caixa OPEN de outro operador). */
       cashSessionId?: string | null;
@@ -92,7 +92,8 @@ export class SalesController {
         body.source === 'NFE_FORM' ||
         body.source === 'WHATSAPP' ||
         body.source === 'PDV' ||
-        body.source === 'RESTAURANT'
+        body.source === 'RESTAURANT' ||
+        body.source === 'DELIVERY'
           ? body.source
           : undefined,
       items: body.items,

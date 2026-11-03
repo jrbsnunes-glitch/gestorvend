@@ -841,6 +841,7 @@ export class ProductsController {
       }>;
       isManufacturedFinishedGood?: boolean;
       showInPublicCatalog?: boolean;
+      availableForDelivery?: boolean;
       manufacturingLeadTimeDays?: number | string | null;
     },
   ) {
@@ -894,6 +895,7 @@ export class ProductsController {
           stockComponentVariantId: isService ? null : stockComponentVariantId,
           isManufacturedFinishedGood: Boolean(body.isManufacturedFinishedGood),
           showInPublicCatalog: Boolean(body.showInPublicCatalog),
+          availableForDelivery: Boolean(body.availableForDelivery),
           manufacturingLeadTimeDays:
             body.manufacturingLeadTimeDays != null &&
             Number.isFinite(Number(body.manufacturingLeadTimeDays))
@@ -1294,6 +1296,9 @@ export class ProductsController {
           }),
           ...(body.showInPublicCatalog !== undefined && {
             showInPublicCatalog: Boolean(body.showInPublicCatalog),
+          }),
+          ...(body.availableForDelivery !== undefined && {
+            availableForDelivery: Boolean(body.availableForDelivery),
           }),
           ...(body.manufacturingLeadTimeDays !== undefined && {
             manufacturingLeadTimeDays:

@@ -30,6 +30,8 @@ enum TenantModuleAddon {
   SERVICE_ORDER
   FACTORY
   SALES_RESERVATION
+  /// Canal de pedidos pelo celular (requer plano RESTAURANT).
+  DELIVERY
 }
 
 /// Estado do provisionamento físico (PostgreSQL + migrações + seed mínimo).

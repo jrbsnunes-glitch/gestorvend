@@ -5,6 +5,7 @@ import { hasRestaurantPlan, isWaiter } from '../../lib/auth';
 import { formatServiceTabBadge, formatServiceTabLabel } from '../../lib/service-tab';
 import { FormModalBackdrop } from '../../components/FormModalBackdrop';
 import { useEffect, useState } from 'react';
+import { DeliveryOrdersPanel } from './DeliveryOrdersPanel';
 import './restaurant.css';
 
 const DEFAULT_CUSTOMER_NAME = 'Cliente Padrão';
@@ -327,6 +328,7 @@ export function RestaurantFloorPage() {
           ) : null}
         </div>
       </header>
+      <DeliveryOrdersPanel />
 
       {(areasQ.error ||
         tabsQ.error ||

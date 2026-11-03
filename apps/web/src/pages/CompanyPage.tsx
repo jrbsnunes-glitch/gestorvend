@@ -5,7 +5,8 @@ import { NumericInput } from '../components/NumericInput';
 
 import { api, apiUpload } from '../lib/api';
 import { prepareImageUpload } from '../lib/prepare-image-upload';
-import { hasFactoryModule } from '../lib/auth';
+import { getIdentity, hasDeliveryModule, hasFactoryModule, hasRestaurantPlan } from '../lib/auth';
+import QRCode from 'qrcode';
 import { resolveCompanyAssetUrl } from '../lib/company-branding';
 import { useMenuAccess } from '../hooks/useMenuAccess';
 import { timezoneFromBrazilUf } from '../lib/business-timezone';
@@ -56,6 +57,18 @@ type Company = {
   scaleAutoConfirmMs?: number;
   scaleHint?: string | null;
   kitchenPrinterHint?: string | null;
+  deliveryEnabled?: boolean;
+  deliveryFeeEnabled?: boolean;
+  deliveryFeeValue?: string | number | null;
+  deliveryPrintMode?: 'DIRECT' | 'COUNTER_THEN_KITCHEN';
+  deliveryStockMode?: 'FULL' | 'SALE_ONLY';
+  deliveryHoursJson?: string | null;
+  deliveryPayPickup?: boolean;
+  deliveryPayPixDeliverer?: boolean;
+  deliveryPayPixOnline?: boolean;
+  deliveryAlwaysOpen?: boolean;
+  deliveryOpenFrom?: string | null;
+  deliveryOpenTo?: string | null;
   serviceFeeEnabled?: boolean;
   serviceFeeMode?: 'PERCENT' | 'FIXED';
   serviceFeeValue?: string | number | null;
@@ -117,6 +130,18 @@ const EMPTY_FORM: FormState = {
   scaleAutoConfirmMs: 700,
   scaleHint: '',
   kitchenPrinterHint: '',
+  deliveryEnabled: false,
+  deliveryFeeEnabled: false,
+  deliveryFeeValue: 0,
+  deliveryPrintMode: 'DIRECT',
+  deliveryStockMode: 'FULL',
+  deliveryHoursJson: null,
+  deliveryAlwaysOpen: true,
+  deliveryOpenFrom: '18:00',
+  deliveryOpenTo: '23:00',
+  deliveryPayPickup: true,
+  deliveryPayPixDeliverer: true,
+  deliveryPayPixOnline: false,
   serviceFeeEnabled: false,
   serviceFeeMode: 'PERCENT',
   serviceFeeValue: 0,
@@ -175,6 +200,31 @@ function toForm(c: Company): FormState {
     scaleAutoConfirmMs: c.scaleAutoConfirmMs ?? 700,
     scaleHint: c.scaleHint ?? '',
     kitchenPrinterHint: c.kitchenPrinterHint ?? '',
+    deliveryEnabled: Boolean(c.deliveryEnabled),
+    deliveryFeeEnabled: Boolean(c.deliveryFeeEnabled),
+    deliveryFeeValue: Number(c.deliveryFeeValue ?? 0),
+    deliveryPrintMode: c.deliveryPrintMode === 'COUNTER_THEN_KITCHEN' ? 'COUNTER_THEN_KITCHEN' : 'DIRECT',
+    deliveryStockMode: c.deliveryStockMode === 'SALE_ONLY' ? 'SALE_ONLY' : 'FULL',
+    deliveryHoursJson: c.deliveryHoursJson ?? null,
+    ...(() => {
+      try {
+        const j = c.deliveryHoursJson ? JSON.parse(c.deliveryHoursJson) : { alwaysOpen: true };
+        if (j?.alwaysOpen !== false) {
+          return { deliveryAlwaysOpen: true, deliveryOpenFrom: '18:00', deliveryOpenTo: '23:00' };
+        }
+        const daily = Array.isArray(j.daily) ? j.daily : ['18:00', '23:00'];
+        return {
+          deliveryAlwaysOpen: false,
+          deliveryOpenFrom: String(daily[0] ?? '18:00'),
+          deliveryOpenTo: String(daily[1] ?? '23:00'),
+        };
+      } catch {
+        return { deliveryAlwaysOpen: true, deliveryOpenFrom: '18:00', deliveryOpenTo: '23:00' };
+      }
+    })(),
+    deliveryPayPickup: c.deliveryPayPickup !== false,
+    deliveryPayPixDeliverer: c.deliveryPayPixDeliverer !== false,
+    deliveryPayPixOnline: Boolean(c.deliveryPayPixOnline),
     serviceFeeEnabled: Boolean(c.serviceFeeEnabled),
     serviceFeeMode: c.serviceFeeMode === 'FIXED' ? 'FIXED' : 'PERCENT',
     serviceFeeValue: Number(c.serviceFeeValue ?? 0),
@@ -767,6 +817,18 @@ export function CompanyPage() {
   const qc = useQueryClient();
   const menuAccess = useMenuAccess();
   const factoryLicensed = hasFactoryModule();
+  const deliveryLicensed = hasRestaurantPlan() && hasDeliveryModule();
+  const tenantSlug = getIdentity()?.tenantSlug ?? '';
+  const [deliveryQr, setDeliveryQr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!deliveryLicensed || !tenantSlug || typeof window === 'undefined') {
+      setDeliveryQr(null);
+      return;
+    }
+    const url = `${window.location.origin}/delivery/${encodeURIComponent(tenantSlug)}`;
+    void QRCode.toDataURL(url, { width: 280, margin: 1 }).then(setDeliveryQr).catch(() => setDeliveryQr(null));
+  }, [deliveryLicensed, tenantSlug]);
   const canViewCompany = menuAccess.canView('company');
   const canUpdateCompany = menuAccess.canUpdate('company');
   const company = useQuery({
@@ -1735,6 +1797,147 @@ export function CompanyPage() {
                     </div>
                   </div>
                 ))}
+
+                {deliveryLicensed ? (
+                  <>
+                    <h3 className="company-form__h" style={{ marginTop: '1.4rem', fontSize: '1rem' }}>
+                      Delivery (pedido pelo celular)
+                    </h3>
+                    <p className="company-form__hint">
+                      Adicional contratado no portal. O cliente acessa{' '}
+                      <code>/delivery/{tenantSlug || ':slug'}</code>.
+                    </p>
+                    <div className="field">
+                      <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(form.deliveryEnabled)}
+                          onChange={(e) => update('deliveryEnabled', e.target.checked)}
+                          style={{ marginTop: '0.15rem' }}
+                        />
+                        <span>Ativar canal delivery neste estabelecimento</span>
+                      </label>
+                    </div>
+                    <div className="form-row form-row--2">
+                      <div className="field">
+                        <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(form.deliveryFeeEnabled)}
+                            onChange={(e) => update('deliveryFeeEnabled', e.target.checked)}
+                          />
+                          Taxa de entrega (R$)
+                        </label>
+                        <NumericInput
+                          min={0}
+                          blurEmpty={0}
+                          disabled={!form.deliveryFeeEnabled}
+                          value={Number(form.deliveryFeeValue ?? 0)}
+                          onChange={(_raw, n) => {
+                            if (n != null) update('deliveryFeeValue', n);
+                          }}
+                        />
+                        <span className="sub">Entra no carrinho só em pedido para entrega, não na retirada.</span>
+                      </div>
+                      <div className="field">
+                        <label>Impressão do pedido</label>
+                        <select
+                          value={form.deliveryPrintMode ?? 'DIRECT'}
+                          onChange={(e) =>
+                            update(
+                              'deliveryPrintMode',
+                              e.target.value as NonNullable<FormState['deliveryPrintMode']>,
+                            )
+                          }
+                        >
+                          <option value="DIRECT">Direto na cozinha</option>
+                          <option value="COUNTER_THEN_KITCHEN">Alerta no PDV/salão, depois cozinha</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="form-row form-row--2">
+                      <div className="field">
+                        <label>Estoque</label>
+                        <select
+                          value={form.deliveryStockMode ?? 'FULL'}
+                          onChange={(e) =>
+                            update(
+                              'deliveryStockMode',
+                              e.target.value as NonNullable<FormState['deliveryStockMode']>,
+                            )
+                          }
+                        >
+                          <option value="FULL">Completo (receita na inclusão, como comanda)</option>
+                          <option value="SALE_ONLY">Só na venda (como PDV)</option>
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={form.deliveryAlwaysOpen !== false}
+                            onChange={(e) => update('deliveryAlwaysOpen', e.target.checked)}
+                          />
+                          Sempre aberto
+                        </label>
+                        {form.deliveryAlwaysOpen === false ? (
+                          <div className="form-row form-row--2" style={{ marginTop: 8 }}>
+                            <input
+                              type="time"
+                              value={form.deliveryOpenFrom ?? '18:00'}
+                              onChange={(e) => update('deliveryOpenFrom', e.target.value)}
+                            />
+                            <input
+                              type="time"
+                              value={form.deliveryOpenTo ?? '23:00'}
+                              onChange={(e) => update('deliveryOpenTo', e.target.value)}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="field">
+                      <span className="company-form__h" style={{ fontSize: '0.95rem' }}>
+                        Pagamentos ao cliente
+                      </span>
+                      <label style={{ display: 'flex', gap: '0.4rem', marginTop: 6 }}>
+                        <input
+                          type="checkbox"
+                          checked={form.deliveryPayPickup !== false}
+                          onChange={(e) => update('deliveryPayPickup', e.target.checked)}
+                        />
+                        Pagamento na retirada
+                      </label>
+                      <label style={{ display: 'flex', gap: '0.4rem', marginTop: 6 }}>
+                        <input
+                          type="checkbox"
+                          checked={form.deliveryPayPixDeliverer !== false}
+                          onChange={(e) => update('deliveryPayPixDeliverer', e.target.checked)}
+                        />
+                        PIX ao entregador
+                      </label>
+                      <label style={{ display: 'flex', gap: '0.4rem', marginTop: 6 }}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(form.deliveryPayPixOnline)}
+                          onChange={(e) => update('deliveryPayPixOnline', e.target.checked)}
+                        />
+                        PIX online (Mercado Pago)
+                      </label>
+                    </div>
+                    {deliveryQr ? (
+                      <div style={{ marginTop: '0.75rem' }}>
+                        <p className="sub">QR do cardápio público</p>
+                        <img src={deliveryQr} alt="QR delivery" width={160} height={160} />
+                        <p className="sub">
+                          {typeof window !== 'undefined'
+                            ? `${window.location.origin}/delivery/${tenantSlug}`
+                            : ''}
+                        </p>
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
               </>
             ) : null}
           </section>

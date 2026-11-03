@@ -193,7 +193,9 @@ export class TenantService {
             ? 'Fábrica'
             : module === TenantModuleAddon.SALES_RESERVATION
               ? 'Reserva de Vendas'
-              : String(module);
+              : module === TenantModuleAddon.DELIVERY
+                ? 'Delivery'
+                : String(module);
       throw new ForbiddenException(
         `Módulo ${label} não contratado. Contate o suporte GestorVend.`,
       );

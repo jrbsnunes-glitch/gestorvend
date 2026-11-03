@@ -10,6 +10,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
+import { DeliveryPendingBanner } from '../components/DeliveryPendingBanner';
 import { PermissionPasswordModal } from '../components/PermissionPasswordModal';
 import { NumericInput } from '../components/NumericInput';
 import { PdvProceduresOverlay } from '../components/PdvProceduresOverlay';
@@ -1276,6 +1277,8 @@ function PosScreen({
     displayName: string;
     label: string;
     guestCount: number;
+    fulfillment?: 'SALON' | 'DELIVERY' | 'PICKUP' | string;
+    deliveryFeeAmount?: number;
   } | null>(null);
   const serviceTabRef = useRef(serviceTab);
   serviceTabRef.current = serviceTab;
@@ -1643,6 +1646,8 @@ function PosScreen({
     number: number;
     status: string;
     guestCount?: number;
+    fulfillment?: 'SALON' | 'DELIVERY' | 'PICKUP' | string;
+    deliveryFeeAmount?: string | number;
     customer?: { id: string; name: string } | null;
     table: { code: string; label: string | null; area: { name: string } } | null;
     station?: { code: string; label: string | null } | null;
@@ -1709,24 +1714,35 @@ function PosScreen({
     } else {
       setCustomer(null);
     }
+    const isDeliveryChannel = tab.fulfillment === 'DELIVERY' || tab.fulfillment === 'PICKUP';
     const tableLabel = tab.table
       ? `${tab.table.area.name} / ${tab.table.label || tab.table.code}`
-      : 'sem mesa';
+      : isDeliveryChannel
+        ? tab.fulfillment === 'PICKUP'
+          ? 'retirada'
+          : 'delivery'
+        : 'sem mesa';
     const guests = Math.max(1, Math.floor(Number(tab.guestCount ?? 1)) || 1);
+    const deliveryFee = isDeliveryChannel ? Math.max(0, Number(tab.deliveryFeeAmount ?? 0)) : 0;
     setServiceTab({
       id: tab.id,
       number: tab.number,
       displayName: tabName,
       label: tableLabel,
       guestCount: guests,
+      fulfillment: tab.fulfillment,
+      deliveryFeeAmount: deliveryFee,
     });
-    // Taxas da comanda: calculadas a partir da empresa + pessoas (F9 bloqueado).
     const itemsSub = [...byVariant.values()].reduce(
       (s, l) => s + l.unitPrice * l.quantity - l.discount,
       0,
     );
-    const fees = calcRestaurantFees(companyQ.data, itemsSub, guests);
-    setSurcharge(fees.feesTotal);
+    if (isDeliveryChannel) {
+      setSurcharge(deliveryFee);
+    } else {
+      const fees = calcRestaurantFees(companyQ.data, itemsSub, guests);
+      setSurcharge(fees.feesTotal);
+    }
     serviceTabLoadedRef.current = tab.id;
     try {
       sessionStorage.setItem(GV_PDV_COMANDA_KEY, tab.id);
@@ -1835,12 +1851,18 @@ function PosScreen({
   );
   const restaurantFees = useMemo(() => {
     if (!serviceTab) return null;
+    if (serviceTab.fulfillment === 'DELIVERY' || serviceTab.fulfillment === 'PICKUP') return null;
     return calcRestaurantFees(companyQ.data, subtotal, serviceTab.guestCount);
   }, [serviceTab, companyQ.data, subtotal]);
 
-  // Comanda: surcharge = taxas (serviço+couvert+garçom); PDV balcão: F9 livre.
+  // Comanda: surcharge = taxas (serviço+couvert+garçom); delivery: taxa de entrega; PDV balcão: F9 livre.
   useEffect(() => {
-    if (!serviceTab || !restaurantFees) return;
+    if (!serviceTab) return;
+    if (serviceTab.fulfillment === 'DELIVERY' || serviceTab.fulfillment === 'PICKUP') {
+      setSurcharge(Number(serviceTab.deliveryFeeAmount ?? 0));
+      return;
+    }
+    if (!restaurantFees) return;
     setSurcharge(restaurantFees.feesTotal);
   }, [serviceTab, restaurantFees]);
 
@@ -1902,12 +1924,22 @@ function PosScreen({
           sellerUserId: sellerUserId || undefined,
           terminalId: pdvTerminalId,
           source: serviceTabRef.current
-            ? 'RESTAURANT'
+            ? serviceTabRef.current.fulfillment === 'DELIVERY' ||
+              serviceTabRef.current.fulfillment === 'PICKUP'
+              ? 'DELIVERY'
+              : 'RESTAURANT'
             : serviceOrderRef.current
               ? 'SERVICE_ORDER'
               : undefined,
-          deductStock:
-            manufacturingDepositRef.current || serviceTabRef.current ? false : undefined,
+          deductStock: manufacturingDepositRef.current
+            ? false
+            : serviceTabRef.current
+              ? serviceTabRef.current.fulfillment === 'DELIVERY' ||
+                serviceTabRef.current.fulfillment === 'PICKUP'
+                ? (companyQ.data as { deliveryStockMode?: string } | undefined)?.deliveryStockMode ===
+                  'SALE_ONLY'
+                : false
+              : undefined,
           externalRef: manufacturingDepositRef.current
             ? `MFG:${manufacturingDepositRef.current.number}`
             : serviceTabRef.current
@@ -2812,6 +2844,7 @@ function PosScreen({
         }}
       />
 
+      <DeliveryPendingBanner />
       {cashSessionFromPreviousDay(session.openedAt) && (
         <div className="pos-stale-cash-banner no-print" role="alert">
           <span>

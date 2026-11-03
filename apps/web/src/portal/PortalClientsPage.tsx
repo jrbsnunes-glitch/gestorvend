@@ -12,7 +12,7 @@ type Client = {
   cnpj: string;
   companyName: string;
   planCode: 'STANDARD' | 'WHATSAPP' | 'RESTAURANT';
-  enabledAddons?: Array<'SERVICE_ORDER' | 'FACTORY' | 'SALES_RESERVATION'>;
+  enabledAddons?: Array<'SERVICE_ORDER' | 'FACTORY' | 'SALES_RESERVATION' | 'DELIVERY'>;
   licenseStatus: 'trial' | 'active' | 'suspended' | 'expired';
   licenseValidFrom: string | null;
   licenseExpiresAt: string | null;
@@ -33,7 +33,7 @@ type CreateForm = {
   companyName: string;
   slug: string;
   planCode: Client['planCode'];
-  enabledAddons: Array<'SERVICE_ORDER' | 'FACTORY' | 'SALES_RESERVATION'>;
+  enabledAddons: Array<'SERVICE_ORDER' | 'FACTORY' | 'SALES_RESERVATION' | 'DELIVERY'>;
   licenseStatus: Client['licenseStatus'];
   licenseValidFrom: string;
   licenseExpiresAt: string;
@@ -42,7 +42,7 @@ type CreateForm = {
   monthlyFee: string;
 };
 
-type TenantAddon = 'SERVICE_ORDER' | 'FACTORY' | 'SALES_RESERVATION';
+type TenantAddon = 'SERVICE_ORDER' | 'FACTORY' | 'SALES_RESERVATION' | 'DELIVERY';
 
 function toggleAddon(list: TenantAddon[], addon: TenantAddon, on: boolean): TenantAddon[] {
   const set = new Set(list);
@@ -100,7 +100,7 @@ function statusColor(s: Client['licenseStatus'], days: number | null): { bg: str
 type EditForm = {
   companyName: string;
   planCode: Client['planCode'];
-  enabledAddons: Array<'SERVICE_ORDER' | 'FACTORY' | 'SALES_RESERVATION'>;
+  enabledAddons: Array<'SERVICE_ORDER' | 'FACTORY' | 'SALES_RESERVATION' | 'DELIVERY'>;
   licenseStatus: Client['licenseStatus'];
   licenseValidFrom: string;
   licenseExpiresAt: string;
@@ -511,6 +511,15 @@ export function PortalClientsPage() {
                           RSV
                         </span>
                       ) : null}
+                      {(c.enabledAddons ?? []).includes('DELIVERY') ? (
+                        <span
+                          className="badge"
+                          style={{ background: '#fce7f3', color: '#9d174d', marginLeft: 4 }}
+                          title="Delivery"
+                        >
+                          DEL
+                        </span>
+                      ) : null}
                     </td>
                     <td data-label="Mensalidade" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                       {c.monthlyFee != null ? formatBRL(c.monthlyFee) : '—'}
@@ -713,7 +722,17 @@ export function PortalClientsPage() {
                 <select
                   id="pc-plan"
                   value={form.planCode}
-                  onChange={(e) => setForm({ ...form, planCode: e.target.value as Client['planCode'] })}
+                  onChange={(e) => {
+                    const planCode = e.target.value as Client['planCode'];
+                    setForm({
+                      ...form,
+                      planCode,
+                      enabledAddons:
+                        planCode === 'RESTAURANT'
+                          ? form.enabledAddons
+                          : form.enabledAddons.filter((a) => a !== 'DELIVERY'),
+                    });
+                  }}
                 >
                   <option value="STANDARD">Padrão</option>
                   <option value="WHATSAPP">WhatsApp</option>
@@ -800,6 +819,28 @@ export function PortalClientsPage() {
                   Adicional: Reserva de Vendas
                   <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>
                     Libera o menu Reserva de Vendas e o estoque separado por 24h
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="field" style={{ marginBottom: '0.75rem' }}>
+              <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                <input
+                  type="checkbox"
+                  checked={form.enabledAddons.includes('DELIVERY')}
+                  disabled={form.planCode !== 'RESTAURANT'}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      enabledAddons: toggleAddon(form.enabledAddons, 'DELIVERY', e.target.checked),
+                    })
+                  }
+                  style={{ marginTop: '0.15rem' }}
+                />
+                <span>
+                  Adicional: Delivery
+                  <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>
+                    Pedidos pelo celular. Requer plano Restaurante.
                   </span>
                 </span>
               </label>
@@ -919,9 +960,17 @@ export function PortalClientsPage() {
                 <select
                   id="pe-plan"
                   value={editForm.planCode}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, planCode: e.target.value as Client['planCode'] })
-                  }
+                  onChange={(e) => {
+                    const planCode = e.target.value as Client['planCode'];
+                    setEditForm({
+                      ...editForm,
+                      planCode,
+                      enabledAddons:
+                        planCode === 'RESTAURANT'
+                          ? editForm.enabledAddons
+                          : editForm.enabledAddons.filter((a) => a !== 'DELIVERY'),
+                    });
+                  }}
                 >
                   <option value="STANDARD">Padrão</option>
                   <option value="WHATSAPP">WhatsApp</option>
@@ -1011,6 +1060,28 @@ export function PortalClientsPage() {
                   Adicional: Reserva de Vendas
                   <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>
                     Libera o menu Reserva de Vendas e o estoque separado por 24h
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="field" style={{ marginBottom: '0.75rem' }}>
+              <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                <input
+                  type="checkbox"
+                  checked={editForm.enabledAddons.includes('DELIVERY')}
+                  disabled={editForm.planCode !== 'RESTAURANT'}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      enabledAddons: toggleAddon(editForm.enabledAddons, 'DELIVERY', e.target.checked),
+                    })
+                  }
+                  style={{ marginTop: '0.15rem' }}
+                />
+                <span>
+                  Adicional: Delivery
+                  <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>
+                    Pedidos pelo celular. Requer plano Restaurante.
                   </span>
                 </span>
               </label>
