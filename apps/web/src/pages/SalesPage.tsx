@@ -86,6 +86,10 @@ const GV_POS_CHECKOUT_FAILURE_KEY = 'gv_pos_checkout_failure_v1';
 const GV_PDV_COMANDA_KEY = 'gv_pdv_comanda';
 const GV_MFG_DEPOSIT_PROJECT_KEY = 'gv_mfg_deposit_project_v1';
 
+function isDeliveryChannel(fulfillment?: string | null) {
+  return fulfillment === 'DELIVERY' || fulfillment === 'PICKUP';
+}
+
 /* ----------------------------------------------------------------------------
  * Tipos de domínio
  * ------------------------------------------------------------------------- */
@@ -1714,16 +1718,16 @@ function PosScreen({
     } else {
       setCustomer(null);
     }
-    const isDeliveryChannel = tab.fulfillment === 'DELIVERY' || tab.fulfillment === 'PICKUP';
+    const deliveryChannel = isDeliveryChannel(tab.fulfillment);
     const tableLabel = tab.table
       ? `${tab.table.area.name} / ${tab.table.label || tab.table.code}`
-      : isDeliveryChannel
+      : deliveryChannel
         ? tab.fulfillment === 'PICKUP'
           ? 'retirada'
           : 'delivery'
         : 'sem mesa';
     const guests = Math.max(1, Math.floor(Number(tab.guestCount ?? 1)) || 1);
-    const deliveryFee = isDeliveryChannel ? Math.max(0, Number(tab.deliveryFeeAmount ?? 0)) : 0;
+    const deliveryFee = deliveryChannel ? Math.max(0, Number(tab.deliveryFeeAmount ?? 0)) : 0;
     setServiceTab({
       id: tab.id,
       number: tab.number,
@@ -1737,7 +1741,7 @@ function PosScreen({
       (s, l) => s + l.unitPrice * l.quantity - l.discount,
       0,
     );
-    if (isDeliveryChannel) {
+    if (deliveryChannel) {
       setSurcharge(deliveryFee);
     } else {
       const fees = calcRestaurantFees(companyQ.data, itemsSub, guests);
@@ -1851,14 +1855,14 @@ function PosScreen({
   );
   const restaurantFees = useMemo(() => {
     if (!serviceTab) return null;
-    if (serviceTab.fulfillment === 'DELIVERY' || serviceTab.fulfillment === 'PICKUP') return null;
+    if (isDeliveryChannel(serviceTab.fulfillment)) return null;
     return calcRestaurantFees(companyQ.data, subtotal, serviceTab.guestCount);
   }, [serviceTab, companyQ.data, subtotal]);
 
   // Comanda: surcharge = taxas (serviço+couvert+garçom); delivery: taxa de entrega; PDV balcão: F9 livre.
   useEffect(() => {
     if (!serviceTab) return;
-    if (serviceTab.fulfillment === 'DELIVERY' || serviceTab.fulfillment === 'PICKUP') {
+    if (isDeliveryChannel(serviceTab.fulfillment)) {
       setSurcharge(Number(serviceTab.deliveryFeeAmount ?? 0));
       return;
     }
@@ -1924,8 +1928,7 @@ function PosScreen({
           sellerUserId: sellerUserId || undefined,
           terminalId: pdvTerminalId,
           source: serviceTabRef.current
-            ? serviceTabRef.current.fulfillment === 'DELIVERY' ||
-              serviceTabRef.current.fulfillment === 'PICKUP'
+            ? isDeliveryChannel(serviceTabRef.current.fulfillment)
               ? 'DELIVERY'
               : 'RESTAURANT'
             : serviceOrderRef.current
@@ -1934,8 +1937,7 @@ function PosScreen({
           deductStock: manufacturingDepositRef.current
             ? false
             : serviceTabRef.current
-              ? serviceTabRef.current.fulfillment === 'DELIVERY' ||
-                serviceTabRef.current.fulfillment === 'PICKUP'
+              ? isDeliveryChannel(serviceTabRef.current.fulfillment)
                 ? (companyQ.data as { deliveryStockMode?: string } | undefined)?.deliveryStockMode ===
                   'SALE_ONLY'
                 : false
@@ -3467,6 +3469,13 @@ function PosScreen({
                         </div>
                       ) : null}
                     </>
+                  ) : serviceTab && isDeliveryChannel(serviceTab.fulfillment) ? (
+                    surcharge > 0.005 ? (
+                      <div className="pos-totals-row">
+                        <span>Taxa de entrega</span>
+                        <strong>{formatBRL(surcharge)}</strong>
+                      </div>
+                    ) : null
                   ) : (
                     <div className="pos-totals-row">
                       <span>

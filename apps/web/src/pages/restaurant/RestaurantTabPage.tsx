@@ -45,12 +45,18 @@ type Tab = {
   status: string;
   notes: string | null;
   guestCount?: number;
+  fulfillment?: 'SALON' | 'DELIVERY' | 'PICKUP' | string;
+  deliveryFeeAmount?: string | number;
   customer?: { id: string; name: string } | null;
   table: { code: string; label: string | null; area: { name: string } } | null;
   station?: { code: string; label: string | null } | null;
   items: TabItem[];
   sale?: { id: string; number: number; total: string | number } | null;
 };
+
+function isDeliveryChannel(fulfillment?: string | null) {
+  return fulfillment === 'DELIVERY' || fulfillment === 'PICKUP';
+}
 
 type CompanyScale = RestaurantFeesCompany & {
   scaleMode?: ScaleMode;
@@ -206,11 +212,16 @@ export function RestaurantTabPage() {
     [activeItems],
   );
   const guestCount = Math.max(1, tab?.guestCount ?? 1);
+  const deliveryChannel = isDeliveryChannel(tab?.fulfillment);
+  const deliveryFee = deliveryChannel ? Math.max(0, Number(tab?.deliveryFeeAmount ?? 0)) : 0;
   const fees = useMemo(
-    () => calcRestaurantFees(companyQ.data, subtotal, guestCount),
-    [companyQ.data, subtotal, guestCount],
+    () =>
+      deliveryChannel
+        ? { serviceFee: 0, couvert: 0, waiterTip: 0, feesTotal: 0 }
+        : calcRestaurantFees(companyQ.data, subtotal, guestCount),
+    [companyQ.data, subtotal, guestCount, deliveryChannel],
   );
-  const total = Math.max(0, subtotal + fees.feesTotal);
+  const total = Math.max(0, subtotal + (deliveryChannel ? deliveryFee : fees.feesTotal));
 
   function goToPdvCheckout() {
     if (!tabId || activeItems.length === 0) {
@@ -324,6 +335,11 @@ export function RestaurantTabPage() {
                   · {tab.table.area.name} · Comanda {formatServiceTabLabel(tab)}
                 </span>
               </>
+            ) : deliveryChannel ? (
+              <>
+                {tab.fulfillment === 'PICKUP' ? 'Retirada' : 'Delivery'}
+                <span className="muted"> · Comanda {formatServiceTabLabel(tab)}</span>
+              </>
             ) : (
               <>Comanda {formatServiceTabLabel(tab)}</>
             )}
@@ -406,21 +422,23 @@ export function RestaurantTabPage() {
                 }}
               />
             </div>
-            <div className="field" style={{ maxWidth: 160, margin: 0 }}>
-              <label htmlFor="tab-guest-count">Pessoas</label>
-              <NumericInput
-                id="tab-guest-count"
-                integer
-                min={1}
-                max={999}
-                blurEmpty={1}
-                value={guestCount}
-                disabled={patchTab.isPending}
-                onChange={(_raw, n) => {
-                  if (n != null) patchTab.mutate({ guestCount: n });
-                }}
-              />
-            </div>
+            {deliveryChannel ? null : (
+              <div className="field" style={{ maxWidth: 160, margin: 0 }}>
+                <label htmlFor="tab-guest-count">Pessoas</label>
+                <NumericInput
+                  id="tab-guest-count"
+                  integer
+                  min={1}
+                  max={999}
+                  blurEmpty={1}
+                  value={guestCount}
+                  disabled={patchTab.isPending}
+                  onChange={(_raw, n) => {
+                    if (n != null) patchTab.mutate({ guestCount: n });
+                  }}
+                />
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -550,6 +568,11 @@ export function RestaurantTabPage() {
             <div>
               Itens <strong>{money(subtotal)}</strong>
             </div>
+            {deliveryChannel && deliveryFee > 0.005 ? (
+              <div>
+                Taxa de entrega <strong>{money(deliveryFee)}</strong>
+              </div>
+            ) : null}
             {fees.serviceFee > 0.005 ? (
               <div>
                 Taxa de serviço <strong>{money(fees.serviceFee)}</strong>

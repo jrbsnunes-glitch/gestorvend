@@ -1,12 +1,15 @@
 import { QueryClient, QueryClientProvider, useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { BrowserRouter, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import { resolveCompanyAssetUrl } from '../lib/company-branding';
 import { formatBRL } from '../lib/format';
 import './delivery.css';
 
 type Store = {
   slug: string;
   tradeName: string;
+  legalName?: string | null;
+  logoUrl?: string | null;
   isOpen: boolean;
   deliveryFeeEnabled: boolean;
   deliveryFeeValue: number;
@@ -38,8 +41,14 @@ type PublicOrder = {
   items: Array<{ name: string; quantity: number; total: number }>;
 };
 
+type LastOrder = { token: string; number: number };
+
+type HomeView = 'welcome' | 'menu' | 'checkout' | 'placed';
+
 const qc = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
+  defaultOptions: {
+    queries: { retry: 1, refetchOnWindowFocus: true, refetchOnReconnect: true },
+  },
 });
 
 async function publicApi<T>(path: string, init?: RequestInit): Promise<T> {
@@ -65,6 +74,10 @@ function cartKey(slug: string) {
   return `gv-delivery-cart:${slug}`;
 }
 
+function lastOrderKey(slug: string) {
+  return `gv-delivery-last:${slug}`;
+}
+
 function loadCart(slug: string): CartLine[] {
   try {
     const raw = localStorage.getItem(cartKey(slug));
@@ -72,6 +85,22 @@ function loadCart(slug: string): CartLine[] {
   } catch {
     return [];
   }
+}
+
+function loadLastOrder(slug: string): LastOrder | null {
+  try {
+    const raw = localStorage.getItem(lastOrderKey(slug));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as LastOrder;
+    if (!parsed?.token || !parsed.number) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveLastOrder(slug: string, order: LastOrder) {
+  localStorage.setItem(lastOrderKey(slug), JSON.stringify(order));
 }
 
 function statusLabel(s: string | null): string {
@@ -93,11 +122,83 @@ function statusLabel(s: string | null): string {
   }
 }
 
+function statusSteps(order: Pick<PublicOrder, 'fulfillment' | 'paymentMode' | 'deliveryStatus'>) {
+  const awaiting = order.paymentMode === 'PIX_ONLINE';
+  const pickup = order.fulfillment === 'PICKUP';
+  const ids = [
+    ...(awaiting ? (['AWAITING_PAYMENT'] as const) : []),
+    'RECEIVED',
+    'PREPARING',
+    pickup ? 'READY_PICKUP' : 'OUT_FOR_DELIVERY',
+    'COMPLETED',
+  ] as const;
+  const current = order.deliveryStatus ?? 'RECEIVED';
+  const idx = Math.max(0, ids.indexOf(current as (typeof ids)[number]));
+  return ids.map((id, i) => ({
+    id,
+    label: statusLabel(id),
+    state: i < idx ? 'done' : i === idx ? 'current' : 'todo',
+  }));
+}
+
+/** Polla só com a aba visível; celular não precisa puxar a tela. */
+function useLiveRefetchMs(ms: number, stop: boolean) {
+  const [hidden, setHidden] = useState(
+    () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
+  );
+  useEffect(() => {
+    const sync = () => setHidden(document.visibilityState === 'hidden');
+    document.addEventListener('visibilitychange', sync);
+    window.addEventListener('focus', sync);
+    window.addEventListener('online', sync);
+    return () => {
+      document.removeEventListener('visibilitychange', sync);
+      window.removeEventListener('focus', sync);
+      window.removeEventListener('online', sync);
+    };
+  }, []);
+  if (stop || hidden) return false;
+  return ms;
+}
+
+function IconMenu() {
+  return (
+    <svg viewBox="0 0 64 64" width="42" height="42" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M14 16h36v4H14zm0 14h36v4H14zm0 14h24v4H14z"
+      />
+    </svg>
+  );
+}
+
+function IconBag() {
+  return (
+    <svg viewBox="0 0 64 64" width="28" height="28" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M20 20v-2a12 12 0 0 1 24 0v2h8v32a6 6 0 0 1-6 6H18a6 6 0 0 1-6-6V20zm4 0h16v-2a8 8 0 0 0-16 0z"
+      />
+    </svg>
+  );
+}
+
+function IconPin() {
+  return (
+    <svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M32 8a16 16 0 0 1 16 16c0 12-16 32-16 32S16 36 16 24A16 16 0 0 1 32 8zm0 10a6 6 0 1 0 0 12 6 6 0 0 0 0-12z"
+      />
+    </svg>
+  );
+}
+
 function DeliveryHome() {
   const { slug = '' } = useParams<{ slug: string }>();
   const nav = useNavigate();
   const [cart, setCart] = useState<CartLine[]>(() => loadCart(slug));
-  const [view, setView] = useState<'menu' | 'checkout'>('menu');
+  const [view, setView] = useState<HomeView>('welcome');
   const [fulfillment, setFulfillment] = useState<'DELIVERY' | 'PICKUP'>('DELIVERY');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -105,6 +206,7 @@ function DeliveryHome() {
   const [notes, setNotes] = useState('');
   const [pay, setPay] = useState<'PICKUP' | 'PIX_DELIVERER' | 'PIX_ONLINE'>('PICKUP');
   const [err, setErr] = useState<string | null>(null);
+  const [placed, setPlaced] = useState<LastOrder | null>(() => loadLastOrder(slug));
 
   useEffect(() => {
     localStorage.setItem(cartKey(slug), JSON.stringify(cart));
@@ -119,7 +221,7 @@ function DeliveryHome() {
     queryKey: ['dl-menu', slug],
     queryFn: () =>
       publicApi<{ categories: MenuCat[] }>(`/api/public/delivery/${encodeURIComponent(slug)}/menu`),
-    enabled: Boolean(slug),
+    enabled: Boolean(slug) && (view === 'menu' || view === 'checkout'),
   });
 
   const store = storeQ.data;
@@ -127,6 +229,8 @@ function DeliveryHome() {
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
   const total = subtotal + fee;
   const count = cart.reduce((s, l) => s + l.qty, 0);
+  const logoSrc = store?.logoUrl?.trim() ? resolveCompanyAssetUrl(store.logoUrl) : null;
+  const storeName = store?.tradeName || store?.legalName || 'Delivery';
 
   const availablePays = useMemo(() => {
     const p = store?.payments;
@@ -179,7 +283,11 @@ function DeliveryHome() {
       }),
     onSuccess: (order) => {
       localStorage.removeItem(cartKey(slug));
-      nav(`/delivery/${slug}/p/${order.token}`);
+      setCart([]);
+      const last = { token: order.token, number: order.number };
+      saveLastOrder(slug, last);
+      setPlaced(last);
+      setView('placed');
     },
     onError: (e: Error) => setErr(e.message.replace(/[{}"]/g, ' ').slice(0, 240)),
   });
@@ -195,10 +303,90 @@ function DeliveryHome() {
     );
   }
 
+  if (view === 'welcome') {
+    return (
+      <div className="dl-app dl-app--welcome">
+        <div className="dl-welcome">
+          <div className="dl-welcome__brand">
+            {logoSrc ? (
+              <img className="dl-welcome__logo" src={logoSrc} alt={storeName} />
+            ) : (
+              <div className="dl-welcome__logo dl-welcome__logo--ph" aria-hidden="true">
+                <IconBag />
+              </div>
+            )}
+            <p className="dl-welcome__hello">Bem-vindo</p>
+            <h1>{storeName}</h1>
+            <p className="dl-welcome__sub">Peça pelo celular · entrega ou retirada</p>
+            {store && !store.isOpen ? (
+              <div className="dl-closed">Fechado no momento. Confira o horário e tente mais tarde.</div>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="dl-welcome__enter"
+            onClick={() => {
+              setErr(null);
+              setView('menu');
+            }}
+          >
+            <span className="dl-welcome__icon" aria-hidden="true">
+              <IconMenu />
+            </span>
+            <strong>Ver cardápio</strong>
+            <span>Toque para montar o pedido</span>
+          </button>
+          {placed ? (
+            <button
+              type="button"
+              className="dl-btn dl-btn-ghost dl-welcome__track"
+              onClick={() => nav(`/delivery/${slug}/p/${placed.token}`)}
+            >
+              Acompanhar pedido #{placed.number}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'placed' && placed) {
+    return (
+      <div className="dl-app">
+        <header className="dl-hero">
+          <h1>Pedido #{placed.number}</h1>
+          <p>Recebemos o seu pedido</p>
+        </header>
+        <div className="dl-body">
+          <div className="dl-ok">Pedido enviado. Acompanhe o status ou volte ao início.</div>
+          <button
+            type="button"
+            className="dl-btn"
+            style={{ width: '100%', padding: '0.9rem', marginTop: 16 }}
+            onClick={() => nav(`/delivery/${slug}/p/${placed.token}`)}
+          >
+            Acompanhar pedido
+          </button>
+          <button
+            type="button"
+            className="dl-btn dl-btn-ghost"
+            style={{ width: '100%', marginTop: 8 }}
+            onClick={() => setView('welcome')}
+          >
+            Voltar ao menu inicial
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="dl-app">
       <header className="dl-hero">
-        <h1>{store?.tradeName ?? 'Delivery'}</h1>
+        <button type="button" className="dl-back" onClick={() => setView(view === 'checkout' ? 'menu' : 'welcome')}>
+          ← {view === 'checkout' ? 'Cardápio' : 'Início'}
+        </button>
+        <h1>{storeName}</h1>
         <p>Peça pelo celular · {fulfillment === 'DELIVERY' ? 'entrega' : 'retirada'}</p>
         {store && !store.isOpen ? (
           <div className="dl-closed">Fechado no momento. Confira o horário e tente mais tarde.</div>
@@ -315,9 +503,6 @@ function DeliveryHome() {
             >
               {submit.isPending ? 'Enviando…' : `Confirmar · ${formatBRL(total)}`}
             </button>
-            <button type="button" className="dl-btn dl-btn-ghost" style={{ width: '100%', marginTop: 8 }} onClick={() => setView('menu')}>
-              Voltar ao cardápio
-            </button>
           </>
         )}
       </div>
@@ -335,14 +520,38 @@ function DeliveryHome() {
 
 function DeliveryTrack() {
   const { slug = '', token = '' } = useParams<{ slug: string; token: string }>();
+  const nav = useNavigate();
+  const liveMs = useLiveRefetchMs(4000, false);
+
   const orderQ = useQuery({
     queryKey: ['dl-order', slug, token],
     queryFn: () =>
       publicApi<PublicOrder>(
         `/api/public/delivery/${encodeURIComponent(slug)}/orders/${encodeURIComponent(token)}`,
       ),
-    refetchInterval: 8000,
+    refetchInterval: (q) => {
+      if (q.state.data?.deliveryStatus === 'COMPLETED') return false;
+      return liveMs;
+    },
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
+
+  useEffect(() => {
+    const bump = () => {
+      if (document.visibilityState === 'visible') void orderQ.refetch();
+    };
+    document.addEventListener('visibilitychange', bump);
+    window.addEventListener('focus', bump);
+    window.addEventListener('online', bump);
+    return () => {
+      document.removeEventListener('visibilitychange', bump);
+      window.removeEventListener('focus', bump);
+      window.removeEventListener('online', bump);
+    };
+  }, [orderQ.refetch]);
+
   const pixQ = useQuery({
     queryKey: ['dl-pix', slug, token, orderQ.data?.paymentMode],
     queryFn: () =>
@@ -350,7 +559,9 @@ function DeliveryTrack() {
         `/api/public/delivery/${encodeURIComponent(slug)}/orders/${encodeURIComponent(token)}/pix`,
       ),
     enabled: orderQ.data?.paymentMode === 'PIX_ONLINE',
-    refetchInterval: 4000,
+    refetchInterval: () =>
+      typeof document !== 'undefined' && document.visibilityState === 'hidden' ? false : 3000,
+    refetchOnWindowFocus: true,
   });
   const pixMut = useMutation({
     mutationFn: () =>
@@ -364,20 +575,51 @@ function DeliveryTrack() {
   const order = orderQ.data;
   const needPix = order?.paymentMode === 'PIX_ONLINE' && order.deliveryStatus === 'AWAITING_PAYMENT';
   const qr = pixQ.data?.intent?.qrCode ?? null;
+  const done = order?.deliveryStatus === 'COMPLETED';
+  const steps = order ? statusSteps(order) : [];
+
+  useEffect(() => {
+    if (order?.token && order.number) saveLastOrder(slug, { token: order.token, number: order.number });
+  }, [order?.token, order?.number, slug]);
 
   return (
     <div className="dl-app">
       <header className="dl-hero">
         <h1>Pedido {order ? `#${order.number}` : ''}</h1>
-        <p>{statusLabel(order?.deliveryStatus ?? null)}</p>
+        <p>{order ? statusLabel(order.deliveryStatus) : orderQ.isError ? 'Não encontrado' : 'Carregando…'}</p>
+        {order && !done ? (
+          <div className="dl-live" aria-live="polite">
+            <span className="dl-live__dot" />
+            Atualiza sozinho
+          </div>
+        ) : null}
       </header>
       <div className="dl-body">
-        {orderQ.isError ? <div className="dl-err">Pedido não encontrado.</div> : null}
+        {orderQ.isError ? (
+          <>
+            <div className="dl-err">Pedido não encontrado.</div>
+            <button
+              type="button"
+              className="dl-btn dl-btn-ghost"
+              style={{ width: '100%', marginTop: 12 }}
+              onClick={() => nav(`/delivery/${slug}`)}
+            >
+              Voltar ao menu inicial
+            </button>
+          </>
+        ) : null}
         {order ? (
           <>
-            <div className="dl-ok">{statusLabel(order.deliveryStatus)}</div>
-            <p className="dl-muted" style={{ marginTop: 12 }}>
-              {order.fulfillment === 'PICKUP' ? 'Retirada no local' : 'Entrega'}
+            <ol className="dl-steps">
+              {steps.map((st) => (
+                <li key={st.id} className={`dl-steps__item dl-steps__item--${st.state}`}>
+                  <span className="dl-steps__mark" />
+                  <span>{st.label}</span>
+                </li>
+              ))}
+            </ol>
+            <p className="dl-muted dl-track-kind">
+              <IconPin /> {order.fulfillment === 'PICKUP' ? 'Retirada no local' : 'Entrega'}
             </p>
             {order.items.map((it) => (
               <div key={it.name} className="dl-row" style={{ margin: '0.4rem 0' }}>
@@ -410,8 +652,16 @@ function DeliveryTrack() {
                 {pixQ.data?.intent?.status === 'CONFIRMED' ? <p className="dl-ok">Pagamento confirmado.</p> : null}
               </div>
             ) : null}
+            <button
+              type="button"
+              className="dl-btn"
+              style={{ width: '100%', padding: '0.85rem', marginTop: 20 }}
+              onClick={() => nav(`/delivery/${slug}`)}
+            >
+              Voltar ao menu inicial
+            </button>
           </>
-        ) : (
+        ) : orderQ.isError ? null : (
           <p className="dl-muted">Carregando…</p>
         )}
       </div>

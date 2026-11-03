@@ -10,6 +10,7 @@ import {
   Prisma,
   SaleSource,
   SaleStatus,
+  ServiceTabFulfillment,
   ServiceTabStatus,
   StockMovementSource,
   StockMovementType,
@@ -388,19 +389,30 @@ export class SalesService {
       throw new BadRequestException('Desconto não pode ser maior que o subtotal dos produtos.');
     }
 
-    if (input.source === SaleSource.RESTAURANT) {
+    const tabRef = String(input.externalRef ?? '');
+    const tabNumMatch = /^tab:(\d+)$/i.exec(tabRef);
+    const openTab = tabNumMatch
+      ? await db.serviceTab.findFirst({
+          where: { number: Number(tabNumMatch[1]), status: ServiceTabStatus.OPEN },
+          select: { guestCount: true, fulfillment: true, deliveryFeeAmount: true },
+        })
+      : null;
+    const tabIsDelivery =
+      input.source === SaleSource.DELIVERY ||
+      openTab?.fulfillment === ServiceTabFulfillment.DELIVERY ||
+      openTab?.fulfillment === ServiceTabFulfillment.PICKUP;
+
+    if (tabIsDelivery) {
+      const fee = Number(openTab?.deliveryFeeAmount ?? surcharge);
+      surcharge = Number.isFinite(fee) && fee > 0 ? fee : 0;
+      serviceFeeAmount = 0;
+      couvertAmount = 0;
+      waiterTipAmount = 0;
+    } else if (input.source === SaleSource.RESTAURANT) {
       const company = await db.company.findFirst();
       let guestCount = Math.max(1, Math.floor(Number(input.guestCount ?? 1)) || 1);
-      const tabRef = String(input.externalRef ?? '');
-      const tabNumMatch = /^tab:(\d+)$/i.exec(tabRef);
-      if (tabNumMatch) {
-        const tab = await db.serviceTab.findFirst({
-          where: { number: Number(tabNumMatch[1]), status: ServiceTabStatus.OPEN },
-          select: { guestCount: true },
-        });
-        if (tab?.guestCount != null) {
-          guestCount = Math.max(1, tab.guestCount);
-        }
+      if (openTab?.guestCount != null) {
+        guestCount = Math.max(1, openTab.guestCount);
       }
       const fees = calcRestaurantFees(company, subtotal, guestCount);
       serviceFeeAmount = fees.serviceFee;
