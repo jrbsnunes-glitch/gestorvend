@@ -79,6 +79,7 @@ export const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
       inputMode,
       onFocus,
       onBlur,
+      onPointerDown,
       ...rest
     },
     ref,
@@ -110,6 +111,18 @@ export const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
         autoComplete="off"
         className={['numeric-input', className].filter(Boolean).join(' ')}
         value={focused ? draft : toDisplay(value, money)}
+        onPointerDown={(e) => {
+          onPointerDown?.(e);
+          if (!selectOnFocus) return;
+          const el = e.currentTarget;
+          requestAnimationFrame(() => {
+            try {
+              el.select();
+            } catch {
+              /* ignore */
+            }
+          });
+        }}
         onFocus={(e) => {
           setFocused(true);
           setDraft(toDisplay(valueRef.current, money));
@@ -119,8 +132,20 @@ export const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
           }
         }}
         onChange={(e) => {
-          const raw = e.target.value;
-          if (!allowedKeystroke(raw, integer, money)) return;
+          let raw = e.target.value;
+          if (!allowedKeystroke(raw, integer, money)) {
+            const inserted =
+              e.nativeEvent instanceof InputEvent ? e.nativeEvent.data : null;
+            // Sem seleção total, "1,50" + "1" vira "1,501" e era engolido.
+            if (money && inserted && /^\d$/.test(inserted)) {
+              raw = inserted;
+            } else if (money && (inserted === ',' || inserted === '.')) {
+              raw = '0,';
+            } else {
+              return;
+            }
+            if (!allowedKeystroke(raw, integer, money)) return;
+          }
           setDraft(raw);
           onChange(raw, parseUserNumber(raw, money));
         }}

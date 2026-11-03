@@ -5,6 +5,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { ListPagination } from '../components/ListPagination';
@@ -1563,10 +1564,14 @@ function ManagerCashReconciliation({
   const [err, setErr] = useState<string | null>(null);
   const [addedMethodKeys, setAddedMethodKeys] = useState<string[]>([]);
   const [pickToAdd, setPickToAdd] = useState('');
+  const [confirmReconcile, setConfirmReconcile] = useState(false);
+  const [confirmUnreconcile, setConfirmUnreconcile] = useState(false);
 
   useEffect(() => {
     setAddedMethodKeys([]);
     setPickToAdd('');
+    setConfirmReconcile(false);
+    setConfirmUnreconcile(false);
   }, [session.id]);
 
   const visible = useMemo(() => buildCashReconciliationRows(session, expected), [session, expected]);
@@ -1865,19 +1870,43 @@ function ManagerCashReconciliation({
               </p>
             ) : null}
           </div>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            style={{ fontSize: '0.82rem' }}
-            disabled={unreconcile.isPending}
-            onClick={() => {
-              if (confirm('Reabrir conferência? Os apresentados poderão ser alterados novamente.')) {
-                unreconcile.mutate();
-              }
-            }}
-          >
-            Reabrir conferência
-          </button>
+          {confirmUnreconcile ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.8rem', color: '#9a3412' }}>
+                Reabrir conferência? Os apresentados poderão ser alterados.
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={unreconcile.isPending}
+                onClick={() => setConfirmUnreconcile(false)}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ fontSize: '0.82rem' }}
+                disabled={unreconcile.isPending}
+                onClick={() => {
+                  setConfirmUnreconcile(false);
+                  unreconcile.mutate();
+                }}
+              >
+                {unreconcile.isPending ? 'Reabrindo…' : 'Confirmar'}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ fontSize: '0.82rem' }}
+              disabled={unreconcile.isPending}
+              onClick={() => setConfirmUnreconcile(true)}
+            >
+              Reabrir conferência
+            </button>
+          )}
         </div>
       </div>
     );
@@ -1962,7 +1991,6 @@ function ManagerCashReconciliation({
                   min={0}
                   value={draft[key] ?? ''}
                   onChange={(raw) => setDraft((prev) => ({ ...prev, [key]: raw }))}
-                  onFocus={() => restoreDesktopKeyboard()}
                   placeholder="0,00"
                   selectOnFocus
                   style={{
@@ -2057,7 +2085,6 @@ function ManagerCashReconciliation({
                       prev.map((r) => (r.uid === row.uid ? { ...r, amount: raw } : r)),
                     )
                   }
-                  onFocus={() => restoreDesktopKeyboard()}
                   placeholder="0,00"
                   selectOnFocus
                   disabled={patchDeclared.isPending}
@@ -2214,32 +2241,60 @@ function ManagerCashReconciliation({
             border: '1px solid var(--color-border-strong)',
           }}
         />
-        <button
-          type="button"
-          className="btn btn-primary"
-          style={{ marginTop: '0.6rem' }}
-          disabled={reconcile.isPending || patchDeclared.isPending}
-          onClick={async () => {
-            if (
-              !confirm(
-                'Confirmar que este caixa foi conferido e encerrado pela conferência do gerente?',
-              )
-            ) {
-              return;
-            }
-            setErr(null);
-            try {
-              const payload = buildDeclaredAmountsPayload();
-              if (!payload) return;
-              await patchDeclared.mutateAsync(payload);
-              await reconcile.mutateAsync();
-            } catch (e) {
-              setErr(e instanceof Error ? e.message : 'Erro ao conferir caixa.');
-            }
-          }}
-        >
-          {reconcile.isPending || patchDeclared.isPending ? 'Registrando…' : 'Marcar como conferido e fechado'}
-        </button>
+        {confirmReconcile ? (
+          <div
+            style={{
+              marginTop: '0.6rem',
+              padding: '0.7rem 0.75rem',
+              borderRadius: 8,
+              border: '1px solid #fca5a5',
+              background: '#fef2f2',
+            }}
+          >
+            <p style={{ margin: 0, fontSize: '0.85rem', color: '#991b1b' }}>
+              Confirmar que este caixa foi conferido e encerrado pela conferência do gerente?
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem', marginTop: '0.55rem' }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={reconcile.isPending || patchDeclared.isPending}
+                onClick={() => setConfirmReconcile(false)}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={reconcile.isPending || patchDeclared.isPending}
+                onClick={async () => {
+                  setErr(null);
+                  try {
+                    const payload = buildDeclaredAmountsPayload();
+                    if (!payload) return;
+                    await patchDeclared.mutateAsync(payload);
+                    await reconcile.mutateAsync();
+                    setConfirmReconcile(false);
+                  } catch (e) {
+                    setErr(e instanceof Error ? e.message : 'Erro ao conferir caixa.');
+                  }
+                }}
+              >
+                {reconcile.isPending || patchDeclared.isPending ? 'Registrando…' : 'Confirmar conferência'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ marginTop: '0.6rem' }}
+            disabled={reconcile.isPending || patchDeclared.isPending}
+            onClick={() => setConfirmReconcile(true)}
+          >
+            Marcar como conferido e fechado
+          </button>
+        )}
       </div>
     </div>
   );
@@ -2281,9 +2336,12 @@ function SessionDetailDrawer({
 
   useEffect(() => {
     restoreDesktopKeyboard();
+    return () => {
+      window.setTimeout(() => restoreDesktopKeyboard(), 0);
+    };
   }, [s?.id]);
 
-  return (
+  const node = (
     <div className="pos-history-drawer" role="presentation" onClick={onClose}>
       <div
         className="pos-history-panel cash-session-detail"
@@ -2427,6 +2485,7 @@ function SessionDetailDrawer({
               />
 
               <ManagerCashReconciliation
+                key={s.id}
                 session={s}
                 expected={sum.byMethod}
                 movementBreakdown={sum.movementBreakdown}
@@ -2669,6 +2728,8 @@ function SessionDetailDrawer({
       </div>
     </div>
   );
+  if (typeof document === 'undefined') return node;
+  return createPortal(node, document.body);
 }
 
 /**
