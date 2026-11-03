@@ -122,18 +122,24 @@ function statusLabel(s: string | null): string {
   }
 }
 
+type DeliveryStatus =
+  | 'AWAITING_PAYMENT'
+  | 'RECEIVED'
+  | 'PREPARING'
+  | 'OUT_FOR_DELIVERY'
+  | 'READY_PICKUP'
+  | 'COMPLETED';
+
 function statusSteps(order: Pick<PublicOrder, 'fulfillment' | 'paymentMode' | 'deliveryStatus'>) {
-  const awaiting = order.paymentMode === 'PIX_ONLINE';
-  const pickup = order.fulfillment === 'PICKUP';
-  const ids = [
-    ...(awaiting ? (['AWAITING_PAYMENT'] as const) : []),
+  const ids: DeliveryStatus[] = [
+    ...(order.paymentMode === 'PIX_ONLINE' ? (['AWAITING_PAYMENT'] satisfies DeliveryStatus[]) : []),
     'RECEIVED',
     'PREPARING',
-    pickup ? 'READY_PICKUP' : 'OUT_FOR_DELIVERY',
+    order.fulfillment === 'PICKUP' ? 'READY_PICKUP' : 'OUT_FOR_DELIVERY',
     'COMPLETED',
-  ] as const;
-  const current = order.deliveryStatus ?? 'RECEIVED';
-  const idx = Math.max(0, ids.indexOf(current as (typeof ids)[number]));
+  ];
+  const current = (order.deliveryStatus ?? 'RECEIVED') as DeliveryStatus;
+  const idx = Math.max(0, ids.indexOf(current));
   return ids.map((id, i) => ({
     id,
     label: statusLabel(id),
