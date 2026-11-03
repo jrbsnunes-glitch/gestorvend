@@ -16,7 +16,7 @@ import { queueCashMovementAutoPrint } from '../lib/cash-movement-print';
 import { isManager } from '../lib/auth';
 import { cashSessionFromPreviousDay } from '../lib/cash-session-day';
 import { restoreDesktopKeyboard } from '../lib/desktop-input-unlock';
-import { formatBRL, formatDate } from '../lib/format';
+import { formatBRL, formatBrMoney, formatDate, parseBrMoney } from '../lib/format';
 import {
   analyzeCashExpenseDiff,
   analyticalExpenseReconFootnote,
@@ -259,7 +259,7 @@ function SessionCardPaymentsEditor({
         method: 'PATCH',
         json: {
           paymentFormId: form.paymentFormId || undefined,
-          amount: form.amount,
+          amount: parseBrMoney(form.amount),
           installments: Number(form.installments) || 1,
           authCode: form.authCode || null,
         },
@@ -306,7 +306,7 @@ function SessionCardPaymentsEditor({
                   setEdit(c);
                   setForm({
                     paymentFormId: c.paymentFormId ?? '',
-                    amount: String(c.amount),
+                    amount: formatBrMoney(Number(c.amount) || 0),
                     installments: String(c.installments),
                     authCode: c.authCode ?? '',
                   });
@@ -341,10 +341,13 @@ function SessionCardPaymentsEditor({
             </div>
             <div className="form-row">
               <div className="field">
-                <label>Valor</label>
-                <input
+                <label>Valor (R$)</label>
+                <NumericInput
+                  money
+                  min={0}
                   value={form.amount}
-                  onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                  onChange={(raw) => setForm((f) => ({ ...f, amount: raw }))}
+                  placeholder="0,00"
                 />
               </div>
               <div className="field">
@@ -604,7 +607,7 @@ export function CashPage() {
 
   const movement = useMutation({
     mutationFn: () => {
-      const amount = parseFloat(movAmount.replace(',', '.')) || 0;
+      const amount = parseBrMoney(movAmount) ?? 0;
       if (amount <= 0) {
         throw new Error('Informe um valor válido.');
       }
@@ -1411,9 +1414,11 @@ export function CashPage() {
               <div className="field">
                 <label>Valor (R$)</label>
                 <NumericInput
+                  money
                   value={movAmount}
                   onChange={(raw) => setMovAmount(raw)}
                   min={0}
+                  placeholder="0,00"
                   autoFocus
                 />
               </div>
@@ -1516,7 +1521,7 @@ function buildCashReconciliationRows(
         ? null
         : typeof rawDeclared === 'number'
           ? rawDeclared
-          : parseFloat(String(rawDeclared).replace(',', '.'));
+          : parseBrMoney(String(rawDeclared));
     const diff = declaredVal == null ? null : declaredVal - expectedFinal;
     return { key, expectedFinal, declaredVal, diff };
   });
@@ -1597,9 +1602,8 @@ function ManagerCashReconciliation({
   const expenseDetailedSumPositive = useMemo(() => {
     let sum = 0;
     for (const row of expenseLineDrafts) {
-      const raw = row.amount.trim().replace(',', '.');
-      const n = parseFloat(raw);
-      if (Number.isFinite(n) && n > 0) sum += Math.round(n * 100) / 100;
+      const n = parseBrMoney(row.amount);
+      if (n != null && n > 0) sum += Math.round(n * 100) / 100;
     }
     return Math.round(sum * 100) / 100;
   }, [expenseLineDrafts]);
@@ -1613,9 +1617,8 @@ function ManagerCashReconciliation({
   const expenseCompleteDraftLines = useMemo(
     () =>
       expenseLineDrafts.filter((r) => {
-        const raw = r.amount.trim().replace(',', '.');
-        const n = parseFloat(raw);
-        return Number.isFinite(n) && n > 0 && r.referentialAccountId.trim() !== '';
+        const n = parseBrMoney(r.amount);
+        return n != null && n > 0 && r.referentialAccountId.trim() !== '';
       }),
     [expenseLineDrafts],
   );
@@ -1649,8 +1652,8 @@ function ManagerCashReconciliation({
         return amt !== '' || cc !== '' || nt !== '';
       });
       const completeRows = candidateRows.filter((r) => {
-        const n = parseFloat(r.amount.trim().replace(',', '.'));
-        return Number.isFinite(n) && n > 0 && r.referentialAccountId.trim() !== '';
+        const n = parseBrMoney(r.amount);
+        return n != null && n > 0 && r.referentialAccountId.trim() !== '';
       });
       if (candidateRows.length > completeRows.length) {
         setErr('Preencha valor e centro de custo em cada despesa, ou remova a linha.');
@@ -1658,8 +1661,8 @@ function ManagerCashReconciliation({
       }
       if (completeRows.length > 0) {
         expenseDetailPayload = completeRows.map((r) => {
-          const amt = parseFloat(r.amount.trim().replace(',', '.'));
-          const rounded = Math.round((Number.isFinite(amt) ? amt : 0) * 100) / 100;
+          const amt = parseBrMoney(r.amount) ?? 0;
+          const rounded = Math.round(amt * 100) / 100;
           const nt = r.notes.trim();
           return {
             amount: rounded,
@@ -1681,8 +1684,8 @@ function ManagerCashReconciliation({
       if (key === 'EXPENSE') continue;
       const raw = (draft[key] ?? '').trim();
       if (raw === '') continue;
-      const n = parseFloat(raw.replace(',', '.'));
-      if (!Number.isFinite(n) || n < 0) {
+      const n = parseBrMoney(raw);
+      if (n == null || n < 0) {
         setErr(`Valor inválido em ${PAYMENT_LABELS[key] ?? key}.`);
         return null;
       }
@@ -1712,7 +1715,8 @@ function ManagerCashReconciliation({
     const next: Record<string, string> = {};
     for (const k of keys) {
       const raw = decl?.[k];
-      next[k] = raw == null ? '' : String(typeof raw === 'number' ? raw : raw);
+      const n = raw == null ? null : parseBrMoney(typeof raw === 'number' ? raw : String(raw));
+      next[k] = n == null ? '' : formatBrMoney(n);
     }
     setDraft(next);
     setAddedMethodKeys([]);
@@ -1727,12 +1731,13 @@ function ManagerCashReconciliation({
       setExpenseLineDrafts(
         raw.map((row) => ({
           uid: crypto.randomUUID(),
-          amount:
-            typeof row.amount === 'number' && Number.isFinite(row.amount)
-              ? String(row.amount)
-              : row.amount != null
-                ? String(row.amount).replace('.', ',')
-                : '',
+          amount: (() => {
+            const n =
+              typeof row.amount === 'number' && Number.isFinite(row.amount)
+                ? row.amount
+                : parseBrMoney(row.amount != null ? String(row.amount) : '');
+            return n == null ? '' : formatBrMoney(n);
+          })(),
           notes: row.notes ? String(row.notes) : '',
           referentialAccountId: row.referentialAccountId ? String(row.referentialAccountId) : '',
           ...(row.cashMovementId ? { cashMovementId: String(row.cashMovementId) } : {}),
@@ -1745,7 +1750,10 @@ function ManagerCashReconciliation({
       setExpenseLineDrafts([
         {
           uid: crypto.randomUUID(),
-          amount: String(typeof expRaw === 'number' ? expRaw : expRaw).replace('.', ','),
+          amount: (() => {
+            const n = parseBrMoney(typeof expRaw === 'number' ? expRaw : String(expRaw));
+            return n == null ? '' : formatBrMoney(n);
+          })(),
           notes: '',
           referentialAccountId: '',
         },
@@ -1765,7 +1773,8 @@ function ManagerCashReconciliation({
       for (const k of addedMethodKeys) {
         if (!(k in next)) {
           const raw = decl?.[k];
-          next[k] = raw == null ? '' : String(typeof raw === 'number' ? raw : raw);
+          const n = raw == null ? null : parseBrMoney(typeof raw === 'number' ? raw : String(raw));
+          next[k] = n == null ? '' : formatBrMoney(n);
           changed = true;
         }
       }
@@ -1898,7 +1907,7 @@ function ManagerCashReconciliation({
               className="mgr-recon-row"
               style={{
                 display: 'grid',
-                gridTemplateColumns: isManualExtra ? 'minmax(0,1fr) auto 118px' : 'minmax(0,1fr) 118px',
+                gridTemplateColumns: isManualExtra ? 'minmax(0,1fr) auto auto' : 'minmax(0,1fr) auto',
                 gap: '0.5rem',
                 alignItems: 'center',
                 fontSize: '0.85rem',
@@ -1936,22 +1945,36 @@ function ManagerCashReconciliation({
                   Remover
                 </button>
               ) : null}
-              <NumericInput
-                aria-label={`Apresentado ${PAYMENT_LABELS[key] ?? key}`}
-                min={0}
-                value={draft[key] ?? ''}
-                onChange={(raw) => setDraft((prev) => ({ ...prev, [key]: raw }))}
-                onFocus={() => restoreDesktopKeyboard()}
-                placeholder="0"
-                selectOnFocus
+              <label
                 style={{
-                  padding: '0.4rem 0.5rem',
-                  textAlign: 'right',
-                  borderRadius: 6,
-                  border: '1px solid var(--color-border-strong)',
-                  fontSize: '0.9rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  gap: '0.35rem',
                 }}
-              />
+              >
+                <span aria-hidden="true" style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>
+                  R$
+                </span>
+                <NumericInput
+                  aria-label={`Apresentado ${PAYMENT_LABELS[key] ?? key}`}
+                  money
+                  min={0}
+                  value={draft[key] ?? ''}
+                  onChange={(raw) => setDraft((prev) => ({ ...prev, [key]: raw }))}
+                  onFocus={() => restoreDesktopKeyboard()}
+                  placeholder="0,00"
+                  selectOnFocus
+                  style={{
+                    width: 110,
+                    padding: '0.4rem 0.5rem',
+                    textAlign: 'right',
+                    borderRadius: 6,
+                    border: '1px solid var(--color-border-strong)',
+                    fontSize: '0.9rem',
+                  }}
+                />
+              </label>
             </div>
           );
         })}
@@ -2026,6 +2049,7 @@ function ManagerCashReconciliation({
                 }}
               >
                 <NumericInput
+                  money
                   min={0}
                   value={row.amount}
                   onChange={(raw) =>
@@ -2034,7 +2058,7 @@ function ManagerCashReconciliation({
                     )
                   }
                   onFocus={() => restoreDesktopKeyboard()}
-                  placeholder="0"
+                  placeholder="0,00"
                   selectOnFocus
                   disabled={patchDeclared.isPending}
                   style={{

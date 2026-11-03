@@ -46,6 +46,26 @@ export function formatBRL(value: number | string | undefined | null): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
 }
 
+/** Interpreta valor digitado no padrão BR (1.234,56 / 1234,56 / R$ 1,50). */
+export function parseBrMoney(raw: string | number | null | undefined): number | null {
+  if (raw == null || raw === '') return null;
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  const t = raw
+    .trim()
+    .replace(/\s/g, '')
+    .replace(/^R\$/i, '');
+  if (!t || t === '-' || t === ',' || t === '.' || t === '-,' || t === '-.') return null;
+  const n = t.includes(',')
+    ? Number(t.replace(/\./g, '').replace(',', '.'))
+    : Number(t.replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Número no padrão Real, sem o prefixo R$ (ex.: 1.234,56). */
+export function formatBrMoney(value: number): string {
+  return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 /** Data civil (sem hora) para prazos, vencimentos e inputs type=date. */
 export function formatCalendarDate(iso: string | Date | undefined | null): string {
   if (!iso) return '—';
