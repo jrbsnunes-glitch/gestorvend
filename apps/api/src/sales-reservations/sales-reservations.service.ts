@@ -44,7 +44,15 @@ const reservationInclude = {
   sale: { select: { id: true, number: true, status: true } },
   items: {
     include: {
-      variant: { include: { product: { select: { name: true, isService: true, controlNumber: true } } } },
+      variant: {
+        select: {
+          id: true,
+          sku: true,
+          barcode: true,
+          taxUnit: true,
+          product: { select: { name: true, isService: true, controlNumber: true } },
+        },
+      },
     },
   },
   payments: { include: { paymentForm: { select: { id: true, name: true, kind: true } } } },
@@ -74,6 +82,21 @@ export type UpsertReservationInput = {
   payments: ReservationPaymentInput[];
 };
 
+export type PdvDraftLineInput = ReservationLineInput & { skipStock?: boolean };
+
+export type UpsertPdvDraftInput = {
+  tenantSlug: string;
+  userId: string;
+  userRoles: string[];
+  customerId?: string | null;
+  pdvTerminalId?: string | null;
+  pdvSellerUserId?: string | null;
+  discount?: number | string;
+  surcharge?: number | string;
+  items: PdvDraftLineInput[];
+  reservationId?: string | null;
+};
+
 type StockMoveLine = {
   stockVariantId: string;
   stockQty: number;
@@ -93,7 +116,7 @@ export class SalesReservationsService {
   async list(tenantSlug: string, status?: string) {
     const db = await this.tenantPrisma.getClient(tenantSlug);
     await this.expireOverdue(db, tenantSlug);
-    const where: Prisma.SaleReservationWhereInput = {};
+    const where: Prisma.SaleReservationWhereInput = { isPdvDraft: false };
     const st = String(status ?? '').trim().toUpperCase();
     if (st && Object.values(SaleReservationStatus).includes(st as SaleReservationStatus)) {
       where.status = st as SaleReservationStatus;
@@ -417,6 +440,283 @@ export class SalesReservationsService {
     const reservation = await this.getOne(tenantSlug, id);
     const company = await this.company.getOrCreate(tenantSlug);
     return { reservation, company };
+  }
+
+  private async assertPdvDraftsEnabled(tenantSlug: string) {
+    const c = await this.company.getOrCreate(tenantSlug);
+    if (!c.pdvDraftsEnabled) {
+      throw new ForbiddenException(
+        'Rascunhos do PDV estão desativados. Ative em Empresa → aba PDV.',
+      );
+    }
+    return c;
+  }
+
+  async listPdvDrafts(tenantSlug: string, userId: string) {
+    await this.assertPdvDraftsEnabled(tenantSlug);
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    await this.expireOverdue(db, tenantSlug);
+    return db.saleReservation.findMany({
+      where: {
+        isPdvDraft: true,
+        status: SaleReservationStatus.OPEN,
+        userId,
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+      take: 50,
+      include: reservationInclude,
+    });
+  }
+
+  async getPdvDraft(tenantSlug: string, id: string, userId: string) {
+    await this.assertPdvDraftsEnabled(tenantSlug);
+    const row = await this.getOne(tenantSlug, id);
+    if (!row.isPdvDraft) throw new NotFoundException('Rascunho não encontrado.');
+    if (row.userId !== userId) {
+      throw new ForbiddenException('Este rascunho pertence a outro operador.');
+    }
+    return row;
+  }
+
+  async upsertPdvDraft(input: UpsertPdvDraftInput) {
+    await this.assertPdvDraftsEnabled(input.tenantSlug);
+    const id = String(input.reservationId ?? '').trim();
+    if (id) {
+      const db = await this.tenantPrisma.getClient(input.tenantSlug);
+      const existing = await this.requireOpenPdvDraft(db, input.tenantSlug, id, input.userId);
+      return this.updatePdvDraft(existing, input);
+    }
+    return this.createPdvDraft(input);
+  }
+
+  async cancelPdvDraft(tenantSlug: string, id: string, userId: string) {
+    await this.assertPdvDraftsEnabled(tenantSlug);
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const existing = await this.requireOpenPdvDraft(db, tenantSlug, id, userId);
+    return this.cancel(tenantSlug, existing.id, userId);
+  }
+
+  private async requireOpenPdvDraft(
+    db: Awaited<ReturnType<TenantPrismaService['getClient']>>,
+    tenantSlug: string,
+    id: string,
+    userId: string,
+  ) {
+    const row = await this.requireOpen(db, tenantSlug, id);
+    if (!row.isPdvDraft) throw new NotFoundException('Rascunho não encontrado.');
+    if (row.userId !== userId) {
+      throw new ForbiddenException('Este rascunho pertence a outro operador.');
+    }
+    return row;
+  }
+
+  private async createPdvDraft(input: UpsertPdvDraftInput) {
+    const db = await this.tenantPrisma.getClient(input.tenantSlug);
+    const prepared = await this.preparePdvDraftPayload(db, input);
+    const expiresAt = new Date(Date.now() + RESERVATION_TTL_MS);
+    const pdvTerminalId = input.pdvTerminalId?.trim() || null;
+    const pdvSellerUserId = input.pdvSellerUserId?.trim() || null;
+
+    const created = await db.$transaction(async (tx) => {
+      const { defaultLoc, reservaLoc } = await this.locations(tx);
+      const row = await tx.saleReservation.create({
+        data: {
+          status: SaleReservationStatus.OPEN,
+          isPdvDraft: true,
+          customerId: prepared.customerId,
+          userId: input.userId,
+          pdvTerminalId,
+          pdvSellerUserId,
+          subtotal: String(prepared.subtotal.toFixed(2)),
+          discount: String(prepared.headerDiscount.toFixed(2)),
+          pdvSurcharge: String(prepared.surcharge.toFixed(2)),
+          total: String(prepared.total.toFixed(2)),
+          notes: null,
+          expiresAt,
+          items: {
+            create: prepared.items.map((it) => ({
+              variantId: it.variantId,
+              quantity: String(it.quantity),
+              unitPrice: String(it.unitPrice),
+              discount: String(it.discount),
+              totalLine: String(it.totalLine.toFixed(2)),
+            })),
+          },
+          payments: {
+            create: prepared.payments.map((p) => ({
+              method: p.method,
+              amount: String(p.amount.toFixed(2)),
+              installments: p.installments,
+              paymentFormId: p.paymentFormId,
+            })),
+          },
+        },
+        include: reservationInclude,
+      });
+      await this.transferLines(
+        tx,
+        defaultLoc.id,
+        reservaLoc.id,
+        prepared.stockLines,
+        input.userId,
+        `Rascunho PDV #${row.number}`,
+        true,
+      );
+      return row;
+    });
+
+    this.activityLog.record({
+      tenantSlug: input.tenantSlug,
+      userId: input.userId,
+      action: ActivityLogAction.CREATE,
+      summary: `Salvou rascunho PDV #${created.number}`,
+      entityType: 'saleReservation',
+      entityRef: `#${created.number}`,
+    });
+    return created;
+  }
+
+  private async updatePdvDraft(
+    existing: Awaited<ReturnType<SalesReservationsService['requireOpen']>>,
+    input: UpsertPdvDraftInput,
+  ) {
+    const db = await this.tenantPrisma.getClient(input.tenantSlug);
+    const prepared = await this.preparePdvDraftPayload(db, input);
+    const id = existing.id;
+    const pdvTerminalId = input.pdvTerminalId?.trim() || null;
+    const pdvSellerUserId = input.pdvSellerUserId?.trim() || null;
+
+    const updated = await db.$transaction(async (tx) => {
+      const { defaultLoc, reservaLoc } = await this.locations(tx);
+      const oldLines = await this.expandStockLines(
+        tx,
+        existing.items.map((it) => ({
+          variantId: it.variantId,
+          quantity: Number(it.quantity),
+        })),
+      );
+      await this.transferLines(
+        tx,
+        reservaLoc.id,
+        defaultLoc.id,
+        oldLines,
+        input.userId,
+        `Estorno rascunho PDV #${existing.number} (atualização)`,
+        false,
+      );
+      await tx.saleReservationItem.deleteMany({ where: { reservationId: id } });
+      await tx.saleReservationPayment.deleteMany({ where: { reservationId: id } });
+      const row = await tx.saleReservation.update({
+        where: { id },
+        data: {
+          customerId: prepared.customerId,
+          pdvTerminalId,
+          pdvSellerUserId,
+          subtotal: String(prepared.subtotal.toFixed(2)),
+          discount: String(prepared.headerDiscount.toFixed(2)),
+          pdvSurcharge: String(prepared.surcharge.toFixed(2)),
+          total: String(prepared.total.toFixed(2)),
+          items: {
+            create: prepared.items.map((it) => ({
+              variantId: it.variantId,
+              quantity: String(it.quantity),
+              unitPrice: String(it.unitPrice),
+              discount: String(it.discount),
+              totalLine: String(it.totalLine.toFixed(2)),
+            })),
+          },
+          payments: {
+            create: prepared.payments.map((p) => ({
+              method: p.method,
+              amount: String(p.amount.toFixed(2)),
+              installments: p.installments,
+              paymentFormId: p.paymentFormId,
+            })),
+          },
+        },
+        include: reservationInclude,
+      });
+      await this.transferLines(
+        tx,
+        defaultLoc.id,
+        reservaLoc.id,
+        prepared.stockLines,
+        input.userId,
+        `Rascunho PDV #${row.number} (atualização)`,
+        true,
+      );
+      return row;
+    });
+
+    this.activityLog.record({
+      tenantSlug: input.tenantSlug,
+      userId: input.userId,
+      action: ActivityLogAction.UPDATE,
+      summary: `Atualizou rascunho PDV #${updated.number}`,
+      entityType: 'saleReservation',
+      entityRef: `#${updated.number}`,
+    });
+    return updated;
+  }
+
+  private async preparePdvDraftPayload(
+    db: Awaited<ReturnType<TenantPrismaService['getClient']>>,
+    input: UpsertPdvDraftInput,
+  ) {
+    if (!input.items?.length) {
+      throw new BadRequestException('Inclua ao menos um produto no rascunho.');
+    }
+
+    const headerDiscount = Math.max(0, Number(input.discount ?? 0));
+    const surcharge = Math.max(0, Number(input.surcharge ?? 0));
+    if (!Number.isFinite(headerDiscount) || !Number.isFinite(surcharge)) {
+      throw new BadRequestException('Desconto ou acréscimo inválido.');
+    }
+
+    const items: Array<{
+      variantId: string;
+      quantity: number;
+      unitPrice: number;
+      discount: number;
+      totalLine: number;
+    }> = [];
+    let subtotal = 0;
+    for (const it of input.items) {
+      const variantId = String(it.variantId ?? '').trim();
+      const q = Number(it.quantity);
+      const p = Number(it.unitPrice);
+      const d = Number(it.discount ?? 0);
+      if (!variantId) throw new BadRequestException('Produto inválido.');
+      if (!(q > 0) || !Number.isFinite(q)) throw new BadRequestException('Quantidade inválida.');
+      if (!(p >= 0) || !Number.isFinite(p)) throw new BadRequestException('Preço inválido.');
+      if (d < 0) throw new BadRequestException('Desconto de item inválido.');
+      const gross = roundMoney2(q * p);
+      if (d > gross + 0.009) {
+        throw new BadRequestException('Desconto de item não pode exceder o valor da linha.');
+      }
+      const totalLine = roundMoney2(gross - d);
+      subtotal = roundMoney2(subtotal + totalLine);
+      items.push({ variantId, quantity: q, unitPrice: p, discount: d, totalLine });
+    }
+
+    const total = roundMoney2(Math.max(0, subtotal - headerDiscount + surcharge));
+    const payments = [{ method: PaymentMethod.CASH, amount: total, installments: 1, paymentFormId: null as string | null }];
+
+    const stockItems = input.items
+      .filter((it) => !it.skipStock)
+      .map((it) => ({ variantId: String(it.variantId).trim(), quantity: Number(it.quantity) }));
+    const stockLines = await this.expandStockLines(db, stockItems);
+
+    return {
+      customerId: input.customerId?.trim() || null,
+      items,
+      payments,
+      subtotal,
+      headerDiscount,
+      surcharge,
+      total,
+      stockLines,
+    };
   }
 
   private async expireOverdue(

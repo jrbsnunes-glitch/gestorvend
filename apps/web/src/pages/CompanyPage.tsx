@@ -46,6 +46,7 @@ type Company = {
   logoUrl: string | null;
   /** Comprovante interno × planejamento documento fiscal (NF-e futura). */
   pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED';
+  pdvDraftsEnabled?: boolean;
   autoQueueNfceOnSale?: boolean;
   saleReceiptAutoPrint?: boolean;
   saleReceiptPrinterHint?: string | null;
@@ -119,6 +120,7 @@ const EMPTY_FORM: FormState = {
   zip: '',
   logoUrl: '',
   pdvDocumentMode: 'NON_FISCAL_RECEIPT',
+  pdvDraftsEnabled: false,
   autoQueueNfceOnSale: false,
   saleReceiptAutoPrint: false,
   saleReceiptPrinterHint: '',
@@ -189,6 +191,7 @@ function toForm(c: Company): FormState {
     zip: c.zip ? formatCep(c.zip) : '',
     logoUrl: c.logoUrl ?? '',
     pdvDocumentMode: c.pdvDocumentMode ?? 'NON_FISCAL_RECEIPT',
+    pdvDraftsEnabled: Boolean(c.pdvDraftsEnabled),
     autoQueueNfceOnSale: Boolean(c.autoQueueNfceOnSale),
     saleReceiptAutoPrint: Boolean(c.saleReceiptAutoPrint),
     saleReceiptPrinterHint: c.saleReceiptPrinterHint ?? '',
@@ -1160,6 +1163,25 @@ export function CompanyPage() {
               Modo do documento da venda e impressão do cupom não fiscal (no navegador do caixa). Não ativa
               SEFAZ — use <code>FISCAL_MODULE_ENABLED</code> quando o certificado estiver pronto.
             </p>
+            <div className="field" style={{ marginBottom: '0.75rem' }}>
+              <label htmlFor="c-pdv-drafts" style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                <input
+                  id="c-pdv-drafts"
+                  type="checkbox"
+                  checked={Boolean(form.pdvDraftsEnabled)}
+                  onChange={(e) => update('pdvDraftsEnabled', e.target.checked)}
+                  style={{ marginTop: '0.15rem' }}
+                />
+                <span>
+                  Rascunhos de venda no PDV
+                  <span className="sub" style={{ fontWeight: 400 }}>
+                    Ao sair do caixa com itens no carrinho, a venda fica em &quot;Rascunhos&quot; por 24 horas, com
+                    estoque reservado (mesma regra da reserva de vendas). Depois desse prazo o saldo volta ao
+                    estoque.
+                  </span>
+                </span>
+              </label>
+            </div>
             <div className="inline-checks" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
               <label>
                 <input

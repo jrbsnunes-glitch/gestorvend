@@ -26,6 +26,7 @@ type CompanyInput = {
   saleReceiptAutoPrint?: boolean;
   saleReceiptPrinterHint?: string | null;
   pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED' | string;
+  pdvDraftsEnabled?: boolean;
   autoQueueNfceOnSale?: boolean;
   restaurantModuleEnabled?: boolean;
   comandaNumberingMode?: 'DYNAMIC' | 'FIXED' | string;
@@ -304,6 +305,10 @@ export class CompanyService {
         throw new BadRequestException('Modo de balança inválido.');
       }
       data.scaleMode = m;
+    }
+
+    if (body.pdvDraftsEnabled !== undefined) {
+      data.pdvDraftsEnabled = Boolean(body.pdvDraftsEnabled);
     }
 
     if (body.pdvDocumentMode !== undefined) {

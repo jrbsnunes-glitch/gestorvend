@@ -2,15 +2,18 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { SalesModule } from '../sales/sales.module';
+import { SalesReservationsModule } from '../sales-reservations/sales-reservations.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { CompanyModule } from '../company/company.module';
 import { TenantModule } from '../tenant/tenant.module';
+import { PdvDraftsController } from './pdv-drafts.controller';
 import { KioskController, PdvTerminalsController } from './pdv-terminals.controller';
 import { PdvTerminalsService } from './pdv-terminals.service';
 
 @Module({
   imports: [
     SalesModule,
+    SalesReservationsModule,
     PaymentsModule,
     CompanyModule,
     TenantModule,
@@ -23,7 +26,7 @@ import { PdvTerminalsService } from './pdv-terminals.service';
       }),
     }),
   ],
-  controllers: [PdvTerminalsController, KioskController],
+  controllers: [PdvTerminalsController, KioskController, PdvDraftsController],
   providers: [PdvTerminalsService],
   exports: [PdvTerminalsService],
 })

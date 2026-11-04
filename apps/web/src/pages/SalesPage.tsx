@@ -250,6 +250,31 @@ type CartLine = {
   mfgDeposit?: boolean;
 };
 
+type PdvDraftRow = {
+  id: string;
+  number: number;
+  status: string;
+  total: string;
+  discount: string;
+  pdvSurcharge?: string;
+  pdvSellerUserId?: string | null;
+  expiresAt: string;
+  updatedAt: string;
+  customer?: { id: string; name: string } | null;
+  items: Array<{
+    variantId: string;
+    quantity: string;
+    unitPrice: string;
+    discount: string;
+    variant?: {
+      sku: string | null;
+      barcode: string | null;
+      taxUnit: string | null;
+      product?: { name: string; isService?: boolean };
+    };
+  }>;
+};
+
 type CartPayment = {
   id: string;
   method: PaymentKind;
@@ -1323,6 +1348,9 @@ function PosScreen({
   const [customerSearch, setCustomerSearch] = useState('');
   const [customerSearchIdx, setCustomerSearchIdx] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [exitDraftOpen, setExitDraftOpen] = useState(false);
+  const [activePdvDraftId, setActivePdvDraftId] = useState<string | null>(null);
   const [closeOpen, setCloseOpen] = useState(false);
   const [closingByMethod, setClosingByMethod] = useState<Record<CloseMethodKey, string>>({
     CASH: '',
@@ -1493,9 +1521,35 @@ function PosScreen({
           restaurantModuleEnabled?: boolean;
           serviceOrderModuleEnabled?: boolean;
           cashExpenseInPresentedTotal?: boolean;
+          pdvDraftsEnabled?: boolean;
         }
       >('/company'),
     staleTime: 60_000,
+  });
+
+  const pdvDraftsEnabled = Boolean(companyQ.data?.pdvDraftsEnabled);
+
+  const pdvDraftsQ = useQuery({
+    queryKey: ['pdv-drafts'],
+    queryFn: () => api<PdvDraftRow[]>('/pdv/drafts'),
+    enabled: pdvDraftsEnabled,
+    staleTime: 20_000,
+  });
+
+  const savePdvDraftMut = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      api<PdvDraftRow>('/pdv/drafts', { method: 'POST', json: payload }),
+    onSuccess: (row) => {
+      setActivePdvDraftId(row.id);
+      void qc.invalidateQueries({ queryKey: ['pdv-drafts'] });
+    },
+  });
+
+  const cancelPdvDraftMut = useMutation({
+    mutationFn: (id: string) => api(`/pdv/drafts/${id}/cancel`, { method: 'POST' }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['pdv-drafts'] });
+    },
   });
 
   const restaurantPdv =
@@ -1927,9 +1981,15 @@ function PosScreen({
   /* --- mutações --- */
 
   const createSale = useMutation({
-    mutationFn: (permissionPassword?: string) => {
+    mutationFn: async (permissionPassword?: string) => {
       if (cashSessionFromPreviousDay(session.openedAt)) {
         throw new Error(STALE_CASH_SALE_BLOCK_MESSAGE);
+      }
+      const draftId = activePdvDraftId;
+      if (draftId) {
+        await api(`/pdv/drafts/${draftId}/cancel`, { method: 'POST' });
+        setActivePdvDraftId(null);
+        void qc.invalidateQueries({ queryKey: ['pdv-drafts'] });
       }
       return api<{ id: string; number: number }>('/sales', {
         method: 'POST',
@@ -2378,7 +2438,77 @@ function PosScreen({
     });
   }
 
-  function resetSale() {
+  function buildPdvDraftPayload() {
+    return {
+      reservationId: activePdvDraftId,
+      customerId: customer?.id ?? null,
+      pdvTerminalId: pdvTerminalId ?? null,
+      pdvSellerUserId: sellerUserId || null,
+      discount,
+      surcharge,
+      items: lines.map((l) => ({
+        variantId: l.variantId,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        discount: l.discount,
+        skipStock: Boolean(l.fromComanda || l.mfgDeposit || l.isService),
+      })),
+    };
+  }
+
+  function applyPdvDraft(draft: PdvDraftRow) {
+    setActivePdvDraftId(draft.id);
+    setDiscount(Number(draft.discount) || 0);
+    setSurcharge(Number(draft.pdvSurcharge ?? 0) || 0);
+    setCustomer(
+      draft.customer?.id
+        ? {
+            id: draft.customer.id,
+            name: draft.customer.name,
+          }
+        : null,
+    );
+    if (draft.pdvSellerUserId) setSellerUserId(draft.pdvSellerUserId);
+    setLines(
+      draft.items.map((it) => ({
+        variantId: it.variantId,
+        productName: it.variant?.product?.name ?? 'Produto',
+        sku: it.variant?.sku ?? '',
+        barcode: it.variant?.barcode ?? null,
+        unitPrice: Number(it.unitPrice),
+        quantity: Number(it.quantity),
+        discount: Number(it.discount) || 0,
+        stockTotal: 0,
+        minStock: 0,
+        taxUnit: it.variant?.taxUnit ?? 'UN',
+        isService: it.variant?.product?.isService,
+      })),
+    );
+    setPayments([]);
+    setDraftsOpen(false);
+  }
+
+  async function savePdvDraftAndLeave() {
+    try {
+      await savePdvDraftMut.mutateAsync(buildPdvDraftPayload());
+      setActivePdvDraftId(null);
+      resetSale();
+      setExitDraftOpen(false);
+      onExit();
+    } catch (e) {
+      setToast({
+        kind: 'err',
+        text: e instanceof Error ? e.message : 'Não foi possível salvar o rascunho.',
+      });
+    }
+  }
+
+  function resetSale(releaseDraft = false) {
+    if (releaseDraft && activePdvDraftId) {
+      const id = activePdvDraftId;
+      setActivePdvDraftId(null);
+      void cancelPdvDraftMut.mutate(id);
+    }
     setLines([]);
     setQtyDraft({});
     setDiscount(0);
@@ -2800,7 +2930,7 @@ function PosScreen({
         if (v != null) applySurcharge(parseDecimal(v));
       } else if (ev.key === 'Escape' && lines.length > 0) {
         if (serviceTab) return; // use "Cancelar cobrança" no aviso amarelo
-        if (confirm('Cancelar venda atual e limpar carrinho?')) resetSale();
+        if (confirm('Cancelar venda atual e limpar carrinho?')) resetSale(Boolean(activePdvDraftId));
       }
     }
     window.addEventListener('keydown', onKey);
@@ -2823,7 +2953,15 @@ function PosScreen({
     pdvCapabilities.canPdvProcedures,
   ]);
 
+  function pdvSpecialSaleContext() {
+    return Boolean(serviceTab || serviceOrder || manufacturingDeposit);
+  }
+
   function tryExit() {
+    if (pdvDraftsEnabled && !pdvSpecialSaleContext() && lines.length > 0) {
+      setExitDraftOpen(true);
+      return;
+    }
     if (lines.length > 0) {
       if (!confirm('Há uma venda em andamento. Sair mesmo assim? O carrinho será descartado.')) {
         return;
@@ -2844,6 +2982,9 @@ function PosScreen({
         pdvTerminalNumber={pdvTerminalNumber}
         pdvTerminalName={pdvTerminalName}
         pdvCapabilities={pdvCapabilities}
+        pdvDraftsEnabled={pdvDraftsEnabled}
+        pdvDraftCount={pdvDraftsQ.data?.length ?? 0}
+        onOpenDrafts={() => setDraftsOpen(true)}
         onOpenPrintPrefs={() => setPrintPrefsOpen(true)}
         onOpenHistory={() => setHistoryOpen(true)}
         onOpenProcedures={() => setProceduresOpen(true)}
@@ -4548,6 +4689,103 @@ function PosScreen({
         }}
       />
 
+      {exitDraftOpen ? (
+        <FormModalBackdrop onClose={() => setExitDraftOpen(false)}>
+          <div className="modal" role="dialog" aria-labelledby="pos-exit-draft-title">
+            <h2 id="pos-exit-draft-title">Salvar venda em rascunho?</h2>
+            <p style={{ margin: '0.5rem 0 1rem', lineHeight: 1.45 }}>
+              Você tem itens no carrinho. Ao sair do PDV, esta venda ficará em{' '}
+              <strong>Rascunhos</strong> por <strong>24 horas</strong>, com o estoque reservado. Depois desse
+              prazo, os produtos voltam automaticamente ao estoque disponível.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="pos-btn pos-btn-ghost"
+                onClick={() => setExitDraftOpen(false)}
+              >
+                Continuar no PDV
+              </button>
+              <button
+                type="button"
+                className="pos-btn pos-btn-finish"
+                disabled={savePdvDraftMut.isPending}
+                onClick={() => void savePdvDraftAndLeave()}
+              >
+                {savePdvDraftMut.isPending ? 'Salvando…' : 'Salvar rascunho e sair'}
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      ) : null}
+
+      {draftsOpen && pdvDraftsEnabled ? (
+        <FormModalBackdrop onClose={() => setDraftsOpen(false)}>
+          <div className="modal pos-drafts-modal" role="dialog" aria-labelledby="pos-drafts-title">
+            <h2 id="pos-drafts-title">Rascunhos de venda</h2>
+            <p style={{ margin: '0.35rem 0 0.75rem', lineHeight: 1.45 }}>
+              Vendas não finalizadas (válidas por 24h). O estoque permanece reservado até expirar ou você
+              concluir a venda.
+            </p>
+            {pdvDraftsQ.isLoading ? (
+              <p>Carregando…</p>
+            ) : (pdvDraftsQ.data?.length ?? 0) === 0 ? (
+              <p>Nenhum rascunho em aberto.</p>
+            ) : (
+              <ul className="pos-drafts-list">
+                {(pdvDraftsQ.data ?? []).map((d) => (
+                  <li key={d.id} className="pos-drafts-item">
+                    <div className="pos-drafts-item-main">
+                      <strong>#{d.number}</strong>
+                      <span>{formatBRL(Number(d.total))}</span>
+                      <span className="pos-drafts-item-meta">
+                        {d.customer?.name ?? 'Balcão'} · expira {formatDate(d.expiresAt)}
+                      </span>
+                    </div>
+                    <div className="pos-drafts-item-actions">
+                      <button
+                        type="button"
+                        className="pos-btn pos-btn-finish"
+                        onClick={() => {
+                          if (lines.length > 0 && !window.confirm('Substituir o carrinho atual por este rascunho?')) {
+                            return;
+                          }
+                          applyPdvDraft(d);
+                        }}
+                      >
+                        Retomar
+                      </button>
+                      <button
+                        type="button"
+                        className="pos-btn pos-btn-ghost"
+                        disabled={cancelPdvDraftMut.isPending}
+                        onClick={() => {
+                          if (!window.confirm(`Excluir rascunho #${d.number} e devolver estoque?`)) return;
+                          if (activePdvDraftId === d.id) setActivePdvDraftId(null);
+                          const clearingActive = activePdvDraftId === d.id;
+                          cancelPdvDraftMut.mutate(d.id, {
+                            onSuccess: () => {
+                              if (clearingActive) resetSale();
+                            },
+                          });
+                        }}
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="pos-btn pos-btn-ghost" onClick={() => setDraftsOpen(false)}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      ) : null}
+
       <PosPrintPrefsModal
         open={printPrefsOpen}
         onClose={() => setPrintPrefsOpen(false)}
@@ -4681,6 +4919,9 @@ function PosTopbar({
   pdvTerminalNumber,
   pdvTerminalName,
   pdvCapabilities,
+  pdvDraftsEnabled,
+  pdvDraftCount,
+  onOpenDrafts,
   onOpenPrintPrefs,
   onOpenHistory,
   onOpenProcedures,
@@ -4694,6 +4935,9 @@ function PosTopbar({
   pdvTerminalNumber: number | null;
   pdvTerminalName: string | null;
   pdvCapabilities: PdvTerminalCapabilities;
+  pdvDraftsEnabled?: boolean;
+  pdvDraftCount?: number;
+  onOpenDrafts?: () => void;
   onOpenPrintPrefs: () => void;
   onOpenHistory: () => void;
   onOpenProcedures: () => void;
@@ -4780,6 +5024,16 @@ function PosTopbar({
         <span>
           <span className="pos-shortcut-key">F8</span> desconto
         </span>
+        {pdvDraftsEnabled && onOpenDrafts ? (
+          <button
+            type="button"
+            className="pos-btn pos-btn-ghost pos-topbar-draft-btn"
+            onClick={onOpenDrafts}
+            title="Vendas salvas ao sair do PDV (válidas por 24 horas)"
+          >
+            Rascunhos{pdvDraftCount ? ` (${pdvDraftCount})` : ''}
+          </button>
+        ) : null}
         <span>
           <span className="pos-shortcut-key">F9</span> acréscimo
         </span>
@@ -4788,6 +5042,16 @@ function PosTopbar({
         </span>
       </div>
       <div className="pos-topbar-actions">
+        {pdvDraftsEnabled && onOpenDrafts ? (
+          <button
+            type="button"
+            className="pos-btn pos-btn-ghost"
+            onClick={onOpenDrafts}
+            title="Retomar vendas não finalizadas (24h, estoque reservado)"
+          >
+            Rascunhos{pdvDraftCount ? ` (${pdvDraftCount})` : ''}
+          </button>
+        ) : null}
         <button
           type="button"
           className="pos-btn pos-btn-ghost"

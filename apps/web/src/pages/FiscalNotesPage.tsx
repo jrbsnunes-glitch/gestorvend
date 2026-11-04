@@ -634,16 +634,18 @@ export function FiscalNotesPage() {
               >
                 {sendBatch.isPending ? 'Enviando…' : `Enviar selecionadas${checkedIds.length ? ` (${checkedIds.length})` : ''}`}
               </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={batchBusy}
-                title="Reenvia NFC-e/NF-e em contingência do filtro atual (ou todas do tipo, se não houver filtro)"
-                onClick={runSendContingencyFilter}
-              >
-                Enviar contingência
-                {contingencyOnPage > 0 ? ` (${contingencyOnPage} na página)` : ''}
-              </button>
+              {tab === 'NFC_E' ? (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={batchBusy}
+                  title="Reenvia NFC-e em contingência do filtro atual (ou todas, se não houver filtro)"
+                  onClick={runSendContingencyFilter}
+                >
+                  Enviar contingência
+                  {contingencyOnPage > 0 ? ` (${contingencyOnPage} na página)` : ''}
+                </button>
+              ) : null}
               <button type="button" className="btn btn-secondary" onClick={() => {
                 setExportErr(null);
                 setExportForm({

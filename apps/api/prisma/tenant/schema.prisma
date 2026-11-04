@@ -34,6 +34,8 @@ model Company {
   logoUrl     String?
   /// Comprovante térmico interno (não transmite SEFAZ) x planejamento para documento fiscal eletrônico.
   pdvDocumentMode PdvDocumentMode @default(NON_FISCAL_RECEIPT)
+  /// Rascunhos de venda no PDV (estoque reservado 24h, como reserva de vendas).
+  pdvDraftsEnabled Boolean @default(false)
   /// Enfileira NFC-e automaticamente ao concluir venda (modo fiscal planejado).
   autoQueueNfceOnSale Boolean @default(false)
   /// Após finalizar venda no PDV, dispara impressão (janela de impressão do navegador na estação do operador).
@@ -1363,6 +1365,12 @@ model SaleReservation {
   expiresAt   DateTime
   confirmedAt DateTime?
   cancelledAt DateTime?
+  /// Rascunho salvo ao sair do PDV (mesma reserva de estoque / TTL 24h).
+  isPdvDraft      Boolean @default(false)
+  pdvTerminalId   String?
+  pdvTerminal     PdvTerminal? @relation(fields: [pdvTerminalId], references: [id], onDelete: SetNull)
+  pdvSurcharge    Decimal @default(0) @db.Decimal(14, 2)
+  pdvSellerUserId String?
   createdAt   DateTime              @default(now())
   updatedAt   DateTime              @updatedAt
   items       SaleReservationItem[]
@@ -1370,6 +1378,7 @@ model SaleReservation {
 
   @@index([status, expiresAt])
   @@index([customerId])
+  @@index([isPdvDraft, status, userId])
 }
 
 model SaleReservationItem {
@@ -1824,6 +1833,7 @@ model PdvTerminal {
   /// Rascunho de venda ativo neste terminal (evita conflito entre dispositivos).
   activeDraftSaleId String?        @unique
   activeDraftSale   Sale?           @relation("PdvTerminalActiveDraft", fields: [activeDraftSaleId], references: [id], onDelete: SetNull)
+  pdvSaleDrafts     SaleReservation[]
   lastSeenAt       DateTime?
   /// Device id do Mercado Pago Point (ex.: PAX_A910__SMARTPOS…). Modo PDV integrado.
   mpPointTerminalId String?        @db.VarChar(128)
