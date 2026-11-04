@@ -8,6 +8,7 @@ import {
   type RefObject,
 } from 'react';
 import { api } from '../lib/api';
+import { FormModalBackdrop } from './FormModalBackdrop';
 
 /** Limites visíveis dos ancestrais com overflow ≠ visible (evita painel cortado em modais). */
 function getClipVerticalBounds(el: HTMLElement): { top: number; bottom: number } {
@@ -565,7 +566,9 @@ export function FiscalCodeSearchCombo({
   const [open, setOpen] = useState(false);
   const [cestDesc, setCestDesc] = useState('');
   const [ncmDesc, setNcmDesc] = useState('');
-  const [includeHint, setIncludeHint] = useState<string | null>(null);
+  const [includeModalOpen, setIncludeModalOpen] = useState(false);
+  const [modalForm, setModalForm] = useState({ code: '', description: '' });
+  const [modalError, setModalError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -606,20 +609,27 @@ export function FiscalCodeSearchCombo({
   });
 
   const create = useMutation({
-    mutationFn: () => {
+    mutationFn: (payload?: { code: string; description: string }) => {
       if (kind === 'ncm') {
-        const digits = q.replace(/\D/g, '').slice(0, 8);
+        const digits = (payload?.code ?? q).replace(/\D/g, '').slice(0, 8);
         const desc =
-          (ncmDesc || q.replace(/^\d+\s*/, '').trim()) ||
-          (q.replace(/\D/g, '').length >= 8 ? q.replace(/^\d{8}\s*/, '').trim() : '');
+          (payload?.description ??
+            ncmDesc ||
+            q.replace(/^\d+\s*/, '').trim() ||
+            (q.replace(/\D/g, '').length >= 8 ? q.replace(/^\d{8}\s*/, '').trim() : '')
+          ).trim();
         return api<NcmRow>('/fiscal-codes/ncm', {
           method: 'POST',
           json: { code: digits, description: desc },
         });
       }
       if (kind === 'cest') {
-        const digits = q.replace(/\D/g, '').slice(0, 7);
-        const desc = (cestDesc || q.replace(/^\d+\s*/, '').trim()) || `CEST ${digits}`;
+        const digits = (payload?.code ?? q).replace(/\D/g, '').slice(0, 7);
+        const desc = (
+          payload?.description ??
+          (cestDesc || q.replace(/^\d+\s*/, '').trim()) ||
+          `CEST ${digits}`
+        ).trim();
         return api<CestRow>('/fiscal-codes/cest', {
           method: 'POST',
           json: {
@@ -644,6 +654,8 @@ export function FiscalCodeSearchCombo({
       setQ(desc ? `${row.code} — ${desc}` : row.code);
       setCestDesc('');
       setNcmDesc('');
+      setIncludeModalOpen(false);
+      setModalError(null);
       setOpen(false);
     },
   });
@@ -702,46 +714,52 @@ export function FiscalCodeSearchCombo({
     );
   }
 
-  function tryIncludeNew() {
-    setIncludeHint(null);
-    if (kind === 'ncm') {
-      const d = ncmDigitsFromQuery();
-      if (d.length !== 8) {
-        setIncludeHint('Informe os 8 dígitos do NCM no campo de busca.');
-        return;
-      }
-      if (rows.some((r) => r.code.replace(/\D/g, '').slice(0, 8) === d)) {
-        setIncludeHint('Este NCM já está na lista — clique nele para selecionar.');
-        return;
-      }
-      const desc = ncmDescriptionDraft();
-      if (!desc) {
-        setIncludeHint('Preencha a descrição do novo NCM abaixo.');
-        document.getElementById(`${id}-ncm-desc`)?.focus();
-        return;
-      }
-      create.mutate();
+  function openIncludeModal() {
+    setModalError(null);
+    const codeLen = kind === 'ncm' ? 8 : 7;
+    const preCode =
+      kind === 'ncm'
+        ? ncmDigitsFromQuery()
+        : q.replace(/\D/g, '').slice(0, codeLen);
+    setModalForm({
+      code: preCode,
+      description: kind === 'ncm' ? ncmDesc : cestDesc,
+    });
+    setIncludeModalOpen(true);
+  }
+
+  function submitIncludeModal() {
+    setModalError(null);
+    const codeLen = kind === 'ncm' ? 8 : 7;
+    const digits = modalForm.code.replace(/\D/g, '').slice(0, codeLen);
+    const desc = modalForm.description.trim();
+    if (digits.length !== codeLen) {
+      setModalError(`Informe ${codeLen} dígitos do ${kind === 'ncm' ? 'NCM' : 'CEST'}.`);
       return;
     }
-    if (kind === 'cest') {
-      const d = q.replace(/\D/g, '').slice(0, 7);
-      if (d.length !== 7) {
-        setIncludeHint('Informe os 7 dígitos do CEST no campo de busca.');
-        return;
-      }
-      if (rows.some((r) => r.code === d)) {
-        setIncludeHint('Este CEST já está na lista — clique nele para selecionar.');
-        return;
-      }
-      const desc = (cestDesc || q.replace(/^\d+\s*/, '').trim()).trim();
-      if (!desc) {
-        setIncludeHint('Preencha a descrição do novo CEST abaixo.');
-        document.getElementById(`${id}-cest-desc`)?.focus();
-        return;
-      }
-      create.mutate();
+    if (!desc) {
+      setModalError('A descrição é obrigatória.');
+      return;
     }
+    if (
+      rows.some((r) =>
+        kind === 'ncm'
+          ? r.code.replace(/\D/g, '').slice(0, codeLen) === digits
+          : r.code === digits,
+      )
+    ) {
+      setModalError('Este código já está cadastrado — feche e selecione na lista.');
+      return;
+    }
+    create.mutate(
+      { code: digits, description: desc },
+      {
+        onError: (e: Error) => setModalError(e.message),
+      },
+    );
   }
+
+  const codeLen = kind === 'ncm' ? 8 : kind === 'cest' ? 7 : 0;
 
   return (
     <div className="catalog-combo" ref={wrapRef}>
@@ -762,12 +780,10 @@ export function FiscalCodeSearchCombo({
           value={q}
           onChange={(e) => {
             setQ(e.target.value);
-            setIncludeHint(null);
             if (value) onChange('');
           }}
           onFocus={() => {
             setOpen(true);
-            setIncludeHint(null);
             // Ao focar em unidades, abre a lista completa (filtrar digitando).
             if (kind === 'tax-units') setQ('');
           }}
@@ -777,17 +793,14 @@ export function FiscalCodeSearchCombo({
             type="button"
             className="catalog-combo-include-link"
             disabled={create.isPending}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => tryIncludeNew()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              openIncludeModal();
+            }}
           >
-            {create.isPending ? 'Incluindo…' : '+ Incluir'}
+            + Incluir
           </button>
-        ) : null}
-        {includeHint ? <p className="catalog-combo-inline-hint">{includeHint}</p> : null}
-        {create.isError && (kind === 'ncm' || kind === 'cest') ? (
-          <p className="catalog-combo-inline-hint catalog-combo-inline-hint--error">
-            {(create.error as Error).message}
-          </p>
         ) : null}
         {open && (
           <div
@@ -849,37 +862,89 @@ export function FiscalCodeSearchCombo({
           </div>
         )}
       </div>
-      {kind === 'cest' && open && (
-        <div className="field catalog-combo-nested">
-          <label htmlFor={`${id}-cest-desc`}>Descrição (obrigatória para novo CEST)</label>
-          <input
-            id={`${id}-cest-desc`}
-            value={cestDesc}
-            onChange={(e) => {
-              setCestDesc(e.target.value);
-              setIncludeHint(null);
-            }}
-            placeholder="Ex.: Outros produtos de…"
-          />
-        </div>
-      )}
-      {kind === 'ncm' && open && (
-        <div className="field catalog-combo-nested">
-          <label htmlFor={`${id}-ncm-desc`}>Descrição (obrigatória para novo NCM)</label>
-          <input
-            id={`${id}-ncm-desc`}
-            value={ncmDesc}
-            onChange={(e) => {
-              setNcmDesc(e.target.value);
-              setIncludeHint(null);
-            }}
-            placeholder="Ex.: Parafusos de aço, fechaduras…"
-          />
-          <p className="catalog-combo-hint" style={{ marginTop: '0.35rem', padding: 0, border: 'none', background: 'none' }}>
-            Código com 8 dígitos no campo de busca. Use <strong>+ Incluir</strong> para gravar.
-          </p>
-        </div>
-      )}
+      {includeModalOpen && (kind === 'ncm' || kind === 'cest') ? (
+        <FormModalBackdrop
+          onClose={() => {
+            if (create.isPending) return;
+            setIncludeModalOpen(false);
+            setModalError(null);
+          }}
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-labelledby={`${id}-include-title`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id={`${id}-include-title`}>
+              {kind === 'ncm' ? 'Incluir NCM' : 'Incluir CEST'}
+            </h2>
+            <p className="sub" style={{ marginTop: '0.35rem' }}>
+              {kind === 'ncm'
+                ? 'Cadastre um código NCM que ainda não está na lista. Campos obrigatórios: código (8 dígitos) e descrição.'
+                : 'Cadastre um CEST que ainda não está na lista. Campos obrigatórios: código (7 dígitos) e descrição.'}
+            </p>
+            {modalError ? <div className="alert alert-error">{modalError}</div> : null}
+            <div className="field" style={{ marginTop: '0.75rem' }}>
+              <label htmlFor={`${id}-modal-code`}>
+                Código {kind === 'ncm' ? 'NCM' : 'CEST'} <span className="req">*</span>
+              </label>
+              <input
+                id={`${id}-modal-code`}
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={codeLen + 4}
+                value={modalForm.code}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/\D/g, '').slice(0, codeLen);
+                  setModalForm((f) => ({ ...f, code: raw }));
+                  setModalError(null);
+                }}
+                placeholder={kind === 'ncm' ? '00000000' : '0000000'}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor={`${id}-modal-desc`}>
+                Descrição <span className="req">*</span>
+              </label>
+              <input
+                id={`${id}-modal-desc`}
+                value={modalForm.description}
+                onChange={(e) => {
+                  setModalForm((f) => ({ ...f, description: e.target.value }));
+                  setModalError(null);
+                }}
+                placeholder={
+                  kind === 'ncm'
+                    ? 'Ex.: Parafusos de aço, fechaduras…'
+                    : 'Ex.: Outros produtos de…'
+                }
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={create.isPending}
+                onClick={() => {
+                  setIncludeModalOpen(false);
+                  setModalError(null);
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={create.isPending}
+                onClick={() => submitIncludeModal()}
+              >
+                {create.isPending ? 'Salvando…' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </FormModalBackdrop>
+      ) : null}
       {value && (
         <p className="catalog-combo-foot">
           Código: <strong>{value}</strong>
