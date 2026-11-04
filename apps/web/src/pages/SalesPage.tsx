@@ -5024,16 +5024,6 @@ function PosTopbar({
         <span>
           <span className="pos-shortcut-key">F8</span> desconto
         </span>
-        {pdvDraftsEnabled && onOpenDrafts ? (
-          <button
-            type="button"
-            className="pos-btn pos-btn-ghost pos-topbar-draft-btn"
-            onClick={onOpenDrafts}
-            title="Vendas salvas ao sair do PDV (válidas por 24 horas)"
-          >
-            Rascunhos{pdvDraftCount ? ` (${pdvDraftCount})` : ''}
-          </button>
-        ) : null}
         <span>
           <span className="pos-shortcut-key">F9</span> acréscimo
         </span>

@@ -2744,13 +2744,6 @@
   }
 }
 
-.pos-topbar-shortcuts .pos-topbar-draft-btn {
-  margin-left: 0.35rem;
-  padding: 0.2rem 0.55rem;
-  min-height: auto;
-  font-size: 0.78rem;
-}
-
 .pos-drafts-modal {
   max-width: min(520px, 96vw);
 }
