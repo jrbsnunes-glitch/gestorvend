@@ -36,6 +36,7 @@ export type PdvTerminalCapabilities = {
   canOpenCash: boolean;
   canCloseCash: boolean;
   canPdvProcedures: boolean;
+  canViewRecentSales: boolean;
   canManagePastSales: boolean;
   isSatellite: boolean;
 };
@@ -44,6 +45,7 @@ export const FULL_PDV_CAPABILITIES: PdvTerminalCapabilities = {
   canOpenCash: true,
   canCloseCash: true,
   canPdvProcedures: true,
+  canViewRecentSales: true,
   canManagePastSales: true,
   isSatellite: false,
 };
@@ -54,8 +56,8 @@ export function isDesktopPdvStation(terminalNumber: number | null): boolean {
 }
 
 /**
- * Só o PDV secundário perde fechamento de caixa, vendas recentes e procedimentos.
- * O mestre (PRIMARY) mantém as opções administrativas, no Desktop e no navegador.
+ * PDV secundário: sem fechar caixa, procedimentos nem gestão de vendas passadas.
+ * Vendas recentes (consulta/reimpressão) permanecem disponíveis.
  */
 export function withDesktopCashierLimits(
   caps: PdvTerminalCapabilities,
@@ -66,6 +68,7 @@ export function withDesktopCashierLimits(
     ...caps,
     canCloseCash: false,
     canPdvProcedures: false,
+    canViewRecentSales: caps.canViewRecentSales !== false,
     canManagePastSales: false,
   };
 }

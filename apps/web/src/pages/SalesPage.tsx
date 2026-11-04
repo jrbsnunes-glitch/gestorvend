@@ -5060,7 +5060,7 @@ function PosTopbar({
             Procedimentos
           </button>
         ) : null}
-        {pdvCapabilities.canManagePastSales ? (
+        {pdvCapabilities.canViewRecentSales ? (
           <button type="button" className="pos-btn pos-btn-ghost" onClick={onOpenHistory}>
             Vendas recentes
           </button>

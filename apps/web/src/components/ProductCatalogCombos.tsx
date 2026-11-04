@@ -564,6 +564,7 @@ export function FiscalCodeSearchCombo({
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const [cestDesc, setCestDesc] = useState('');
+  const [ncmDesc, setNcmDesc] = useState('');
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -607,9 +608,12 @@ export function FiscalCodeSearchCombo({
     mutationFn: () => {
       if (kind === 'ncm') {
         const digits = q.replace(/\D/g, '').slice(0, 8);
+        const desc =
+          (ncmDesc || q.replace(/^\d+\s*/, '').trim()) ||
+          (q.replace(/\D/g, '').length >= 8 ? q.replace(/^\d{8}\s*/, '').trim() : '');
         return api<NcmRow>('/fiscal-codes/ncm', {
           method: 'POST',
-          json: { code: digits, description: null },
+          json: { code: digits, description: desc },
         });
       }
       if (kind === 'cest') {
@@ -638,6 +642,7 @@ export function FiscalCodeSearchCombo({
       const desc = 'description' in row && row.description ? row.description : '';
       setQ(desc ? `${row.code} — ${desc}` : row.code);
       setCestDesc('');
+      setNcmDesc('');
       setOpen(false);
     },
   });
@@ -652,8 +657,11 @@ export function FiscalCodeSearchCombo({
   const term = q.trim();
   let canCreate = term.length > 0 && !create.isPending;
   if (kind === 'ncm') {
-    const d = term.replace(/\D/g, '');
-    canCreate = canCreate && d.length === 8 && !rows.some((r) => r.code === d);
+    const d = term.replace(/\D/g, '').slice(0, 8);
+    const descOk =
+      (ncmDesc || term.replace(/^\d+\s*/, '').trim()).length > 0 ||
+      (d.length === 8 && term.replace(/^\d{8}\s*/, '').trim().length > 0);
+    canCreate = canCreate && d.length === 8 && descOk && !rows.some((r) => r.code === d);
   } else if (kind === 'cest') {
     const d = term.replace(/\D/g, '').slice(0, 7);
     const descOk = (cestDesc || term.replace(/^\d+\s*/, '').trim()).length > 0;
@@ -706,13 +714,27 @@ export function FiscalCodeSearchCombo({
       />
       {kind === 'cest' && open && (
         <div className="field catalog-combo-nested">
-          <label htmlFor={`${id}-cest-desc`}>Descrição (para novo CEST)</label>
+          <label htmlFor={`${id}-cest-desc`}>Descrição (obrigatória para novo CEST)</label>
           <input
             id={`${id}-cest-desc`}
             value={cestDesc}
             onChange={(e) => setCestDesc(e.target.value)}
-            placeholder="Obrigatório ao cadastrar novo CEST"
+            placeholder="Ex.: Outros produtos de…"
           />
+        </div>
+      )}
+      {kind === 'ncm' && open && (
+        <div className="field catalog-combo-nested">
+          <label htmlFor={`${id}-ncm-desc`}>Descrição (obrigatória para novo NCM)</label>
+          <input
+            id={`${id}-ncm-desc`}
+            value={ncmDesc}
+            onChange={(e) => setNcmDesc(e.target.value)}
+            placeholder="Ex.: Parafusos de aço, fechaduras…"
+          />
+          <p className="catalog-combo-hint" style={{ marginTop: '0.35rem' }}>
+            Código: 8 dígitos no campo acima. Preencha a descrição antes de cadastrar.
+          </p>
         </div>
       )}
       {open && (

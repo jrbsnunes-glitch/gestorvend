@@ -58,11 +58,15 @@ export class FiscalCodesController {
     if (code.length !== 8) {
       throw new BadRequestException('NCM deve ter 8 dígitos');
     }
+    const description = body.description?.trim() ?? '';
+    if (!description) {
+      throw new BadRequestException('Informe a descrição do NCM.');
+    }
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     return db.ncmCode.create({
       data: {
         code,
-        description: body.description?.trim() || null,
+        description,
       },
     });
   }
