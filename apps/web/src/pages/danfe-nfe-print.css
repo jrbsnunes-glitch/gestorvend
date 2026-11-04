@@ -1,6 +1,6 @@
 @page {
   size: A4 portrait;
-  margin: 6mm;
+  margin: 6mm 6mm 6mm 6mm;
 }
 
 .danfe-nfe-page {
@@ -16,10 +16,10 @@
   background: #fff;
   color: #000;
   font-family: Arial, Helvetica, sans-serif;
-  font-size: 8pt;
-  line-height: 1.25;
+  font-size: 7pt;
+  line-height: 1.2;
   box-sizing: border-box;
-  padding: 4mm 5mm;
+  padding: 6mm;
 }
 
 .danfe-nfe * {
@@ -30,110 +30,295 @@
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
+  margin-top: -1px;
 }
 
 .danfe-nfe td,
 .danfe-nfe th {
   border: 1px solid #000;
-  padding: 2px 4px;
+  padding: 1px 3px 2px;
   vertical-align: top;
+  overflow: hidden;
 }
 
 .danfe-nfe .lbl {
   display: block;
-  font-size: 6pt;
+  font-size: 5.5pt;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
-  color: #222;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .danfe-nfe .val {
+  display: block;
   font-size: 8pt;
   font-weight: 700;
+  min-height: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.danfe-nfe .tiny {
-  font-size: 6.5pt;
-}
-
-.danfe-nfe .center {
+.danfe-nfe .center,
+.danfe-nfe .center .val {
   text-align: center;
 }
 
-.danfe-nfe .right {
+.danfe-nfe .right,
+.danfe-nfe .right .val {
   text-align: right;
 }
 
-.danfe-nfe-canhoto td {
-  height: 16mm;
+.danfe-nfe .left,
+.danfe-nfe .left .val {
+  text-align: left;
 }
 
-.danfe-nfe-cut {
-  border: 0;
-  border-top: 1px dashed #000;
-  margin: 3mm 0 3mm;
+.danfe-nums .val {
+  text-align: right;
 }
 
-.danfe-nfe-logo {
-  width: 22mm;
-  height: 18mm;
-  object-fit: contain;
-  display: block;
-  margin: 0 auto 2px;
-}
-
-.danfe-nfe-emit {
-  font-size: 8pt;
-  text-align: center;
-}
-
-.danfe-nfe-emit strong {
-  font-size: 9pt;
-}
-
-.danfe-nfe-box-title {
-  font-weight: 700;
-  font-size: 12pt;
-  letter-spacing: 0.08em;
-}
-
-.danfe-nfe-key {
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 8pt;
-  letter-spacing: 0.04em;
-  word-break: break-all;
-}
-
-.danfe-nfe-barcode {
-  display: block;
-  margin: 2px auto;
-  max-width: 100%;
-  height: 10mm;
-}
-
-.danfe-nfe-items th {
-  font-size: 6pt;
+/* Canhoto */
+.danfe-canhoto-text {
+  font-size: 6.5pt;
+  line-height: 1.3;
   text-transform: uppercase;
-  background: #f3f3f3;
+}
+
+.danfe-canhoto-nf {
   text-align: center;
+  vertical-align: middle !important;
+  font-size: 8pt;
+  font-weight: 700;
 }
 
-.danfe-nfe-items td {
-  font-size: 7pt;
+.danfe-canhoto-nf strong {
+  font-size: 12pt;
+  display: block;
 }
 
-.danfe-nfe-watermark {
+.danfe-cut {
+  border-top: 1px dashed #000;
+  margin: 2.5mm 0 2.5mm;
+}
+
+.danfe-watermark {
   text-align: center;
   font-weight: 700;
   font-size: 9pt;
   color: #b91c1c;
-  margin: 2px 0;
+  margin: 0 0 1.5mm;
+  letter-spacing: 0.02em;
 }
 
-.danfe-nfe-foot {
+/* Cabeçalho */
+.danfe-emit .danfe-emit-body {
+  display: flex;
+  align-items: center;
+  gap: 3mm;
+  min-height: 30mm;
+}
+
+.danfe-logo {
+  width: 26mm;
+  height: 22mm;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.danfe-emit-text {
+  flex: 1;
+  text-align: center;
+  font-size: 7pt;
+  line-height: 1.35;
+}
+
+.danfe-emit-name {
+  font-size: 10pt;
+  font-weight: 700;
+  margin-bottom: 1mm;
+  text-transform: uppercase;
+}
+
+.danfe-title {
+  text-align: center;
+  vertical-align: middle !important;
+}
+
+.danfe-title-main {
+  font-size: 14pt;
+  font-weight: 700;
+}
+
+.danfe-title-sub {
   font-size: 6.5pt;
-  color: #333;
-  margin-top: 2mm;
+  line-height: 1.2;
+  margin-bottom: 1.5mm;
+}
+
+.danfe-tpnf {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2.5mm;
+  font-size: 6.5pt;
+  text-align: left;
+  margin-bottom: 1.5mm;
+}
+
+.danfe-tpnf-box {
+  display: inline-block;
+  border: 1px solid #000;
+  width: 6mm;
+  height: 6mm;
+  line-height: 6mm;
+  text-align: center;
+  font-size: 11pt;
+  font-weight: 700;
+}
+
+.danfe-title-num {
+  font-size: 8.5pt;
+  font-weight: 700;
+}
+
+.danfe-title-folha {
+  font-size: 7pt;
+  font-weight: 700;
+  margin-top: 0.5mm;
+}
+
+.danfe-barcode-cell {
+  text-align: center;
+  vertical-align: middle !important;
+  height: 14mm;
+}
+
+.danfe-barcode {
+  display: block;
+  margin: 1mm auto;
+  width: 95%;
+  height: 11mm;
+}
+
+.danfe-nokey {
+  font-size: 7pt;
+  padding-top: 4mm;
+}
+
+.danfe-key {
+  font-size: 8pt;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+  margin: 0.5mm 0 1mm;
+}
+
+.danfe-consulta {
+  font-size: 7pt;
+  text-align: center;
+  line-height: 1.3;
+}
+
+/* Seções */
+.danfe-sec {
+  font-size: 6.5pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin: 1.8mm 0 0.4mm;
+}
+
+.danfe-dups {
+  display: flex;
+  flex-wrap: wrap;
+  border: 1px solid #000;
+  min-height: 8mm;
+}
+
+.danfe-dup {
+  flex: 0 0 25%;
+  padding: 1px 3px;
+  font-size: 7pt;
+  border-right: 1px solid #000;
+}
+
+.danfe-dup:last-child {
+  border-right: 0;
+}
+
+.danfe-dup span {
+  display: inline-block;
+  min-width: 11mm;
+}
+
+.danfe-vnf .val {
+  font-size: 9pt;
+}
+
+/* Itens */
+.danfe-items th {
+  font-size: 5.5pt;
+  font-weight: 400;
+  text-transform: uppercase;
+  text-align: center;
+  vertical-align: middle;
+  line-height: 1.1;
+  padding: 1px 1px;
+}
+
+.danfe-items td {
+  font-size: 6.5pt;
+  border-top: 0;
+  border-bottom: 0;
+  padding: 1px 2px;
+  word-break: break-word;
+}
+
+.danfe-items tbody tr:last-child td {
+  border-bottom: 1px solid #000;
+}
+
+.danfe-items tbody tr:first-child td {
+  padding-top: 2px;
+}
+
+.danfe-infadprod {
+  font-size: 5.8pt;
+  font-style: italic;
+}
+
+.danfe-items thead {
+  display: table-header-group;
+}
+
+.danfe-items tr {
+  break-inside: avoid;
+}
+
+/* Dados adicionais */
+.danfe-adic {
+  height: 28mm;
+}
+
+.danfe-adic-text {
+  font-size: 6.5pt;
+  line-height: 1.3;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.danfe-err {
+  color: #b91c1c;
+  margin-top: 1mm;
+}
+
+.danfe-foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 6pt;
+  margin-top: 0.8mm;
 }
 
 @media print {

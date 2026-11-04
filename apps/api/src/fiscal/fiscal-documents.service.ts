@@ -38,6 +38,7 @@ import {
   resolveNfceCouponPrint,
 } from './issuer/nfce-print-supl';
 import { mapSalePaymentToNfcePag } from './issuer/nfce-payment';
+import { parseNfeDanfeXml } from './issuer/nfe-danfe-xml.parser';
 
 export type FiscalDocumentListQuery = {
   kind?: FiscalDocumentKind;
@@ -931,6 +932,7 @@ export class FiscalDocumentsService {
         serie: keyParts.serie,
         nNF: keyParts.nNF,
       },
+      xmlData: raw.kind === FiscalDocumentKind.NF_E ? parseNfeDanfeXml(xml) : null,
       aliquots: [...aliqMap.values()],
       rtc: rtcDanfeBlock(issuer?.crt ?? 1),
       nfce,
