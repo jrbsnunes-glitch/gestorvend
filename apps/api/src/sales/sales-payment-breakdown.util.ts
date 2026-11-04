@@ -1,4 +1,10 @@
-import { PaymentMethod, Prisma, PrismaClient } from '../generated/tenant-client';
+import {
+  CardOperation,
+  PaymentMethod,
+  Prisma,
+  PrismaClient,
+  SaleStatus,
+} from '../generated/tenant-client';
 
 export function roundMoney(n: number): number {
   return Math.round(n * 100) / 100;
@@ -39,6 +45,37 @@ export type SumReceivableViaCashOpts = {
   to: Date;
   sessionId?: string;
 };
+
+/** Vendas pagas com cartão de crédito (repasse não entra no caixa no mesmo dia). */
+export function cardCreditSalePaymentWhere(
+  createdAt: { gte: Date; lte: Date },
+): Prisma.SalePaymentWhereInput {
+  return {
+    method: PaymentMethod.CARD,
+    OR: [
+      { cardOperation: CardOperation.CREDIT },
+      {
+        cardOperation: null,
+        paymentForm: { cardOperation: CardOperation.CREDIT },
+      },
+    ],
+    sale: {
+      status: SaleStatus.COMPLETED,
+      createdAt,
+    },
+  };
+}
+
+export async function sumCardCreditSalesAtSale(
+  db: PrismaClient,
+  range: { from: Date; to: Date },
+): Promise<number> {
+  const agg = await db.salePayment.aggregate({
+    where: cardCreditSalePaymentWhere({ gte: range.from, lte: range.to }),
+    _sum: { amount: true },
+  });
+  return roundMoney(Number(agg._sum.amount ?? 0));
+}
 
 export async function sumReceivableSettlementsViaCash(
   db: PrismaClient,

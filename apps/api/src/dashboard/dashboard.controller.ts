@@ -24,7 +24,10 @@ import {
 } from '../generated/tenant-client';
 
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
-import { sumReceivableSettlementsViaCash } from '../sales/sales-payment-breakdown.util';
+import {
+  sumCardCreditSalesAtSale,
+  sumReceivableSettlementsViaCash,
+} from '../sales/sales-payment-breakdown.util';
 
 import {
 
@@ -131,6 +134,10 @@ export class DashboardController {
       receivableCashTodayAgg,
 
       receivableCashMonthAgg,
+
+      cardCreditAtSaleToday,
+
+      cardCreditAtSaleMonth,
 
       topItems,
 
@@ -299,6 +306,10 @@ export class DashboardController {
       sumReceivableSettlementsViaCash(db, { from: todayStart, to: todayEnd }),
 
       sumReceivableSettlementsViaCash(db, { from: monthStart, to: todayEnd }),
+
+      sumCardCreditSalesAtSale(db, { from: todayStart, to: todayEnd }),
+
+      sumCardCreditSalesAtSale(db, { from: monthStart, to: todayEnd }),
 
       db.saleItem.groupBy({
 
@@ -535,6 +546,10 @@ export class DashboardController {
         creditAtSaleToday,
 
         creditAtSaleMonth,
+
+        cardCreditAtSaleToday,
+
+        cardCreditAtSaleMonth,
 
         receivableCashToday,
 

@@ -33,6 +33,8 @@ type Overview = {
     requisitionMonth: number;
     creditAtSaleToday: number;
     creditAtSaleMonth: number;
+    cardCreditAtSaleToday: number;
+    cardCreditAtSaleMonth: number;
     receivableCashToday: number;
     receivableCashMonth: number;
   };
@@ -458,6 +460,13 @@ export function DashboardPage() {
                   · Em requisição: <strong>{formatBRL(data?.revenue.requisitionToday ?? 0)}</strong>
                 </>
               ) : null}
+              {(data?.revenue.cardCreditAtSaleToday ?? 0) > 0 ? (
+                <>
+                  <br />
+                  Cartão de crédito (repasse posterior):{' '}
+                  <strong>{formatBRL(data?.revenue.cardCreditAtSaleToday ?? 0)}</strong>
+                </>
+              ) : null}
               {(data?.revenue.receivableCashToday ?? 0) > 0 ? (
                 <>
                   <br />
@@ -485,6 +494,13 @@ export function DashboardPage() {
                   <>
                     {' '}
                     · Em requisição: <strong>{formatBRL(data?.revenue.requisitionMonth ?? 0)}</strong>
+                  </>
+                ) : null}
+                {(data?.revenue.cardCreditAtSaleMonth ?? 0) > 0 ? (
+                  <>
+                    <br />
+                    Cartão de crédito (repasse posterior):{' '}
+                    <strong>{formatBRL(data?.revenue.cardCreditAtSaleMonth ?? 0)}</strong>
                   </>
                 ) : null}
                 {(data?.revenue.receivableCashMonth ?? 0) > 0 ? (
