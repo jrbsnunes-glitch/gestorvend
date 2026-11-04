@@ -2,10 +2,11 @@
  * DANFE / cupom auxiliar — NF-e (A4) ou NFC-e (térmica 80 mm).
  */
 import { useQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { printDocument } from '../lib/desktop-print';
+import { isGestorVendDesktop } from '../lib/desktop-bridge';
+import { printDocument, saveDocumentPdf } from '../lib/desktop-print';
 import { formatBRL, formatCnpj, formatCpfCnpj, formatDate } from '../lib/format';
 import { fiscalPaymentLabel } from '../lib/nfce-payment';
 import { formatNfceAccessKey, NfceQrImage, useNfceQrDataUrl } from '../lib/nfce-qr';
@@ -129,6 +130,8 @@ export function DanfePrintPage() {
 
   const doc = q.data?.document;
   const company = q.data?.company;
+  const desktop = isGestorVendDesktop();
+  const [savingPdf, setSavingPdf] = useState(false);
   const isNfce = doc?.kind === 'NFC_E';
   const nfce = q.data?.nfce;
   const qrSrc = useNfceQrDataUrl(isNfce ? nfce?.qrCode : null);
@@ -149,13 +152,36 @@ export function DanfePrintPage() {
   const toolbar = (
     <div className="no-print" style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
       <Link to={isNfce ? '/notas-fiscais?tab=NFC_E' : '/notas-fiscais?tab=NF_E'}>← Notas</Link>
-      <button
-        type="button"
-        className="btn btn-primary"
-        onClick={() => void printDocument(isNfce ? '80mm' : 'A4')}
-      >
-        Imprimir {isNfce ? '(80 mm)' : '/ PDF'}
-      </button>
+      {isNfce ? (
+        <button type="button" className="btn btn-primary" onClick={() => void printDocument('80mm')}>
+          Imprimir (80 mm)
+        </button>
+      ) : (
+        <>
+          <button type="button" className="btn btn-primary" onClick={() => window.print()}>
+            {desktop ? 'Imprimir' : 'Imprimir / PDF'}
+          </button>
+          {desktop && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={savingPdf}
+              onClick={() => {
+                setSavingPdf(true);
+                void saveDocumentPdf({
+                  defaultPath: `DANFE-NFe-${doc?.accessKey ?? doc?.sale.number ?? 'nota'}.pdf`,
+                })
+                  .then((res) => {
+                    if (!res.ok) window.alert(res.error || 'Não foi possível gerar o PDF.');
+                  })
+                  .finally(() => setSavingPdf(false));
+              }}
+            >
+              {savingPdf ? 'Gerando PDF…' : 'Salvar PDF'}
+            </button>
+          )}
+        </>
+      )}
       {pending && (
         <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
           Aguardando autorização SEFAZ ({doc?.status})…
