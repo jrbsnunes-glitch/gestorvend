@@ -4181,8 +4181,47 @@ td .numeric-input {
   position: relative;
 }
 
+.catalog-combo-field {
+  position: relative;
+}
+
 .catalog-combo input {
   width: 100%;
+}
+
+.catalog-combo-include-link {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.25rem 0;
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.catalog-combo-include-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.catalog-combo-include-link:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.catalog-combo-inline-hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+  line-height: 1.35;
+}
+
+.catalog-combo-inline-hint--error {
+  color: var(--color-danger);
 }
 
 .catalog-combo-panel {

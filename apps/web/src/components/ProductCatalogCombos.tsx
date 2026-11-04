@@ -565,6 +565,7 @@ export function FiscalCodeSearchCombo({
   const [open, setOpen] = useState(false);
   const [cestDesc, setCestDesc] = useState('');
   const [ncmDesc, setNcmDesc] = useState('');
+  const [includeHint, setIncludeHint] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -687,64 +688,115 @@ export function FiscalCodeSearchCombo({
     create.isPending,
   );
 
+  const showIncludeLink = open && (kind === 'ncm' || kind === 'cest') && !disabled;
+
+  function ncmDigitsFromQuery() {
+    return q.replace(/\D/g, '').slice(0, 8);
+  }
+
+  function ncmDescriptionDraft() {
+    return (
+      ncmDesc.trim() ||
+      q.replace(/^\d+\s*/, '').trim() ||
+      (ncmDigitsFromQuery().length === 8 ? q.replace(/^\d{8}\s*/, '').trim() : '')
+    );
+  }
+
+  function tryIncludeNew() {
+    setIncludeHint(null);
+    if (kind === 'ncm') {
+      const d = ncmDigitsFromQuery();
+      if (d.length !== 8) {
+        setIncludeHint('Informe os 8 dígitos do NCM no campo de busca.');
+        return;
+      }
+      if (rows.some((r) => r.code.replace(/\D/g, '').slice(0, 8) === d)) {
+        setIncludeHint('Este NCM já está na lista — clique nele para selecionar.');
+        return;
+      }
+      const desc = ncmDescriptionDraft();
+      if (!desc) {
+        setIncludeHint('Preencha a descrição do novo NCM abaixo.');
+        document.getElementById(`${id}-ncm-desc`)?.focus();
+        return;
+      }
+      create.mutate();
+      return;
+    }
+    if (kind === 'cest') {
+      const d = q.replace(/\D/g, '').slice(0, 7);
+      if (d.length !== 7) {
+        setIncludeHint('Informe os 7 dígitos do CEST no campo de busca.');
+        return;
+      }
+      if (rows.some((r) => r.code === d)) {
+        setIncludeHint('Este CEST já está na lista — clique nele para selecionar.');
+        return;
+      }
+      const desc = (cestDesc || q.replace(/^\d+\s*/, '').trim()).trim();
+      if (!desc) {
+        setIncludeHint('Preencha a descrição do novo CEST abaixo.');
+        document.getElementById(`${id}-cest-desc`)?.focus();
+        return;
+      }
+      create.mutate();
+    }
+  }
+
   return (
     <div className="catalog-combo" ref={wrapRef}>
-      <input
-        id={id}
-        type="text"
-        autoComplete="off"
-        disabled={disabled}
-        aria-label={label}
-        placeholder={
-          kind === 'tax-units'
-            ? 'Ex.: UN Unidade'
-            : kind === 'ncm'
-              ? '8 dígitos ou descrição…'
-              : '7 dígitos ou descrição…'
-        }
-        value={q}
-        onChange={(e) => {
-          setQ(e.target.value);
-          if (value) onChange('');
-        }}
-        onFocus={() => {
-          setOpen(true);
-          // Ao focar em unidades, abre a lista completa (filtrar digitando).
-          if (kind === 'tax-units') setQ('');
-        }}
-      />
-      {kind === 'cest' && open && (
-        <div className="field catalog-combo-nested">
-          <label htmlFor={`${id}-cest-desc`}>Descrição (obrigatória para novo CEST)</label>
-          <input
-            id={`${id}-cest-desc`}
-            value={cestDesc}
-            onChange={(e) => setCestDesc(e.target.value)}
-            placeholder="Ex.: Outros produtos de…"
-          />
-        </div>
-      )}
-      {kind === 'ncm' && open && (
-        <div className="field catalog-combo-nested">
-          <label htmlFor={`${id}-ncm-desc`}>Descrição (obrigatória para novo NCM)</label>
-          <input
-            id={`${id}-ncm-desc`}
-            value={ncmDesc}
-            onChange={(e) => setNcmDesc(e.target.value)}
-            placeholder="Ex.: Parafusos de aço, fechaduras…"
-          />
-          <p className="catalog-combo-hint" style={{ marginTop: '0.35rem' }}>
-            Código: 8 dígitos no campo acima. Preencha a descrição antes de cadastrar.
-          </p>
-        </div>
-      )}
-      {open && (
-        <div
-          className={
-            'catalog-combo-panel catalog-combo-panel--raised' + (panelAbove ? ' catalog-combo-panel--above' : '')
+      <div className="catalog-combo-field">
+        <input
+          id={id}
+          type="text"
+          autoComplete="off"
+          disabled={disabled}
+          aria-label={label}
+          placeholder={
+            kind === 'tax-units'
+              ? 'Ex.: UN Unidade'
+              : kind === 'ncm'
+                ? '8 dígitos ou descrição…'
+                : '7 dígitos ou descrição…'
           }
-          role="listbox"
-        >
+          value={q}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setIncludeHint(null);
+            if (value) onChange('');
+          }}
+          onFocus={() => {
+            setOpen(true);
+            setIncludeHint(null);
+            // Ao focar em unidades, abre a lista completa (filtrar digitando).
+            if (kind === 'tax-units') setQ('');
+          }}
+        />
+        {showIncludeLink ? (
+          <button
+            type="button"
+            className="catalog-combo-include-link"
+            disabled={create.isPending}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => tryIncludeNew()}
+          >
+            {create.isPending ? 'Incluindo…' : '+ Incluir'}
+          </button>
+        ) : null}
+        {includeHint ? <p className="catalog-combo-inline-hint">{includeHint}</p> : null}
+        {create.isError && (kind === 'ncm' || kind === 'cest') ? (
+          <p className="catalog-combo-inline-hint catalog-combo-inline-hint--error">
+            {(create.error as Error).message}
+          </p>
+        ) : null}
+        {open && (
+          <div
+            className={
+              'catalog-combo-panel catalog-combo-panel--raised' +
+              (panelAbove ? ' catalog-combo-panel--above' : '')
+            }
+            role="listbox"
+          >
           {kind === 'tax-units' && !list.isLoading && (
             <div className="catalog-combo-hint">Digite para filtrar ou escolha uma unidade abaixo.</div>
           )}
@@ -780,7 +832,7 @@ export function FiscalCodeSearchCombo({
               {term.length > 0 ? 'Nenhum registro.' : 'Nenhuma unidade cadastrada.'}
             </div>
           )}
-          {canCreate && (
+          {canCreate && kind === 'tax-units' && (
             <button
               type="button"
               className="catalog-combo-create"
@@ -788,14 +840,44 @@ export function FiscalCodeSearchCombo({
               onClick={() => create.mutate()}
               disabled={create.isPending}
             >
-              {kind === 'ncm' && `+ Cadastrar NCM ${term.replace(/\D/g, '').slice(0, 8)}`}
-              {kind === 'cest' && `+ Cadastrar CEST ${term.replace(/\D/g, '').slice(0, 7)}`}
-              {kind === 'tax-units' && '+ Cadastrar unidade'}
+              + Cadastrar unidade
             </button>
           )}
-          {create.isError && (
+          {create.isError && kind === 'tax-units' ? (
             <div className="catalog-combo-error">{(create.error as Error).message}</div>
-          )}
+          ) : null}
+          </div>
+        )}
+      </div>
+      {kind === 'cest' && open && (
+        <div className="field catalog-combo-nested">
+          <label htmlFor={`${id}-cest-desc`}>Descrição (obrigatória para novo CEST)</label>
+          <input
+            id={`${id}-cest-desc`}
+            value={cestDesc}
+            onChange={(e) => {
+              setCestDesc(e.target.value);
+              setIncludeHint(null);
+            }}
+            placeholder="Ex.: Outros produtos de…"
+          />
+        </div>
+      )}
+      {kind === 'ncm' && open && (
+        <div className="field catalog-combo-nested">
+          <label htmlFor={`${id}-ncm-desc`}>Descrição (obrigatória para novo NCM)</label>
+          <input
+            id={`${id}-ncm-desc`}
+            value={ncmDesc}
+            onChange={(e) => {
+              setNcmDesc(e.target.value);
+              setIncludeHint(null);
+            }}
+            placeholder="Ex.: Parafusos de aço, fechaduras…"
+          />
+          <p className="catalog-combo-hint" style={{ marginTop: '0.35rem', padding: 0, border: 'none', background: 'none' }}>
+            Código com 8 dígitos no campo de busca. Use <strong>+ Incluir</strong> para gravar.
+          </p>
         </div>
       )}
       {value && (
