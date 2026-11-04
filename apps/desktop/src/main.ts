@@ -274,6 +274,54 @@ async function waitReceiptReady(win: BrowserWindow): Promise<boolean> {
   });
 }
 
+/** Margem útil da DANFE no PDF (7 mm → polegadas para printToPDF). */
+const DANFE_PDF_MARGIN_IN = 7 / 25.4;
+
+function isDanfePrintUrl(url: string): boolean {
+  try {
+    return new URL(url).pathname.includes('/notas-fiscais/danfe/');
+  } catch {
+    return false;
+  }
+}
+
+async function waitDanfeReady(win: BrowserWindow): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    let tries = 0;
+    const tick = async () => {
+      if (win.isDestroyed()) {
+        resolve(false);
+        return;
+      }
+      try {
+        const ok = await win.webContents.executeJavaScript(`
+          (() => {
+            const el = document.querySelector('article.danfe-nfe');
+            if (!el) return false;
+            if (el.querySelector('.danfe-head')) return true;
+            return ${tries} >= 15 && el.querySelector('table') != null;
+          })()
+        `);
+        if (ok) {
+          resolve(true);
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+      tries += 1;
+      if (tries >= 80) {
+        resolve(false);
+        return;
+      }
+      setTimeout(() => {
+        void tick();
+      }, 100);
+    };
+    void tick();
+  });
+}
+
 async function printReceiptFromUrl(
   target: string,
   device: string,
@@ -370,14 +418,56 @@ async function restoreWebContentsAfterPdf(wc: WebContents): Promise<void> {
     .catch(() => {});
 }
 
+async function injectDanfePdfLayout(wc: WebContents): Promise<void> {
+  await wc.executeJavaScript(`(() => {
+    document.documentElement.classList.add('gv-danfe-save-pdf');
+    const id = 'gv-danfe-pdf-inline';
+    if (!document.getElementById(id)) {
+      const s = document.createElement('style');
+      s.id = id;
+      s.textContent = [
+        'html,body,#root,.danfe-nfe-page{width:210mm!important;max-width:210mm!important;margin:0!important;padding:0!important;background:#fff!important}',
+        '.danfe-nfe{width:100%!important;max-width:none!important;margin:0!important;padding:0!important}',
+        '.no-print{display:none!important}',
+      ].join('');
+      document.head.appendChild(s);
+    }
+    return true;
+  })()`);
+}
+
+/** PDF da DANFE: janela A4 (794 px) + margens fixas — não usa a janela larga do app. */
+async function renderDanfePdf(wc: WebContents): Promise<Buffer> {
+  await prepareWebContentsForPdf(wc);
+  await injectDanfePdfLayout(wc);
+  const m = DANFE_PDF_MARGIN_IN;
+  try {
+    const data = await wc.printToPDF({
+      printBackground: true,
+      landscape: false,
+      pageSize: 'A4',
+      preferCSSPageSize: false,
+      margins: { marginType: 'custom', top: m, bottom: m, left: m, right: m },
+    });
+    const buf = Buffer.from(data);
+    if (!buf.length) {
+      throw new Error('O PDF gerado veio vazio. Recarregue a DANFE e tente de novo.');
+    }
+    return buf;
+  } finally {
+    await restoreWebContentsAfterPdf(wc);
+  }
+}
+
 async function renderWebContentsPdf(wc: WebContents): Promise<Buffer> {
+  const isDanfe = await wc.executeJavaScript(`Boolean(document.querySelector('.danfe-nfe'))`);
+  if (isDanfe) return renderDanfePdf(wc);
   await prepareWebContentsForPdf(wc);
   try {
     const data = await wc.printToPDF({
       printBackground: true,
       landscape: false,
       preferCSSPageSize: true,
-      // Margens vêm do @page (DANFE: danfe-nfe-print.css; cupom: sale-receipt-print.css).
       margins: { marginType: 'none' },
     });
     const buf = Buffer.from(data);
@@ -442,6 +532,36 @@ async function saveReceiptPdfFromUrl(
     }
     await new Promise((r) => setTimeout(r, 250));
     const pdf = await renderWebContentsPdf(win.webContents);
+    return promptAndWritePdf(ownerWindowOf(sender), pdf, defaultPath);
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+}
+
+async function saveDanfePdfFromUrl(
+  sender: WebContents,
+  target: string,
+  defaultPath: string,
+): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }> {
+  const win = new BrowserWindow({
+    width: 794,
+    height: 1123,
+    show: false,
+    backgroundColor: '#ffffff',
+    icon: appIconPath(),
+    webPreferences: appWebPrefs(mainWindowPartition),
+  });
+  try {
+    await win.loadURL(target);
+    const ready = await waitDanfeReady(win);
+    if (!ready) {
+      return {
+        ok: false,
+        error: 'DANFE não carregou a tempo. Atualize o servidor e tente de novo.',
+      };
+    }
+    await new Promise((r) => setTimeout(r, 350));
+    const pdf = await renderDanfePdf(win.webContents);
     return promptAndWritePdf(ownerWindowOf(sender), pdf, defaultPath);
   } finally {
     if (!win.isDestroyed()) win.destroy();
@@ -1064,6 +1184,19 @@ function registerIpc() {
           typeof body?.defaultPath === 'string' ? body.defaultPath : undefined,
         );
         const urlRaw = typeof body?.url === 'string' ? body.url.trim() : '';
+        let pageUrl = urlRaw;
+        if (!pageUrl) {
+          try {
+            pageUrl = event.sender.getURL();
+          } catch {
+            pageUrl = '';
+          }
+        }
+        if (pageUrl && isDanfePrintUrl(pageUrl)) {
+          const resolved = resolveAbsolutePrintUrl(pageUrl);
+          if (!resolved.ok) return resolved;
+          return await saveDanfePdfFromUrl(event.sender, resolved.url, defaultPath);
+        }
         if (urlRaw) {
           const resolved = resolveAbsolutePrintUrl(urlRaw);
           if (!resolved.ok) return resolved;

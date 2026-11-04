@@ -1,7 +1,7 @@
 /* Página nomeada: não herda margens de 14–16 mm dos relatórios (reports-document.css). */
 @page danfe {
   size: A4 portrait;
-  margin: 8mm;
+  margin: 7mm;
 }
 
 .danfe-nfe-page {
@@ -13,7 +13,7 @@
 .danfe-nfe {
   page: danfe;
   width: 100%;
-  max-width: 194mm;
+  max-width: 196mm;
   margin: 0 auto;
   background: #fff;
   color: #000;
@@ -326,17 +326,21 @@
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm !important;
+    margin: 7mm !important;
   }
 
   html,
   body {
-    margin: 0 !important;
+    width: 210mm !important;
+    max-width: 210mm !important;
+    margin: 0 auto !important;
     padding: 0 !important;
     background: #fff !important;
   }
 
   .danfe-nfe-page {
+    width: 210mm !important;
+    max-width: 210mm !important;
     background: #fff;
     padding: 0;
     min-height: 0;
@@ -344,22 +348,39 @@
 
   .danfe-nfe {
     page: danfe;
-    width: auto;
-    max-width: none;
+    width: 100% !important;
+    max-width: none !important;
     margin: 0;
     padding: 0;
   }
 }
 
-/* Salvar PDF no Desktop (printToPDF): mesmas regras do @media print. */
+/*
+ * Salvar PDF no Desktop: a janela é larga — sem fixar 210 mm o Chromium encolhe
+ * a DANFE no centro e aparece fundo escuro nas laterais.
+ */
 html.gv-danfe-save-pdf,
 html.gv-danfe-save-pdf body {
+  width: 210mm !important;
+  max-width: 210mm !important;
+  min-width: 210mm !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #fff !important;
+  overflow: visible !important;
+}
+
+html.gv-danfe-save-pdf #root {
+  width: 210mm !important;
+  max-width: 210mm !important;
   margin: 0 !important;
   padding: 0 !important;
   background: #fff !important;
 }
 
 html.gv-danfe-save-pdf .danfe-nfe-page {
+  width: 210mm !important;
+  max-width: 210mm !important;
   background: #fff;
   padding: 0;
   min-height: 0;
@@ -367,8 +388,32 @@ html.gv-danfe-save-pdf .danfe-nfe-page {
 
 html.gv-danfe-save-pdf .danfe-nfe {
   page: danfe;
-  width: auto;
-  max-width: none;
+  width: 100% !important;
+  max-width: none !important;
   margin: 0;
   padding: 0;
+}
+
+@media print {
+  html.gv-danfe-route,
+  html.gv-danfe-route body,
+  html.gv-danfe-route #root {
+    width: 210mm !important;
+    max-width: 210mm !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  html.gv-danfe-route .danfe-nfe-page {
+    width: 210mm !important;
+    max-width: 210mm !important;
+    background: #fff;
+    padding: 0;
+  }
+
+  html.gv-danfe-route .danfe-nfe {
+    width: 100% !important;
+    max-width: none !important;
+  }
 }

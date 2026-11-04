@@ -1,5 +1,5 @@
 {
-  "version": "1.0.76",
+  "version": "1.0.78",
   "downloadUrl": "",
-  "notes": "DANFE A4 com margens de 8 mm na impressão e no Salvar PDF. Inclui correções de PDF, login em janelas novas e teclado (Ctrl+Shift+K)."
+  "notes": "Salvar PDF da DANFE em janela A4 dedicada (preenche a folha). Requer servidor atualizado na tela da DANFE."
 }

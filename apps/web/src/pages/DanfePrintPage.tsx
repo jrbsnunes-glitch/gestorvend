@@ -149,6 +149,16 @@ export function DanfePrintPage() {
       : 'Documento fiscal';
   }, [doc, isNfce]);
 
+  useEffect(() => {
+    if (isNfce) return;
+    document.documentElement.classList.add('gv-danfe-route');
+    document.body.style.background = '#e8e8e8';
+    return () => {
+      document.documentElement.classList.remove('gv-danfe-route');
+      document.body.style.background = '';
+    };
+  }, [isNfce]);
+
   const toolbar = (
     <div className="no-print" style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
       <Link to={isNfce ? '/notas-fiscais?tab=NFC_E' : '/notas-fiscais?tab=NF_E'}>← Notas</Link>
@@ -169,6 +179,7 @@ export function DanfePrintPage() {
               onClick={() => {
                 setSavingPdf(true);
                 void saveDocumentPdf({
+                  url: window.location.href,
                   defaultPath: `DANFE-NFe-${doc?.accessKey ?? doc?.sale.number ?? 'nota'}.pdf`,
                 })
                   .then((res) => {
