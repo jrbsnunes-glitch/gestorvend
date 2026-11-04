@@ -86,6 +86,25 @@ function parseAccessKey44(key: string): {
   };
 }
 
+/**
+ * NF-e (55): indIEDest a partir da IE do cadastro do cliente.
+ * 1 = contribuinte com IE; 2 = contribuinte isento (PJ, sem tag IE); 9 = não contribuinte.
+ * NFC-e (65) aceita só 9 — não usar aqui.
+ */
+export function destIeFromCustomer(
+  docDigits: string,
+  ieRaw: string | null | undefined,
+): { indIEDest: '1' | '2' | '9'; ie: string | null } {
+  const ie = (ieRaw ?? '').trim().toUpperCase();
+  if (!ie) return { indIEDest: '9', ie: null };
+  if (ie === 'ISENTO') {
+    return docDigits.length === 14 ? { indIEDest: '2', ie: null } : { indIEDest: '9', ie: null };
+  }
+  const digits = ie.replace(/\D/g, '');
+  if (!digits) return { indIEDest: '9', ie: null };
+  return { indIEDest: '1', ie: digits };
+}
+
 function wrapEnviNFe(nfeOrEnviXml: string): string {
   const trimmed = nfeOrEnviXml.trim();
   if (/<enviNFe[\s>]/i.test(trimmed)) return trimmed;
@@ -670,11 +689,13 @@ export class FiscalEmissionProcessorService {
       if (!destMunIbge && sale.customer.city && sale.customer.state?.trim().toUpperCase() === ufSig) {
         destMunIbge = munEmit;
       }
+      const dest55Ie = isNfe ? destIeFromCustomer(custDoc, sale.customer.ie) : null;
       dest = {
         document: custDoc || null,
         xNome: homologFieldText(sale.customer.name, tpAmb, 60),
         email: sale.customer.email,
-        indIEDest: '9',
+        indIEDest: dest55Ie?.indIEDest ?? '9',
+        ie: dest55Ie?.ie ?? null,
         ender: {
           xLgr: sale.customer.street?.trim() || company.address?.trim() || 'NAO INFORMADO',
           nro: sale.customer.number?.trim() || company.addressNumber?.trim() || 'S/N',

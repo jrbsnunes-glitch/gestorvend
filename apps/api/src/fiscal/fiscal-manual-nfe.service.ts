@@ -224,6 +224,8 @@ export class FiscalManualNfeService {
       throw new BadRequestException('Esta nota já foi concluída e não pode ser reenviada.');
     }
     // SENT sem retorno (ou com rejeição) precisa poder reenviar — senão o botão some.
+    // Fora da contingência o XML é remontado do zero a cada envio com o cadastro atual
+    // (cliente, IE, endereço, itens): a correção no cadastro vale no próximo "Enviar".
 
     const alreadyProcessable =
       doc.status === FiscalDocumentStatus.QUEUED ||

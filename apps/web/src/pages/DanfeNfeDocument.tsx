@@ -26,6 +26,7 @@ export type DanfeNfePayload = {
       customer: {
         name: string;
         document: string | null;
+        ie?: string | null;
         street?: string | null;
         number?: string | null;
         complement?: string | null;
@@ -327,7 +328,11 @@ export function DanfeNfeDocument({ data }: { data: DanfeNfePayload }) {
               <span className="lbl">Fone / e-mail</span>
               <span className="val">{[dest?.phone, dest?.email].filter(Boolean).join(' · ') || '—'}</span>
             </td>
-            <td colSpan={2}>
+            <td>
+              <span className="lbl">Inscrição Estadual</span>
+              <span className="val">{dest?.ie?.trim() || '—'}</span>
+            </td>
+            <td>
               <span className="lbl">Controle interno</span>
               <span className="val">Venda #{sale.number}</span>
             </td>

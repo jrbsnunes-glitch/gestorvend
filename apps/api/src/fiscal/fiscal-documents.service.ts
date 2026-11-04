@@ -773,6 +773,7 @@ export class FiscalDocumentsService {
                 id: true,
                 name: true,
                 document: true,
+                ie: true,
                 segment: true,
                 street: true,
                 number: true,
@@ -912,6 +913,7 @@ export class FiscalDocumentsService {
             ? {
                 name: raw.sale.customer.name,
                 document: raw.sale.customer.document,
+                ie: raw.sale.customer.ie,
                 street: raw.sale.customer.street,
                 number: raw.sale.customer.number,
                 complement: raw.sale.customer.complement,
@@ -1153,6 +1155,7 @@ export class FiscalDocumentsService {
           customer: {
             name: customer.name,
             document: customer.document,
+            ie: customer.ie,
             street: customer.street,
             number: customer.number,
             complement: customer.complement,
