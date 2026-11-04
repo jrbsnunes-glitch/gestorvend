@@ -343,7 +343,8 @@ async function prepareWebContentsForPdf(wc: WebContents): Promise<void> {
   await wc
     .executeJavaScript(
       `(() => {
-        document.documentElement.classList.add('gv-receipt-save-pdf');
+        const isDanfe = Boolean(document.querySelector('.danfe-nfe'));
+        document.documentElement.classList.add(isDanfe ? 'gv-danfe-save-pdf' : 'gv-receipt-save-pdf');
         document.querySelectorAll('.no-print, .sale-receipt-toolbar').forEach((el) => {
           el.setAttribute('data-gv-pdf-hide', '1');
           el.style.setProperty('display', 'none', 'important');
@@ -358,7 +359,7 @@ async function restoreWebContentsAfterPdf(wc: WebContents): Promise<void> {
   await wc
     .executeJavaScript(
       `(() => {
-        document.documentElement.classList.remove('gv-receipt-save-pdf');
+        document.documentElement.classList.remove('gv-receipt-save-pdf', 'gv-danfe-save-pdf');
         document.querySelectorAll('[data-gv-pdf-hide]').forEach((el) => {
           el.removeAttribute('data-gv-pdf-hide');
           el.style.removeProperty('display');
@@ -375,15 +376,9 @@ async function renderWebContentsPdf(wc: WebContents): Promise<Buffer> {
     const data = await wc.printToPDF({
       printBackground: true,
       landscape: false,
-      pageSize: 'A4',
-      preferCSSPageSize: false,
-      // Electron ≥ 21: margens em polegadas (0,24" ≈ 6 mm).
-      margins: {
-        top: 0.24,
-        bottom: 0.24,
-        left: 0.24,
-        right: 0.24,
-      },
+      preferCSSPageSize: true,
+      // Margens vêm do @page (DANFE: danfe-nfe-print.css; cupom: sale-receipt-print.css).
+      margins: { marginType: 'none' },
     });
     const buf = Buffer.from(data);
     if (!buf.length) {
