@@ -612,12 +612,12 @@ export function FiscalCodeSearchCombo({
     mutationFn: (payload?: { code: string; description: string }) => {
       if (kind === 'ncm') {
         const digits = (payload?.code ?? q).replace(/\D/g, '').slice(0, 8);
-        const desc =
-          (payload?.description ??
-            ncmDesc ||
+        const desc = (
+          payload?.description ??
+          (ncmDesc ||
             q.replace(/^\d+\s*/, '').trim() ||
-            (q.replace(/\D/g, '').length >= 8 ? q.replace(/^\d{8}\s*/, '').trim() : '')
-          ).trim();
+            (q.replace(/\D/g, '').length >= 8 ? q.replace(/^\d{8}\s*/, '').trim() : ''))
+        ).trim();
         return api<NcmRow>('/fiscal-codes/ncm', {
           method: 'POST',
           json: { code: digits, description: desc },
@@ -627,8 +627,7 @@ export function FiscalCodeSearchCombo({
         const digits = (payload?.code ?? q).replace(/\D/g, '').slice(0, 7);
         const desc = (
           payload?.description ??
-          (cestDesc || q.replace(/^\d+\s*/, '').trim()) ||
-          `CEST ${digits}`
+          ((cestDesc || q.replace(/^\d+\s*/, '').trim()) || `CEST ${digits}`)
         ).trim();
         return api<CestRow>('/fiscal-codes/cest', {
           method: 'POST',
@@ -704,14 +703,6 @@ export function FiscalCodeSearchCombo({
 
   function ncmDigitsFromQuery() {
     return q.replace(/\D/g, '').slice(0, 8);
-  }
-
-  function ncmDescriptionDraft() {
-    return (
-      ncmDesc.trim() ||
-      q.replace(/^\d+\s*/, '').trim() ||
-      (ncmDigitsFromQuery().length === 8 ? q.replace(/^\d{8}\s*/, '').trim() : '')
-    );
   }
 
   function openIncludeModal() {
@@ -850,7 +841,7 @@ export function FiscalCodeSearchCombo({
               type="button"
               className="catalog-combo-create"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => create.mutate()}
+              onClick={() => create.mutate(undefined)}
               disabled={create.isPending}
             >
               + Cadastrar unidade
