@@ -1,5 +1,5 @@
 {
-  "version": "1.0.73",
+  "version": "1.0.74",
   "downloadUrl": "",
-  "notes": "Corrige o teclado travado nos campos após avisos e confirmações (pesquisas, PDV). Atalho Ctrl+Shift+K destrava o teclado."
+  "notes": "Janelas abertas pelo sistema (DANFE, relatórios) mantêm o login. Inclui a correção do teclado travado após avisos (Ctrl+Shift+K destrava)."
 }

@@ -515,7 +515,7 @@ function attachPdvNavGuard(win: BrowserWindow, allowPath: (pathname: string) => 
             autoHideMenuBar: true,
             backgroundColor: '#0b1220',
             icon: appIconPath(),
-            webPreferences: appWebPrefs(),
+            webPreferences: appWebPrefs(mainWindowPartition),
           },
         };
       }
@@ -558,7 +558,8 @@ function createWindow(partition?: string): BrowserWindow {
               autoHideMenuBar: false,
               backgroundColor: '#0b1220',
               icon: appIconPath(),
-              webPreferences: appWebPrefs(),
+              // Mesma partição da janela principal: senão a janela nova abre sem o login.
+              webPreferences: appWebPrefs(partition),
             },
           };
         }

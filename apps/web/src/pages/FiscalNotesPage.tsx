@@ -359,6 +359,13 @@ export function FiscalNotesPage() {
     onError: (err: Error) => window.alert(err.message),
   });
 
+  /** Mesma janela: nova janela no Desktop abre sem a sessão do login, e o navegador bloqueia pop-up após await. */
+  function openDanfe(docId: string) {
+    setOpenId(null);
+    setViewId(null);
+    navigate(`/notas-fiscais/danfe/${encodeURIComponent(docId)}`);
+  }
+
   const emitDoc = useMutation({
     mutationFn: async (row: FiscalDocRow) => {
       if (row.status === 'AUTHORIZED') return row;
@@ -373,10 +380,16 @@ export function FiscalNotesPage() {
         json: { saleId: row.saleId, kind: row.kind },
       });
     },
-    onSuccess: (_data, row) => {
+    onSuccess: (data, row) => {
       qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
-      window.open(`/notas-fiscais/danfe/${encodeURIComponent(row.id)}`, '_blank', 'noopener');
+      const res = data as Partial<FiscalDocRow> | undefined;
+      if ((res?.status === 'REJECTED' || res?.status === 'ERROR') && res.lastError?.trim()) {
+        window.alert(res.lastError.trim());
+        return;
+      }
+      openDanfe(row.id);
     },
+    onError: (err: Error) => window.alert(err.message),
   });
 
   const deleteUnsent = useMutation({
@@ -1276,11 +1289,7 @@ export function FiscalNotesPage() {
                           className="btn btn-secondary btn-compact"
                           onClick={(e) => {
                             e.stopPropagation();
-                            window.open(
-                              `/notas-fiscais/danfe/${encodeURIComponent(r.id)}`,
-                              '_blank',
-                              'noopener',
-                            );
+                            openDanfe(r.id);
                           }}
                         >
                           2ª via
@@ -1372,11 +1381,7 @@ export function FiscalNotesPage() {
                 cancelling={cancelDoc.isPending}
                 onPrintSecondCopy={() => {
                   if (detail.data!.kind === 'NF_E') {
-                    window.open(
-                      `/notas-fiscais/danfe/${encodeURIComponent(detail.data!.id)}`,
-                      '_blank',
-                      'noopener',
-                    );
+                    openDanfe(detail.data!.id);
                     return;
                   }
                   const returnTo = encodeURIComponent('/notas-fiscais?tab=NFC_E');

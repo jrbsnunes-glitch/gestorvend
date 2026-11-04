@@ -322,10 +322,7 @@ export function NfeFormPage() {
     },
     onSuccess: ({ docId, andEmit }) => {
       qc.invalidateQueries({ queryKey: ['fiscal', 'documents'] });
-      if (andEmit) {
-        window.open(`/notas-fiscais/danfe/${encodeURIComponent(docId)}`, '_blank', 'noopener');
-      }
-      navigate(`/notas-fiscais?tab=NF_E`);
+      navigate(andEmit ? `/notas-fiscais/danfe/${encodeURIComponent(docId)}` : `/notas-fiscais?tab=NF_E`);
     },
     onError: (e: Error) => setErr(e.message),
   });
