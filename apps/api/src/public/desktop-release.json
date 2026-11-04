@@ -1,5 +1,5 @@
 {
-  "version": "1.0.74",
+  "version": "1.0.75",
   "downloadUrl": "",
-  "notes": "Janelas abertas pelo sistema (DANFE, relatórios) mantêm o login. Inclui a correção do teclado travado após avisos (Ctrl+Shift+K destrava)."
+  "notes": "Corrige o Salvar PDF (DANFE e cupom). Janelas abertas pelo sistema mantêm o login e o teclado não trava após avisos (Ctrl+Shift+K destrava)."
 }

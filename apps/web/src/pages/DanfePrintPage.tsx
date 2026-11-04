@@ -172,7 +172,8 @@ export function DanfePrintPage() {
                   defaultPath: `DANFE-NFe-${doc?.accessKey ?? doc?.sale.number ?? 'nota'}.pdf`,
                 })
                   .then((res) => {
-                    if (!res.ok) window.alert(res.error || 'Não foi possível gerar o PDF.');
+                    // Desktop ≤ 1.0.74 falha no printToPDF: usa o diálogo (Microsoft Print to PDF).
+                    if (!res.ok) window.print();
                   })
                   .finally(() => setSavingPdf(false));
               }}

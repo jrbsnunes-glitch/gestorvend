@@ -377,12 +377,12 @@ async function renderWebContentsPdf(wc: WebContents): Promise<Buffer> {
       landscape: false,
       pageSize: 'A4',
       preferCSSPageSize: false,
+      // Electron ≥ 21: margens em polegadas (0,24" ≈ 6 mm).
       margins: {
-        marginType: 'custom',
-        top: 12000,
-        bottom: 12000,
-        left: 12000,
-        right: 12000,
+        top: 0.24,
+        bottom: 0.24,
+        left: 0.24,
+        right: 0.24,
       },
     });
     const buf = Buffer.from(data);
