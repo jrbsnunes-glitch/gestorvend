@@ -34,18 +34,25 @@ export class FiscalCodesController {
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     await ensureConstructionNcms(db, user.tenantSlug);
     const term = q?.trim();
-    return db.ncmCode.findMany({
+    const digitsOnly = term ? normDigits(term, 8) : '';
+    const rows = await db.ncmCode.findMany({
       where: term
         ? {
             OR: [
               { code: { contains: term, mode: 'insensitive' } },
               { description: { contains: term, mode: 'insensitive' } },
+              ...(digitsOnly.length === 8 ? [{ code: digitsOnly }] : []),
             ],
           }
         : undefined,
       take: 120,
       orderBy: term ? { code: 'asc' } : { description: 'asc' },
     });
+    if (digitsOnly.length === 8 && !rows.some((r) => r.code === digitsOnly)) {
+      const exact = await db.ncmCode.findUnique({ where: { code: digitsOnly } });
+      if (exact) return [exact, ...rows].slice(0, 120);
+    }
+    return rows;
   }
 
   @Post('ncm')
@@ -63,12 +70,37 @@ export class FiscalCodesController {
       throw new BadRequestException('Informe a descrição do NCM.');
     }
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
-    return db.ncmCode.create({
-      data: {
-        code,
-        description,
-      },
-    });
+    const existing = await db.ncmCode.findUnique({ where: { code } });
+    if (existing) {
+      if (!existing.description?.trim()) {
+        return db.ncmCode.update({
+          where: { code },
+          data: { description },
+        });
+      }
+      throw new BadRequestException(
+        `NCM ${code} já está cadastrado${existing.description ? `: ${existing.description}` : ''}. Selecione-o na lista.`,
+      );
+    }
+    try {
+      return await db.ncmCode.create({
+        data: {
+          code,
+          description,
+        },
+      });
+    } catch (err: unknown) {
+      const codePrisma = (err as { code?: string })?.code;
+      if (codePrisma === 'P2002') {
+        const again = await db.ncmCode.findUnique({ where: { code } });
+        if (again) {
+          throw new BadRequestException(
+            `NCM ${code} já está cadastrado${again.description ? `: ${again.description}` : ''}. Selecione-o na lista.`,
+          );
+        }
+      }
+      throw err;
+    }
   }
 
   @Get('cest')

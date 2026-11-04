@@ -661,7 +661,8 @@ export function FiscalCodeSearchCombo({
     const descOk =
       (ncmDesc || term.replace(/^\d+\s*/, '').trim()).length > 0 ||
       (d.length === 8 && term.replace(/^\d{8}\s*/, '').trim().length > 0);
-    canCreate = canCreate && d.length === 8 && descOk && !rows.some((r) => r.code === d);
+    const alreadyListed = rows.some((r) => r.code.replace(/\D/g, '').slice(0, 8) === d);
+    canCreate = canCreate && d.length === 8 && descOk && !alreadyListed;
   } else if (kind === 'cest') {
     const d = term.replace(/\D/g, '').slice(0, 7);
     const descOk = (cestDesc || term.replace(/^\d+\s*/, '').trim()).length > 0;
