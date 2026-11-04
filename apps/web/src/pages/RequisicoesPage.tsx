@@ -329,8 +329,6 @@ export function RequisicoesPage() {
   const availableLimit = creditSummary.data
     ? Number(creditSummary.data.requisitionAvailable)
     : null;
-  const overLimit = availableLimit != null && draftTotal > availableLimit + 0.009;
-
   function resetForm() {
     setCustomer(null);
     setCustomerSearch('');
@@ -1037,12 +1035,6 @@ export function RequisicoesPage() {
             <p className="page-desc" style={{ marginTop: '0.5rem' }}>
               Total da requisição: <strong>{money(draftTotal)}</strong>
             </p>
-            {overLimit && (
-              <div className="alert alert-error">
-                Total acima do limite de requisição disponível ({money(availableLimit ?? 0)}).
-              </div>
-            )}
-
             <div className="modal-actions">
               <button
                 type="button"

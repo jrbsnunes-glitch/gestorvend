@@ -44,6 +44,18 @@ function strOrNull(v: unknown): string | null {
   return String(v).trim() || null;
 }
 
+/** IE: só dígitos (até 14) ou "ISENTO". */
+function normalizeIe(raw: unknown): string | null {
+  if (raw == null) return null;
+  const s = String(raw).trim().toUpperCase();
+  if (!s) return null;
+  if (s === 'ISENTO' || s === 'ISENTA') return 'ISENTO';
+  const digits = s.replace(/\D/g, '');
+  if (!digits) throw new BadRequestException('Inscrição estadual inválida (use só números ou ISENTO).');
+  if (digits.length > 14) throw new BadRequestException('Inscrição estadual deve ter no máximo 14 dígitos.');
+  return digits;
+}
+
 function normalizeCityIbge(raw: unknown): string | null | undefined {
   if (raw === undefined) return undefined;
   if (raw == null || raw === '') return null;
@@ -190,6 +202,7 @@ export class CustomersController {
       data: {
         name: String(body.name ?? ''),
         document: normalizeDocument(body.document),
+        ie: normalizeIe(body.ie),
         email: strOrNull(body.email),
         phone: strOrNull(body.phone),
         creditLimit: body.creditLimit != null ? String(body.creditLimit) : '0',
@@ -231,6 +244,7 @@ export class CustomersController {
       data: {
         ...(body.name != null && { name: String(body.name) }),
         ...(body.document !== undefined && { document: normalizeDocument(body.document) }),
+        ...(body.ie !== undefined && { ie: normalizeIe(body.ie) }),
         ...(body.email !== undefined && { email: strOrNull(body.email) }),
         ...(body.phone !== undefined && { phone: strOrNull(body.phone) }),
         ...(body.creditLimit != null && { creditLimit: String(body.creditLimit) }),

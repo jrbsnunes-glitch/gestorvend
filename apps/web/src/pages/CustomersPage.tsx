@@ -27,6 +27,7 @@ type Customer = {
   id: string;
   name: string;
   document: string | null;
+  ie?: string | null;
   email: string | null;
   phone: string | null;
   creditLimit: string;
@@ -122,6 +123,7 @@ export function CustomersPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [name, setName] = useState('');
   const [document, setDocument] = useState('');
+  const [ie, setIe] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [birthDate, setBirthDate] = useState('');
@@ -310,6 +312,7 @@ export function CustomersPage() {
   function resetForm() {
     setName('');
     setDocument('');
+    setIe('');
     setEmail('');
     setPhone('');
     setBirthDate('');
@@ -323,6 +326,7 @@ export function CustomersPage() {
   function loadSelectedToForm(c: Customer) {
     setName(c.name);
     setDocument(c.document ? formatCpfCnpj(c.document) : '');
+    setIe(c.ie ?? '');
     setEmail(c.email ?? '');
     setPhone(c.phone ?? '');
     setBirthDate(birthDateInput(c.birthDate));
@@ -342,12 +346,15 @@ export function CustomersPage() {
     setErr(null);
   }
 
+  const isPj = document.replace(/\D/g, '').length === 14;
+
   function payload() {
     const docErr = validateDocumentIfCpf(document);
     if (docErr) throw new Error(docErr);
     return {
       name,
       document: document.replace(/\D/g, '') || null,
+      ie: isPj ? ie.trim() || null : null,
       email: email || null,
       phone: phone || null,
       birthDate: birthDate || null,
@@ -439,15 +446,29 @@ export function CustomersPage() {
             inputMode="numeric"
           />
         </div>
-        <div className="field">
-          <label htmlFor="c-birth">Data de nascimento</label>
-          <input
-            id="c-birth"
-            type="date"
-            value={birthDate}
-            onChange={(e) => setBirthDate(e.target.value)}
-          />
-        </div>
+        {isPj ? (
+          <div className="field">
+            <label htmlFor="c-ie">Inscrição estadual</label>
+            <input
+              id="c-ie"
+              value={ie}
+              onChange={(e) => setIe(e.target.value.toUpperCase().replace(/[^0-9A-Z./-]/g, ''))}
+              placeholder="Números ou ISENTO"
+              maxLength={20}
+              autoComplete="off"
+            />
+          </div>
+        ) : (
+          <div className="field">
+            <label htmlFor="c-birth">Data de nascimento</label>
+            <input
+              id="c-birth"
+              type="date"
+              value={birthDate}
+              onChange={(e) => setBirthDate(e.target.value)}
+            />
+          </div>
+        )}
       </div>
       <div className="form-row">
         <div className="field">
@@ -934,10 +955,14 @@ export function CustomersPage() {
                       label: 'Documento',
                       value: viewData.document ? formatCpfCnpj(viewData.document) : null,
                     },
-                    {
-                      label: 'Nascimento',
-                      value: birthDateInput(viewData.birthDate) || null,
-                    },
+                    ...((viewData.document ?? '').replace(/\D/g, '').length === 14
+                      ? [{ label: 'Inscrição estadual', value: viewData.ie ?? null }]
+                      : [
+                          {
+                            label: 'Nascimento',
+                            value: birthDateInput(viewData.birthDate) || null,
+                          },
+                        ]),
                     { label: 'E-mail', value: viewData.email },
                     { label: 'Telefone', value: viewData.phone },
                     {

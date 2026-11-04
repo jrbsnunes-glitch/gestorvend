@@ -141,6 +141,8 @@ export class CustomerCreditService {
     amount: number | string | Prisma.Decimal,
   ): Promise<CustomerCreditSummary> {
     const summary = await this.getSummary(tenantSlug, customerId);
+    /** Requisição é livre: o limite cadastral é só referência, não bloqueia a venda. */
+    if (kind === CreditKind.REQUISITION) return summary;
     const need = money(amount);
     const available =
       kind === CreditKind.CREDIT

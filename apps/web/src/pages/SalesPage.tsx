@@ -1439,6 +1439,7 @@ function PosScreen({
         byKind.set(p.method, Math.round(((byKind.get(p.method) ?? 0) + p.amount) * 100) / 100);
       }
       for (const [method, amount] of byKind) {
+        if (method === 'REQUISITION') continue;
         const available =
           method === 'REQUISITION'
             ? Number(cust.requisitionAvailable ?? NaN)
