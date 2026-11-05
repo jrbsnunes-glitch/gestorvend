@@ -61,10 +61,20 @@ type PublicOrder = {
   fulfillment: string;
   paymentMode: string;
   deliveryStatus: string | null;
+  phone?: string | null;
   subtotal: number;
   deliveryFee: number;
   total: number;
   items: Array<{ name: string; quantity: number; total: number }>;
+};
+
+type LatestOrderResponse = {
+  order: {
+    token: string;
+    number: number;
+    deliveryStatus: string | null;
+    placedAt: number;
+  } | null;
 };
 
 type LastOrder = { token: string; number: number; placedAt: number };
@@ -170,6 +180,18 @@ function normalizeLastOrder(raw: unknown): LastOrder | null {
   };
 }
 
+function digitsPhone(raw: string): string {
+  return String(raw ?? '').replace(/\D/g, '').slice(0, 32);
+}
+
+function mergeLastOrder(a: LastOrder | null, b: LastOrder | null): LastOrder | null {
+  if (!a) return b;
+  if (!b) return a;
+  if (b.number !== a.number) return b.number > a.number ? b : a;
+  if (b.placedAt !== a.placedAt) return b.placedAt > a.placedAt ? b : a;
+  return b;
+}
+
 function loadLastOrder(slug: string): LastOrder | null {
   try {
     const raw = localStorage.getItem(lastOrderKey(slug));
@@ -187,9 +209,25 @@ function saveLastOrder(slug: string, order: Omit<LastOrder, 'placedAt'> & { plac
     number: order.number,
     placedAt: order.placedAt ?? Date.now(),
   };
-  const prev = loadLastOrder(slug);
-  if (prev && entry.placedAt < prev.placedAt) return;
-  localStorage.setItem(lastOrderKey(slug), JSON.stringify(entry));
+  const merged = mergeLastOrder(loadLastOrder(slug), entry);
+  if (merged) localStorage.setItem(lastOrderKey(slug), JSON.stringify(merged));
+}
+
+function applySyncedLastOrder(
+  slug: string,
+  remote: LatestOrderResponse['order'],
+  setPlaced?: (o: LastOrder | null) => void,
+) {
+  if (!remote?.token || !remote.number) return;
+  const entry: LastOrder = {
+    token: remote.token,
+    number: remote.number,
+    placedAt: remote.placedAt ?? Date.now(),
+  };
+  const merged = mergeLastOrder(loadLastOrder(slug), entry);
+  if (!merged) return;
+  saveLastOrder(slug, merged);
+  setPlaced?.(merged);
 }
 
 function statusLabel(s: string | null): string {
@@ -313,12 +351,31 @@ function DeliveryHome() {
     setPlaced(loadLastOrder(slug));
   }, [slug]);
 
+  const syncPhone = digitsPhone(phone || loadProfile(slug)?.phone || '');
+
+  const latestOrderQ = useQuery({
+    queryKey: ['dl-latest-order', slug, syncPhone],
+    queryFn: () =>
+      publicApi<LatestOrderResponse>(
+        `/api/public/delivery/${encodeURIComponent(slug)}/orders/latest?phone=${encodeURIComponent(syncPhone)}`,
+      ),
+    enabled: Boolean(slug) && syncPhone.length >= 8,
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+  });
+
+  useEffect(() => {
+    if (latestOrderQ.data?.order) {
+      applySyncedLastOrder(slug, latestOrderQ.data.order, setPlaced);
+    }
+  }, [latestOrderQ.data, slug]);
+
   useEffect(() => {
     if (view !== 'welcome') return;
-    const sync = () => setPlaced(loadLastOrder(slug));
-    sync();
-    document.addEventListener('visibilitychange', sync);
-    return () => document.removeEventListener('visibilitychange', sync);
+    const syncLocal = () => setPlaced(loadLastOrder(slug));
+    syncLocal();
+    document.addEventListener('visibilitychange', syncLocal);
+    return () => document.removeEventListener('visibilitychange', syncLocal);
   }, [view, slug]);
 
   useEffect(() => {
@@ -847,6 +904,30 @@ function DeliveryTrack() {
   });
 
   const order = orderQ.data;
+  const trackPhone = digitsPhone(order?.phone ?? loadProfile(slug)?.phone ?? '');
+
+  const latestOrderQ = useQuery({
+    queryKey: ['dl-latest-order', slug, trackPhone],
+    queryFn: () =>
+      publicApi<LatestOrderResponse>(
+        `/api/public/delivery/${encodeURIComponent(slug)}/orders/latest?phone=${encodeURIComponent(trackPhone)}`,
+      ),
+    enabled: Boolean(slug) && trackPhone.length >= 8,
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+  });
+
+  useEffect(() => {
+    if (latestOrderQ.data?.order) {
+      applySyncedLastOrder(slug, latestOrderQ.data.order);
+    }
+  }, [latestOrderQ.data, slug]);
+
+  const newerOrder =
+    latestOrderQ.data?.order && order && latestOrderQ.data.order.number > order.number
+      ? latestOrderQ.data.order
+      : null;
+
   const needPix = order?.paymentMode === 'PIX_ONLINE' && order.deliveryStatus === 'AWAITING_PAYMENT';
   const qr = pixQ.data?.intent?.qrCode ?? null;
   const done = order?.deliveryStatus === 'COMPLETED';
@@ -880,6 +961,22 @@ function DeliveryTrack() {
         ) : null}
         {order ? (
           <>
+            {newerOrder ? (
+              <div className="dl-area-warn" role="status">
+                <p>
+                  Seu pedido mais recente é o <strong>#{newerOrder.number}</strong>
+                  {newerOrder.deliveryStatus === 'COMPLETED' ? ' (já concluído)' : ''}.
+                </p>
+                <button
+                  type="button"
+                  className="dl-btn"
+                  style={{ width: '100%' }}
+                  onClick={() => nav(`/delivery/${slug}/p/${newerOrder.token}`)}
+                >
+                  Ver pedido #{newerOrder.number}
+                </button>
+              </div>
+            ) : null}
             <ol className="dl-steps">
               {steps.map((st) => (
                 <li key={st.id} className={`dl-steps__item dl-steps__item--${st.state}`}>

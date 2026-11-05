@@ -529,6 +529,42 @@ export class DeliveryService {
     });
   }
 
+  async getLatestOrderForPhone(slugOuHost: string, phoneRaw: string) {
+    const phone = digitsPhone(phoneRaw);
+    if (phone.length < 8) {
+      throw new BadRequestException('Informe um telefone válido.');
+    }
+    const tenantSlug = await this.resolveSlug(slugOuHost);
+    const db = await this.db(tenantSlug, { public: true });
+    const rows = await db.$queryRaw<
+      Array<{
+        publicToken: string;
+        number: number;
+        deliveryStatus: DeliveryOrderStatus | null;
+        createdAt: Date;
+      }>
+    >`
+      SELECT "publicToken", number, "deliveryStatus", "createdAt"
+      FROM "ServiceTab"
+      WHERE "fulfillment" IN ('DELIVERY', 'PICKUP')
+        AND "publicToken" IS NOT NULL
+        AND "deliveryPhone" IS NOT NULL
+        AND regexp_replace("deliveryPhone", '[^0-9]', '', 'g') = ${phone}
+      ORDER BY number DESC
+      LIMIT 1
+    `;
+    const tab = rows[0];
+    if (!tab?.publicToken) return { order: null as null };
+    return {
+      order: {
+        token: tab.publicToken,
+        number: tab.number,
+        deliveryStatus: tab.deliveryStatus,
+        placedAt: tab.createdAt.getTime(),
+      },
+    };
+  }
+
   async getPublicOrder(slugOuHost: string, publicToken: string) {
     const tenantSlug = await this.resolveSlug(slugOuHost);
     const db = await this.db(tenantSlug, { public: true });

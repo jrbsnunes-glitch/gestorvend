@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { DeliveryService } from './delivery.service';
 import { CreateDeliveryOrderDto } from './delivery-public.dto';
@@ -27,6 +27,12 @@ export class DeliveryPublicController {
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     return this.delivery.createPublicOrder(slug, body, idempotencyKey);
+  }
+
+  @Get('orders/latest')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  latestOrder(@Param('slug') slug: string, @Query('phone') phone?: string) {
+    return this.delivery.getLatestOrderForPhone(slug, phone ?? '');
   }
 
   @Get('orders/:token')
