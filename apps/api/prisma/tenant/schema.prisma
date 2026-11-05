@@ -69,6 +69,12 @@ model Company {
   deliveryPayPickup Boolean @default(true)
   deliveryPayPixDeliverer Boolean @default(true)
   deliveryPayPixOnline Boolean @default(false)
+  /// Área de entrega por bairro (OFF = sem restrição).
+  deliveryDistrictMode DeliveryDistrictMode @default(OFF)
+  /// JSON array de nomes de bairros (lista branca ou negra conforme o modo).
+  deliveryDistrictsJson String? @db.Text
+  /// Mensagem quando o bairro não é atendido — placeholders {bairro}, {cidade}.
+  deliveryDistrictMessage String? @db.VarChar(500)
   /// Taxa de serviço (salão/comanda).
   serviceFeeEnabled Boolean @default(false)
   serviceFeeMode    RestaurantFeeMode @default(PERCENT)
@@ -144,6 +150,12 @@ enum DeliveryPrintMode {
 enum DeliveryStockMode {
   FULL
   SALE_ONLY
+}
+
+enum DeliveryDistrictMode {
+  OFF
+  ALLOWLIST
+  BLOCKLIST
 }
 
 /// Canal da comanda: salão (padrão), entrega ou retirada.

@@ -25,8 +25,14 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { RestaurantService } from '../restaurant/restaurant.service';
 import { SalesService } from '../sales/sales.service';
 import { TenantService } from '../tenant/tenant.service';
+import {
+  assertDeliveryDistrictAllowed,
+  buildPublicDistrictPolicy,
+  formatDeliveryAddress,
+} from './delivery-districts';
 import { isDeliveryOpenNow, parseDeliveryHours } from './delivery-hours';
 import { resolveTenant } from './resolve-tenant';
+import type { CreateDeliveryOrderDto } from './delivery-public.dto';
 
 function money(n: number): number {
   return Math.round(n * 100) / 100;
@@ -142,6 +148,7 @@ export class DeliveryService {
         pixDeliverer: Boolean(co.deliveryPayPixDeliverer),
         pixOnline,
       },
+      districtPolicy: buildPublicDistrictPolicy(co),
     };
   }
 
@@ -222,15 +229,7 @@ export class DeliveryService {
 
   async createPublicOrder(
     slugOuHost: string,
-    body: {
-      fulfillment: 'DELIVERY' | 'PICKUP';
-      customerName: string;
-      phone: string;
-      address?: string | null;
-      notes?: string | null;
-      paymentMode: 'PICKUP' | 'PIX_DELIVERER' | 'PIX_ONLINE';
-      items: Array<{ variantId: string; quantity?: number | string; notes?: string | null }>;
-    },
+    body: CreateDeliveryOrderDto,
     idempotencyKey?: string | null,
   ) {
     const tenantSlug = await this.resolveSlug(slugOuHost);
@@ -248,10 +247,28 @@ export class DeliveryService {
     const phone = digitsPhone(body.phone);
     if (customerName.length < 2) throw new BadRequestException('Informe o nome.');
     if (phone.length < 8) throw new BadRequestException('Informe um telefone válido.');
-    const address = String(body.address ?? '').trim().slice(0, 240);
-    if (fulfillment === ServiceTabFulfillment.DELIVERY && address.length < 8) {
-      throw new BadRequestException('Informe o endereço de entrega.');
+
+    const addrFields = body.addressFields ?? null;
+    let address = String(body.address ?? '').trim().slice(0, 240);
+    if (addrFields) {
+      const built = formatDeliveryAddress({
+        street: addrFields.street,
+        number: addrFields.number,
+        complement: addrFields.complement,
+        district: addrFields.district,
+        city: addrFields.city ?? co.city,
+      });
+      if (built.length >= 8) address = built;
     }
+    const districtForPolicy = String(addrFields?.district ?? '').trim();
+    if (fulfillment === ServiceTabFulfillment.DELIVERY) {
+      if (address.length < 8) {
+        throw new BadRequestException('Informe o endereço de entrega.');
+      }
+      assertDeliveryDistrictAllowed(co, districtForPolicy);
+    }
+
+    const saveCustomerData = Boolean(body.saveCustomerData);
 
     const pixReady = await this.pixOnlineReady(tenantSlug);
     if (body.paymentMode === 'PICKUP' && !co.deliveryPayPickup) {
@@ -323,7 +340,20 @@ export class DeliveryService {
     void idem;
 
     const userId = await this.systemUserId(db);
-    const customerId = await this.upsertCustomer(db, customerName, phone);
+    const customerId = await this.upsertCustomer(db, customerName, phone, {
+      saveCustomerData,
+      address:
+        fulfillment === ServiceTabFulfillment.DELIVERY && saveCustomerData
+          ? {
+              street: addrFields?.street?.trim()?.slice(0, 120) || null,
+              number: addrFields?.number?.trim()?.slice(0, 20) || null,
+              complement: addrFields?.complement?.trim()?.slice(0, 80) || null,
+              district: addrFields?.district?.trim()?.slice(0, 80) || null,
+              city: (addrFields?.city?.trim() || co.city?.trim() || null)?.slice(0, 80) ?? null,
+              state: co.state?.trim()?.slice(0, 2) || null,
+            }
+          : null,
+    });
     const publicToken = randomUUID().replace(/-/g, '');
     const awaitingPix = paymentMode === DeliveryPaymentMode.PIX_ONLINE;
     const printMode = co.deliveryPrintMode ?? DeliveryPrintMode.DIRECT;
@@ -386,20 +416,88 @@ export class DeliveryService {
     return this.toPublicOrder(tenantSlug, created, subtotal, fee, total);
   }
 
-  private async upsertCustomer(db: TenantDb, name: string, phone: string): Promise<string> {
-    const byPhone = await db.customer.findFirst({
-      where: { phone },
+  private async findCustomerIdByPhone(db: TenantDb, phoneDigits: string): Promise<string | null> {
+    const exact = await db.customer.findFirst({
+      where: { phone: phoneDigits },
       select: { id: true },
     });
-    if (byPhone) {
-      await db.customer.update({
-        where: { id: byPhone.id },
-        data: { name },
-      });
-      return byPhone.id;
+    if (exact) return exact.id;
+    const rows = await db.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "Customer"
+      WHERE phone IS NOT NULL
+        AND regexp_replace(phone, '[^0-9]', '', 'g') = ${phoneDigits}
+      LIMIT 1
+    `;
+    return rows[0]?.id ?? null;
+  }
+
+  private async upsertCustomer(
+    db: TenantDb,
+    name: string,
+    phoneDigits: string,
+    opts?: {
+      saveCustomerData?: boolean;
+      address?: {
+        street: string | null;
+        number: string | null;
+        complement: string | null;
+        district: string | null;
+        city: string | null;
+        state: string | null;
+      } | null;
+    },
+  ): Promise<string> {
+    const existingId = await this.findCustomerIdByPhone(db, phoneDigits);
+    const baseData = { name, phone: phoneDigits };
+
+    if (existingId) {
+      if (opts?.saveCustomerData && opts.address) {
+        const cur = await db.customer.findUnique({
+          where: { id: existingId },
+          select: { segment: true, notes: true },
+        });
+        const today = new Date().toISOString().slice(0, 10);
+        const noteLine = `Origem: pedido delivery (${today})`;
+        await db.customer.update({
+          where: { id: existingId },
+          data: {
+            ...baseData,
+            street: opts.address.street,
+            number: opts.address.number,
+            complement: opts.address.complement,
+            district: opts.address.district,
+            city: opts.address.city,
+            state: opts.address.state,
+            segment: cur?.segment?.trim() ? cur.segment : 'Delivery',
+            notes: cur?.notes?.trim() ? cur.notes : noteLine,
+          },
+        });
+      } else {
+        await db.customer.update({
+          where: { id: existingId },
+          data: baseData,
+        });
+      }
+      return existingId;
     }
+
+    const noteLine = `Origem: pedido delivery (${new Date().toISOString().slice(0, 10)})`;
     const created = await db.customer.create({
-      data: { name, phone },
+      data: {
+        ...baseData,
+        ...(opts?.saveCustomerData && opts.address
+          ? {
+              street: opts.address.street,
+              number: opts.address.number,
+              complement: opts.address.complement,
+              district: opts.address.district,
+              city: opts.address.city,
+              state: opts.address.state,
+              segment: 'Delivery',
+              notes: noteLine,
+            }
+          : {}),
+      },
       select: { id: true },
     });
     return created.id;

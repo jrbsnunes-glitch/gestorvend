@@ -392,3 +392,51 @@ html, body, #root {
 }
 
 .dl-muted { color: var(--dl-muted); font-size: 0.88rem; }
+
+.dl-field--row {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 0.5rem;
+}
+
+.dl-check {
+  display: flex !important;
+  gap: 0.55rem;
+  align-items: flex-start;
+  font-weight: 500 !important;
+  cursor: pointer;
+}
+
+.dl-check input { width: auto; margin-top: 0.2rem; }
+
+.dl-check small {
+  display: block;
+  font-weight: 450;
+  color: var(--dl-muted);
+  font-size: 0.78rem;
+  margin-top: 0.15rem;
+}
+
+.dl-area-warn {
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: 12px;
+  padding: 0.75rem 0.85rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.dl-area-warn p { margin: 0 0 0.65rem; }
+
+.dl-area-warn__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.dl-btn--ghost {
+  background: #fff !important;
+  color: var(--dl-accent-2) !important;
+  border: 1px solid #fdba74 !important;
+}

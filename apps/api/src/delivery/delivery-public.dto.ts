@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsOptional,
   IsString,
@@ -24,6 +25,33 @@ export class DeliveryOrderItemDto {
   notes?: string | null;
 }
 
+export class DeliveryAddressFieldsDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  street?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  number?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  complement?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  district?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  city?: string | null;
+}
+
 export class CreateDeliveryOrderDto {
   @IsIn(['DELIVERY', 'PICKUP'])
   fulfillment!: 'DELIVERY' | 'PICKUP';
@@ -42,6 +70,15 @@ export class CreateDeliveryOrderDto {
   @IsString()
   @MaxLength(240)
   address?: string | null;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeliveryAddressFieldsDto)
+  addressFields?: DeliveryAddressFieldsDto | null;
+
+  @IsOptional()
+  @IsBoolean()
+  saveCustomerData?: boolean;
 
   @IsOptional()
   @IsString()

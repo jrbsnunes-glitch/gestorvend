@@ -12,6 +12,7 @@ import { useMenuAccess } from '../hooks/useMenuAccess';
 import { timezoneFromBrazilUf } from '../lib/business-timezone';
 import { digitsOnly, formatCep, formatCnpj } from '../lib/format';
 import { lookupCep } from '../lib/lookups';
+import { districtsJsonToText } from '../lib/delivery-districts';
 import '../components/crud-toolbar.css';
 
 type CompanyTab = 'dados' | 'pdv' | 'caixa' | 'os' | 'fabrica' | 'restaurante' | 'visual' | 'nfce';
@@ -67,6 +68,9 @@ type Company = {
   deliveryPayPickup?: boolean;
   deliveryPayPixDeliverer?: boolean;
   deliveryPayPixOnline?: boolean;
+  deliveryDistrictMode?: 'OFF' | 'ALLOWLIST' | 'BLOCKLIST';
+  deliveryDistrictsJson?: string | null;
+  deliveryDistrictMessage?: string | null;
   deliveryAlwaysOpen?: boolean;
   deliveryOpenFrom?: string | null;
   deliveryOpenTo?: string | null;
@@ -99,7 +103,7 @@ type Company = {
   factoryWhatsappHandoffText?: string | null;
 };
 
-type FormState = Omit<Company, 'id'>;
+type FormState = Omit<Company, 'id' | 'deliveryDistrictsJson'> & { deliveryDistrictsText: string };
 
 type FeeMode = 'PERCENT' | 'FIXED';
 
@@ -144,6 +148,9 @@ const EMPTY_FORM: FormState = {
   deliveryPayPickup: true,
   deliveryPayPixDeliverer: true,
   deliveryPayPixOnline: false,
+  deliveryDistrictMode: 'OFF',
+  deliveryDistrictsText: '',
+  deliveryDistrictMessage: '',
   serviceFeeEnabled: false,
   serviceFeeMode: 'PERCENT',
   serviceFeeValue: 0,
@@ -228,6 +235,12 @@ function toForm(c: Company): FormState {
     deliveryPayPickup: c.deliveryPayPickup !== false,
     deliveryPayPixDeliverer: c.deliveryPayPixDeliverer !== false,
     deliveryPayPixOnline: Boolean(c.deliveryPayPixOnline),
+    deliveryDistrictMode:
+      c.deliveryDistrictMode === 'ALLOWLIST' || c.deliveryDistrictMode === 'BLOCKLIST'
+        ? c.deliveryDistrictMode
+        : 'OFF',
+    deliveryDistrictsText: districtsJsonToText(c.deliveryDistrictsJson),
+    deliveryDistrictMessage: c.deliveryDistrictMessage ?? '',
     serviceFeeEnabled: Boolean(c.serviceFeeEnabled),
     serviceFeeMode: c.serviceFeeMode === 'FIXED' ? 'FIXED' : 'PERCENT',
     serviceFeeValue: Number(c.serviceFeeValue ?? 0),
@@ -949,10 +962,13 @@ export function CompanyPage() {
       setFeedback({ kind: 'err', msg: 'CNPJ deve ter 14 dígitos (formato 00.000.000/0000-00).' });
       return;
     }
+    const { deliveryDistrictsText, ...rest } = form;
     save.mutate({
-      ...form,
+      ...rest,
       cnpj: cnpjDigits,
       zip: digitsOnly(form.zip, 8) || null,
+      deliveryDistrictsText,
+      deliveryDistrictMessage: form.deliveryDistrictMessage?.trim() || null,
     });
   }
 
@@ -1917,6 +1933,47 @@ export function CompanyPage() {
                           </div>
                         ) : null}
                       </div>
+                    </div>
+                    <div className="field" style={{ marginTop: '1rem' }}>
+                      <label>Área de entrega (bairros)</label>
+                      <select
+                        value={form.deliveryDistrictMode ?? 'OFF'}
+                        onChange={(e) =>
+                          update(
+                            'deliveryDistrictMode',
+                            e.target.value as NonNullable<FormState['deliveryDistrictMode']>,
+                          )
+                        }
+                      >
+                        <option value="OFF">Sem restrição por bairro</option>
+                        <option value="ALLOWLIST">Entregar só nos bairros listados</option>
+                        <option value="BLOCKLIST">Não entregar nos bairros listados</option>
+                      </select>
+                      {form.deliveryDistrictMode && form.deliveryDistrictMode !== 'OFF' ? (
+                        <>
+                          <textarea
+                            value={form.deliveryDistrictsText ?? ''}
+                            onChange={(e) => update('deliveryDistrictsText', e.target.value)}
+                            rows={4}
+                            placeholder={'Um bairro por linha\nEx.: Centro\nJardim América'}
+                            style={{ marginTop: 8, width: '100%' }}
+                          />
+                          <span className="sub">
+                            No celular, se o bairro não for atendido, o cliente vê uma mensagem e pode
+                            escolher retirada no restaurante.
+                          </span>
+                          <label style={{ display: 'block', marginTop: 10 }}>
+                            Mensagem para bairro não atendido
+                          </label>
+                          <textarea
+                            value={form.deliveryDistrictMessage ?? ''}
+                            onChange={(e) => update('deliveryDistrictMessage', e.target.value)}
+                            rows={3}
+                            placeholder="Use {bairro} e {cidade} no texto."
+                            style={{ width: '100%' }}
+                          />
+                        </>
+                      ) : null}
                     </div>
                     <div className="field">
                       <span className="company-form__h" style={{ fontSize: '0.95rem' }}>

@@ -7,6 +7,7 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { TenantService } from '../tenant/tenant.service';
 import { CompanyLogoStorage } from './company-logo.storage';
 import { CompanyTimezoneService } from './company-timezone.service';
+import { districtsTextToJson } from '../delivery/delivery-districts';
 
 type CompanyInput = {
   legalName?: string;
@@ -48,6 +49,11 @@ type CompanyInput = {
   deliveryPayPickup?: boolean;
   deliveryPayPixDeliverer?: boolean;
   deliveryPayPixOnline?: boolean;
+  deliveryDistrictMode?: 'OFF' | 'ALLOWLIST' | 'BLOCKLIST' | string;
+  deliveryDistrictsJson?: string | null;
+  /** Um bairro por linha (convertido para JSON no update). */
+  deliveryDistrictsText?: string | null;
+  deliveryDistrictMessage?: string | null;
   serviceFeeEnabled?: boolean;
   serviceFeeMode?: 'PERCENT' | 'FIXED' | string;
   serviceFeeValue?: number | string;
@@ -421,6 +427,22 @@ export class CompanyService {
     }
     if (body.deliveryPayPixOnline !== undefined) {
       data.deliveryPayPixOnline = Boolean(body.deliveryPayPixOnline);
+    }
+    if (body.deliveryDistrictMode !== undefined) {
+      const m = String(body.deliveryDistrictMode).trim().toUpperCase();
+      if (m !== 'OFF' && m !== 'ALLOWLIST' && m !== 'BLOCKLIST') {
+        throw new BadRequestException('Modo de bairros do delivery inválido.');
+      }
+      data.deliveryDistrictMode = m;
+    }
+    if (body.deliveryDistrictsJson !== undefined) {
+      data.deliveryDistrictsJson = trimOrNull(body.deliveryDistrictsJson);
+    } else if (body.deliveryDistrictsText !== undefined) {
+      data.deliveryDistrictsJson = districtsTextToJson(String(body.deliveryDistrictsText ?? ''));
+    }
+    if (body.deliveryDistrictMessage !== undefined) {
+      const msg = trimOrNull(body.deliveryDistrictMessage);
+      data.deliveryDistrictMessage = msg ? msg.slice(0, 500) : null;
     }
 
     const updated = await db.company.update({ where: { id: current.id }, data });

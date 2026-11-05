@@ -2,18 +2,44 @@ import { QueryClient, QueryClientProvider, useMutation, useQuery } from '@tansta
 import { useEffect, useMemo, useState } from 'react';
 import { BrowserRouter, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { resolveCompanyAssetUrl } from '../lib/company-branding';
+import { formatDistrictMessage, isDistrictAllowed } from '../lib/delivery-districts';
 import { formatBRL } from '../lib/format';
 import './delivery.css';
+
+type DistrictPolicy = {
+  mode: 'OFF' | 'ALLOWLIST' | 'BLOCKLIST';
+  districts: string[];
+  districtsDisplay: string[];
+  message: string;
+};
 
 type Store = {
   slug: string;
   tradeName: string;
   legalName?: string | null;
   logoUrl?: string | null;
+  city?: string | null;
+  state?: string | null;
   isOpen: boolean;
   deliveryFeeEnabled: boolean;
   deliveryFeeValue: number;
   payments: { pickup: boolean; pixDeliverer: boolean; pixOnline: boolean };
+  districtPolicy?: DistrictPolicy;
+};
+
+type DeliveryAddressFields = {
+  street: string;
+  number: string;
+  complement: string;
+  district: string;
+  city: string;
+};
+
+type DeliveryProfile = {
+  name: string;
+  phone: string;
+  address: DeliveryAddressFields;
+  saveProfile: boolean;
 };
 
 type MenuItem = {
@@ -59,8 +85,17 @@ async function publicApi<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const t = await res.text();
     try {
-      const j = JSON.parse(t) as { message?: string | string[] };
-      const msg = Array.isArray(j.message) ? j.message.join(' ') : j.message;
+      const j = JSON.parse(t) as {
+        message?: string | string[] | { message?: string; code?: string };
+      };
+      let msg: string | undefined;
+      if (typeof j.message === 'object' && j.message && !Array.isArray(j.message)) {
+        msg = j.message.message;
+      } else if (Array.isArray(j.message)) {
+        msg = j.message.join(' ');
+      } else {
+        msg = j.message;
+      }
       throw new Error(msg || t || `Erro ${res.status}`);
     } catch (e) {
       if (e instanceof Error && e.message && !e.message.startsWith('{')) throw e;
@@ -76,6 +111,43 @@ function cartKey(slug: string) {
 
 function lastOrderKey(slug: string) {
   return `gv-delivery-last:${slug}`;
+}
+
+function profileKey(slug: string) {
+  return `gv-delivery-profile:${slug}`;
+}
+
+const EMPTY_ADDRESS: DeliveryAddressFields = {
+  street: '',
+  number: '',
+  complement: '',
+  district: '',
+  city: '',
+};
+
+function loadProfile(slug: string): DeliveryProfile | null {
+  try {
+    const raw = localStorage.getItem(profileKey(slug));
+    if (!raw) return null;
+    const p = JSON.parse(raw) as DeliveryProfile;
+    if (!p?.name && !p?.phone) return null;
+    return {
+      name: p.name ?? '',
+      phone: p.phone ?? '',
+      saveProfile: p.saveProfile !== false,
+      address: { ...EMPTY_ADDRESS, ...(p.address ?? {}) },
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistProfile(slug: string, profile: DeliveryProfile) {
+  if (!profile.saveProfile) {
+    localStorage.removeItem(profileKey(slug));
+    return;
+  }
+  localStorage.setItem(profileKey(slug), JSON.stringify(profile));
 }
 
 function loadCart(slug: string): CartLine[] {
@@ -203,12 +275,18 @@ function IconPin() {
 function DeliveryHome() {
   const { slug = '' } = useParams<{ slug: string }>();
   const nav = useNavigate();
+  const initialProfile = loadProfile(slug);
   const [cart, setCart] = useState<CartLine[]>(() => loadCart(slug));
   const [view, setView] = useState<HomeView>('welcome');
   const [fulfillment, setFulfillment] = useState<'DELIVERY' | 'PICKUP'>('DELIVERY');
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
+  const [name, setName] = useState(initialProfile?.name ?? '');
+  const [phone, setPhone] = useState(initialProfile?.phone ?? '');
+  const [addr, setAddr] = useState<DeliveryAddressFields>(() => ({
+    ...EMPTY_ADDRESS,
+    ...(initialProfile?.address ?? {}),
+  }));
+  const [saveProfile, setSaveProfile] = useState(initialProfile?.saveProfile !== false);
+  const [districtTouched, setDistrictTouched] = useState(false);
   const [notes, setNotes] = useState('');
   const [pay, setPay] = useState<'PICKUP' | 'PIX_DELIVERER' | 'PIX_ONLINE'>('PICKUP');
   const [err, setErr] = useState<string | null>(null);
@@ -237,6 +315,29 @@ function DeliveryHome() {
   const count = cart.reduce((s, l) => s + l.qty, 0);
   const logoSrc = store?.logoUrl?.trim() ? resolveCompanyAssetUrl(store.logoUrl) : null;
   const storeName = store?.tradeName || store?.legalName || 'Delivery';
+  const districtPolicy = store?.districtPolicy;
+  const storeCity = store?.city?.trim() || '';
+
+  useEffect(() => {
+    if (storeCity && !addr.city.trim()) {
+      setAddr((a) => ({ ...a, city: storeCity }));
+    }
+  }, [storeCity, addr.city]);
+
+  const districtBlocked = useMemo(() => {
+    if (fulfillment !== 'DELIVERY' || !districtPolicy || districtPolicy.mode === 'OFF') return false;
+    if (!districtTouched && !addr.district.trim()) return false;
+    return !isDistrictAllowed(districtPolicy.mode, districtPolicy.districts, addr.district);
+  }, [fulfillment, districtPolicy, districtTouched, addr.district]);
+
+  const districtWarnText = useMemo(() => {
+    if (!districtBlocked || !districtPolicy) return '';
+    return formatDistrictMessage(
+      districtPolicy.message,
+      addr.district.trim() || 'seu bairro',
+      addr.city.trim() || storeCity || 'sua cidade',
+    );
+  }, [districtBlocked, districtPolicy, addr.district, addr.city, storeCity]);
 
   const availablePays = useMemo(() => {
     const p = store?.payments;
@@ -281,7 +382,18 @@ function DeliveryHome() {
           fulfillment,
           customerName: name.trim(),
           phone,
-          address: fulfillment === 'DELIVERY' ? address : null,
+          address: null,
+          addressFields:
+            fulfillment === 'DELIVERY'
+              ? {
+                  street: addr.street.trim(),
+                  number: addr.number.trim(),
+                  complement: addr.complement.trim() || null,
+                  district: addr.district.trim(),
+                  city: addr.city.trim() || storeCity || null,
+                }
+              : null,
+          saveCustomerData: saveProfile,
           notes: notes.trim() || null,
           paymentMode: fulfillment === 'PICKUP' && pay === 'PIX_DELIVERER' ? 'PICKUP' : pay,
           items: cart.map((l) => ({ variantId: l.variantId, quantity: l.qty })),
@@ -290,6 +402,12 @@ function DeliveryHome() {
     onSuccess: (order) => {
       localStorage.removeItem(cartKey(slug));
       setCart([]);
+      persistProfile(slug, {
+        name: name.trim(),
+        phone,
+        address: addr,
+        saveProfile,
+      });
       const last = { token: order.token, number: order.number };
       saveLastOrder(slug, last);
       setPlaced(last);
@@ -444,10 +562,25 @@ function DeliveryHome() {
         ) : (
           <>
             <div className="dl-toggle">
-              <button type="button" className={fulfillment === 'DELIVERY' ? 'on' : ''} onClick={() => setFulfillment('DELIVERY')}>
+              <button
+                type="button"
+                className={fulfillment === 'DELIVERY' ? 'on' : ''}
+                onClick={() => {
+                  setFulfillment('DELIVERY');
+                  setDistrictTouched(false);
+                }}
+              >
                 Entrega
               </button>
-              <button type="button" className={fulfillment === 'PICKUP' ? 'on' : ''} onClick={() => setFulfillment('PICKUP')}>
+              <button
+                type="button"
+                className={fulfillment === 'PICKUP' ? 'on' : ''}
+                onClick={() => {
+                  setFulfillment('PICKUP');
+                  setDistrictTouched(false);
+                  setErr(null);
+                }}
+              >
                 Retirada
               </button>
             </div>
@@ -478,11 +611,91 @@ function DeliveryHome() {
               <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" autoComplete="tel" />
             </div>
             {fulfillment === 'DELIVERY' ? (
-              <div className="dl-field">
-                <label>Endereço</label>
-                <textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={3} />
-              </div>
+              <>
+                <div className="dl-field">
+                  <label>Rua / avenida</label>
+                  <input
+                    value={addr.street}
+                    onChange={(e) => setAddr((a) => ({ ...a, street: e.target.value }))}
+                    autoComplete="street-address"
+                  />
+                </div>
+                <div className="dl-field dl-field--row">
+                  <div>
+                    <label>Número</label>
+                    <input
+                      value={addr.number}
+                      onChange={(e) => setAddr((a) => ({ ...a, number: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label>Complemento</label>
+                    <input
+                      value={addr.complement}
+                      onChange={(e) => setAddr((a) => ({ ...a, complement: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="dl-field">
+                  <label>Bairro</label>
+                  <input
+                    value={addr.district}
+                    onChange={(e) => setAddr((a) => ({ ...a, district: e.target.value }))}
+                    onBlur={() => setDistrictTouched(true)}
+                    autoComplete="address-level3"
+                  />
+                </div>
+                <div className="dl-field">
+                  <label>Cidade</label>
+                  <input
+                    value={addr.city}
+                    onChange={(e) => setAddr((a) => ({ ...a, city: e.target.value }))}
+                    autoComplete="address-level2"
+                  />
+                </div>
+                {districtBlocked ? (
+                  <div className="dl-area-warn" role="alert">
+                    <p>{districtWarnText}</p>
+                    <div className="dl-area-warn__actions">
+                      <button
+                        type="button"
+                        className="dl-btn"
+                        onClick={() => {
+                          setFulfillment('PICKUP');
+                          setDistrictTouched(false);
+                          setErr(null);
+                        }}
+                      >
+                        Retirar no restaurante
+                      </button>
+                      <button
+                        type="button"
+                        className="dl-btn dl-btn--ghost"
+                        onClick={() => {
+                          setDistrictTouched(false);
+                          setAddr((a) => ({ ...a, district: '' }));
+                        }}
+                      >
+                        Alterar bairro
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </>
             ) : null}
+            <div className="dl-field">
+              <label className="dl-check">
+                <input
+                  type="checkbox"
+                  checked={saveProfile}
+                  onChange={(e) => setSaveProfile(e.target.checked)}
+                />
+                <span>
+                  Lembrar meus dados neste celular
+                  <small>Salvar também no cadastro do restaurante</small>
+                </span>
+              </label>
+            </div>
             <div className="dl-field">
               <label>Observações</label>
               <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
@@ -501,9 +714,14 @@ function DeliveryHome() {
               type="button"
               className="dl-btn"
               style={{ width: '100%', padding: '0.85rem' }}
-              disabled={submit.isPending || !store?.isOpen}
+              disabled={
+                submit.isPending ||
+                !store?.isOpen ||
+                (fulfillment === 'DELIVERY' && districtBlocked)
+              }
               onClick={() => {
                 setErr(null);
+                if (fulfillment === 'DELIVERY') setDistrictTouched(true);
                 submit.mutate();
               }}
             >

@@ -847,7 +847,11 @@ export function CustomersPage() {
                     '—'
                   )}
                 </td>
-                <td>{c.city || c.state ? `${c.city ?? ''} ${c.state ?? ''}`.trim() : '—'}</td>
+                <td>
+                  {c.district || c.city || c.state
+                    ? [c.district, c.city, c.state].filter(Boolean).join(' · ')
+                    : '—'}
+                </td>
                 <td>{formatBRL(c.creditLimit)}</td>
                 <td>{formatBRL(c.requisitionAvailable ?? c.requisitionLimit ?? '0')}</td>
                 <td className="col-actions">
