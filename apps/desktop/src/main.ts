@@ -274,9 +274,6 @@ async function waitReceiptReady(win: BrowserWindow): Promise<boolean> {
   });
 }
 
-/** Margem útil da DANFE no PDF (7 mm → polegadas para printToPDF). */
-const DANFE_PDF_MARGIN_IN = 7 / 25.4;
-
 function isDanfePrintUrl(url: string): boolean {
   try {
     return new URL(url).pathname.includes('/notas-fiscais/danfe/');
@@ -426,7 +423,7 @@ async function injectDanfePdfLayout(wc: WebContents): Promise<void> {
       const s = document.createElement('style');
       s.id = id;
       s.textContent = [
-        'html,body,#root,.danfe-nfe-page{width:210mm!important;max-width:210mm!important;margin:0!important;padding:0!important;background:#fff!important;border:none!important;box-shadow:none!important}',
+        'html,body,#root,.danfe-nfe-page{width:auto!important;max-width:none!important;margin:0!important;padding:0!important;background:#fff!important;border:none!important;box-shadow:none!important}',
         '.danfe-nfe{width:100%!important;max-width:none!important;margin:0!important;padding:0!important;background:#fff!important;border:none!important;box-shadow:none!important}',
         '.no-print{display:none!important}',
       ].join('');
@@ -440,14 +437,13 @@ async function injectDanfePdfLayout(wc: WebContents): Promise<void> {
 async function renderDanfePdf(wc: WebContents): Promise<Buffer> {
   await prepareWebContentsForPdf(wc);
   await injectDanfePdfLayout(wc);
-  const m = DANFE_PDF_MARGIN_IN;
   try {
     const data = await wc.printToPDF({
       printBackground: false,
       landscape: false,
       pageSize: 'A4',
-      preferCSSPageSize: false,
-      margins: { marginType: 'custom', top: m, bottom: m, left: m, right: m },
+      preferCSSPageSize: true,
+      margins: { marginType: 'none' },
     });
     const buf = Buffer.from(data);
     if (!buf.length) {

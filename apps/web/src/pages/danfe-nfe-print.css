@@ -35,30 +35,15 @@
   margin-top: -1px;
 }
 
-/*
- * Grade só com divisórias internas (topo/esquerda) — evita moldura preta
- * em volta de toda a área impressa.
- */
 .danfe-nfe td,
 .danfe-nfe th {
-  border: none;
-  border-top: 1px solid #000;
-  border-left: 1px solid #000;
+  border: 1px solid #000;
   padding: 1px 3px 2px;
   vertical-align: top;
   overflow: hidden;
 }
 
-.danfe-nfe > table:first-of-type tr:first-child > td,
-.danfe-nfe > table:first-of-type tr:first-child > th {
-  border-top: none;
-}
-
-.danfe-nfe td:first-child,
-.danfe-nfe th:first-child {
-  border-left: none;
-}
-
+/* Sem moldura extra no container — só linhas da grade das células. */
 .danfe-nfe,
 .danfe-nfe-page {
   border: none !important;
@@ -258,9 +243,7 @@
 .danfe-dups {
   display: flex;
   flex-wrap: wrap;
-  border: none;
-  border-top: 1px solid #000;
-  border-left: 1px solid #000;
+  border: 1px solid #000;
   min-height: 8mm;
 }
 
@@ -304,7 +287,7 @@
 }
 
 .danfe-items tbody tr:last-child td {
-  border-bottom: none;
+  border-bottom: 1px solid #000;
 }
 
 .danfe-items tbody tr:first-child td {
@@ -355,10 +338,11 @@
   }
 
   html,
-  body {
-    width: 210mm !important;
-    max-width: 210mm !important;
-    margin: 0 auto !important;
+  body,
+  #root {
+    width: auto !important;
+    max-width: none !important;
+    margin: 0 !important;
     padding: 0 !important;
     background: #fff !important;
     -webkit-print-color-adjust: economy;
@@ -366,8 +350,8 @@
   }
 
   .danfe-nfe-page {
-    width: 210mm !important;
-    max-width: 210mm !important;
+    width: auto !important;
+    max-width: none !important;
     background: #fff !important;
     padding: 0;
     min-height: 0;
@@ -393,9 +377,9 @@
  */
 html.gv-danfe-save-pdf,
 html.gv-danfe-save-pdf body {
-  width: 210mm !important;
-  max-width: 210mm !important;
-  min-width: 210mm !important;
+  width: auto !important;
+  max-width: none !important;
+  min-width: 0 !important;
   margin: 0 !important;
   padding: 0 !important;
   background: #fff !important;
@@ -403,16 +387,16 @@ html.gv-danfe-save-pdf body {
 }
 
 html.gv-danfe-save-pdf #root {
-  width: 210mm !important;
-  max-width: 210mm !important;
+  width: auto !important;
+  max-width: none !important;
   margin: 0 !important;
   padding: 0 !important;
   background: #fff !important;
 }
 
 html.gv-danfe-save-pdf .danfe-nfe-page {
-  width: 210mm !important;
-  max-width: 210mm !important;
+  width: auto !important;
+  max-width: none !important;
   background: #fff;
   padding: 0;
   min-height: 0;
@@ -430,16 +414,16 @@ html.gv-danfe-save-pdf .danfe-nfe {
   html.gv-danfe-route,
   html.gv-danfe-route body,
   html.gv-danfe-route #root {
-    width: 210mm !important;
-    max-width: 210mm !important;
-    margin: 0 auto !important;
+    width: auto !important;
+    max-width: none !important;
+    margin: 0 !important;
     padding: 0 !important;
     background: #fff !important;
   }
 
   html.gv-danfe-route .danfe-nfe-page {
-    width: 210mm !important;
-    max-width: 210mm !important;
+    width: auto !important;
+    max-width: none !important;
     background: #fff;
     padding: 0;
   }

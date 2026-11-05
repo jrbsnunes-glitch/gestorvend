@@ -1,5 +1,5 @@
 {
-  "version": "1.0.80",
+  "version": "1.0.81",
   "downloadUrl": "",
-  "notes": "DANFE NF-e sem moldura preta na impressao/PDF; fundo de tela nao vaza no PDF."
+  "notes": "DANFE NF-e: largura alinhada ao @page evita cortar linhas laterais na impressao/PDF."
 }
