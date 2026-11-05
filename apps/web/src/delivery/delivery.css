@@ -241,6 +241,57 @@ html, body, #root {
   margin: 1rem 0 0.45rem;
 }
 
+.dl-cat-block {
+  margin: 0.65rem 0 0.25rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.dl-cat-block[open] .dl-cat-summary {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.dl-cat-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 0.85rem;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--dl-text);
+  user-select: none;
+}
+
+.dl-cat-summary::-webkit-details-marker {
+  display: none;
+}
+
+.dl-cat-summary::before {
+  content: '▸';
+  margin-right: 0.45rem;
+  color: var(--dl-accent);
+  transition: transform 0.15s ease;
+}
+
+.dl-cat-block[open] .dl-cat-summary::before {
+  transform: rotate(90deg);
+}
+
+.dl-cat-summary__meta {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--dl-muted);
+}
+
+.dl-cat-body {
+  padding: 0.35rem 0.5rem 0.55rem;
+}
+
 .dl-item {
   display: flex;
   gap: 0.75rem;

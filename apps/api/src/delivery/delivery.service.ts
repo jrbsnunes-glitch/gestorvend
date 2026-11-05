@@ -198,7 +198,7 @@ export class DeliveryService {
         description: p.description,
         hasImage: p.hasImage,
         imageUrl: p.hasImage
-          ? `/api/catalog/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(p.id)}/image?size=thumb&v=${p.imageVersion}`
+          ? `/api/catalog/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(p.id)}/image?size=medium&v=${p.imageVersion ?? 0}`
           : null,
         variantId: variant.id,
         price: money(price),

@@ -67,7 +67,7 @@ type PublicOrder = {
   items: Array<{ name: string; quantity: number; total: number }>;
 };
 
-type LastOrder = { token: string; number: number };
+type LastOrder = { token: string; number: number; placedAt: number };
 
 type HomeView = 'welcome' | 'menu' | 'checkout' | 'placed';
 
@@ -159,20 +159,37 @@ function loadCart(slug: string): CartLine[] {
   }
 }
 
+function normalizeLastOrder(raw: unknown): LastOrder | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as { token?: string; number?: number; placedAt?: number };
+  if (!o.token || !o.number) return null;
+  return {
+    token: o.token,
+    number: o.number,
+    placedAt: typeof o.placedAt === 'number' && o.placedAt > 0 ? o.placedAt : 0,
+  };
+}
+
 function loadLastOrder(slug: string): LastOrder | null {
   try {
     const raw = localStorage.getItem(lastOrderKey(slug));
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as LastOrder;
-    if (!parsed?.token || !parsed.number) return null;
-    return parsed;
+    return normalizeLastOrder(JSON.parse(raw));
   } catch {
     return null;
   }
 }
 
-function saveLastOrder(slug: string, order: LastOrder) {
-  localStorage.setItem(lastOrderKey(slug), JSON.stringify(order));
+/** Registra pedido recém-criado (não usar ao só visualizar acompanhamento). */
+function saveLastOrder(slug: string, order: Omit<LastOrder, 'placedAt'> & { placedAt?: number }) {
+  const entry: LastOrder = {
+    token: order.token,
+    number: order.number,
+    placedAt: order.placedAt ?? Date.now(),
+  };
+  const prev = loadLastOrder(slug);
+  if (prev && entry.placedAt < prev.placedAt) return;
+  localStorage.setItem(lastOrderKey(slug), JSON.stringify(entry));
 }
 
 function statusLabel(s: string | null): string {
@@ -293,6 +310,18 @@ function DeliveryHome() {
   const [placed, setPlaced] = useState<LastOrder | null>(() => loadLastOrder(slug));
 
   useEffect(() => {
+    setPlaced(loadLastOrder(slug));
+  }, [slug]);
+
+  useEffect(() => {
+    if (view !== 'welcome') return;
+    const sync = () => setPlaced(loadLastOrder(slug));
+    sync();
+    document.addEventListener('visibilitychange', sync);
+    return () => document.removeEventListener('visibilitychange', sync);
+  }, [view, slug]);
+
+  useEffect(() => {
     localStorage.setItem(cartKey(slug), JSON.stringify(cart));
   }, [cart, slug]);
 
@@ -408,7 +437,11 @@ function DeliveryHome() {
         address: addr,
         saveProfile,
       });
-      const last = { token: order.token, number: order.number };
+      const last: LastOrder = {
+        token: order.token,
+        number: order.number,
+        placedAt: Date.now(),
+      };
       saveLastOrder(slug, last);
       setPlaced(last);
       setView('placed');
@@ -521,13 +554,21 @@ function DeliveryHome() {
         {view === 'menu' ? (
           <>
             {(menuQ.data?.categories ?? []).map((cat) => (
-              <section key={cat.id ?? cat.name}>
-                <div className="dl-cat">{cat.name}</div>
+              <details key={cat.id ?? cat.name} className="dl-cat-block">
+                <summary className="dl-cat-summary">
+                  <span>{cat.name}</span>
+                  <span className="dl-cat-summary__meta">{cat.products.length} itens</span>
+                </summary>
+                <div className="dl-cat-body">
                 {cat.products.map((p) => {
                   const line = cart.find((l) => l.variantId === p.variantId);
                   return (
                     <article key={p.id} className="dl-item">
-                      {p.imageUrl ? <img src={p.imageUrl} alt="" /> : <div className="dl-ph" />}
+                      {p.imageUrl ? (
+                        <img src={p.imageUrl} alt="" loading="lazy" decoding="async" />
+                      ) : (
+                        <div className="dl-ph" />
+                      )}
                       <div style={{ flex: 1 }}>
                         <h3>{p.name}</h3>
                         {p.description ? <p className="dl-desc">{p.description}</p> : null}
@@ -553,7 +594,8 @@ function DeliveryHome() {
                     </article>
                   );
                 })}
-              </section>
+                </div>
+              </details>
             ))}
             {menuQ.isSuccess && !(menuQ.data?.categories ?? []).length ? (
               <p className="dl-muted">Cardápio ainda não cadastrado.</p>
@@ -712,6 +754,14 @@ function DeliveryHome() {
             </div>
             <button
               type="button"
+              className="dl-btn dl-btn--ghost"
+              style={{ width: '100%', padding: '0.75rem', marginBottom: '0.5rem' }}
+              onClick={() => setView('menu')}
+            >
+              Adicionar mais itens
+            </button>
+            <button
+              type="button"
               className="dl-btn"
               style={{ width: '100%', padding: '0.85rem' }}
               disabled={
@@ -801,10 +851,6 @@ function DeliveryTrack() {
   const qr = pixQ.data?.intent?.qrCode ?? null;
   const done = order?.deliveryStatus === 'COMPLETED';
   const steps = order ? statusSteps(order) : [];
-
-  useEffect(() => {
-    if (order?.token && order.number) saveLastOrder(slug, { token: order.token, number: order.number });
-  }, [order?.token, order?.number, slug]);
 
   return (
     <div className="dl-app">
