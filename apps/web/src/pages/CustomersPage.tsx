@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AddressFormBlock, EMPTY_ADDRESS, type AddressFormFields } from '../components/AddressFormBlock';
 import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { CrudToolbar, RowRecordActions } from '../components/CrudToolbar';
@@ -112,6 +113,7 @@ function statementDocumentControl(line: CreditStatement['lines'][number]): strin
 
 export function CustomersPage() {
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [viewId, setViewId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
@@ -429,6 +431,24 @@ export function CustomersPage() {
         setEditOpen(true);
       });
   }
+
+  useEffect(() => {
+    const editId = searchParams.get('edit')?.trim();
+    if (!editId) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('edit');
+    setSearchParams(next, { replace: true });
+    void api<Customer>(`/customers/${editId}`)
+      .then((full) => {
+        loadSelectedToForm(full);
+        setEditCustomer(full);
+        setEditOpen(true);
+      })
+      .catch((e: unknown) => {
+        setErr(e instanceof Error ? e.message : 'Cliente não encontrado.');
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- abre modal quando ?edit= na URL
+  }, [searchParams]);
 
   const formFields = (
     <>

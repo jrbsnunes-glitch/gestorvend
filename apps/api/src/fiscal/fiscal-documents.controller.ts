@@ -21,7 +21,7 @@ import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { FiscalDocumentKind } from '../generated/tenant-client';
 import { FiscalDocumentsService } from './fiscal-documents.service';
 import { FiscalManualNfeService } from './fiscal-manual-nfe.service';
-import type { ManualNfeInput } from './manual-nfe.types';
+import type { FiscalNoteSaleContentInput, ManualNfeInput } from './manual-nfe.types';
 
 @Controller('fiscal/documents')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -181,6 +181,17 @@ export class FiscalDocumentsController {
     @Body() body: ManualNfeInput,
   ) {
     return this.manualNfe.updateManualNfe(user, id, body);
+  }
+
+  /** Cliente e produtos da venda (modal Cadastro da nota / rejeição SEFAZ). */
+  @Patch(':id/sale-content')
+  @Roles('admin', 'manager', 'seller')
+  updateSaleContent(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: FiscalNoteSaleContentInput,
+  ) {
+    return this.docs.updateSaleContent(user.tenantSlug, id, body);
   }
 
   @Get(':id/danfe')

@@ -415,12 +415,11 @@ export class FiscalManualNfeService {
     if (doc.sale?.source !== SaleSource.NFE_FORM) {
       throw new BadRequestException('Documento não é de formulário NF-e.');
     }
-    const editable: FiscalDocumentStatus[] = [
-      FiscalDocumentStatus.DRAFT,
-      FiscalDocumentStatus.REJECTED,
-      FiscalDocumentStatus.ERROR,
+    const blocked: FiscalDocumentStatus[] = [
+      FiscalDocumentStatus.AUTHORIZED,
+      FiscalDocumentStatus.CANCELLED,
     ];
-    if (!editable.includes(doc.status)) {
+    if (blocked.includes(doc.status)) {
       throw new BadRequestException('Nota já enviada/autorizada — não pode ser editada.');
     }
     return doc;

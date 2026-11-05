@@ -7,6 +7,12 @@ export type ManualNfeItemInput = {
   discount?: number;
 };
 
+/** Cliente e itens da venda vinculada à nota (rejeição / reenvio). */
+export type FiscalNoteSaleContentInput = {
+  customerId?: string | null;
+  items: ManualNfeItemInput[];
+};
+
 export type ManualNfeInput = {
   customerId: string;
   operationNatureId: string;

@@ -1024,13 +1024,14 @@ export function ProductsPage() {
     setEditOpen(true);
   }
 
-  async function openEditFromSearch(productId: string) {
+  async function openEditFromSearch(productId: string, initialTab?: ProductFormTab) {
     setSearchActionErr(null);
     try {
       const cached = list.data?.items.find((p) => p.id === productId);
       const product = cached ?? (await api<Product>(`/products/${productId}`));
       setSearchOpen(false);
       setSearchInput('');
+      if (initialTab) setProductFormTab(initialTab);
       openEdit(product);
     } catch (e) {
       setSearchActionErr(
@@ -1042,10 +1043,14 @@ export function ProductsPage() {
   useEffect(() => {
     const editId = searchParams.get('edit')?.trim();
     if (!editId) return;
+    const tabRaw = searchParams.get('tab')?.trim();
+    const initialTab: ProductFormTab | undefined =
+      tabRaw === 'fiscal' ? 'fiscal' : tabRaw === 'identificacao' ? 'identificacao' : undefined;
     const next = new URLSearchParams(searchParams);
     next.delete('edit');
+    next.delete('tab');
     setSearchParams(next, { replace: true });
-    void openEditFromSearch(editId);
+    void openEditFromSearch(editId, initialTab);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- abre modal quando ?edit= na URL
   }, [searchParams]);
 

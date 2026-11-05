@@ -8,20 +8,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { NumericInput } from '../components/NumericInput';
 import { api } from '../lib/api';
 import { validateDocumentIfCpf } from '../lib/cpf';
+import { ProductSearchModal, type ProductSearchRow } from '../components/ProductSearchModal';
+import { openCustomerCadastro, openProductCadastro } from '../lib/cadastro-edit-window';
 import { formatBRL, formatCpfCnpj } from '../lib/format';
 
 type CustomerRow = {
   id: string;
   name: string;
   document: string | null;
-};
-
-type ProductSearchRow = {
-  productName: string;
-  variantId: string;
-  sku: string;
-  retailPrice: string;
-  taxUnit?: string | null;
 };
 
 type NatureRow = {
@@ -35,6 +29,7 @@ type NatureRow = {
 type Line = {
   key: string;
   variantId: string;
+  productId: string;
   label: string;
   sku: string;
   quantity: number;
@@ -62,7 +57,7 @@ type FiscalDetail = {
       variantId: string;
       quantity: string;
       unitPrice: string;
-      variant?: { sku?: string; product?: { name?: string } };
+      variant?: { sku?: string; product?: { id?: string; name?: string } };
     }>;
   };
 };
@@ -79,7 +74,7 @@ export function NfeFormPage() {
   const [customerQ, setCustomerQ] = useState('');
   const [showCustomerQuick, setShowCustomerQuick] = useState(false);
   const [customerQuick, setCustomerQuick] = useState({ name: '', document: '' });
-  const [productQ, setProductQ] = useState('');
+  const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
   const [discount, setDiscount] = useState('0');
   const [surcharge, setSurcharge] = useState('0');
@@ -110,8 +105,8 @@ export function NfeFormPage() {
   useEffect(() => {
     const d = existing.data;
     if (!d) return;
-    if (!DELETABLE.has(d.status)) {
-      setErr('Esta nota não pode ser editada (já enviada/autorizada). Exclua só se ainda não enviada.');
+    if (d.status === 'AUTHORIZED' || d.status === 'CANCELLED') {
+      setErr('Esta nota não pode ser editada (autorizada ou cancelada).');
     }
     setCustomerId(d.sale.customerId ?? '');
     setNotes(d.sale.notes ?? '');
@@ -128,6 +123,7 @@ export function NfeFormPage() {
       (d.sale.items ?? []).map((it, i) => ({
         key: `${it.variantId}-${i}`,
         variantId: it.variantId,
+        productId: it.variant?.product?.id ?? '',
         label: it.variant?.product?.name ?? 'Produto',
         sku: it.variant?.sku ?? '',
         quantity: Number(it.quantity),
@@ -157,13 +153,6 @@ export function NfeFormPage() {
   const selectedCustomer = (customers.data ?? []).find((c) => c.id === customerId) ?? null;
   const activeNatures = (natures.data ?? []).filter((n) => n.isActive);
 
-  const productSearch = useQuery({
-    queryKey: ['products', 'search', productQ],
-    queryFn: () =>
-      api<ProductSearchRow[]>(`/products/search?q=${encodeURIComponent(productQ.trim())}`),
-    enabled: productQ.trim().length >= 1,
-  });
-
   const subtotal = lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
   const disc = Number(String(discount).replace(',', '.')) || 0;
   const sur = Number(String(surcharge).replace(',', '.')) || 0;
@@ -184,6 +173,7 @@ export function NfeFormPage() {
         {
           key: `${p.variantId}-${Date.now()}`,
           variantId: p.variantId,
+          productId: p.productId,
           label: p.productName,
           sku: p.sku,
           quantity: 1,
@@ -191,7 +181,7 @@ export function NfeFormPage() {
         },
       ];
     });
-    setProductQ('');
+    setProductSearchOpen(false);
   }
 
   const createNatureQuick = useMutation({
@@ -297,8 +287,13 @@ export function NfeFormPage() {
       if (!lines.length) throw new Error('Inclua ao menos um item.');
       if (total <= 0) throw new Error('Total da nota deve ser maior que zero.');
 
-      if (isEdit && documentId && existing.data && !DELETABLE.has(existing.data.status)) {
-        throw new Error('Não é possível alterar nota já enviada/autorizada.');
+      if (
+        isEdit &&
+        documentId &&
+        existing.data &&
+        (existing.data.status === 'AUTHORIZED' || existing.data.status === 'CANCELLED')
+      ) {
+        throw new Error('Não é possível alterar nota autorizada ou cancelada.');
       }
 
       const payload = buildManualPayload(andEmit);
@@ -385,6 +380,19 @@ export function NfeFormPage() {
               }}
             >
               {showCustomerQuick ? 'Fechar inclusão' : '+ Incluir cliente'}
+            </button>
+          </div>
+          <div className="field field--action">
+            <span className="field-label-spacer" aria-hidden="true">
+              Cadastro
+            </span>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={!customerId}
+              onClick={() => customerId && openCustomerCadastro(customerId)}
+            >
+              Editar cadastro
             </button>
           </div>
         </div>
@@ -584,30 +592,22 @@ export function NfeFormPage() {
             </span>
           </label>
         </div>
-        <div className="field">
-          <label htmlFor="nfe-prod">Produto (busca)</label>
-          <input
-            id="nfe-prod"
-            value={productQ}
-            onChange={(e) => setProductQ(e.target.value)}
-            placeholder="Nome, SKU ou código de barras"
-          />
+        <div style={{ marginBottom: '0.75rem' }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setProductSearchOpen(true)}
+          >
+            Pesquisar / incluir produto
+          </button>
         </div>
-        {productSearch.data && productSearch.data.length > 0 && (
-          <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 0.75rem' }}>
-            {productSearch.data.slice(0, 12).map((p) => (
-              <li key={p.variantId} style={{ marginBottom: '0.25rem' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-compact"
-                  onClick={() => addProduct(p)}
-                >
-                  + {p.productName} ({p.sku}) — {formatBRL(p.retailPrice)}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <ProductSearchModal
+          open={productSearchOpen}
+          title="Produto na NF-e"
+          onClose={() => setProductSearchOpen(false)}
+          onPick={addProduct}
+          onEdit={(row) => openProductCadastro(row.productId, 'fiscal')}
+        />
 
         <div className="table-wrap">
           <table className="data-table data-table--no-cards">
@@ -664,13 +664,31 @@ export function NfeFormPage() {
                   </td>
                   <td className="num">{formatBRL(l.quantity * l.unitPrice)}</td>
                   <td>
-                    <button
-                      type="button"
-                      className="btn btn-danger btn-compact"
-                      onClick={() => setLines((prev) => prev.filter((x) => x.key !== l.key))}
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.25rem',
+                        alignItems: 'flex-end',
+                      }}
                     >
-                      Remover
-                    </button>
+                      {l.productId ? (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-compact"
+                          onClick={() => openProductCadastro(l.productId, 'fiscal')}
+                        >
+                          Cadastro
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-compact"
+                        onClick={() => setLines((prev) => prev.filter((x) => x.key !== l.key))}
+                      >
+                        Remover
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

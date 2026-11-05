@@ -30,7 +30,7 @@ import {
 } from './sefaz/nfe-inutilizacao.soap';
 import { SalesService } from '../sales/sales.service';
 import { postCceNfe } from './sefaz/nfe-cce.soap';
-import type { ManualNfeInput } from './manual-nfe.types';
+import type { FiscalNoteSaleContentInput, ManualNfeInput } from './manual-nfe.types';
 import { OutboundNfeStorage } from './issuer/outbound-nfe.storage';
 import {
   parseNfceAccessKey,
@@ -176,6 +176,134 @@ export class FiscalDocumentsService {
         createdAt: c.createdAt.toISOString(),
       })),
     };
+  }
+
+  /** Atualiza destinatário (cliente) e itens da venda antes de reenviar à SEFAZ. */
+  async updateSaleContent(
+    tenantSlug: string,
+    documentId: string,
+    input: FiscalNoteSaleContentInput,
+  ) {
+    if (!input.items?.length) {
+      throw new BadRequestException('Informe ao menos um item na nota.');
+    }
+
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const doc = await db.fiscalDocument.findUnique({
+      where: { id: documentId },
+      include: {
+        sale: { include: { payments: true } },
+      },
+    });
+    if (!doc) throw new NotFoundException('Documento fiscal não encontrado.');
+    if (
+      doc.status === FiscalDocumentStatus.AUTHORIZED ||
+      doc.status === FiscalDocumentStatus.CANCELLED
+    ) {
+      throw new BadRequestException('Nota autorizada ou cancelada — não pode alterar itens.');
+    }
+
+    const customerId =
+      input.customerId !== undefined ? input.customerId?.trim() || null : doc.sale.customerId;
+    if (doc.kind === FiscalDocumentKind.NF_E && !customerId) {
+      throw new BadRequestException('NF-e exige destinatário (cliente com CPF/CNPJ).');
+    }
+
+    let subtotal = 0;
+    const lines: Array<{
+      variantId: string;
+      quantity: number;
+      unitPrice: number;
+      discount: number;
+      totalLine: number;
+    }> = [];
+    for (const it of input.items) {
+      const q = Number(it.quantity);
+      const p = Number(it.unitPrice);
+      const d = Number(it.discount ?? 0);
+      if (!it.variantId?.trim()) {
+        throw new BadRequestException('Item sem produto (variante).');
+      }
+      if (q <= 0) throw new BadRequestException('Quantidade inválida.');
+      const gross = Math.round(q * p * 100) / 100;
+      if (d > gross + 0.009) {
+        throw new BadRequestException('Desconto de item não pode exceder o valor da linha.');
+      }
+      const totalLine = Math.round((gross - d) * 100) / 100;
+      subtotal += totalLine;
+      lines.push({
+        variantId: it.variantId.trim(),
+        quantity: q,
+        unitPrice: p,
+        discount: d,
+        totalLine,
+      });
+    }
+    subtotal = Math.round(subtotal * 100) / 100;
+    const discount = Math.round(Number(doc.sale.discount ?? 0) * 100) / 100;
+    const surcharge = Math.round(Number(doc.sale.surcharge ?? 0) * 100) / 100;
+    const freightMod = Number(doc.sale.freightMod ?? 9);
+    const freight =
+      freightMod === 9 ? 0 : Math.round(Number(doc.sale.freightAmount ?? 0) * 100) / 100;
+    const total = Math.round(Math.max(0, subtotal - discount + surcharge + freight) * 100) / 100;
+    if (total <= 0) {
+      throw new BadRequestException('Total da nota deve ser maior que zero.');
+    }
+
+    const payments = doc.sale.payments;
+    const paySum = payments.reduce((s, p) => s + Number(p.amount), 0);
+    if (payments.length > 1 && Math.abs(paySum - Number(doc.sale.total)) < 0.02) {
+      if (Math.abs(paySum - total) > 0.02) {
+        throw new BadRequestException(
+          'Total alterado e a venda tem várias formas de pagamento. Use Editar NF-e (formulário completo) para ajustar pagamentos.',
+        );
+      }
+    }
+
+    const nextDocStatus =
+      doc.status === FiscalDocumentStatus.CONTINGENCY
+        ? FiscalDocumentStatus.CONTINGENCY
+        : FiscalDocumentStatus.DRAFT;
+
+    await db.$transaction(async (tx) => {
+      await tx.saleItem.deleteMany({ where: { saleId: doc.saleId } });
+      await tx.sale.update({
+        where: { id: doc.saleId },
+        data: {
+          customerId,
+          subtotal: String(subtotal),
+          total: String(total),
+          items: {
+            create: lines.map((l) => ({
+              variantId: l.variantId,
+              quantity: String(l.quantity),
+              unitPrice: String(l.unitPrice),
+              discount: String(l.discount),
+              totalLine: String(l.totalLine),
+            })),
+          },
+        },
+      });
+      if (payments.length === 1) {
+        await tx.salePayment.update({
+          where: { id: payments[0]!.id },
+          data: { amount: String(total) },
+        });
+      }
+      await tx.fiscalDocument.update({
+        where: { id: documentId },
+        data: {
+          status: nextDocStatus,
+          lastError: null,
+          accessKey: null,
+          protocol: null,
+          xmlPath: null,
+          xmlSha256: null,
+        },
+      });
+    });
+
+    return this.getById(tenantSlug, documentId);
   }
 
   async list(tenantSlug: string, q: FiscalDocumentListQuery) {

@@ -20,6 +20,10 @@ import { api, apiDownload } from '../lib/api';
 import { formatBRL, formatDate } from '../lib/format';
 import { trimFilterPeriod, validateFilterPeriodRange } from '../lib/list-filters';
 import { matchesListSearch } from '../lib/list-search';
+import {
+  canEditFiscalNoteSaleContent,
+  FiscalNoteSaleEditor,
+} from '../components/FiscalNoteSaleEditor';
 import { queueSaleReceiptAutoPrint } from '../lib/sale-receipt-print';
 
 type FiscalKind = 'NFC_E' | 'NF_E';
@@ -58,7 +62,14 @@ type FiscalDocRow = {
 
 type FiscalDocDetail = FiscalDocRow & {
   sale: FiscalDocRow['sale'] & {
-    items?: Array<Record<string, unknown>>;
+    customerId?: string | null;
+    items?: Array<{
+      variantId: string;
+      quantity: string;
+      unitPrice: string;
+      totalLine?: string;
+      variant?: { sku?: string; product?: { name?: string } };
+    }>;
     payments?: unknown[];
   };
 };
@@ -1370,6 +1381,9 @@ export function FiscalNotesPage() {
               <FiscalNoteDetail
                 doc={detail.data}
                 editable
+                onSaleContentSaved={() => {
+                  void qc.invalidateQueries({ queryKey: ['fiscal', 'documents', openId] });
+                }}
                 onSendContingency={() => sendContingency.mutate(detail.data!.id)}
                 sending={sendContingency.isPending}
                 onCancel={() => {
@@ -1509,13 +1523,8 @@ export function FiscalNotesPage() {
   );
 }
 
-function fiscalNoteViewSections(doc: FiscalDocDetail): RecordViewSection[] {
-  const items = (doc.sale.items ?? []) as Array<{
-    quantity: string;
-    unitPrice: string;
-    totalLine: string;
-    variant?: { sku?: string; product?: { name?: string } };
-  }>;
+function fiscalNoteViewSections(doc: FiscalDocDetail, omitItems = false): RecordViewSection[] {
+  const items = doc.sale.items ?? [];
 
   const sections: RecordViewSection[] = [
     {
@@ -1537,7 +1546,7 @@ function fiscalNoteViewSections(doc: FiscalDocDetail): RecordViewSection[] {
     },
   ];
 
-  if (items.length > 0) {
+  if (!omitItems && items.length > 0) {
     sections.push({
       title: 'Itens',
       columns: [
@@ -1557,7 +1566,9 @@ function fiscalNoteViewSections(doc: FiscalDocDetail): RecordViewSection[] {
         </>,
         Number(it.quantity).toLocaleString('pt-BR'),
         formatBRL(Number(it.unitPrice)),
-        formatBRL(Number(it.totalLine)),
+        formatBRL(
+          Number(it.totalLine ?? Number(it.quantity) * Number(it.unitPrice)),
+        ),
       ]),
     });
   }
@@ -1568,6 +1579,7 @@ function fiscalNoteViewSections(doc: FiscalDocDetail): RecordViewSection[] {
 function FiscalNoteDetail({
   doc,
   editable,
+  onSaleContentSaved,
   onSendContingency,
   sending,
   onCancel,
@@ -1580,6 +1592,7 @@ function FiscalNoteDetail({
 }: {
   doc: FiscalDocDetail;
   editable: boolean;
+  onSaleContentSaved?: () => void;
   onSendContingency: () => void;
   sending: boolean;
   onCancel: () => void;
@@ -1590,9 +1603,14 @@ function FiscalNoteDetail({
   onSendNow?: () => void;
   sendingNow?: boolean;
 }) {
+  const saleEditable = editable && canEditFiscalNoteSaleContent(doc.status);
   return (
     <div>
-      <RecordViewSections sections={fiscalNoteViewSections(doc)} />
+      <RecordViewSections sections={fiscalNoteViewSections(doc, saleEditable)} />
+
+      {saleEditable ? (
+        <FiscalNoteSaleEditor doc={doc} onSaved={onSaleContentSaved} />
+      ) : null}
 
       {editable && (
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
