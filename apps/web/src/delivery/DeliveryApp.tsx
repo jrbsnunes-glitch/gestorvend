@@ -40,6 +40,7 @@ type DeliveryProfile = {
   phone: string;
   address: DeliveryAddressFields;
   saveProfile: boolean;
+  fulfillment?: 'DELIVERY' | 'PICKUP';
 };
 
 type MenuItem = {
@@ -333,7 +334,9 @@ function DeliveryHome() {
   const initialProfile = loadProfile(slug);
   const [cart, setCart] = useState<CartLine[]>(() => loadCart(slug));
   const [view, setView] = useState<HomeView>('welcome');
-  const [fulfillment, setFulfillment] = useState<'DELIVERY' | 'PICKUP'>('DELIVERY');
+  const [fulfillment, setFulfillment] = useState<'DELIVERY' | 'PICKUP'>(() =>
+    initialProfile?.fulfillment === 'PICKUP' ? 'PICKUP' : 'DELIVERY',
+  );
   const [name, setName] = useState(initialProfile?.name ?? '');
   const [phone, setPhone] = useState(initialProfile?.phone ?? '');
   const [addr, setAddr] = useState<DeliveryAddressFields>(() => ({
@@ -493,6 +496,7 @@ function DeliveryHome() {
         phone,
         address: addr,
         saveProfile,
+        fulfillment,
       });
       const last: LastOrder = {
         token: order.token,

@@ -321,7 +321,7 @@ export class DeliveryService {
     const idem = (idempotencyKey?.trim() || `${phone}:${sig}`).slice(0, 80);
     const recent = await db.serviceTab.findFirst({
       where: {
-        fulfillment: { in: [ServiceTabFulfillment.DELIVERY, ServiceTabFulfillment.PICKUP] },
+        fulfillment,
         deliveryPhone: phone,
         status: ServiceTabStatus.OPEN,
         createdAt: { gte: new Date(Date.now() - 90_000) },
@@ -333,7 +333,7 @@ export class DeliveryService {
       const recentSig = this.itemSignature(
         recent.items.map((i) => ({ variantId: i.variantId, quantity: Number(i.quantity) })),
       );
-      if (recentSig === sig || idempotencyKey?.trim()) {
+      if (recentSig === sig) {
         return this.toPublicOrder(tenantSlug, recent, subtotal, Number(recent.deliveryFeeAmount));
       }
     }
@@ -713,6 +713,12 @@ export class DeliveryService {
     if (!tab) throw new NotFoundException('Pedido não encontrado.');
     if (tab.fulfillment !== ServiceTabFulfillment.DELIVERY && tab.fulfillment !== ServiceTabFulfillment.PICKUP) {
       throw new BadRequestException('Comanda não é um pedido delivery.');
+    }
+    if (status === 'OUT_FOR_DELIVERY' && tab.fulfillment !== ServiceTabFulfillment.DELIVERY) {
+      throw new BadRequestException('Este pedido é retirada no local.');
+    }
+    if (status === 'READY_PICKUP' && tab.fulfillment !== ServiceTabFulfillment.PICKUP) {
+      throw new BadRequestException('Este pedido é entrega.');
     }
     const next =
       status === 'OUT_FOR_DELIVERY'
