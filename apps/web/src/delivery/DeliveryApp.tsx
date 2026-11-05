@@ -1,4 +1,10 @@
-import { QueryClient, QueryClientProvider, useMutation, useQuery } from '@tanstack/react-query';
+import {
+  QueryClient,
+  QueryClientProvider,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { BrowserRouter, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { resolveCompanyAssetUrl } from '../lib/company-branding';
@@ -873,6 +879,7 @@ function DeliveryHome() {
 function DeliveryTrack() {
   const { slug = '', token = '' } = useParams<{ slug: string; token: string }>();
   const nav = useNavigate();
+  const qc = useQueryClient();
   const liveMs = useLiveRefetchMs(4000, false);
 
   const orderQ = useQuery({
@@ -931,7 +938,7 @@ function DeliveryTrack() {
         { method: 'POST' },
       ),
     onSuccess: (data) => {
-      orderQ.setQueryData(['dl-order', slug, token], data.order);
+      qc.setQueryData(['dl-order', slug, token], data.order);
     },
   });
 
