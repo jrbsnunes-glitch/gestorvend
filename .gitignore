@@ -32,6 +32,8 @@ apps/web/.env.production.local
 apps/api/src/generated/
 
 # --- Logs, scratch e temporários ---
+__pycache__/
+*.py[cod]
 logs/
 tmp/
 *.log
