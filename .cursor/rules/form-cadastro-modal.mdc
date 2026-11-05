@@ -1,0 +1,56 @@
+---
+description: Padrão visual e estrutural de modais de cadastro (CRUD) no GestorVend web
+globs: apps/web/src/**/*.tsx
+alwaysApply: false
+---
+
+# Modal de cadastro (padrão GestorVend)
+
+Novos formulários modais de **cadastro/edição** devem usar o shell compacto que cabe na viewport (desktop e mobile).
+
+## Componente (preferido)
+
+```tsx
+import { FormCadastroModal } from '../components/FormCadastroModal';
+
+<FormCadastroModal
+  onClose={...}
+  title="Novo item"
+  hint="Texto curto opcional"
+  headerExtra={<>...</>}  // alertas, abas
+  size="md"               // sm | md | lg (default) | xl
+  footer={
+    <>
+      <button className="btn btn-secondary">Cancelar</button>
+      <button className="btn btn-primary">Salvar</button>
+    </>
+  }
+>
+  {/* campos */}
+</FormCadastroModal>
+```
+
+## Legado (sem refatorar para o componente ainda)
+
+- Backdrop: `FormModalBackdrop` com `className="modal-backdrop--cadastro"` (+ `modal-backdrop--wide` se `modal--wide`).
+- Modal: `className="modal form-cadastro-modal form-cadastro-modal--md"` (ajustar `size`).
+- Estrutura recomendada: `form-cadastro-modal__head` (título/hint/abas) + `form-cadastro-modal__body` (campos) + `modal-actions`.
+
+Helper: `formCadastroModalShellClass({ size: 'md' })` em `FormCadastroModal.tsx`.
+
+## Tamanhos
+
+| Classe | Largura máx. | Uso típico |
+|--------|--------------|------------|
+| `--sm` | 640px | OS, formulários estreitos |
+| `--md` | 720px | Cliente, portal, financeiro simples |
+| (lg)   | 920px | Produto, fornecedor |
+| `--xl` | 1320px | Fiscal extenso, entrada NF |
+
+## Não aplicar
+
+Filtros (`modal--filters-compact`), pesquisa rápida, confirmação de exclusão, tokens, pagamento PIX/cartão, impressão.
+
+## CSS
+
+Estilos em `apps/web/src/styles/ui.css` (bloco `.form-cadastro-modal`). Aliases legados: `product-form-modal`, `customer-form-modal`, `service-order-form-modal`.
