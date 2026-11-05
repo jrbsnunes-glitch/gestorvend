@@ -152,10 +152,8 @@ export function DanfePrintPage() {
   useEffect(() => {
     if (isNfce) return;
     document.documentElement.classList.add('gv-danfe-route');
-    document.body.style.background = '#e8e8e8';
     return () => {
       document.documentElement.classList.remove('gv-danfe-route');
-      document.body.style.background = '';
     };
   }, [isNfce]);
 

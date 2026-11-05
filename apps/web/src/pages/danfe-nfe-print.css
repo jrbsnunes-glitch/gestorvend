@@ -35,12 +35,35 @@
   margin-top: -1px;
 }
 
+/*
+ * Grade só com divisórias internas (topo/esquerda) — evita moldura preta
+ * em volta de toda a área impressa.
+ */
 .danfe-nfe td,
 .danfe-nfe th {
-  border: 1px solid #000;
+  border: none;
+  border-top: 1px solid #000;
+  border-left: 1px solid #000;
   padding: 1px 3px 2px;
   vertical-align: top;
   overflow: hidden;
+}
+
+.danfe-nfe > table:first-of-type tr:first-child > td,
+.danfe-nfe > table:first-of-type tr:first-child > th {
+  border-top: none;
+}
+
+.danfe-nfe td:first-child,
+.danfe-nfe th:first-child {
+  border-left: none;
+}
+
+.danfe-nfe,
+.danfe-nfe-page {
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 .danfe-nfe .lbl {
@@ -235,7 +258,9 @@
 .danfe-dups {
   display: flex;
   flex-wrap: wrap;
-  border: 1px solid #000;
+  border: none;
+  border-top: 1px solid #000;
+  border-left: 1px solid #000;
   min-height: 8mm;
 }
 
@@ -279,7 +304,7 @@
 }
 
 .danfe-items tbody tr:last-child td {
-  border-bottom: 1px solid #000;
+  border-bottom: none;
 }
 
 .danfe-items tbody tr:first-child td {
@@ -336,14 +361,18 @@
     margin: 0 auto !important;
     padding: 0 !important;
     background: #fff !important;
+    -webkit-print-color-adjust: economy;
+    print-color-adjust: economy;
   }
 
   .danfe-nfe-page {
     width: 210mm !important;
     max-width: 210mm !important;
-    background: #fff;
+    background: #fff !important;
     padding: 0;
     min-height: 0;
+    border: none !important;
+    box-shadow: none !important;
   }
 
   .danfe-nfe {
@@ -352,6 +381,9 @@
     max-width: none !important;
     margin: 0;
     padding: 0;
+    background: #fff !important;
+    border: none !important;
+    box-shadow: none !important;
   }
 }
 

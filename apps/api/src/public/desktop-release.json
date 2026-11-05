@@ -1,5 +1,5 @@
 {
-  "version": "1.0.79",
+  "version": "1.0.80",
   "downloadUrl": "",
-  "notes": "QR Code da NFC-e maior no cupom termico (40 mm) para leitura no celular."
+  "notes": "DANFE NF-e sem moldura preta na impressao/PDF; fundo de tela nao vaza no PDF."
 }

@@ -426,8 +426,8 @@ async function injectDanfePdfLayout(wc: WebContents): Promise<void> {
       const s = document.createElement('style');
       s.id = id;
       s.textContent = [
-        'html,body,#root,.danfe-nfe-page{width:210mm!important;max-width:210mm!important;margin:0!important;padding:0!important;background:#fff!important}',
-        '.danfe-nfe{width:100%!important;max-width:none!important;margin:0!important;padding:0!important}',
+        'html,body,#root,.danfe-nfe-page{width:210mm!important;max-width:210mm!important;margin:0!important;padding:0!important;background:#fff!important;border:none!important;box-shadow:none!important}',
+        '.danfe-nfe{width:100%!important;max-width:none!important;margin:0!important;padding:0!important;background:#fff!important;border:none!important;box-shadow:none!important}',
         '.no-print{display:none!important}',
       ].join('');
       document.head.appendChild(s);
@@ -443,7 +443,7 @@ async function renderDanfePdf(wc: WebContents): Promise<Buffer> {
   const m = DANFE_PDF_MARGIN_IN;
   try {
     const data = await wc.printToPDF({
-      printBackground: true,
+      printBackground: false,
       landscape: false,
       pageSize: 'A4',
       preferCSSPageSize: false,
