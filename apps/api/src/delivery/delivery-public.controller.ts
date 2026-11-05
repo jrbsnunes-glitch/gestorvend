@@ -50,4 +50,10 @@ export class DeliveryPublicController {
   getPix(@Param('slug') slug: string, @Param('token') token: string) {
     return this.delivery.getPublicPix(slug, token);
   }
+
+  @Post('orders/:token/pix/confirm')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  confirmPix(@Param('slug') slug: string, @Param('token') token: string) {
+    return this.delivery.confirmPublicPix(slug, token);
+  }
 }

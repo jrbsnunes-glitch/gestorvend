@@ -27,7 +27,9 @@ function statusLabel(s: string | null): string {
     case 'AWAITING_PAYMENT':
       return 'Aguardando PIX';
     case 'RECEIVED':
-      return 'Recebido';
+      return 'Pedido recebido';
+    case 'ACCEPTED':
+      return 'Pedido aceito';
     case 'PREPARING':
       return 'Preparo';
     case 'OUT_FOR_DELIVERY':
@@ -52,6 +54,12 @@ export function DeliveryOrdersPanel() {
       typeof document !== 'undefined' && document.visibilityState === 'hidden' ? false : 8_000,
   });
 
+  const acceptMut = useMutation({
+    mutationFn: (id: string) =>
+      api(`/restaurant/delivery/orders/${id}/accept`, { method: 'POST', json: {} }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['restaurant', 'delivery-orders'] }),
+  });
+
   const kitchen = useMutation({
     mutationFn: (id: string) =>
       api(`/restaurant/delivery/orders/${id}/kitchen-print`, { method: 'POST', json: {} }),
@@ -67,14 +75,20 @@ export function DeliveryOrdersPanel() {
   if (q.isError) return null;
 
   const rows = q.data ?? [];
-  const pending = rows.filter((t) => t.deliveryPrintStatus === 'PENDING_COUNTER').length;
+  const pendingKitchen = rows.filter(
+    (t) => t.deliveryPrintStatus === 'PENDING_COUNTER' && t.deliveryStatus === 'ACCEPTED',
+  ).length;
+  const awaitingAccept = rows.filter((t) => t.deliveryStatus === 'RECEIVED').length;
 
   return (
     <section className="restaurant-delivery-panel" aria-label="Pedidos delivery">
       <div className="restaurant-delivery-panel__head">
         <h2>Pedidos delivery / retirada</h2>
-        {pending > 0 ? (
-          <span className="restaurant-delivery-badge">{pending} aguardando cozinha</span>
+        {awaitingAccept > 0 ? (
+          <span className="restaurant-delivery-badge">{awaitingAccept} aguardando aceite</span>
+        ) : null}
+        {pendingKitchen > 0 ? (
+          <span className="restaurant-delivery-badge">{pendingKitchen} prontos p/ preparo</span>
         ) : null}
       </div>
       {rows.length === 0 ? (
@@ -84,6 +98,9 @@ export function DeliveryOrdersPanel() {
           {rows.map((t) => {
             const total =
               t.items.reduce((s, i) => s + Number(i.totalLine), 0) + Number(t.deliveryFeeAmount ?? 0);
+            const counterPending = t.deliveryPrintStatus === 'PENDING_COUNTER';
+            const canAccept = t.deliveryStatus === 'RECEIVED';
+            const canStartPrep = counterPending && t.deliveryStatus === 'ACCEPTED';
             return (
               <li key={t.id} className="restaurant-delivery-card">
                 <div>
@@ -98,15 +115,24 @@ export function DeliveryOrdersPanel() {
                   <div>{formatBRL(total)}</div>
                 </div>
                 <div className="restaurant-delivery-card__actions">
-                  {t.deliveryPrintStatus === 'PENDING_COUNTER' &&
-                  t.deliveryStatus !== 'AWAITING_PAYMENT' ? (
+                  {canAccept ? (
                     <button
                       type="button"
                       className="btn btn-primary"
-                      disabled={kitchen.isPending}
+                      disabled={acceptMut.isPending}
+                      onClick={() => acceptMut.mutate(t.id)}
+                    >
+                      Aceitar pedido
+                    </button>
+                  ) : null}
+                  {canStartPrep ? (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={kitchen.isPending || canAccept}
                       onClick={() => kitchen.mutate(t.id)}
                     >
-                      Enviar à cozinha
+                      Iniciar preparo
                     </button>
                   ) : null}
                   {t.fulfillment === 'DELIVERY' && t.deliveryStatus === 'PREPARING' ? (

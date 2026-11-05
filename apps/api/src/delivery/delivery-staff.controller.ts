@@ -27,6 +27,12 @@ export class DeliveryStaffController {
     return this.delivery.pendingCounterCount(user.tenantSlug).then((count) => ({ count }));
   }
 
+  @Post('orders/:id/accept')
+  @Roles('admin', 'manager', 'seller', 'waiter')
+  accept(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.delivery.acceptOrder(user.tenantSlug, id);
+  }
+
   @Post('orders/:id/kitchen-print')
   @Roles('admin', 'manager', 'seller', 'waiter')
   kitchen(@CurrentUser() user: JwtPayload, @Param('id') id: string) {

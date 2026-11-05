@@ -179,6 +179,7 @@ enum DeliveryPrintStatus {
 enum DeliveryOrderStatus {
   AWAITING_PAYMENT
   RECEIVED
+  ACCEPTED
   PREPARING
   OUT_FOR_DELIVERY
   READY_PICKUP

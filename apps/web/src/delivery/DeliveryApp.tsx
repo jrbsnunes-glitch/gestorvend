@@ -62,6 +62,8 @@ type PublicOrder = {
   fulfillment: string;
   paymentMode: string;
   deliveryStatus: string | null;
+  deliveryPrintStatus?: string | null;
+  canConfirmPixFromMobile?: boolean;
   phone?: string | null;
   subtotal: number;
   deliveryFee: number;
@@ -237,6 +239,8 @@ function statusLabel(s: string | null): string {
       return 'Aguardando pagamento';
     case 'RECEIVED':
       return 'Pedido recebido';
+    case 'ACCEPTED':
+      return 'Pedido aceito';
     case 'PREPARING':
       return 'Em preparo';
     case 'OUT_FOR_DELIVERY':
@@ -253,25 +257,38 @@ function statusLabel(s: string | null): string {
 type DeliveryStatus =
   | 'AWAITING_PAYMENT'
   | 'RECEIVED'
+  | 'ACCEPTED'
   | 'PREPARING'
   | 'OUT_FOR_DELIVERY'
   | 'READY_PICKUP'
   | 'COMPLETED';
 
+const DELIVERY_STATUS_RANK: Record<DeliveryStatus, number> = {
+  AWAITING_PAYMENT: 0,
+  RECEIVED: 1,
+  ACCEPTED: 2,
+  PREPARING: 3,
+  OUT_FOR_DELIVERY: 4,
+  READY_PICKUP: 4,
+  COMPLETED: 5,
+};
+
 function statusSteps(order: Pick<PublicOrder, 'fulfillment' | 'paymentMode' | 'deliveryStatus'>) {
   const ids: DeliveryStatus[] = [
     ...(order.paymentMode === 'PIX_ONLINE' ? (['AWAITING_PAYMENT'] satisfies DeliveryStatus[]) : []),
     'RECEIVED',
+    'ACCEPTED',
     'PREPARING',
     order.fulfillment === 'PICKUP' ? 'READY_PICKUP' : 'OUT_FOR_DELIVERY',
     'COMPLETED',
   ];
   const current = (order.deliveryStatus ?? 'RECEIVED') as DeliveryStatus;
-  const idx = Math.max(0, ids.indexOf(current));
-  return ids.map((id, i) => ({
+  const rank = DELIVERY_STATUS_RANK[current] ?? DELIVERY_STATUS_RANK.RECEIVED;
+  return ids.map((id) => ({
     id,
     label: statusLabel(id),
-    state: i < idx ? 'done' : i === idx ? 'current' : 'todo',
+    state:
+      DELIVERY_STATUS_RANK[id] < rank ? 'done' : DELIVERY_STATUS_RANK[id] === rank ? 'current' : 'todo',
   }));
 }
 
@@ -907,6 +924,17 @@ function DeliveryTrack() {
     onSuccess: () => pixQ.refetch(),
   });
 
+  const pixConfirmMut = useMutation({
+    mutationFn: () =>
+      publicApi<{ pixStatus: string; order: PublicOrder }>(
+        `/api/public/delivery/${encodeURIComponent(slug)}/orders/${encodeURIComponent(token)}/pix/confirm`,
+        { method: 'POST' },
+      ),
+    onSuccess: (data) => {
+      orderQ.setQueryData(['dl-order', slug, token], data.order);
+    },
+  });
+
   const order = orderQ.data;
   const trackPhone = digitsPhone(order?.phone ?? loadProfile(slug)?.phone ?? '');
 
@@ -934,8 +962,15 @@ function DeliveryTrack() {
 
   const needPix = order?.paymentMode === 'PIX_ONLINE' && order.deliveryStatus === 'AWAITING_PAYMENT';
   const qr = pixQ.data?.intent?.qrCode ?? null;
+  const pixConfirmed =
+    pixQ.data?.status === 'CONFIRMED' || pixQ.data?.intent?.status === 'CONFIRMED';
   const done = order?.deliveryStatus === 'COMPLETED';
   const steps = order ? statusSteps(order) : [];
+
+  useEffect(() => {
+    if (!order?.canConfirmPixFromMobile || !pixConfirmed || pixConfirmMut.isPending) return;
+    pixConfirmMut.mutate();
+  }, [order?.canConfirmPixFromMobile, pixConfirmed, pixConfirmMut.isPending]);
 
   return (
     <div className="dl-app">
@@ -1012,7 +1047,7 @@ function DeliveryTrack() {
             </div>
             {needPix ? (
               <div style={{ marginTop: 16 }}>
-                <p>Pague com PIX para o pedido ir à cozinha.</p>
+                <p>Pague com PIX para confirmarmos seu pedido.</p>
                 {!qr ? (
                   <button type="button" className="dl-btn" onClick={() => pixMut.mutate()} disabled={pixMut.isPending}>
                     {pixMut.isPending ? 'Gerando…' : 'Gerar PIX'}
@@ -1020,8 +1055,32 @@ function DeliveryTrack() {
                 ) : (
                   <div className="dl-pix">{qr}</div>
                 )}
-                {pixQ.data?.intent?.status === 'CONFIRMED' ? <p className="dl-ok">Pagamento confirmado.</p> : null}
+                {pixConfirmed ? (
+                  <p className="dl-ok">
+                    {pixConfirmMut.isPending
+                      ? 'Confirmando pagamento…'
+                      : order?.deliveryStatus === 'ACCEPTED' || order?.deliveryStatus === 'PREPARING'
+                        ? 'Pagamento confirmado — pedido aceito!'
+                        : 'Pagamento detectado — aguarde…'}
+                  </p>
+                ) : null}
+                {qr && order?.canConfirmPixFromMobile ? (
+                  <button
+                    type="button"
+                    className="dl-btn dl-btn--ghost"
+                    style={{ width: '100%', marginTop: 8 }}
+                    disabled={pixConfirmMut.isPending}
+                    onClick={() => pixConfirmMut.mutate()}
+                  >
+                    Já paguei — confirmar
+                  </button>
+                ) : null}
               </div>
+            ) : null}
+            {order.deliveryStatus === 'ACCEPTED' ? (
+              <p className="dl-muted" style={{ marginTop: 12 }}>
+                Pedido aceito. Em breve o restaurante inicia o preparo.
+              </p>
             ) : null}
             <button
               type="button"

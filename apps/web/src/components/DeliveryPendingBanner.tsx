@@ -16,7 +16,7 @@ export function DeliveryPendingBanner() {
   return (
     <div className="pos-stale-cash-banner no-print" role="status">
       <span>
-        {q.data.count} pedido{q.data.count > 1 ? 's' : ''} delivery aguardando envio à cozinha.{' '}
+        {q.data.count} pedido{q.data.count > 1 ? 's' : ''} delivery aceito(s) — iniciar preparo.{' '}
         <Link to="/salao">Abrir salão</Link>
       </span>
     </div>

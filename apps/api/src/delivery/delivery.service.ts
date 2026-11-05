@@ -529,6 +529,28 @@ export class DeliveryService {
     });
   }
 
+  /** Após PIX confirmado: aceito; cozinha só no balcão via sendToKitchen. */
+  private async advanceOrderAfterPixPayment(tenantSlug: string, tabId: string) {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const tab = await db.serviceTab.findUnique({ where: { id: tabId } });
+    if (!tab || tab.status !== ServiceTabStatus.OPEN) return;
+    if (tab.deliveryStatus !== DeliveryOrderStatus.AWAITING_PAYMENT) return;
+
+    const co = await db.company.findFirst({ select: { deliveryPrintMode: true } });
+    const printMode = co?.deliveryPrintMode ?? DeliveryPrintMode.DIRECT;
+    if (printMode === DeliveryPrintMode.DIRECT) {
+      await this.dispatchConfirmed(tenantSlug, tabId, printMode);
+      return;
+    }
+    await db.serviceTab.update({
+      where: { id: tabId },
+      data: {
+        deliveryStatus: DeliveryOrderStatus.ACCEPTED,
+        deliveryPrintStatus: DeliveryPrintStatus.PENDING_COUNTER,
+      },
+    });
+  }
+
   async getLatestOrderForPhone(slugOuHost: string, phoneRaw: string) {
     const phone = digitsPhone(phoneRaw);
     if (phone.length < 8) {
@@ -634,6 +656,30 @@ export class DeliveryService {
     return { status: intent.status, intent: this.payments.toDto(intent) };
   }
 
+  /** Celular: sincroniza PIX e avança para pedido aceito (estrutura pronta para confirmação no app). */
+  async confirmPublicPix(slugOuHost: string, publicToken: string) {
+    const tenantSlug = await this.resolveSlug(slugOuHost);
+    await this.assertDeliveryEnabled(tenantSlug, { public: true });
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const tab = await db.serviceTab.findFirst({
+      where: { publicToken: String(publicToken ?? '').trim() },
+      select: { id: true, paymentMode: true, deliveryStatus: true, status: true },
+    });
+    if (!tab) throw new NotFoundException();
+    if (tab.paymentMode !== DeliveryPaymentMode.PIX_ONLINE) {
+      throw new BadRequestException('Este pedido não usa PIX online.');
+    }
+    const pix = await this.getPublicPix(slugOuHost, publicToken);
+    if (pix.status === PaymentIntentStatus.CONFIRMED) {
+      await this.advanceOrderAfterPixPayment(tenantSlug, tab.id);
+    }
+    const order = await this.getPublicOrder(slugOuHost, publicToken);
+    return {
+      pixStatus: pix.status,
+      order,
+    };
+  }
+
   async onPixConfirmed(
     tenantSlug: string,
     intent: { status: PaymentIntentStatus; metadata?: unknown },
@@ -645,13 +691,7 @@ export class DeliveryService {
     const tab = await db.serviceTab.findUnique({ where: { id: meta.deliveryTabId } });
     if (!tab || tab.status !== ServiceTabStatus.OPEN) return;
     if (tab.deliveryStatus !== DeliveryOrderStatus.AWAITING_PAYMENT) return;
-    const co = await db.company.findFirst({ select: { deliveryPrintMode: true } });
-    const printMode = co?.deliveryPrintMode ?? DeliveryPrintMode.DIRECT;
-    await db.serviceTab.update({
-      where: { id: tab.id },
-      data: { deliveryStatus: DeliveryOrderStatus.RECEIVED },
-    });
-    await this.dispatchConfirmed(tenantSlug, tab.id, printMode);
+    await this.advanceOrderAfterPixPayment(tenantSlug, tab.id);
   }
 
   async listStaffOrders(tenantSlug: string) {
@@ -673,8 +713,29 @@ export class DeliveryService {
         status: ServiceTabStatus.OPEN,
         fulfillment: { in: [ServiceTabFulfillment.DELIVERY, ServiceTabFulfillment.PICKUP] },
         deliveryPrintStatus: DeliveryPrintStatus.PENDING_COUNTER,
-        deliveryStatus: { not: DeliveryOrderStatus.AWAITING_PAYMENT },
+        deliveryStatus: DeliveryOrderStatus.ACCEPTED,
       },
+    });
+  }
+
+  async acceptOrder(tenantSlug: string, tabId: string) {
+    await this.assertDeliveryEnabled(tenantSlug);
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const tab = await db.serviceTab.findUnique({ where: { id: tabId } });
+    if (!tab) throw new NotFoundException('Pedido não encontrado.');
+    if (
+      tab.fulfillment !== ServiceTabFulfillment.DELIVERY &&
+      tab.fulfillment !== ServiceTabFulfillment.PICKUP
+    ) {
+      throw new BadRequestException('Comanda não é um pedido delivery.');
+    }
+    if (tab.deliveryStatus !== DeliveryOrderStatus.RECEIVED) {
+      throw new BadRequestException('Este pedido já foi aceito ou está em outra fase.');
+    }
+    return db.serviceTab.update({
+      where: { id: tabId },
+      data: { deliveryStatus: DeliveryOrderStatus.ACCEPTED },
+      include: orderInclude,
     });
   }
 
@@ -691,6 +752,12 @@ export class DeliveryService {
     }
     if (tab.deliveryStatus === DeliveryOrderStatus.AWAITING_PAYMENT) {
       throw new BadRequestException('Aguarde a confirmação do PIX.');
+    }
+    if (tab.deliveryStatus !== DeliveryOrderStatus.ACCEPTED) {
+      throw new BadRequestException('O pedido não está aguardando início do preparo.');
+    }
+    if (tab.deliveryPrintStatus !== DeliveryPrintStatus.PENDING_COUNTER) {
+      throw new BadRequestException('Este pedido não aguarda envio à cozinha pelo balcão.');
     }
     const printed = await this.restaurant.markKitchenPrinted(tenantSlug, tabId);
     await db.serviceTab.update({
@@ -745,6 +812,7 @@ export class DeliveryService {
       publicToken: string | null;
       paymentMode: DeliveryPaymentMode | null;
       deliveryStatus: DeliveryOrderStatus | null;
+      deliveryPrintStatus?: DeliveryPrintStatus | null;
       deliveryAddress: string | null;
       deliveryPhone: string | null;
       deliveryFeeAmount: unknown;
@@ -771,6 +839,10 @@ export class DeliveryService {
       fulfillment: tab.fulfillment,
       paymentMode: tab.paymentMode,
       deliveryStatus: tab.deliveryStatus,
+      deliveryPrintStatus: tab.deliveryPrintStatus ?? null,
+      canConfirmPixFromMobile:
+        tab.paymentMode === DeliveryPaymentMode.PIX_ONLINE &&
+        tab.deliveryStatus === DeliveryOrderStatus.AWAITING_PAYMENT,
       customerName: tab.customer?.name ?? '',
       phone: tab.deliveryPhone,
       address: tab.deliveryAddress,
