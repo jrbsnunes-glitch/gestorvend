@@ -62,8 +62,6 @@ type FiscalDetail = {
   };
 };
 
-const DELETABLE = new Set(['DRAFT', 'QUEUED', 'ERROR', 'REJECTED', 'BUILDING_XML']);
-
 export function NfeFormPage() {
   const { documentId } = useParams<{ documentId?: string }>();
   const isEdit = Boolean(documentId);
