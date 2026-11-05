@@ -1,0 +1,55 @@
+---
+description: Leiaute e impressão/PDF da DANFE NF-e A4 (margens, bordas, Desktop)
+globs: apps/web/src/pages/danfe-nfe-print.css,apps/web/src/pages/DanfePrintPage.tsx,apps/web/src/pages/DanfeNfeDocument.tsx,apps/desktop/src/main.ts
+alwaysApply: false
+---
+
+# DANFE NF-e — impressão e PDF (configuração validada)
+
+Referência: v1.1.89 / Desktop 1.0.81. **Não alterar** estes pontos sem testar impressão física e PDF.
+
+## Arquivos
+
+| Papel | Caminho |
+|-------|---------|
+| CSS A4 | `apps/web/src/pages/danfe-nfe-print.css` |
+| Rota / toolbar | `apps/web/src/pages/DanfePrintPage.tsx` |
+| HTML da DANFE | `apps/web/src/pages/DanfeNfeDocument.tsx` |
+| PDF no Electron | `apps/desktop/src/main.ts` (`injectDanfePdfLayout`, `renderDanfePdf`) |
+
+NFC-e térmica usa `danfe-thermal-print.css` — **fora** desta regra.
+
+## Margens e largura (crítico)
+
+- Página nomeada: `@page danfe { size: A4 portrait; margin: 7mm; }` e `.danfe-nfe { page: danfe; }`.
+- **Não** herdar margens de 14–16 mm de `reports-document.css` na rota DANFE.
+- **Impressão / PDF:** `html`, `body`, `#root` e `.danfe-nfe-page` com **`width: auto`** (nunca `210mm` fixo junto com `@page` margin 7 mm). Conteúdo: `.danfe-nfe { width: 100%; max-width: none; }`.
+- **Preview na tela:** `.danfe-nfe-page` fundo `#e8e8e8`; `.danfe-nfe` `max-width: 196mm` centralizado (210 − 2×7 mm).
+- **Proibido:** largura 210 mm no layout **e** margem 7 mm no `@page` ou no `printToPDF` — corta as **linhas laterais** da grade.
+
+## Bordas
+
+- Células: `border: 1px solid #000` em `td`/`th` (grade completa estilo ACBr).
+- Container: `.danfe-nfe` / `.danfe-nfe-page` **sem** `border`, `box-shadow` ou `outline` extras (evita “moldura” além da grade).
+- **Não** usar modelo só topo/esquerda com `first-child { border-left: none }` — remove bordas externas e quebra o leiaute.
+
+## Tela vs impressão
+
+- Classe `gv-danfe-route` no `documentElement` (NF-e); **não** pintar `body` com cinza inline — só CSS de `.danfe-nfe-page`.
+- `@media print`: fundo branco; `print-color-adjust: economy` no body.
+
+## Desktop — Salvar PDF
+
+```text
+printToPDF: preferCSSPageSize: true, margins: { marginType: 'none' }, printBackground: false
+```
+
+Margens **somente** via CSS `@page`. `injectDanfePdfLayout`: `width: auto` em html/body/#root/.danfe-nfe-page; `.danfe-nfe` width 100%.
+
+**Não** combinar `preferCSSPageSize: false` + margens custom 7 mm + inject 210 mm (configuração antiga que cortava laterais).
+
+## Checklist ao mudar CSS/PDF
+
+1. Imprimir A4 pelo navegador (`window.print`) — bordas esquerda/direita visíveis.
+2. Salvar PDF no Desktop — mesma grade, sem faixa escura/cinza nas laterais.
+3. Preview web — folha branca sobre cinza, sem moldura extra no `article`.

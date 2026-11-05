@@ -1,0 +1,42 @@
+---
+description: Envio ao Git deve atualizar main (servidor) e incrementar versão
+alwaysApply: true
+---
+
+# Envio ao Git (GestorVend)
+
+## Repositório
+
+- **GitHub:** https://github.com/jrbsnunes-glitch/gestorvend
+- **Remote:** `origin` → `https://github.com/jrbsnunes-glitch/gestorvend.git`
+- **Branch de produção:** `main` (servidor faz pull desta branch)
+
+Quando o usuário pedir para **enviar / commit / push** ao Git, seguir este fluxo (não só a branch de feature):
+
+1. **Incrementar a versão do sistema** (obrigatório em todo envio):
+   - Arquivo: `apps/web/src/version.ts` (`APP_VERSION`)
+   - Formato: `MAJOR.MINOR.PATCH` (ex.: `1.0.1`)
+   - Incremento normal: somar **1** no `PATCH` (ex.: `1.0.96` → `1.0.97`)
+   - Quando o `PATCH` **atingir 100**, publicar com `PATCH = 0` e `MINOR + 1` (ex.: `1.0.99` → `1.1.0`; não usar `1.0.100`)
+   - Não pular números no PATCH, exceto no rollover acima
+   - Incluir `version.ts` no mesmo commit do envio
+   - **Shell Desktop** (`apps/desktop/package.json` + `apps/api/src/public/desktop-release.json`): só incrementar quando houver mudança em `apps/desktop/src` (preload, impressão, agent, etc.). Mudança só de web/API **não** sobe a versão do shell — senão o aviso “Atualização disponível” aparece sem necessidade de novo Setup.
+2. Commitar as alterações relevantes (mensagem no estilo do repositório), **incluindo** o bump de versão.
+3. Push da branch atual (`git push -u origin HEAD` se necessário).
+4. Atualizar **`main`** e publicar no remoto:
+   - `git checkout main`
+   - `git pull origin main`
+   - Merge da branch com o trabalho (preferir fast-forward quando possível)
+   - `git push origin main`
+5. Confirmar que `origin/main` aponta para o commit esperado e mencionar a nova versão no resumo (ex.: `v1.0.2`).
+
+## Motivo
+
+O servidor de produção/atualização faz pull de **`main`**. Push só na branch de feature (`cursor/...`) **não** faz as mudanças aparecerem após atualizar o servidor. A versão na sidebar (`vX.Y.Z`) precisa acompanhar cada publicação.
+
+## Exceções
+
+- Se o usuário pedir explicitamente **não** mexer em `main`, respeitar.
+- Não usar force push em `main`.
+- Continuar pedindo confirmação só quando as regras gerais de commit exigirem; o pedido de “enviar ao git” já autoriza commit + push + merge em `main` neste projeto.
+- Se o usuário pedir **não** incrementar versão naquele envio, respeitar.

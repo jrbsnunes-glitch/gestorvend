@@ -92,5 +92,7 @@ apps/api/data/nfe-inbound/
 id_rsa
 id_rsa.pub
 
-# --- Cursor (regras locais; se quiser versionar .cursor/rules, remova esta linha) ---
-.cursor/
+# --- Cursor (IDE local; regras do projeto versionadas em .cursor/rules/) ---
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
