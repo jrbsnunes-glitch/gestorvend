@@ -67,10 +67,11 @@
 }
 
 .nfce-qr {
-  width: 32mm;
-  height: 32mm;
+  width: 42mm;
+  height: 42mm;
   display: block;
-  image-rendering: pixelated;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
 }
 
 @media print {
@@ -97,8 +98,8 @@
   }
 
   .nfce-qr {
-    width: 32mm !important;
-    height: 32mm !important;
+    width: 42mm !important;
+    height: 42mm !important;
   }
 
   @page {

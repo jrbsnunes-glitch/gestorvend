@@ -198,8 +198,8 @@ export async function prepareSaleReceiptForThermalPrint(wc: WebContents): Promis
         }
         .sale-receipt-doc--nfce .nfce-qr,
         .sale-receipt-doc--nfce .sale-receipt-nfce-qr img {
-          width: 24mm !important;
-          height: 24mm !important;
+          width: 40mm !important;
+          height: 40mm !important;
         }
         .sale-receipt-company, .sale-receipt-title, .sale-receipt-sub, .sale-receipt-legal {
           text-align: center !important;

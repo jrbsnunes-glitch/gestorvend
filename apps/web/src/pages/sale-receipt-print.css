@@ -253,10 +253,11 @@
 
 .nfce-qr,
 .sale-receipt-nfce-qr img {
-  width: 32mm;
-  height: 32mm;
+  width: 42mm;
+  height: 42mm;
   display: block;
-  image-rendering: pixelated;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
 }
 
 .sale-receipt-totals {
@@ -425,8 +426,8 @@
 
 .sale-receipt-doc--nfce .nfce-qr,
 .sale-receipt-doc--nfce .sale-receipt-nfce-qr img {
-  width: 24mm;
-  height: 24mm;
+  width: 40mm;
+  height: 40mm;
 }
 
 .sale-receipt-doc--nfce .sale-receipt-foot {
@@ -628,8 +629,8 @@
 
   .nfce-qr,
   .sale-receipt-nfce-qr img {
-    width: 32mm !important;
-    height: 32mm !important;
+    width: 42mm !important;
+    height: 42mm !important;
   }
 
   .sale-receipt-doc--nfce .sale-receipt-logo {
@@ -689,8 +690,8 @@
 
   .sale-receipt-doc--nfce .nfce-qr,
   .sale-receipt-doc--nfce .sale-receipt-nfce-qr img {
-    width: 24mm !important;
-    height: 24mm !important;
+    width: 40mm !important;
+    height: 40mm !important;
   }
 
   .sale-receipt-doc--nfce .sale-receipt-foot {

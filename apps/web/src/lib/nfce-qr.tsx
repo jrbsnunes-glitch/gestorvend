@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 
-const QR_PX = 168;
+/** Resolução do bitmap (maior = melhor leitura no celular ao imprimir ~40 mm). */
+const QR_PX = 320;
 
 export function formatNfceAccessKey(raw: string | null | undefined): string {
   const d = String(raw ?? '').replace(/\D/g, '');
@@ -12,8 +13,8 @@ export function formatNfceAccessKey(raw: string | null | undefined): string {
 export async function buildNfceQrDataUrl(url: string, sizePx = QR_PX): Promise<string | null> {
   try {
     return await QRCode.toDataURL(url, {
-      errorCorrectionLevel: 'M',
-      margin: 0,
+      errorCorrectionLevel: 'Q',
+      margin: 1,
       width: sizePx,
       color: { dark: '#000000', light: '#FFFFFF' },
     });

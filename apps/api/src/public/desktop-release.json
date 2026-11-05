@@ -1,5 +1,5 @@
 {
-  "version": "1.0.78",
+  "version": "1.0.79",
   "downloadUrl": "",
-  "notes": "Salvar PDF da DANFE em janela A4 dedicada (preenche a folha). Requer servidor atualizado na tela da DANFE."
+  "notes": "QR Code da NFC-e maior no cupom termico (40 mm) para leitura no celular."
 }

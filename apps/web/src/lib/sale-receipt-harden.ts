@@ -290,8 +290,8 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
     selector: '.nfce-qr',
     decls: {
       display: 'block',
-      width: '32mm',
-      height: '32mm',
+      width: '42mm',
+      height: '42mm',
     },
   },
   {
@@ -365,7 +365,7 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   },
   {
     selector: '.sale-receipt-doc--nfce .nfce-qr',
-    decls: { width: '24mm', height: '24mm' },
+    decls: { width: '40mm', height: '40mm' },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-foot',
