@@ -51,11 +51,6 @@
   .print-toolbar {
     font-size: 14px;
   }
-
-  .print-doc {
-    border: 1px solid #cbd5e1;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
-  }
 }
 
 .print-page {
@@ -547,11 +542,15 @@
   line-height: 1.35;
 }
 
-/* @media print — folha branca sem moldura; margens em @page */
+/*
+ * @page com margem deixa a faixa transparente no printToPDF do Electron
+ * e o fundo escuro da janela aparece como borda. Margem 0 + padding no
+ * documento branco cobre a folha inteira (7 mm, como o DANFE).
+ */
 @media print {
   @page {
     size: A4 portrait;
-    margin: 7mm;
+    margin: 0;
   }
 
   html,
@@ -575,7 +574,7 @@
     width: 100% !important;
     max-width: none !important;
     margin: 0 !important;
-    padding: 0 !important;
+    padding: 7mm !important;
     border: none !important;
     box-shadow: none !important;
     border-radius: 0 !important;
@@ -610,7 +609,8 @@ html.gv-saving-pdf .print-doc,
 html.gv-receipt-save-pdf .print-doc {
   border: none !important;
   box-shadow: none !important;
-  margin: 0 auto !important;
+  margin: 0 !important;
+  background: #ffffff !important;
 }
 
 /* === Responsivo (telas estreitas) === */

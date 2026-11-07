@@ -226,6 +226,7 @@ html.gv-saving-pdf .print-doc,
 html.gv-receipt-save-pdf .print-doc {
   box-shadow: none !important;
   border: none !important;
+  background: #ffffff !important;
 }
 
 .print-only {
