@@ -40,16 +40,27 @@
 @media screen {
   html:has(.print-page) {
     font-size: var(--gv-a4-font-base);
+    background: #f1f5f9;
+  }
+
+  html:has(.print-page) body,
+  html:has(.print-page) #root {
+    background: #f1f5f9;
   }
 
   .print-toolbar {
     font-size: 14px;
   }
+
+  .print-doc {
+    border: 1px solid #cbd5e1;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+  }
 }
 
 .print-page {
   min-height: 100vh;
-  background: #e2e8f0;
+  background: #f1f5f9;
   padding: 1.25rem 1rem 2.5rem;
   font-family: var(--gv-report-font-sans);
   color: #0f172a;
@@ -75,9 +86,9 @@
 
 .print-doc {
   background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 2px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
   min-height: auto;
   position: relative;
 }
@@ -524,20 +535,6 @@
   line-height: 1.3;
 }
 
-@media print {
-  @page {
-    size: A4 portrait;
-    margin: 7mm;
-  }
-
-  .print-page .print-doc {
-    max-width: 196mm;
-    padding: 0;
-    border: none;
-    box-shadow: none;
-  }
-}
-
 .print-foot {
   margin-top: 1.25rem;
   border-top: 1px solid #94a3b8;
@@ -550,21 +547,39 @@
   line-height: 1.35;
 }
 
-/* @media print — só remove chrome de tela; margens vêm do @page em reports-document.css */
+/* @media print — folha branca sem moldura; margens em @page */
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 7mm;
+  }
+
+  html,
+  body,
+  #root {
+    background: #ffffff !important;
+  }
+
   .print-page {
-    background: #ffffff;
-    padding: 0;
-    min-height: auto;
+    background: #ffffff !important;
+    padding: 0 !important;
+    min-height: auto !important;
   }
 
   .no-print {
     display: none !important;
   }
 
+  .print-page .print-doc,
   .print-doc {
-    box-shadow: none;
-    border: none;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    background: #ffffff !important;
   }
 
   .print-session,
@@ -572,6 +587,30 @@
     break-inside: avoid;
     page-break-inside: avoid;
   }
+}
+
+/* PDF (PWA html2canvas) e printToPDF do Desktop — sem faixa escura ao redor */
+html.gv-saving-pdf,
+html.gv-receipt-save-pdf,
+html.gv-saving-pdf body,
+html.gv-receipt-save-pdf body,
+html.gv-saving-pdf #root,
+html.gv-receipt-save-pdf #root {
+  background: #ffffff !important;
+}
+
+html.gv-saving-pdf .print-page,
+html.gv-receipt-save-pdf .print-page {
+  background: #ffffff !important;
+  padding: 0 !important;
+  min-height: auto !important;
+}
+
+html.gv-saving-pdf .print-doc,
+html.gv-receipt-save-pdf .print-doc {
+  border: none !important;
+  box-shadow: none !important;
+  margin: 0 auto !important;
 }
 
 /* === Responsivo (telas estreitas) === */

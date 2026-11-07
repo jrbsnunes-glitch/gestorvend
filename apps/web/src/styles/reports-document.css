@@ -216,6 +216,18 @@ html.gv-saving-pdf .print-only {
   display: block !important;
 }
 
+html.gv-saving-pdf .print-page,
+html.gv-receipt-save-pdf .print-page {
+  background: #ffffff !important;
+  padding: 0 !important;
+}
+
+html.gv-saving-pdf .print-doc,
+html.gv-receipt-save-pdf .print-doc {
+  box-shadow: none !important;
+  border: none !important;
+}
+
 .print-only {
   display: none !important;
 }

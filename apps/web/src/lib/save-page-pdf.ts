@@ -4,9 +4,12 @@
  */
 
 function pickPdfSource(): HTMLElement {
+  const page = document.querySelector('.print-page');
+  const docInPage = page?.querySelector('.print-doc') as HTMLElement | null;
   return (
-    (document.querySelector('.print-page') as HTMLElement | null) ||
+    docInPage ||
     (document.querySelector('.print-doc') as HTMLElement | null) ||
+    (page as HTMLElement | null) ||
     (document.querySelector('.print-area') as HTMLElement | null) ||
     (document.querySelector('.main-content') as HTMLElement | null) ||
     document.body
@@ -36,6 +39,20 @@ function prepareClone(doc: Document): void {
   });
   doc.querySelectorAll('.gv-report-print-only, .print-only').forEach((el) => {
     (el as HTMLElement).style.setProperty('display', 'block', 'important');
+  });
+  const bg = '#ffffff';
+  doc.documentElement.style.setProperty('background', bg, 'important');
+  doc.body?.style.setProperty('background', bg, 'important');
+  doc.querySelector('#root')?.style.setProperty('background', bg, 'important');
+  doc.querySelectorAll('.print-page').forEach((el) => {
+    const h = el as HTMLElement;
+    h.style.setProperty('background', bg, 'important');
+    h.style.setProperty('padding', '0', 'important');
+  });
+  doc.querySelectorAll('.print-doc').forEach((el) => {
+    const h = el as HTMLElement;
+    h.style.setProperty('box-shadow', 'none', 'important');
+    h.style.setProperty('border', 'none', 'important');
   });
 }
 
