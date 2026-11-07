@@ -43,7 +43,11 @@ function prepareClone(doc: Document): void {
   const bg = '#ffffff';
   doc.documentElement.style.setProperty('background', bg, 'important');
   doc.body?.style.setProperty('background', bg, 'important');
-  doc.querySelector('#root')?.style.setProperty('background', bg, 'important');
+  (doc.querySelector('#root') as HTMLElement | null)?.style.setProperty(
+    'background',
+    bg,
+    'important',
+  );
   doc.querySelectorAll('.print-page').forEach((el) => {
     const h = el as HTMLElement;
     h.style.setProperty('background', bg, 'important');
