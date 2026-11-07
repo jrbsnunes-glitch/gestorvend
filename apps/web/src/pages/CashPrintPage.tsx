@@ -16,7 +16,6 @@ import {
 } from '../lib/cash-reconciliation';
 import {
   CASH_DEFERRED_RECEIPT_LABEL,
-  type CancelledSaleReportRow,
   type CashPaymentBreakdownRow,
 } from '../lib/cash-payment-report';
 import './cash-print.css';
@@ -78,7 +77,6 @@ type ReportData = {
   from: string;
   to: string;
   sessions: ReportSession[];
-  cancelledSales?: CancelledSaleReportRow[];
   totals: {
     completedCount: number;
     cancelledCount: number;
@@ -432,15 +430,6 @@ export function CashPrintPage() {
                 <SalesByPaymentSection rows={data.totals.salesByPaymentBreakdown ?? []} />
               ) : null}
 
-              {(data.totals.cancelledCount > 0 || (data.cancelledSales?.length ?? 0) > 0) ? (
-                <CancelledSalesSection
-                  count={data.totals.cancelledCount}
-                  total={data.totals.totalCancelled}
-                  rows={data.cancelledSales ?? []}
-                  multiSession={data.sessions.length > 1}
-                />
-              ) : null}
-
               {(data.totals.totalDiscounts > 0 || (data.totals.totalSurcharges ?? 0) > 0) && (
                 <p className="print-summary-line">
                   {data.totals.totalDiscounts > 0
@@ -766,53 +755,6 @@ function SalesByPaymentSection({ rows }: { rows: CashPaymentBreakdownRow[] }) {
         Formas com “{CASH_DEFERRED_RECEIPT_LABEL}” entram no faturamento, mas o recebimento não
         compõe o caixa no ato (ex.: cartão de crédito, requisição, crediário).
       </p>
-    </section>
-  );
-}
-
-function CancelledSalesSection({
-  count,
-  total,
-  rows,
-  multiSession,
-}: {
-  count: number;
-  total: number;
-  rows: CancelledSaleReportRow[];
-  multiSession: boolean;
-}) {
-  return (
-    <section className="print-section print-section--tight">
-      <h2>Vendas canceladas</h2>
-      <p className="print-summary-line">
-        {count} venda{count === 1 ? '' : 's'} · total {formatBRL(total)}
-      </p>
-      {rows.length > 0 ? (
-        <table className="print-table print-table-compact">
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th className="num">Venda</th>
-              {multiSession ? <th className="num">Caixa</th> : null}
-              <th className="num">Valor</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td>{fmtDateTime(row.createdAt)}</td>
-                <td className="num">#{row.number}</td>
-                {multiSession ? (
-                  <td className="num">#{row.sessionControlNumber ?? '—'}</td>
-                ) : null}
-                <td className="num">{formatBRL(row.total)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p className="print-empty">Sem detalhamento de vendas canceladas neste filtro.</p>
-      )}
     </section>
   );
 }
