@@ -3,7 +3,7 @@ import {
   PaymentMethod,
   SaleStatus,
 } from '../generated/tenant-client';
-import { roundMoney, splitSalePayments } from '../sales/sales-payment-breakdown.util';
+import { roundMoney } from '../sales/sales-payment-breakdown.util';
 
 /** Chaves analíticas — não entram no saldo apresentado (soma dos meios de recebimento). */
 export const CASH_RECON_EXCLUDE_FROM_CLOSING_TOTAL = ['EXPENSE'] as const;
@@ -68,13 +68,15 @@ export function isDeferredSalePaymentMethod(method: string): boolean {
 export type CompletedSalesTotals = {
   /** Soma dos totais das vendas concluídas (faturamento). */
   totalInvoiced: number;
-  /** Pagamentos na venda exceto requisição (inclui saldo crediário). */
+  /** Pagamentos que compõem o caixa no ato (dinheiro, débito, pix, etc.). */
   totalReceivedAtSale: number;
-  /** Só requisição (título a receber). */
+  /** Requisição, cartão crédito e demais formas com recebimento posterior (ver tabela por forma). */
+  totalDeferredReceiptAtSale: number;
+  /** Só requisição (detalhe / KPI). */
   totalRequisitionAtSale: number;
   /** Saldo crediário consumido na venda. */
   totalCreditAtSale: number;
-  /** Crediário + requisição (legado / conferência de caixa). */
+  /** Igual a {@link totalDeferredReceiptAtSale} (campo legado). */
   totalDeferred: number;
 };
 
@@ -83,20 +85,37 @@ export function aggregateCompletedSalesTotals(
 ): CompletedSalesTotals {
   let totalInvoiced = 0;
   let totalReceivedAtSale = 0;
+  let totalDeferredReceiptAtSale = 0;
   let totalRequisitionAtSale = 0;
   let totalCreditAtSale = 0;
   for (const sale of sales) {
     if (sale.status !== SaleStatus.COMPLETED) continue;
     totalInvoiced += Number(sale.total ?? 0);
-    const split = splitSalePayments(sale.payments);
-    totalReceivedAtSale += split.receivedAtSale;
-    totalRequisitionAtSale += split.requisitionAtSale;
-    totalCreditAtSale += split.creditFromBalance;
+    for (const p of sale.payments) {
+      const amt = Number(p.amount);
+      if (!Number.isFinite(amt) || amt <= 0) continue;
+      const key = salePaymentGroupKey(p);
+      if (isDeferredSaleReceiptKey(key, p)) {
+        totalDeferredReceiptAtSale += amt;
+      } else {
+        totalReceivedAtSale += amt;
+      }
+      if (p.method === PaymentMethod.REQUISITION) {
+        totalRequisitionAtSale += amt;
+      } else {
+        const kind = String(p.paymentForm?.kind ?? '').toUpperCase();
+        if (kind === 'REQUISITION') totalRequisitionAtSale += amt;
+      }
+      if (p.method === PaymentMethod.CREDIT) {
+        totalCreditAtSale += amt;
+      }
+    }
   }
-  const totalDeferred = roundMoney(totalRequisitionAtSale + totalCreditAtSale);
+  const totalDeferred = roundMoney(totalDeferredReceiptAtSale);
   return {
     totalInvoiced: roundMoney(totalInvoiced),
     totalReceivedAtSale: roundMoney(totalReceivedAtSale),
+    totalDeferredReceiptAtSale: totalDeferred,
     totalRequisitionAtSale: roundMoney(totalRequisitionAtSale),
     totalCreditAtSale: roundMoney(totalCreditAtSale),
     totalDeferred,

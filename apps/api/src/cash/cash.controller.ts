@@ -779,6 +779,7 @@ export class CashController {
         const salesPaymentTotals = aggregateCompletedSalesTotals(sales);
         totalReceivedAtSale = salesPaymentTotals.totalReceivedAtSale;
         totalDeferredSales = salesPaymentTotals.totalDeferred;
+        const totalDeferredReceiptAtSale = salesPaymentTotals.totalDeferredReceiptAtSale;
         const totalRequisitionAtSale = salesPaymentTotals.totalRequisitionAtSale;
         const totalCreditAtSale = salesPaymentTotals.totalCreditAtSale;
         const totalReceivableCollectionsViaCash = receivableBySessionId.get(s.id) ?? 0;
@@ -861,6 +862,7 @@ export class CashController {
           itemsCount,
           totalCompleted,
           totalReceivedAtSale,
+          totalDeferredReceiptAtSale,
           totalRequisitionAtSale,
           totalCreditAtSale,
           totalReceivableCollectionsViaCash,
@@ -938,6 +940,7 @@ export class CashController {
         acc.itemsCount += s.itemsCount;
         acc.totalCompleted += s.totalCompleted;
         acc.totalReceivedAtSale += s.totalReceivedAtSale;
+        acc.totalDeferredReceiptAtSale += s.totalDeferredReceiptAtSale ?? 0;
         acc.totalRequisitionAtSale += s.totalRequisitionAtSale;
         acc.totalCreditAtSale += s.totalCreditAtSale;
         acc.totalReceivableCollectionsViaCash += s.totalReceivableCollectionsViaCash;
@@ -979,6 +982,7 @@ export class CashController {
         itemsCount: 0,
         totalCompleted: 0,
         totalReceivedAtSale: 0,
+        totalDeferredReceiptAtSale: 0,
         totalRequisitionAtSale: 0,
         totalCreditAtSale: 0,
         totalReceivableCollectionsViaCash: 0,
@@ -1018,6 +1022,7 @@ export class CashController {
     totals.movementBreakdown.despesas = roundMoney(totals.movementBreakdown.despesas);
     totals.presentedTotal = roundMoney(totals.presentedTotal);
     totals.totalReceivedAtSale = roundMoney(totals.totalReceivedAtSale);
+    totals.totalDeferredReceiptAtSale = roundMoney(totals.totalDeferredReceiptAtSale);
     totals.totalRequisitionAtSale = roundMoney(totals.totalRequisitionAtSale);
     totals.totalCreditAtSale = roundMoney(totals.totalCreditAtSale);
     totals.totalReceivableCollectionsViaCash = roundMoney(totals.totalReceivableCollectionsViaCash);
@@ -1507,6 +1512,7 @@ export class CashController {
         cancelledCount: sales.filter((s) => s.status === SaleStatus.CANCELLED).length,
         totalCompleted,
         totalReceivedAtSale: sessionPaymentTotals.totalReceivedAtSale,
+        totalDeferredReceiptAtSale: sessionPaymentTotals.totalDeferredReceiptAtSale,
         totalRequisitionAtSale: sessionPaymentTotals.totalRequisitionAtSale,
         totalCreditAtSale: sessionPaymentTotals.totalCreditAtSale,
         totalReceivableCollectionsViaCash,

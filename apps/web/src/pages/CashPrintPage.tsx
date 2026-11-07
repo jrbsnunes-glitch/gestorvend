@@ -60,6 +60,7 @@ type ReportSession = {
   itemsCount: number;
   totalCompleted: number;
   totalReceivedAtSale?: number;
+  totalDeferredReceiptAtSale?: number;
   totalRequisitionAtSale?: number;
   totalReceivableCollectionsViaCash?: number;
   totalCancelled: number;
@@ -84,6 +85,8 @@ type ReportData = {
     itemsCount: number;
     totalCompleted: number;
     totalReceivedAtSale?: number;
+    totalDeferredReceiptAtSale?: number;
+    totalDeferredSales?: number;
     totalRequisitionAtSale?: number;
     totalReceivableCollectionsViaCash?: number;
     totalCancelled: number;
@@ -416,7 +419,11 @@ export function CashPrintPage() {
                   compact
                   revenueTotal={data.totals.totalCompleted}
                   receivedAtSale={data.totals.totalReceivedAtSale ?? data.totals.totalCompleted}
-                  requisitionAtSale={data.totals.totalRequisitionAtSale ?? 0}
+                  deferredReceiptAtSale={
+                    data.totals.totalDeferredReceiptAtSale ??
+                    data.totals.totalDeferredSales ??
+                    0
+                  }
                   receivableSettledViaCash={data.totals.totalReceivableCollectionsViaCash ?? 0}
                 />
               </section>

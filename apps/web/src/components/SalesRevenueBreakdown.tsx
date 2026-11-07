@@ -3,19 +3,25 @@ import { formatBRL } from '../lib/format';
 export type SalesRevenueBreakdownProps = {
   revenueTotal: number;
   receivedAtSale: number;
-  requisitionAtSale: number;
+  /** Total a receber posteriormente (requisição + crédito, etc.). Preferir em relatórios de caixa. */
+  deferredReceiptAtSale?: number;
+  /** Legado: só requisição (visão financeira). Ignorado se `deferredReceiptAtSale` vier preenchido. */
+  requisitionAtSale?: number;
   receivableSettledViaCash?: number;
   compact?: boolean;
 };
 
-/** Resumo: faturamento = recebido no ato + requisição (vendas concluídas). */
+/** Resumo: faturamento = recebido no ato + a receber posteriormente (vendas concluídas). */
 export function SalesRevenueBreakdown({
   revenueTotal,
   receivedAtSale,
-  requisitionAtSale,
+  deferredReceiptAtSale,
+  requisitionAtSale = 0,
   receivableSettledViaCash = 0,
   compact,
 }: SalesRevenueBreakdownProps) {
+  const deferred =
+    deferredReceiptAtSale != null ? deferredReceiptAtSale : requisitionAtSale;
   const cls = compact ? 'sales-rev-breakdown sales-rev-breakdown--compact' : 'sales-rev-breakdown';
   return (
     <div className={cls}>
@@ -27,10 +33,10 @@ export function SalesRevenueBreakdown({
         <span>Recebido no ato</span>
         <strong>{formatBRL(receivedAtSale)}</strong>
       </p>
-      {requisitionAtSale > 0 ? (
+      {deferred > 0 ? (
         <p className="sales-rev-breakdown__line">
-          <span>Em requisição (a receber)</span>
-          <strong>{formatBRL(requisitionAtSale)}</strong>
+          <span>A receber posteriormente</span>
+          <strong>{formatBRL(deferred)}</strong>
         </p>
       ) : null}
       {receivableSettledViaCash > 0 ? (
@@ -40,7 +46,10 @@ export function SalesRevenueBreakdown({
         </p>
       ) : null}
       <p className="sales-rev-breakdown__hint">
-        Composição do faturamento: recebido no ato + em requisição ≈ total vendido.
+        Composição do faturamento: recebido no ato + a receber posteriormente ≈ total vendido.
+        {deferredReceiptAtSale != null
+          ? ' Requisições e cartões de crédito aparecem detalhados por forma logo abaixo.'
+          : null}
       </p>
     </div>
   );

@@ -19,8 +19,27 @@ describe('aggregateCompletedSalesTotals', () => {
     ]);
     expect(t.totalInvoiced).toBe(100);
     expect(t.totalReceivedAtSale).toBe(40);
+    expect(t.totalDeferredReceiptAtSale).toBe(60);
     expect(t.totalRequisitionAtSale).toBe(60);
-    expect(t.totalReceivedAtSale + t.totalRequisitionAtSale).toBe(100);
+    expect(t.totalReceivedAtSale + t.totalDeferredReceiptAtSale).toBe(100);
+  });
+
+  it('inclui cartão de crédito em a receber posteriormente', () => {
+    const t = aggregateCompletedSalesTotals([
+      {
+        status: SaleStatus.COMPLETED,
+        total: '195',
+        payments: [
+          { method: PaymentMethod.CASH, amount: '40' },
+          { method: PaymentMethod.CARD, amount: '80', cardOperation: 'CREDIT' },
+          { method: PaymentMethod.CARD, amount: '20', cardOperation: 'DEBIT' },
+          { method: PaymentMethod.REQUISITION, amount: '55' },
+        ],
+      },
+    ]);
+    expect(t.totalReceivedAtSale).toBe(60);
+    expect(t.totalDeferredReceiptAtSale).toBe(135);
+    expect(t.totalRequisitionAtSale).toBe(55);
   });
 });
 
