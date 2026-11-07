@@ -14,6 +14,11 @@ import {
   reconDiffDisplay,
   sumDeclaredForClosingBalance,
 } from '../lib/cash-reconciliation';
+import {
+  CASH_DEFERRED_RECEIPT_LABEL,
+  type CancelledSaleReportRow,
+  type CashPaymentBreakdownRow,
+} from '../lib/cash-payment-report';
 import './cash-print.css';
 
 type ReconciliationExpenseLine = {
@@ -72,6 +77,7 @@ type ReportData = {
   from: string;
   to: string;
   sessions: ReportSession[];
+  cancelledSales?: CancelledSaleReportRow[];
   totals: {
     completedCount: number;
     cancelledCount: number;
@@ -90,6 +96,7 @@ type ReportData = {
     movementsOut: number;
     movementBreakdown: CashMovementBreakdown;
     salesByMethod: Record<string, number>;
+    salesByPaymentBreakdown?: CashPaymentBreakdownRow[];
     expectedByMethod: Record<string, number>;
     declaredByMethod: Record<string, number>;
   };
@@ -414,6 +421,19 @@ export function CashPrintPage() {
                 />
               </section>
 
+              {(data.totals.salesByPaymentBreakdown?.length ?? 0) > 0 ? (
+                <SalesByPaymentSection rows={data.totals.salesByPaymentBreakdown ?? []} />
+              ) : null}
+
+              {(data.totals.cancelledCount > 0 || (data.cancelledSales?.length ?? 0) > 0) ? (
+                <CancelledSalesSection
+                  count={data.totals.cancelledCount}
+                  total={data.totals.totalCancelled}
+                  rows={data.cancelledSales ?? []}
+                  multiSession={data.sessions.length > 1}
+                />
+              ) : null}
+
               {(data.totals.totalDiscounts > 0 || (data.totals.totalSurcharges ?? 0) > 0) && (
                 <p className="print-summary-line">
                   {data.totals.totalDiscounts > 0
@@ -700,6 +720,93 @@ function ReconSection({
         </p>
       ) : null}
     </div>
+  );
+}
+
+function SalesByPaymentSection({ rows }: { rows: CashPaymentBreakdownRow[] }) {
+  const total = rows.reduce((s, r) => s + r.amount, 0);
+  return (
+    <section className="print-section print-section--tight">
+      <h2>Vendas por forma de pagamento</h2>
+      <table className="print-table print-table-compact">
+        <thead>
+          <tr>
+            <th>Forma</th>
+            <th className="num">Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key}>
+              <td>
+                {row.label}
+                {row.deferredReceipt ? (
+                  <span className="print-pay-deferred"> ({CASH_DEFERRED_RECEIPT_LABEL})</span>
+                ) : null}
+              </td>
+              <td className="num">{formatBRL(row.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th>Total</th>
+            <th className="num">{formatBRL(total)}</th>
+          </tr>
+        </tfoot>
+      </table>
+      <p className="print-recon-footnote print-recon-footnote--muted">
+        Formas com “{CASH_DEFERRED_RECEIPT_LABEL}” entram no faturamento, mas o recebimento não
+        compõe o caixa no ato (ex.: cartão de crédito, requisição, crediário).
+      </p>
+    </section>
+  );
+}
+
+function CancelledSalesSection({
+  count,
+  total,
+  rows,
+  multiSession,
+}: {
+  count: number;
+  total: number;
+  rows: CancelledSaleReportRow[];
+  multiSession: boolean;
+}) {
+  return (
+    <section className="print-section print-section--tight">
+      <h2>Vendas canceladas</h2>
+      <p className="print-summary-line">
+        {count} venda{count === 1 ? '' : 's'} · total {formatBRL(total)}
+      </p>
+      {rows.length > 0 ? (
+        <table className="print-table print-table-compact">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th className="num">Venda</th>
+              {multiSession ? <th className="num">Caixa</th> : null}
+              <th className="num">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <td>{fmtDateTime(row.createdAt)}</td>
+                <td className="num">#{row.number}</td>
+                {multiSession ? (
+                  <td className="num">#{row.sessionControlNumber ?? '—'}</td>
+                ) : null}
+                <td className="num">{formatBRL(row.total)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="print-empty">Sem detalhamento de vendas canceladas neste filtro.</p>
+      )}
+    </section>
   );
 }
 

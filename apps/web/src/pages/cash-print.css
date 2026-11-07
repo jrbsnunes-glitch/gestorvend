@@ -1,5 +1,29 @@
 @import '../styles/reports-document.css';
 
+/* Margens alinhadas ao DANFE (7 mm úteis na folha A4). */
+.print-page {
+  --gv-a4-margin-top: 7mm;
+  --gv-a4-margin-right: 7mm;
+  --gv-a4-margin-bottom: 7mm;
+  --gv-a4-margin-left: 7mm;
+}
+
+.print-page .print-doc {
+  max-width: 196mm;
+}
+
+.print-pay-deferred {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.print-section--tight {
+  margin-bottom: 0.85rem;
+}
+
 /* ============================================================================
  * Layout da página de impressão de relatório de caixa.
  *
@@ -501,8 +525,16 @@
 }
 
 @media print {
-  .print-page--compact .print-doc {
-    padding: 8mm 10mm;
+  @page {
+    size: A4 portrait;
+    margin: 7mm;
+  }
+
+  .print-page .print-doc {
+    max-width: 196mm;
+    padding: 0;
+    border: none;
+    box-shadow: none;
   }
 }
 

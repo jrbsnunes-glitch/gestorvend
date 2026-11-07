@@ -35,7 +35,11 @@ import { sumReceivableSettlementsViaCash } from '../sales/sales-payment-breakdow
 import {
   aggregateCompletedSalesTotals,
   buildSalesByMethod,
+  buildSalesByPaymentBreakdown,
+  buildSalesByPaymentForm,
   buildSessionExpectedByMethod,
+  collectCancelledSales,
+  mergePaymentBreakdownRows,
   computeClosingBalanceFromDeclared,
   computeReconciliationDifference,
   expectedFinalForMethodKey,
@@ -734,7 +738,13 @@ export class CashController {
             ],
           },
           include: {
-            payments: true,
+            payments: {
+              include: {
+                paymentForm: {
+                  select: { id: true, name: true, kind: true, cardOperation: true },
+                },
+              },
+            },
             items: { select: { quantity: true, discount: true } },
           },
         });
@@ -774,6 +784,12 @@ export class CashController {
         const totalReceivableCollectionsViaCash = receivableBySessionId.get(s.id) ?? 0;
 
         const salesByMethod = buildSalesByMethod(sales);
+        const salesByPaymentForm = buildSalesByPaymentForm(sales);
+        const salesByPaymentBreakdown = buildSalesByPaymentBreakdown(sales);
+        const cancelledSales = collectCancelledSales(sales).map((row) => ({
+          ...row,
+          sessionControlNumber: s.controlNumber,
+        }));
 
         const { byMethod: expectedByMethodBase, movementBreakdown } = buildSessionExpectedByMethod(
           sales,
@@ -853,6 +869,9 @@ export class CashController {
           totalDiscounts,
           totalSurcharges,
           salesByMethod,
+          salesByPaymentForm,
+          salesByPaymentBreakdown,
+          cancelledSales,
           expectedByMethod,
           declaredByMethod: declaredNormalized,
           diffByMethod,
@@ -936,6 +955,14 @@ export class CashController {
         for (const [k, v] of Object.entries(s.salesByMethod)) {
           acc.salesByMethod[k] = (acc.salesByMethod[k] ?? 0) + (v as number);
         }
+        for (const [k, v] of Object.entries(s.salesByPaymentForm)) {
+          acc.salesByPaymentForm[k] = (acc.salesByPaymentForm[k] ?? 0) + (v as number);
+        }
+        acc.salesByPaymentBreakdown = mergePaymentBreakdownRows(
+          acc.salesByPaymentBreakdown,
+          s.salesByPaymentBreakdown,
+        );
+        acc.cancelledSales.push(...s.cancelledSales);
         for (const [k, v] of Object.entries(s.expectedByMethod)) {
           acc.expectedByMethod[k] = (acc.expectedByMethod[k] ?? 0) + (v as number);
         }
@@ -965,10 +992,26 @@ export class CashController {
         movementsOut: 0,
         movementBreakdown: { suprimentos: 0, sangrias: 0, despesas: 0 },
         salesByMethod: {} as Record<string, number>,
+        salesByPaymentForm: {} as Record<string, number>,
+        salesByPaymentBreakdown: [] as Array<{
+          key: string;
+          label: string;
+          amount: number;
+          deferredReceipt: boolean;
+        }>,
+        cancelledSales: [] as Array<{
+          id: string;
+          number: number;
+          createdAt: string;
+          total: number;
+          sessionControlNumber: number;
+        }>,
         expectedByMethod: {} as Record<string, number>,
         declaredByMethod: {} as Record<string, number>,
       },
     );
+
+    totals.cancelledSales.sort((a, b) => a.number - b.number);
 
     totals.movementBreakdown.suprimentos = roundMoney(totals.movementBreakdown.suprimentos);
     totals.movementBreakdown.sangrias = roundMoney(totals.movementBreakdown.sangrias);
@@ -998,6 +1041,7 @@ export class CashController {
       from: reportFrom,
       to: reportTo,
       sessions: sessionsOut,
+      cancelledSales: totals.cancelledSales,
       totals: {
         ...totals,
         /** Alias legado — soma dos apresentados por rubrica (pós-conferência quando gravado). */
@@ -1396,7 +1440,8 @@ export class CashController {
 
     const salesByMethod = buildSalesByMethod(sales);
 
-    const salesByPaymentForm: Record<string, number> = {};
+    const salesByPaymentForm = buildSalesByPaymentForm(sales);
+    const salesByPaymentBreakdown = buildSalesByPaymentBreakdown(sales);
     const cardPayments: Array<{
       id: string;
       saleId: string;
@@ -1413,9 +1458,6 @@ export class CashController {
     for (const sale of sales) {
       if (sale.status !== SaleStatus.COMPLETED) continue;
       for (const p of sale.payments) {
-        const formKey = p.paymentForm?.name ?? p.method;
-        salesByPaymentForm[formKey] =
-          (salesByPaymentForm[formKey] ?? 0) + Number(p.amount);
         if (p.method === 'CARD') {
           cardPayments.push({
             id: p.id,
@@ -1475,6 +1517,7 @@ export class CashController {
         totalSurcharges,
         salesByMethod,
         salesByPaymentForm,
+        salesByPaymentBreakdown,
         cardPayments,
         byMethod,
         movementBreakdown,

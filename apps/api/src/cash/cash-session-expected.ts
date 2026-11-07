@@ -19,10 +19,38 @@ export type CashMovementForExpected = {
   method: PaymentMethod | null;
 };
 
+export type SalePaymentForCashReport = {
+  method: string;
+  amount: unknown;
+  cardOperation?: string | null;
+  paymentForm?: {
+    name: string;
+    kind?: string | null;
+    cardOperation?: string | null;
+  } | null;
+};
+
 export type CashSaleForExpected = {
   status: SaleStatus;
   total?: unknown;
-  payments: Array<{ method: string; amount: unknown }>;
+  number?: number;
+  id?: string;
+  createdAt?: Date;
+  payments: Array<{ method: string; amount: unknown } & Partial<SalePaymentForCashReport>>;
+};
+
+export type CashPaymentBreakdownRow = {
+  key: string;
+  label: string;
+  amount: number;
+  deferredReceipt: boolean;
+};
+
+export type CancelledSaleReportRow = {
+  id: string;
+  number: number;
+  createdAt: string;
+  total: number;
 };
 
 /** Pagamentos que não entram no caixa na hora da venda (título a receber). */
@@ -148,6 +176,150 @@ function mapToRoundedRecord(map: Map<string, number>): Record<string, number> {
 /** Pagamentos registrados nas vendas concluídas, por forma (sem fundo, sangria ou suprimento). */
 export function buildSalesByMethod(sales: CashSaleForExpected[]): Record<string, number> {
   return mapToRoundedRecord(aggregateCompletedSalePayments(sales));
+}
+
+function cardOpDebit(cardOperation?: string | null): boolean {
+  return String(cardOperation ?? '').trim().toUpperCase() === 'DEBIT';
+}
+
+export function salePaymentGroupKey(p: SalePaymentForCashReport): string {
+  const formName = p.paymentForm?.name?.trim();
+  if (formName) return formName;
+  if (p.method === PaymentMethod.CARD) {
+    return cardOpDebit(p.cardOperation) ? 'CARD_DEBIT' : 'CARD_CREDIT';
+  }
+  return p.method;
+}
+
+export function salePaymentGroupLabel(key: string, p?: SalePaymentForCashReport): string {
+  if (p?.paymentForm?.name?.trim()) return p.paymentForm.name.trim();
+  if (key === 'CARD_CREDIT') return 'Cartão de crédito';
+  if (key === 'CARD_DEBIT') return 'Cartão de débito';
+  const labels: Record<string, string> = {
+    CASH: 'Dinheiro',
+    CARD: 'Cartão',
+    PIX: 'Pix',
+    CREDIT: 'Saldo crediário',
+    REQUISITION: 'Requisição',
+    OTHER: 'Outro',
+  };
+  return labels[key] ?? key;
+}
+
+export function isDeferredSaleReceiptKey(key: string, p?: SalePaymentForCashReport): boolean {
+  if (key === PaymentMethod.REQUISITION || key === PaymentMethod.CREDIT) return true;
+  if (key === 'CARD_CREDIT') return true;
+  const kind = String(p?.paymentForm?.kind ?? '').toUpperCase();
+  if (kind === 'REQUISITION' || kind === 'CREDIT') return true;
+  if (kind === 'CARD') {
+    const op = p?.paymentForm?.cardOperation ?? p?.cardOperation;
+    return !cardOpDebit(op);
+  }
+  return false;
+}
+
+/** Vendas concluídas agrupadas por forma cadastrada ou método (cartão crédito/débito). */
+export function buildSalesByPaymentForm(
+  sales: Array<{ status: SaleStatus; payments: SalePaymentForCashReport[] }>,
+): Record<string, number> {
+  const map = new Map<string, number>();
+  for (const sale of sales) {
+    if (sale.status !== SaleStatus.COMPLETED) continue;
+    for (const p of sale.payments) {
+      const key = salePaymentGroupKey(p);
+      map.set(key, (map.get(key) ?? 0) + Number(p.amount));
+    }
+  }
+  return mapToRoundedRecord(map);
+}
+
+const BREAKDOWN_SORT_ORDER = [
+  'CASH',
+  'PIX',
+  'CARD_DEBIT',
+  'CARD_CREDIT',
+  'CREDIT',
+  'REQUISITION',
+  'OTHER',
+] as const;
+
+export function buildSalesByPaymentBreakdown(
+  sales: Array<{ status: SaleStatus; payments: SalePaymentForCashReport[] }>,
+): CashPaymentBreakdownRow[] {
+  const map = new Map<
+    string,
+    { amount: number; label: string; deferredReceipt: boolean }
+  >();
+  for (const sale of sales) {
+    if (sale.status !== SaleStatus.COMPLETED) continue;
+    for (const p of sale.payments) {
+      const key = salePaymentGroupKey(p);
+      const prev = map.get(key);
+      const add = Number(p.amount);
+      if (!Number.isFinite(add) || add <= 0) continue;
+      const label = salePaymentGroupLabel(key, p);
+      const deferredReceipt = isDeferredSaleReceiptKey(key, p);
+      if (prev) {
+        prev.amount += add;
+      } else {
+        map.set(key, { amount: add, label, deferredReceipt });
+      }
+    }
+  }
+  const rows: CashPaymentBreakdownRow[] = [];
+  for (const [key, v] of map.entries()) {
+    rows.push({
+      key,
+      label: v.label,
+      amount: roundMoney(v.amount),
+      deferredReceipt: v.deferredReceipt,
+    });
+  }
+  return sortPaymentBreakdownRows(rows);
+}
+
+export function sortPaymentBreakdownRows(rows: CashPaymentBreakdownRow[]): CashPaymentBreakdownRow[] {
+  return [...rows].sort((a, b) => {
+    const ai = BREAKDOWN_SORT_ORDER.indexOf(a.key as (typeof BREAKDOWN_SORT_ORDER)[number]);
+    const bi = BREAKDOWN_SORT_ORDER.indexOf(b.key as (typeof BREAKDOWN_SORT_ORDER)[number]);
+    if (ai === -1 && bi === -1) return a.label.localeCompare(b.label, 'pt-BR');
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    if (ai !== bi) return ai - bi;
+    return a.label.localeCompare(b.label, 'pt-BR');
+  });
+}
+
+export function mergePaymentBreakdownRows(
+  target: CashPaymentBreakdownRow[],
+  add: CashPaymentBreakdownRow[],
+): CashPaymentBreakdownRow[] {
+  const map = new Map<string, CashPaymentBreakdownRow>();
+  for (const row of [...target, ...add]) {
+    const prev = map.get(row.key);
+    if (prev) {
+      prev.amount = roundMoney(prev.amount + row.amount);
+      prev.deferredReceipt = prev.deferredReceipt || row.deferredReceipt;
+    } else {
+      map.set(row.key, { ...row });
+    }
+  }
+  return sortPaymentBreakdownRows([...map.values()]);
+}
+
+export function collectCancelledSales(
+  sales: CashSaleForExpected[],
+): CancelledSaleReportRow[] {
+  return sales
+    .filter((s) => s.status === SaleStatus.CANCELLED)
+    .map((s) => ({
+      id: String(s.id ?? ''),
+      number: Number(s.number ?? 0),
+      createdAt: (s.createdAt instanceof Date ? s.createdAt : new Date()).toISOString(),
+      total: roundMoney(Number(s.total ?? 0)),
+    }))
+    .filter((r) => r.id && r.number > 0)
+    .sort((a, b) => a.number - b.number);
 }
 
 export function buildSessionExpectedByMethod(
