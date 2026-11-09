@@ -35,6 +35,14 @@ import {
 } from '../lib/user-permissions';
 import { formatBRL, formatDate } from '../lib/format';
 import {
+  formatSaleQty as formatCartQty,
+  isFractionalSaleUnit as isFractionalTaxUnit,
+  normalizeSaleUnit as normalizeTaxUnit,
+  qtyStepForUnit,
+  qtyUnitLabel,
+  roundSaleQty as roundCartQty,
+} from '../lib/sale-qty-unit';
+import {
   expectedFinalForReconKey,
   buildCashClosingPresentGuide,
   computeClosingReconTotals,
@@ -315,65 +323,6 @@ function parseDecimal(v: string | number | null | undefined): number {
   if (v == null) return 0;
   const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
   return Number.isFinite(n) ? n : 0;
-}
-
-/** Unidades que aceitam quantidade fracionada no PDV (peso/volume). */
-const FRACTIONAL_TAX_UNITS = new Set([
-  'KG',
-  'G',
-  'GR',
-  'MG',
-  'T',
-  'TON',
-  'L',
-  'LT',
-  'ML',
-]);
-
-function normalizeTaxUnit(taxUnit: string | null | undefined): string {
-  const u = (taxUnit ?? 'UN').trim().toUpperCase();
-  return u || 'UN';
-}
-
-function isFractionalTaxUnit(taxUnit: string | null | undefined): boolean {
-  return FRACTIONAL_TAX_UNITS.has(normalizeTaxUnit(taxUnit));
-}
-
-function qtyStepForUnit(taxUnit: string | null | undefined): number {
-  const u = normalizeTaxUnit(taxUnit);
-  if (u === 'G' || u === 'GR' || u === 'MG' || u === 'ML') return 1;
-  if (isFractionalTaxUnit(u)) return 0.1;
-  return 1;
-}
-
-function qtyUnitLabel(taxUnit: string | null | undefined): string {
-  const u = normalizeTaxUnit(taxUnit);
-  if (u === 'KG') return 'kg';
-  if (u === 'G' || u === 'GR') return 'g';
-  if (u === 'MG') return 'mg';
-  if (u === 'L' || u === 'LT') return 'L';
-  if (u === 'ML') return 'ml';
-  if (u === 'T' || u === 'TON') return 't';
-  return u.toLowerCase();
-}
-
-/** Arredonda qty: 3 casas p/ fracionados; inteiro p/ UN etc. */
-function roundCartQty(qty: number, taxUnit: string | null | undefined): number {
-  if (!Number.isFinite(qty) || qty < 0) return 0;
-  if (isFractionalTaxUnit(taxUnit)) {
-    return Math.round(qty * 1000) / 1000;
-  }
-  return Math.round(qty);
-}
-
-function formatCartQty(qty: number, taxUnit: string | null | undefined): string {
-  if (isFractionalTaxUnit(taxUnit)) {
-    return qty.toLocaleString('pt-BR', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 3,
-    });
-  }
-  return String(qty);
 }
 
 function classifyStock(stock: number, qtyInCart: number, minStock: number) {
@@ -2348,7 +2297,7 @@ function PosScreen({
               i === idx ? { ...l, quantity: roundCartQty(qtyOverride, l.taxUnit) } : l,
             );
           }
-          // Peso/volume: não soma +1 automaticamente — operador ajusta a qty.
+          // Metro, peso ou volume: não soma +1 — o operador informa a quantidade.
           return prev;
         }
         const step = qtyStepForUnit(prev[idx]!.taxUnit);

@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { isGestorVendDesktop } from '../lib/desktop-bridge';
 import { printDocument } from '../lib/desktop-print';
 import { formatBRL, formatDate } from '../lib/format';
+import { formatSaleQty, isFractionalSaleUnit, qtyUnitLabel } from '../lib/sale-qty-unit';
 import { PAYMENT_FORM_KIND_LABELS, type PaymentFormKind } from '../lib/payment-forms';
 import { consumeAutoPrintNonce } from '../lib/sale-receipt-print';
 import { APP_VERSION } from '../version';
@@ -37,7 +38,7 @@ type ReservationReceipt = {
     quantity: string;
     unitPrice: string;
     totalLine: string;
-    variant: { sku: string; product: { name: string } };
+    variant: { sku: string; product: { name: string; taxUnit?: string | null } };
   }>;
   payments: Array<{
     method: PaymentFormKind;
@@ -290,10 +291,15 @@ export function SaleReservationPrintPage() {
                   <td>
                     <span className="gv-rsv-item-name">{it.variant.product.name}</span>
                     <span className="gv-rsv-item-sku">
-                      {it.variant.sku} · {formatBRL(it.unitPrice)} un
+                      {it.variant.sku} · {formatBRL(it.unitPrice)}
+                      {isFractionalSaleUnit(it.variant.product.taxUnit)
+                        ? ` / ${qtyUnitLabel(it.variant.product.taxUnit)}`
+                        : ' un'}
                     </span>
                   </td>
-                  <td className="num">{parseN(it.quantity)}</td>
+                  <td className="num">
+                    {formatSaleQty(parseN(it.quantity), it.variant.product.taxUnit)}
+                  </td>
                   <td className="num">{formatBRL(it.totalLine)}</td>
                 </tr>
               ))}

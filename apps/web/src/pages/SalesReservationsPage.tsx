@@ -7,6 +7,12 @@ import { RecordViewModal, type RecordViewSection } from '../components/RecordVie
 import { api } from '../lib/api';
 import { formatBRL, formatDate, formatStockQty } from '../lib/format';
 import {
+  isFractionalSaleUnit,
+  qtyStepForUnit,
+  qtyUnitLabel,
+  roundSaleQty,
+} from '../lib/sale-qty-unit';
+import {
   isCustomerCreditKind,
   PAYMENT_FORM_KIND_LABELS,
   type PaymentForm,
@@ -28,6 +34,7 @@ type CartLine = {
   barcode?: string | null;
   unitPrice: number;
   quantity: number;
+  taxUnit?: string | null;
   isService?: boolean;
 };
 
@@ -50,7 +57,10 @@ type Reservation = {
     unitPrice: string;
     discount: string;
     totalLine: string;
-    variant: { sku: string; product: { name: string; isService?: boolean } };
+    variant: {
+      sku: string;
+      product: { name: string; isService?: boolean; taxUnit?: string | null };
+    };
   }>;
   payments: Array<{
     method: string;
@@ -157,13 +167,19 @@ export function SalesReservationsPage() {
 
   function addProduct(p: ProductSearchRow & { promoPrice?: string | null }) {
     const price = Number(p.promoPrice ?? p.retailPrice) || 0;
+    const taxUnit = p.taxUnit ?? 'UN';
+    const fractional = isFractionalSaleUnit(taxUnit);
+    const step = qtyStepForUnit(taxUnit);
     setForm((prev) => {
       const found = prev.lines.find((l) => l.variantId === p.variantId);
       if (found) {
+        if (fractional) return prev;
         return {
           ...prev,
           lines: prev.lines.map((l) =>
-            l.variantId === p.variantId ? { ...l, quantity: money(l.quantity + 1) } : l,
+            l.variantId === p.variantId
+              ? { ...l, quantity: roundSaleQty(l.quantity + step, l.taxUnit) }
+              : l,
           ),
         };
       }
@@ -178,6 +194,7 @@ export function SalesReservationsPage() {
             barcode: p.barcode,
             unitPrice: price,
             quantity: 1,
+            taxUnit,
             isService: p.isService,
           },
         ],
@@ -190,7 +207,12 @@ export function SalesReservationsPage() {
   function setLineQty(variantId: string, qty: number) {
     setForm((prev) => ({
       ...prev,
-      lines: prev.lines.map((x) => (x.variantId === variantId ? { ...x, quantity: qty } : x)),
+      lines: prev.lines.flatMap((x) => {
+        if (x.variantId !== variantId) return [x];
+        const next = roundSaleQty(qty, x.taxUnit);
+        if (next <= 0) return [];
+        return [{ ...x, quantity: next }];
+      }),
     }));
   }
 
@@ -199,8 +221,9 @@ export function SalesReservationsPage() {
       ...prev,
       lines: prev.lines.flatMap((l) => {
         if (l.variantId !== variantId) return [l];
-        const next = money(l.quantity + delta);
-        if (next < 0.001) return [];
+        const step = qtyStepForUnit(l.taxUnit) * Math.sign(delta || 1);
+        const next = roundSaleQty(l.quantity + step, l.taxUnit);
+        if (next <= 0) return [];
         return [{ ...l, quantity: next }];
       }),
     }));
@@ -226,7 +249,8 @@ export function SalesReservationsPage() {
         sku: it.variant.sku,
         barcode: null,
         unitPrice: Number(it.unitPrice),
-        quantity: Number(it.quantity),
+        quantity: roundSaleQty(Number(it.quantity), it.variant.product.taxUnit),
+        taxUnit: it.variant.product.taxUnit,
         isService: it.variant.product.isService,
       })),
     });
@@ -564,13 +588,17 @@ export function SalesReservationsPage() {
                 </tr>
               </thead>
               <tbody>
-                {form.lines.map((l) => (
+                {form.lines.map((l) => {
+                  const fractional = isFractionalSaleUnit(l.taxUnit);
+                  const unitLbl = qtyUnitLabel(l.taxUnit);
+                  return (
                   <tr key={l.variantId}>
                     <td>
                       <div className="gv-rsv-item-name">{l.productName}</div>
                       <span className="gv-rsv-item-sku">
                         SKU {l.sku}
                         {l.barcode ? ` · EAN ${l.barcode}` : ''}
+                        {fractional ? ` · ${unitLbl}` : ''}
                       </span>
                     </td>
                     <td>
@@ -585,9 +613,10 @@ export function SalesReservationsPage() {
                         </button>
                         <NumericInput
                           aria-label={`Quantidade de ${l.productName}`}
-                          min={0.001}
+                          integer={!fractional}
+                          min={fractional ? 0.001 : 1}
                           blurEmpty={1}
-                          value={l.quantity}
+                          value={fractional ? l.quantity : Math.round(l.quantity)}
                           onChange={(_raw, n) => {
                             if (n != null) setLineQty(l.variantId, n);
                           }}
@@ -604,7 +633,10 @@ export function SalesReservationsPage() {
                     </td>
                     <td>
                       <div className="gv-rsv-money">{formatBRL(l.quantity * l.unitPrice)}</div>
-                      <span className="gv-rsv-unit">{formatBRL(l.unitPrice)} un</span>
+                      <span className="gv-rsv-unit">
+                        {formatBRL(l.unitPrice)}
+                        {fractional ? ` / ${unitLbl}` : ' un'}
+                      </span>
                     </td>
                     <td>
                       <button
@@ -623,7 +655,8 @@ export function SalesReservationsPage() {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}

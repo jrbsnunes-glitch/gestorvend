@@ -8,6 +8,7 @@ import { canPrintHere } from '../../lib/print-station';
 import { calcRestaurantFees, type RestaurantFeesCompany } from '../../lib/restaurant-fees';
 import { formatServiceTabLabel } from '../../lib/service-tab';
 import { parseBarcodeWeight } from '../../lib/pos-scale';
+import { isFractionalSaleUnit } from '../../lib/sale-qty-unit';
 import { usePosScale } from '../../lib/use-pos-scale';
 import type { ScaleMode } from '../../lib/pos-scale';
 import './restaurant.css';
@@ -67,11 +68,10 @@ type CompanyScale = RestaurantFeesCompany & {
   restaurantModuleEnabled?: boolean;
 };
 
-const FRACTIONAL = new Set(['KG', 'G', 'GR', 'L', 'LT', 'ML']);
 const DEFAULT_CUSTOMER_NAME = 'Cliente Padrão';
 
 function isFractional(taxUnit?: string | null) {
-  return FRACTIONAL.has(String(taxUnit ?? '').trim().toUpperCase());
+  return isFractionalSaleUnit(taxUnit);
 }
 
 function money(n: number) {
