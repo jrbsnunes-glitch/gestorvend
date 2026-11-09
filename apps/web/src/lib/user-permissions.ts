@@ -1,5 +1,5 @@
 /** Códigos alinhados ao enum `UserPermissionCode` da API. */
-export type UserPermissionCode = 'SALE_DISCOUNT' | 'SALE_CANCEL' | 'FISCAL_DOC_CANCEL';
+export type UserPermissionCode = 'SALE_DISCOUNT' | 'SALE_CANCEL' | 'FISCAL_DOC_CANCEL' | 'SALE_RETURN';
 
 export type UserPermissionRow = {
   code: UserPermissionCode;

@@ -501,6 +501,10 @@ export function buildNfceInfNFeXml(opts: {
   nNF: number;
   /** 1=normal; 9=contingência off-line (NFC-e). */
   tpEmis?: number;
+  /** 1=normal, 4=devolução. */
+  finNFe?: 1 | 4;
+  /** Chave da NF-e/NFC-e referenciada na devolução. */
+  refAccessKey?: string | null;
   dhContIso?: string | null;
   xJustCont?: string | null;
   /** modFrete SEFAZ (0 emitente, 1 destinatário, 9 sem frete…). */
@@ -656,28 +660,35 @@ export function buildNfceInfNFeXml(opts: {
       ? `<dhCont>${opts.dhContIso}</dhCont><xJust>${xmlEscape(opts.xJustCont.slice(0, 256))}</xJust>`
       : '';
 
+  const finNFe = opts.finNFe === 4 ? 4 : 1;
+  const tpNF = finNFe === 4 ? 0 : 1;
+  const refKey = (opts.refAccessKey ?? '').replace(/\D/g, '');
+  const refXml =
+    finNFe === 4 && refKey.length === 44 ? `<NFref><refNFe>${refKey}</refNFe></NFref>` : '';
+
   const infNFe =
     `<infNFe Id="${infNFeId}" versao="4.00">` +
     `<ide>` +
     `<cUF>${onlyDigits(ch.slice(0, 2), 2)}</cUF>` +
     `<cNF>${cNF8}</cNF>` +
-    `<natOp>${xmlEscape(sanitizeTString(opts.natOp ?? 'VENDA', 60) || 'VENDA')}</natOp>` +
+    `<natOp>${xmlEscape(sanitizeTString(opts.natOp ?? (finNFe === 4 ? 'DEVOLUCAO DE MERCADORIA' : 'VENDA'), 60) || 'VENDA')}</natOp>` +
     `<mod>${modelo}</mod>` +
     `<serie>${opts.serie}</serie>` +
     `<nNF>${opts.nNF}</nNF>` +
     `<dhEmi>${opts.dhEmiIso}</dhEmi>` +
-    `<tpNF>1</tpNF>` +
+    `<tpNF>${tpNF}</tpNF>` +
     `<idDest>${[1, 2, 3].includes(Number(opts.idDest)) ? Number(opts.idDest) : 1}</idDest>` +
     `<cMunFG>${onlyDigits(opts.codMunIbgeFg, 7).padStart(7, '0')}</cMunFG>` +
     `<tpImp>${tpImp}</tpImp>` +
     `<tpEmis>${tpEmis}</tpEmis>` +
     `<cDV>${ch.slice(43)}</cDV>` +
     `<tpAmb>${opts.tpAmb}</tpAmb>` +
-    `<finNFe>1</finNFe>` +
-    `<indFinal>1</indFinal>` +
-    `<indPres>1</indPres>` +
+    `<finNFe>${finNFe}</finNFe>` +
+    `<indFinal>${finNFe === 4 ? 0 : 1}</indFinal>` +
+    `<indPres>${finNFe === 4 ? 0 : 1}</indPres>` +
     `<procEmi>0</procEmi>` +
     `<verProc>GestorVend-1.0</verProc>` +
+    refXml +
     contXml +
     `</ide>` +
     `<emit>` +

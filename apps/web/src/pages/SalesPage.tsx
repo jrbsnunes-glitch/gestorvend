@@ -12,6 +12,7 @@ import { CompanyLogo } from '../components/CompanyLogo';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { DeliveryPendingBanner } from '../components/DeliveryPendingBanner';
 import { PermissionPasswordModal } from '../components/PermissionPasswordModal';
+import { SaleReturnModal } from '../components/SaleReturnModal';
 import { NumericInput } from '../components/NumericInput';
 import { PdvProceduresOverlay } from '../components/PdvProceduresOverlay';
 import { api } from '../lib/api';
@@ -1297,6 +1298,7 @@ function PosScreen({
   const [customerSearch, setCustomerSearch] = useState('');
   const [customerSearchIdx, setCustomerSearchIdx] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [returnSale, setReturnSale] = useState<{ id: string; number: number } | null>(null);
   const [draftsOpen, setDraftsOpen] = useState(false);
   const [exitDraftOpen, setExitDraftOpen] = useState(false);
   const [activePdvDraftId, setActivePdvDraftId] = useState<string | null>(null);
@@ -4290,6 +4292,13 @@ function PosScreen({
                               )}
                               <button
                                 type="button"
+                                className="pos-btn pos-btn-ghost"
+                                onClick={() => setReturnSale({ id: s.id, number: s.number })}
+                              >
+                                Devolver / trocar
+                              </button>
+                              <button
+                                type="button"
                                 className="pos-btn pos-btn-ghost pos-history-action-danger"
                                 disabled={cancelSale.isPending}
                                 onClick={() => {
@@ -4593,6 +4602,14 @@ function PosScreen({
             </FormModalBackdrop>
           );
         })()}
+
+      {returnSale && (
+        <SaleReturnModal
+          saleId={returnSale.id}
+          saleNumber={returnSale.number}
+          onClose={() => setReturnSale(null)}
+        />
+      )}
 
       <PermissionPasswordModal
         open={permModal != null}

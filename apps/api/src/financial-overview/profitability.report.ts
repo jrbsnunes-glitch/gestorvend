@@ -6,6 +6,7 @@ import {
   FiscalDocumentStatus,
   PaymentMethod,
   PrismaClient,
+  SaleSource,
   SaleStatus,
 } from '../generated/tenant-client';
 import {
@@ -107,7 +108,7 @@ async function computeCogsInPeriod(
   const items = await db.saleItem.findMany({
     where: {
       sale: {
-        status: SaleStatus.COMPLETED,
+        status: SaleStatus.COMPLETED, source: { not: SaleSource.RETURN },
         createdAt: { gte: from, lte: to },
       },
     },
@@ -168,26 +169,26 @@ export async function buildProfitabilityReport(
     openReceivables,
   ] = await Promise.all([
     db.sale.aggregate({
-      where: { status: SaleStatus.COMPLETED, createdAt: { gte: from, lte: to } },
+      where: { status: SaleStatus.COMPLETED, source: { not: SaleSource.RETURN }, createdAt: { gte: from, lte: to } },
       _sum: { total: true },
       _count: { _all: true },
     }),
     db.salePayment.aggregate({
       where: {
         method: { notIn: [PaymentMethod.CREDIT, PaymentMethod.REQUISITION] },
-        sale: { status: SaleStatus.COMPLETED, createdAt: { gte: from, lte: to } },
+        sale: { status: SaleStatus.COMPLETED, source: { not: SaleSource.RETURN }, createdAt: { gte: from, lte: to } },
       },
       _sum: { amount: true },
     }),
     db.salePayment.aggregate({
       where: {
         method: PaymentMethod.REQUISITION,
-        sale: { status: SaleStatus.COMPLETED, createdAt: { gte: from, lte: to } },
+        sale: { status: SaleStatus.COMPLETED, source: { not: SaleSource.RETURN }, createdAt: { gte: from, lte: to } },
       },
       _sum: { amount: true },
     }),
     db.sale.findMany({
-      where: { status: SaleStatus.COMPLETED, createdAt: { gte: from, lte: to } },
+      where: { status: SaleStatus.COMPLETED, source: { not: SaleSource.RETURN }, createdAt: { gte: from, lte: to } },
       select: {
         total: true,
         fiscalDocument: { select: { kind: true, status: true } },
@@ -207,7 +208,7 @@ export async function buildProfitabilityReport(
       },
     }),
     db.sale.findMany({
-      where: { status: SaleStatus.COMPLETED, createdAt: { gte: from, lte: to } },
+      where: { status: SaleStatus.COMPLETED, source: { not: SaleSource.RETURN }, createdAt: { gte: from, lte: to } },
       select: {
         total: true,
         createdAt: true,

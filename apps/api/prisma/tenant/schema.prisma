@@ -381,6 +381,7 @@ enum UserPermissionCode {
   SALE_DISCOUNT
   SALE_CANCEL
   FISCAL_DOC_CANCEL
+  SALE_RETURN
 }
 
 model UserPermission {
@@ -827,6 +828,7 @@ enum StockMovementSource {
   SERVICE_ORDER
   MANUFACTURING
   OTHER
+  RETURN
 }
 
 enum GoodsReceiptMode {
@@ -1078,6 +1080,8 @@ enum SaleSource {
   SERVICE_ORDER
   /// Pedido delivery / retirada pelo celular.
   DELIVERY
+  /// NF-e de devolução (não entra no faturamento nem no caixa).
+  RETURN
 }
 
 model Sale {
@@ -1144,6 +1148,9 @@ model Sale {
   manufacturingDeposit   ManufacturingProject? @relation("ManufacturingDepositSale")
   activeDraftForTerminal PdvTerminal?  @relation("PdvTerminalActiveDraft")
   saleReservation        SaleReservation?
+  returns                SaleReturn[] @relation("ReturnedSale")
+  replacementOf          SaleReturn?  @relation("ReplacementSale")
+  returnInvoiceOf        SaleReturn?  @relation("ReturnInvoiceSale")
 
   @@index([operationNatureId])
   @@index([cashSessionId])
@@ -1172,6 +1179,10 @@ model FiscalDocument {
   xmlSha256        String?              @db.VarChar(64)
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
+  /// 1 = normal, 4 = devolução.
+  finNFe           Int                  @default(1)
+  /// Chave da nota original quando finNFe = 4.
+  refAccessKey     String?              @db.VarChar(44)
   correctionLetters FiscalCorrectionLetter[]
 }
 
@@ -1198,6 +1209,70 @@ model SaleItem {
   unitPrice   Decimal        @db.Decimal(14, 4)
   discount    Decimal        @default(0) @db.Decimal(14, 2)
   totalLine   Decimal        @db.Decimal(14, 2)
+  returnLines SaleReturnItem[]
+}
+
+enum SaleReturnKind {
+  RETURN
+  EXCHANGE
+}
+
+enum SaleReturnRefundMethod {
+  CASH
+  CUSTOMER_CREDIT
+}
+
+enum SaleReturnFiscalAction {
+  NONE
+  CANCELLED_ORIGINAL
+  RETURN_NFE_QUEUED
+  CANCEL_FAILED
+}
+
+model SaleReturn {
+  id                  String                 @id @default(uuid())
+  number              Int                    @unique @default(autoincrement())
+  saleId              String
+  sale                Sale                   @relation("ReturnedSale", fields: [saleId], references: [id])
+  kind                SaleReturnKind
+  refundMethod        SaleReturnRefundMethod
+  /// Valor dos itens devolvidos.
+  amount              Decimal                @db.Decimal(14, 2)
+  /// Parte abatida numa venda de troca.
+  creditApplied       Decimal                @default(0) @db.Decimal(14, 2)
+  /// Dinheiro efetivamente devolvido no caixa atual.
+  cashRefundAmount    Decimal                @default(0) @db.Decimal(14, 2)
+  /// Saldo de crediário / crédito de cliente reposto.
+  creditRestoredAmount Decimal               @default(0) @db.Decimal(14, 2)
+  /// Quanto foi abatido de títulos de requisição em aberto.
+  requisitionReduced  Decimal                @default(0) @db.Decimal(14, 2)
+  notes               String?
+  fiscalAction        SaleReturnFiscalAction @default(NONE)
+  fiscalMessage       String?                @db.VarChar(500)
+  userId              String?
+  cashSessionId       String?
+  replacementSaleId   String?                @unique
+  replacementSale     Sale?                  @relation("ReplacementSale", fields: [replacementSaleId], references: [id])
+  returnInvoiceSaleId String?                @unique
+  returnInvoiceSale   Sale?                  @relation("ReturnInvoiceSale", fields: [returnInvoiceSaleId], references: [id])
+  createdAt           DateTime               @default(now())
+  items               SaleReturnItem[]
+
+  @@index([saleId])
+}
+
+model SaleReturnItem {
+  id           String     @id @default(uuid())
+  saleReturnId String
+  saleReturn   SaleReturn @relation(fields: [saleReturnId], references: [id], onDelete: Cascade)
+  saleItemId   String
+  saleItem     SaleItem   @relation(fields: [saleItemId], references: [id])
+  quantity     Decimal    @db.Decimal(18, 4)
+  unitPrice    Decimal    @db.Decimal(14, 4)
+  totalLine    Decimal    @db.Decimal(14, 2)
+
+  @@index([saleReturnId])
+  @@index([saleItemId])
 }
 
 /// Cadastro de formas de pagamento (PDV + cartões + conferência de caixa).

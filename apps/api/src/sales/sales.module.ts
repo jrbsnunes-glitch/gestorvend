@@ -5,11 +5,12 @@ import { UsersModule } from '../users/users.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { SalesController } from './sales.controller';
 import { SalesService } from './sales.service';
+import { SaleReturnsService } from './sale-returns.service';
 
 @Module({
   imports: [UsersModule, CompanyModule, CatalogModule, PaymentsModule],
   controllers: [SalesController],
-  providers: [SalesService],
-  exports: [SalesService],
+  providers: [SalesService, SaleReturnsService],
+  exports: [SalesService, SaleReturnsService],
 })
 export class SalesModule {}

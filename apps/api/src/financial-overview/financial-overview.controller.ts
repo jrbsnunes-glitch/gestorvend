@@ -10,6 +10,7 @@ import {
   CashMovementType,
   CreditKind,
   PaymentMethod,
+  SaleSource,
   SaleStatus,
 } from '../generated/tenant-client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
@@ -90,7 +91,7 @@ export class FinancialOverviewController {
     const floor = startOfDay(new Date(ACCUMULATED_FLOOR_YEAR, ACCUMULATED_FLOOR_MONTH, 1));
     const [firstSale, firstMov, firstPay, firstRec] = await Promise.all([
       db.sale.findFirst({
-        where: { status: SaleStatus.COMPLETED },
+        where: { status: SaleStatus.COMPLETED, source: { not: SaleSource.RETURN } },
         orderBy: { createdAt: 'asc' },
         select: { createdAt: true },
       }),
@@ -349,7 +350,7 @@ export class FinancialOverviewController {
         by: ['method'],
         where: {
           ...salePaymentBaseWhere,
-          sale: { status: SaleStatus.COMPLETED, createdAt: { lt: from } },
+          sale: { status: SaleStatus.COMPLETED, source: { not: SaleSource.RETURN }, createdAt: { lt: from } },
         },
         _sum: { amount: true },
       }),
@@ -359,6 +360,7 @@ export class FinancialOverviewController {
           ...salePaymentBaseWhere,
           sale: {
             status: SaleStatus.COMPLETED,
+          source: { not: SaleSource.RETURN },
             createdAt: { gte: from, lte: to },
           },
         },
@@ -543,6 +545,7 @@ export class FinancialOverviewController {
       db.sale.aggregate({
         where: {
           status: SaleStatus.COMPLETED,
+          source: { not: SaleSource.RETURN },
           createdAt: { gte: from, lte: to },
         },
         _sum: { total: true },
@@ -611,7 +614,7 @@ export class FinancialOverviewController {
       where: {
         creditKind: CreditKind.REQUISITION,
         status: { in: [BillStatus.OPEN, BillStatus.OVERDUE] },
-        sale: { status: SaleStatus.COMPLETED, createdAt: { gte: from, lte: to } },
+        sale: { status: SaleStatus.COMPLETED, source: { not: SaleSource.RETURN }, createdAt: { gte: from, lte: to } },
       },
       _sum: { amountRemaining: true },
     });
@@ -632,6 +635,7 @@ export class FinancialOverviewController {
             method: { not: PaymentMethod.REQUISITION },
             sale: {
               status: SaleStatus.COMPLETED,
+          source: { not: SaleSource.RETURN },
               createdAt: { gte: from, lte: to },
             },
           },
@@ -642,6 +646,7 @@ export class FinancialOverviewController {
             method: PaymentMethod.REQUISITION,
             sale: {
               status: SaleStatus.COMPLETED,
+          source: { not: SaleSource.RETURN },
               createdAt: { gte: from, lte: to },
             },
           },
@@ -662,7 +667,7 @@ export class FinancialOverviewController {
       db.salePayment.findMany({
         where: {
           method: { notIn: [PaymentMethod.CREDIT, PaymentMethod.REQUISITION] },
-          sale: { status: SaleStatus.COMPLETED, createdAt: { gte: from, lte: to } },
+          sale: { status: SaleStatus.COMPLETED, source: { not: SaleSource.RETURN }, createdAt: { gte: from, lte: to } },
         },
         select: {
           id: true,

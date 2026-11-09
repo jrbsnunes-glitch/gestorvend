@@ -22,6 +22,12 @@ export const USER_PERMISSION_CATALOG: PermissionMeta[] = [
     label: 'Cancelamento de nota fiscal',
     description: 'Permite cancelar documento fiscal vinculado à venda (exige senha de autorização).',
   },
+  {
+    code: UserPermissionCode.SALE_RETURN,
+    label: 'Devolução e troca',
+    description:
+      'Permite devolver ou trocar itens de uma venda concluída, ajustando estoque, caixa e títulos.',
+  },
 ];
 
 export const ALL_PERMISSION_CODES = USER_PERMISSION_CATALOG.map((p) => p.code);

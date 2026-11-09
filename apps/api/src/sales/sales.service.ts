@@ -36,7 +36,7 @@ import { readNfceAuthorizedXml, resolveNfceCouponPrint } from '../fiscal/issuer/
 
 type TenantTx = Prisma.TransactionClient;
 
-async function getDefaultStockLocation(db: {
+export async function getDefaultStockLocation(db: {
   stockLocation: {
     findFirst: (args: {
       where: { isDefault: boolean };
@@ -53,7 +53,7 @@ async function getDefaultStockLocation(db: {
   });
 }
 
-async function resolveSaleStockTarget(
+export async function resolveSaleStockTarget(
   tx: TenantTx,
   soldVariantId: string,
   soldQty: number,
@@ -1079,6 +1079,10 @@ export class SalesService {
         fiscalDocument: true,
         items: { include: { variant: { include: { product: true } } } },
         payments: { include: { paymentForm: { select: { name: true } } } },
+        returns: {
+          orderBy: { createdAt: 'asc' },
+          include: { items: true },
+        },
       },
     });
     if (!sale) {
@@ -1154,7 +1158,7 @@ export class SalesService {
 
   async list(tenantSlug: string, from?: string, to?: string, customerId?: string) {
     const db = await this.tenantPrisma.getClient(tenantSlug);
-    const where: Prisma.SaleWhereInput = {};
+    const where: Prisma.SaleWhereInput = { source: { not: SaleSource.RETURN } };
     if (from || to) {
       where.createdAt = {};
       if (from) where.createdAt.gte = new Date(from);
@@ -1176,6 +1180,18 @@ export class SalesService {
         fiscalDocument: true,
         items: { include: { variant: { include: { product: true } } } },
         payments: true,
+        returns: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            number: true,
+            kind: true,
+            amount: true,
+            fiscalAction: true,
+            fiscalMessage: true,
+            createdAt: true,
+          },
+        },
       },
     });
   }
@@ -1440,6 +1456,13 @@ export class SalesService {
       });
       if (sale.status === SaleStatus.CANCELLED) {
         throw new BadRequestException('Venda já cancelada');
+      }
+
+      const fiscal = await tx.fiscalDocument.findUnique({ where: { saleId } });
+      if (fiscal?.status === FiscalDocumentStatus.AUTHORIZED) {
+        throw new BadRequestException(
+          'Esta venda tem nota autorizada. Use Devolver / trocar: a nota só pode ser cancelada na devolução total, dentro do prazo, ou substituída por NF-e de devolução.',
+        );
       }
 
       const receivables = await tx.accountReceivable.findMany({

@@ -63,6 +63,7 @@ const TYPE_LABEL: Record<string, string> = {
 const SOURCE_LABEL: Record<string, string> = {
   GOODS_RECEIPT: 'Entrada NF',
   SALE: 'Venda',
+  RETURN: 'Devolução',
   MANUAL_OUT: 'Saída manual',
   ADJUSTMENT: 'Ajuste',
   OTHER: 'Outros',

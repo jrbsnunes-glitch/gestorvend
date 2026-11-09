@@ -31,6 +31,7 @@ function sourceLabel(source: string): string {
   const map: Record<string, string> = {
     GOODS_RECEIPT: 'Entrada / compra (NF)',
     SALE: 'Venda (PDV)',
+    RETURN: 'Devolução de venda',
     MANUAL_OUT: 'Saída manual',
     ADJUSTMENT: 'Ajuste de inventário',
     OTHER: 'Outras',

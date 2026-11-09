@@ -604,9 +604,14 @@ export class FiscalEmissionProcessorService {
     const itemsXml: NfceItemInput[] = sale.items.map((it, idx) => {
       const p = it.variant.product;
       const fs = p.fiscalSituation;
-      const cfopRaw = isInterstate
-        ? natureCfop || fs?.cfopInterstate || '6102'
-        : natureCfop || fs?.cfopInternal || '5102';
+      const cfopRaw =
+        doc.finNFe === 4
+          ? isInterstate
+            ? '2202'
+            : '1202'
+          : isInterstate
+            ? natureCfop || fs?.cfopInterstate || '6102'
+            : natureCfop || fs?.cfopInternal || '5102';
       const cfop = cfopRaw.replace(/\D/g, '').padStart(4, '0').slice(-4);
       const ncm = (p.ncm ?? '00000000').replace(/\D/g, '').padStart(8, '0').slice(-8);
       const csosnRaw = (fs?.csosn ?? '102').replace(/\D/g, '');
@@ -655,17 +660,20 @@ export class FiscalEmissionProcessorService {
       };
     });
 
-    const payRows = sale.payments
-      .filter((p) => p.method !== PaymentMethod.EXPENSE)
-      .map((p) => {
-        const row = mapSalePaymentToNfcePag({
-          method: String(p.method),
-          amount: p.amount,
-          cardOperation: p.cardOperation,
-          paymentFormName: p.paymentForm?.name ?? null,
-        });
-        return { tPag: row.tPag, vPag: row.vPag, xPag: row.xPag, indPag: row.indPag };
-      });
+    const payRows =
+      doc.finNFe === 4
+        ? [{ tPag: '90', vPag: Number(sale.total), indPag: 0 as const }]
+        : sale.payments
+            .filter((p) => p.method !== PaymentMethod.EXPENSE)
+            .map((p) => {
+              const row = mapSalePaymentToNfcePag({
+                method: String(p.method),
+                amount: p.amount,
+                cardOperation: p.cardOperation,
+                paymentFormName: p.paymentForm?.name ?? null,
+              });
+              return { tPag: row.tPag, vPag: row.vPag, xPag: row.xPag, indPag: row.indPag };
+            });
 
     const vNF = Number(sale.total);
     const vProd = itemsXml.reduce((s, x) => s + x.vProd, 0);
@@ -711,7 +719,10 @@ export class FiscalEmissionProcessorService {
     const { xmlNfeEnvelope, infNFeId } = buildNfceInfNFeXml({
       chave44,
       cNF,
-      natOp: sale.operationNature?.description?.trim() || 'VENDA',
+      natOp:
+        doc.finNFe === 4
+          ? 'DEVOLUCAO DE MERCADORIA'
+          : sale.operationNature?.description?.trim() || 'VENDA',
       tpAmb,
       dhEmiIso,
       crt: settings.crt,
@@ -720,6 +731,8 @@ export class FiscalEmissionProcessorService {
       serie,
       nNF: nextNumber,
       tpEmis,
+      finNFe: doc.finNFe === 4 ? 4 : 1,
+      refAccessKey: doc.refAccessKey,
       dhContIso: tpEmis !== 1 ? dhEmiIso : null,
       xJustCont:
         tpEmis !== 1

@@ -1,7 +1,7 @@
 /** Rótulos de movimento alinhados à API `/reports/product-movements`. */
 export function movementLabel(type: string, source: string): string {
   if (type === 'ADJUST') return 'Ajuste de inventário';
-  if (type === 'IN' && source === 'GOODS_RECEIPT') return 'Entrada / NF compra';
+  if (type === 'IN' && source === 'RETURN') return 'Devolução de venda';
   if (type === 'IN' && source === 'TRANSFER') return 'Transferência (entrada)';
   if (type === 'OUT' && source === 'SALE') return 'Venda';
   if (type === 'OUT' && source === 'MANUAL_OUT') return 'Saída manual';

@@ -18,6 +18,7 @@ import {
 
   PaymentMethod,
 
+  SaleSource,
   SaleStatus,
   StockLocationKind,
 
@@ -156,6 +157,7 @@ export class DashboardController {
         where: {
 
           status: SaleStatus.COMPLETED,
+          source: { not: SaleSource.RETURN },
 
           createdAt: { gte: todayStart, lte: todayEnd },
 
@@ -172,6 +174,7 @@ export class DashboardController {
         where: {
 
           status: SaleStatus.COMPLETED,
+          source: { not: SaleSource.RETURN },
 
           createdAt: { gte: monthStart, lte: todayEnd },
 
@@ -192,6 +195,7 @@ export class DashboardController {
           sale: {
 
             status: SaleStatus.COMPLETED,
+          source: { not: SaleSource.RETURN },
 
             createdAt: { gte: todayStart, lte: todayEnd },
 
@@ -212,6 +216,7 @@ export class DashboardController {
           sale: {
 
             status: SaleStatus.COMPLETED,
+          source: { not: SaleSource.RETURN },
 
             createdAt: { gte: todayStart, lte: todayEnd },
 
@@ -232,6 +237,7 @@ export class DashboardController {
           sale: {
 
             status: SaleStatus.COMPLETED,
+          source: { not: SaleSource.RETURN },
 
             createdAt: { gte: todayStart, lte: todayEnd },
 
@@ -252,6 +258,7 @@ export class DashboardController {
           sale: {
 
             status: SaleStatus.COMPLETED,
+          source: { not: SaleSource.RETURN },
 
             createdAt: { gte: monthStart, lte: todayEnd },
 
@@ -272,6 +279,7 @@ export class DashboardController {
           sale: {
 
             status: SaleStatus.COMPLETED,
+          source: { not: SaleSource.RETURN },
 
             createdAt: { gte: monthStart, lte: todayEnd },
 
@@ -292,6 +300,7 @@ export class DashboardController {
           sale: {
 
             status: SaleStatus.COMPLETED,
+          source: { not: SaleSource.RETURN },
 
             createdAt: { gte: monthStart, lte: todayEnd },
 
@@ -320,6 +329,7 @@ export class DashboardController {
           sale: {
 
             status: SaleStatus.COMPLETED,
+          source: { not: SaleSource.RETURN },
 
             createdAt: { gte: last30Start, lte: todayEnd },
 

@@ -3,6 +3,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { UsersModule } from '../users/users.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { SalesModule } from '../sales/sales.module';
+import { SaleReturnsController } from '../sales/sale-returns.controller';
 import { FiscalDocumentsController } from './fiscal-documents.controller';
 import { FiscalDocumentsService } from './fiscal-documents.service';
 import { FiscalEmissionProcessorService } from './fiscal-emission.processor';
@@ -25,6 +26,7 @@ import { OutboundNfeStorage } from './issuer/outbound-nfe.storage';
     FiscalDocumentsController,
     FiscalIssuerSettingsController,
     InboundNfeController,
+    SaleReturnsController,
   ],
   providers: [
     FiscalDocumentsService,

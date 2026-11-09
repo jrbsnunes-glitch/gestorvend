@@ -22,6 +22,7 @@ import {
   CashSessionStatus,
   PaymentMethod,
   Prisma,
+  SaleSource,
   SaleStatus,
   type PrismaClient,
 } from '../generated/tenant-client';
@@ -501,6 +502,7 @@ export class CashController {
       }
       batchSales = await db.sale.findMany({
         where: {
+          source: { not: SaleSource.RETURN },
           OR: [
             { cashSessionId: { in: sessionIds } },
             {
@@ -725,6 +727,7 @@ export class CashController {
 
         const sales = await db.sale.findMany({
           where: {
+            source: { not: SaleSource.RETURN },
             OR: [
               {
                 cashSessionId: s.id,
@@ -1122,7 +1125,7 @@ export class CashController {
       throw new BadRequestException('Datas inválidas em "from"/"to".');
     }
 
-    const saleWhere: Record<string, unknown> = {};
+    const saleWhere: Record<string, unknown> = { source: { not: 'RETURN' } };
     // Status — por padrão, apenas vendas concluídas; aceita ALL para incluir canceladas.
     if (!status || status === 'COMPLETED') saleWhere.status = SaleStatus.COMPLETED;
     else if (status === 'CANCELLED') saleWhere.status = SaleStatus.CANCELLED;
@@ -1389,6 +1392,7 @@ export class CashController {
     const upper = session.closedAt ?? new Date();
     const sales = await db.sale.findMany({
       where: {
+        source: { not: SaleSource.RETURN },
         OR: [
           { cashSessionId: session.id },
           {
