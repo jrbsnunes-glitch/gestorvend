@@ -18,6 +18,7 @@ import {
   type SupplierLinkDraft,
 } from '../components/ProductSupplierLinksSection';
 import { ProductReportsPanel } from '../components/ProductReportsPanel';
+import { ProductQuickStockPanel, postQuickStockInventory } from '../components/ProductQuickStockPanel';
 import { RecordViewModal, type RecordViewSection } from '../components/RecordViewModal';
 import { ProductSearchModal, type ProductSearchRow as SearchPickRow } from '../components/ProductSearchModal';
 import { StockLocationBalancesPopover } from '../components/StockLocationBalancesPopover';
@@ -42,13 +43,14 @@ function isServiceTaxUnit(taxUnit: string | null | undefined): boolean {
   return u === 'SERV' || u === 'SERVICO' || u === 'SERVIÇO';
 }
 
-type ProductFormTab = 'identificacao' | 'imagem' | 'fiscal' | 'fornecedores';
+type ProductFormTab = 'identificacao' | 'imagem' | 'fiscal' | 'fornecedores' | 'estoque';
 
 const PRODUCT_FORM_TABS: Array<{ id: ProductFormTab; label: string }> = [
   { id: 'identificacao', label: 'Identificação' },
   { id: 'fiscal', label: 'Fiscal e composto' },
   { id: 'fornecedores', label: 'Fornecedores' },
   { id: 'imagem', label: 'Imagem' },
+  { id: 'estoque', label: 'Estoque Rápido' },
 ];
 
 function ProductFormTabNav({
@@ -390,6 +392,10 @@ export function ProductsPage() {
   const [viewOpen, setViewOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [productFormTab, setProductFormTab] = useState<ProductFormTab>('identificacao');
+  const [quickStockLocationId, setQuickStockLocationId] = useState('');
+  const [quickStockQty, setQuickStockQty] = useState('');
+  const [quickStockNotes, setQuickStockNotes] = useState('');
+  const [quickStockVariantId, setQuickStockVariantId] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [searchActionErr, setSearchActionErr] = useState<string | null>(null);
@@ -643,6 +649,41 @@ export function ProductsPage() {
     );
   }
 
+  function resetQuickStock() {
+    setQuickStockLocationId('');
+    setQuickStockQty('');
+    setQuickStockNotes('');
+    setQuickStockVariantId('');
+  }
+
+  function quickStockBlockedReason(): string | null {
+    if (isServiceTaxUnit(taxUnit)) {
+      return 'Serviço não controla estoque. O inventário rápido não se aplica.';
+    }
+    if (
+      normalizeProductConversion(conversion.trim()) &&
+      resolveConversionFactor(conversion, packItemQty) > 1
+    ) {
+      return 'Produto composto. O inventário é do item unitário vinculado, não da caixa ou do pack.';
+    }
+    return null;
+  }
+
+  function readQuickStock(): { locationId: string; countedQty: number; notes: string } | null {
+    const loc = quickStockLocationId.trim();
+    const qtyRaw = quickStockQty.trim();
+    const notes = quickStockNotes.trim();
+    if (!qtyRaw && !notes) return null;
+    const blocked = quickStockBlockedReason();
+    if (blocked) throw new Error(blocked);
+    if (!loc) throw new Error('Estoque rápido: selecione o local de estoque.');
+    const countedQty = Number(qtyRaw.replace(',', '.'));
+    if (!qtyRaw || !Number.isFinite(countedQty) || countedQty < 0) {
+      throw new Error('Estoque rápido: informe a quantidade contada.');
+    }
+    return { locationId: loc, countedQty, notes };
+  }
+
   function resetCreateForm() {
     setName('');
     setDescription('');
@@ -671,6 +712,7 @@ export function ProductsPage() {
     setAvailableForDelivery(false);
     setErr(null);
     setProductFormTab('identificacao');
+    resetQuickStock();
   }
 
   function loadEditFromProduct(p: Product) {
@@ -717,12 +759,16 @@ export function ProductsPage() {
     setVariantPrices(vp);
     setSupplierLinks([]);
     setErr(null);
+    resetQuickStock();
+    const firstVariant = p.variants[0];
+    if (firstVariant) setQuickStockVariantId(firstVariant.id);
   }
 
   const create = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
+      const stock = readQuickStock();
       const service = isServiceTaxUnit(taxUnit);
-      return api<Product>('/products', {
+      const product = await api<Product>('/products', {
         method: 'POST',
         json: {
           name,
@@ -769,10 +815,33 @@ export function ProductsPage() {
             : {}),
         },
       });
+      let inventoryWarning: string | null = null;
+      const variantId = product.variants[0]?.id;
+      if (stock && variantId) {
+        try {
+          await postQuickStockInventory({
+            variantId,
+            locationId: stock.locationId,
+            countedQty: stock.countedQty,
+            notes: stock.notes,
+            productName: product.name,
+          });
+        } catch (err) {
+          inventoryWarning =
+            err instanceof Error
+              ? `Produto cadastrado. O inventário não foi lançado: ${err.message}`
+              : 'Produto cadastrado. O inventário não foi lançado.';
+        }
+      } else if (stock && !variantId) {
+        inventoryWarning = 'Produto cadastrado, mas a variação não voltou para lançar o inventário.';
+      }
+      return { inventoryWarning };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: ['stock-inventories'] });
       resetCreateForm();
+      if (result.inventoryWarning) setErr(result.inventoryWarning);
       requestAnimationFrame(() => document.getElementById('p-name')?.focus());
     },
     onError: (e: Error) => setErr(e.message),
@@ -780,6 +849,7 @@ export function ProductsPage() {
 
   const update = useMutation({
     mutationFn: async (payload: { id: string; product: Product }) => {
+      const stock = readQuickStock();
       const service = isServiceTaxUnit(taxUnit);
       const product = await api<Product>(`/products/${payload.id}`, {
         method: 'PATCH',
@@ -834,10 +904,23 @@ export function ProductsPage() {
         method: 'PUT',
         json: { links: linksToPayload(supplierLinks) },
       });
+      if (stock) {
+        const variantId =
+          quickStockVariantId || payload.product.variants[0]?.id || product.variants[0]?.id;
+        if (!variantId) throw new Error('Estoque rápido: variação não encontrada.');
+        await postQuickStockInventory({
+          variantId,
+          locationId: stock.locationId,
+          countedQty: stock.countedQty,
+          notes: stock.notes,
+          productName: name.trim() || product.name,
+        });
+      }
       return product;
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: ['stock-inventories'] });
       qc.invalidateQueries({ queryKey: ['products', vars.id, 'supplier-links'] });
       qc.invalidateQueries({ queryKey: ['products', vars.id, 'price-history'] });
       setEditOpen(false);
@@ -1871,6 +1954,18 @@ export function ProductsPage() {
                   </section>
                 </div>
               )}
+              {productFormTab === 'estoque' && (
+                <ProductQuickStockPanel
+                  createMode
+                  blockedReason={quickStockBlockedReason()}
+                  locationId={quickStockLocationId}
+                  countedQty={quickStockQty}
+                  notes={quickStockNotes}
+                  onLocationId={setQuickStockLocationId}
+                  onCountedQty={setQuickStockQty}
+                  onNotes={setQuickStockNotes}
+                />
+              )}
             </div>
             </div>
             <div className="modal-actions">
@@ -2381,6 +2476,21 @@ export function ProductsPage() {
                     />
                   </section>
                 </div>
+              )}
+              {productFormTab === 'estoque' && (
+                <ProductQuickStockPanel
+                  createMode={false}
+                  blockedReason={quickStockBlockedReason()}
+                  locationId={quickStockLocationId}
+                  countedQty={quickStockQty}
+                  notes={quickStockNotes}
+                  onLocationId={setQuickStockLocationId}
+                  onCountedQty={setQuickStockQty}
+                  onNotes={setQuickStockNotes}
+                  variants={editProduct.variants.map((v) => ({ id: v.id, sku: v.sku }))}
+                  variantId={quickStockVariantId}
+                  onVariantId={setQuickStockVariantId}
+                />
               )}
             </div>
             <div className="field" style={{ marginBottom: 0 }}>
