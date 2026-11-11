@@ -28,6 +28,7 @@ type CompanyInput = {
   saleReceiptPrinterHint?: string | null;
   pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED' | string;
   pdvDraftsEnabled?: boolean;
+  pdvAllowSaleWithoutStock?: boolean;
   autoQueueNfceOnSale?: boolean;
   restaurantModuleEnabled?: boolean;
   comandaNumberingMode?: 'DYNAMIC' | 'FIXED' | string;
@@ -315,6 +316,10 @@ export class CompanyService {
 
     if (body.pdvDraftsEnabled !== undefined) {
       data.pdvDraftsEnabled = Boolean(body.pdvDraftsEnabled);
+    }
+
+    if (body.pdvAllowSaleWithoutStock !== undefined) {
+      data.pdvAllowSaleWithoutStock = Boolean(body.pdvAllowSaleWithoutStock);
     }
 
     if (body.pdvDocumentMode !== undefined) {

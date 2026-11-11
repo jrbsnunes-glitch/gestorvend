@@ -36,6 +36,8 @@ model Company {
   pdvDocumentMode PdvDocumentMode @default(NON_FISCAL_RECEIPT)
   /// Rascunhos de venda no PDV (estoque reservado 24h, como reserva de vendas).
   pdvDraftsEnabled Boolean @default(false)
+  /// Permite concluir a venda mesmo sem saldo (o estoque pode ficar negativo).
+  pdvAllowSaleWithoutStock Boolean @default(false)
   /// Enfileira NFC-e automaticamente ao concluir venda (modo fiscal planejado).
   autoQueueNfceOnSale Boolean @default(false)
   /// Após finalizar venda no PDV, dispara impressão (janela de impressão do navegador na estação do operador).

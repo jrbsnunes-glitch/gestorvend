@@ -100,6 +100,7 @@ export function SaleReservationPrintPage() {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
   const id = sp.get('id')?.trim() ?? '';
+  const isDraft = sp.get('origem') === 'rascunho';
   const isSecondCopy = sp.get('copy') === '1';
   const wantAutoPrint = sp.get('autoprint') === '1';
   const wantClose = sp.get('close') === '1';
@@ -109,10 +110,12 @@ export function SaleReservationPrintPage() {
   const thermal = isGestorVendDesktop();
 
   const q = useQuery({
-    queryKey: ['sales-reservations', id, 'receipt'],
+    queryKey: [isDraft ? 'pdv-drafts' : 'sales-reservations', id, 'receipt'],
     queryFn: () =>
       api<{ reservation: ReservationReceipt; company: Company }>(
-        `/sales-reservations/${encodeURIComponent(id)}/receipt`,
+        isDraft
+          ? `/pdv/drafts/${encodeURIComponent(id)}/receipt`
+          : `/sales-reservations/${encodeURIComponent(id)}/receipt`,
       ),
     enabled: Boolean(id),
   });
@@ -138,11 +141,11 @@ export function SaleReservationPrintPage() {
 
   useEffect(() => {
     const prev = document.title;
-    if (r) document.title = `Reserva #${r.number}`;
+    if (r) document.title = isDraft ? `Espelho rascunho #${r.number}` : `Reserva #${r.number}`;
     return () => {
       document.title = prev;
     };
-  }, [r]);
+  }, [r, isDraft]);
 
   useEffect(() => {
     if (!wantAutoPrint || !ready || printedRef.current) return;
@@ -177,7 +180,7 @@ export function SaleReservationPrintPage() {
   if (!id) {
     return (
       <div className="gv-rsv-print-page">
-        <p>Informe a reserva para impressão.</p>
+        <p>{isDraft ? 'Informe o rascunho para impressão.' : 'Informe a reserva para impressão.'}</p>
       </div>
     );
   }
@@ -209,7 +212,9 @@ export function SaleReservationPrintPage() {
         </article>
       ) : q.isError || !r || !c ? (
         <article className={'gv-rsv-doc' + (thermal ? ' sale-receipt-doc' : '')}>
-          <p className="gv-rsv-center">Não foi possível carregar a reserva.</p>
+          <p className="gv-rsv-center">
+            {isDraft ? 'Não foi possível carregar o rascunho.' : 'Não foi possível carregar a reserva.'}
+          </p>
         </article>
       ) : (
         <article
@@ -235,7 +240,9 @@ export function SaleReservationPrintPage() {
 
           <hr className="gv-rsv-line" />
 
-          <p className="gv-rsv-center gv-rsv-headline">Reserva de venda</p>
+          <p className="gv-rsv-center gv-rsv-headline">
+            {isDraft ? 'Espelho do rascunho' : 'Reserva de venda'}
+          </p>
           <p className="gv-rsv-center gv-rsv-note">Não possui validade fiscal</p>
           {isSecondCopy ? (
             <p className="gv-rsv-center">
@@ -251,7 +258,7 @@ export function SaleReservationPrintPage() {
           <table className="gv-rsv-meta">
             <tbody>
               <tr>
-                <th>Reserva</th>
+                <th>{isDraft ? 'Rascunho' : 'Reserva'}</th>
                 <td>#{r.number}</td>
               </tr>
               <tr>
@@ -311,24 +318,30 @@ export function SaleReservationPrintPage() {
             <span>{formatBRL(r.total)}</span>
           </div>
 
-          {r.payments.map((p, i) => (
-            <div key={i} className="gv-rsv-pay">
-              <span>
-                {p.paymentForm?.name || PAYMENT_FORM_KIND_LABELS[p.method] || p.method}
-                {p.installments > 1 ? ` · ${p.installments}x` : ''}
-              </span>
-              <span>{formatBRL(p.amount)}</span>
-            </div>
-          ))}
+          {isDraft ? (
+            <p className="gv-rsv-note">Pagamento ainda não lançado. Estoque dos itens permanece reservado.</p>
+          ) : (
+            r.payments.map((p, i) => (
+              <div key={i} className="gv-rsv-pay">
+                <span>
+                  {p.paymentForm?.name || PAYMENT_FORM_KIND_LABELS[p.method] || p.method}
+                  {p.installments > 1 ? ` · ${p.installments}x` : ''}
+                </span>
+                <span>{formatBRL(p.amount)}</span>
+              </div>
+            ))
+          )}
 
           {r.notes?.trim() ? <p className="gv-rsv-note">Obs.: {r.notes.trim()}</p> : null}
 
           <hr className="gv-rsv-line" />
 
           <div className="gv-rsv-foot">
-            <div>Retire em até 24 horas.</div>
+            <div>{isDraft ? 'Rascunho válido por 24 horas.' : 'Retire em até 24 horas.'}</div>
             <small>
-              Depois disso a reserva é cancelada e o estoque volta ao local padrão.
+              {isDraft
+                ? 'Depois disso o rascunho expira e o estoque reservado volta ao local padrão.'
+                : 'Depois disso a reserva é cancelada e o estoque volta ao local padrão.'}
               <br />
               GestorVend v{APP_VERSION}
             </small>

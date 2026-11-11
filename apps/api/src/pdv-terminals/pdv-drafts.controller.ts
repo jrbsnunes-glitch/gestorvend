@@ -17,6 +17,12 @@ export class PdvDraftsController {
     return this.reservations.listPdvDrafts(user.tenantSlug, user.sub);
   }
 
+  @Get(':id/receipt')
+  @Roles('admin', 'manager', 'seller')
+  receipt(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.reservations.pdvDraftReceipt(user.tenantSlug, id, user.sub);
+  }
+
   @Get(':id')
   @Roles('admin', 'manager', 'seller')
   getOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {

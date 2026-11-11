@@ -477,6 +477,13 @@ export class SalesReservationsService {
     return row;
   }
 
+  /** Espelho do rascunho (sem validade fiscal). O saldo segue na reserva. */
+  async pdvDraftReceipt(tenantSlug: string, id: string, userId: string) {
+    const reservation = await this.getPdvDraft(tenantSlug, id, userId);
+    const company = await this.company.getOrCreate(tenantSlug);
+    return { reservation, company };
+  }
+
   async upsertPdvDraft(input: UpsertPdvDraftInput) {
     await this.assertPdvDraftsEnabled(input.tenantSlug);
     const id = String(input.reservationId ?? '').trim();

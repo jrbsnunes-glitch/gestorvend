@@ -35,6 +35,7 @@ import {
   type UserPermissionsResponse,
 } from '../lib/user-permissions';
 import { formatBRL, formatDate } from '../lib/format';
+import { openPdvDraftMirror } from '../lib/sales-reservation-print';
 import {
   formatSaleQty as formatCartQty,
   isFractionalSaleUnit as isFractionalTaxUnit,
@@ -279,7 +280,7 @@ type PdvDraftRow = {
       sku: string | null;
       barcode: string | null;
       taxUnit: string | null;
-      product?: { name: string; isService?: boolean };
+      product?: { name: string; isService?: boolean; taxUnit?: string | null };
     };
   }>;
 };
@@ -328,8 +329,8 @@ function parseDecimal(v: string | number | null | undefined): number {
 
 function classifyStock(stock: number, qtyInCart: number, minStock: number) {
   const remaining = stock - qtyInCart;
-  if (remaining <= 0) return 'out';
-  if (remaining < minStock) return 'low';
+  if (remaining < -1e-9) return 'out';
+  if (minStock > 0 && remaining < minStock) return 'low';
   return 'ok';
 }
 
@@ -1302,6 +1303,9 @@ function PosScreen({
   const [draftsOpen, setDraftsOpen] = useState(false);
   const [exitDraftOpen, setExitDraftOpen] = useState(false);
   const [activePdvDraftId, setActivePdvDraftId] = useState<string | null>(null);
+  /** Quantidade de cada item que este rascunho mantém no local Reserva. */
+  const [draftReservedByVariant, setDraftReservedByVariant] = useState<Record<string, number>>({});
+  const draftReservedRef = useRef<Record<string, number>>({});
   const [closeOpen, setCloseOpen] = useState(false);
   const [closingByMethod, setClosingByMethod] = useState<Record<CloseMethodKey, string>>({
     CASH: '',
@@ -2407,8 +2411,23 @@ function PosScreen({
     };
   }
 
+  function rememberDraftReservation(draft: PdvDraftRow | null) {
+    const map: Record<string, number> = {};
+    if (draft) {
+      for (const it of draft.items) {
+        if (it.variant?.product?.isService) continue;
+        const q = Number(it.quantity);
+        if (!(q > 0)) continue;
+        map[it.variantId] = (map[it.variantId] ?? 0) + q;
+      }
+    }
+    draftReservedRef.current = map;
+    setDraftReservedByVariant(map);
+  }
+
   function applyPdvDraft(draft: PdvDraftRow) {
     setActivePdvDraftId(draft.id);
+    rememberDraftReservation(draft);
     setDiscount(Number(draft.discount) || 0);
     setSurcharge(Number(draft.pdvSurcharge ?? 0) || 0);
     setCustomer(
@@ -2420,23 +2439,24 @@ function PosScreen({
         : null,
     );
     if (draft.pdvSellerUserId) setSellerUserId(draft.pdvSellerUserId);
-    setLines(
-      draft.items.map((it) => ({
-        variantId: it.variantId,
-        productName: it.variant?.product?.name ?? 'Produto',
-        sku: it.variant?.sku ?? '',
-        barcode: it.variant?.barcode ?? null,
-        unitPrice: Number(it.unitPrice),
-        quantity: Number(it.quantity),
-        discount: Number(it.discount) || 0,
-        stockTotal: 0,
-        minStock: 0,
-        taxUnit: it.variant?.taxUnit ?? 'UN',
-        isService: it.variant?.product?.isService,
-      })),
-    );
+    const nextLines = draft.items.map((it) => ({
+      variantId: it.variantId,
+      productName: it.variant?.product?.name ?? 'Produto',
+      sku: it.variant?.sku ?? '',
+      barcode: it.variant?.barcode ?? null,
+      unitPrice: Number(it.unitPrice),
+      quantity: Number(it.quantity),
+      discount: Number(it.discount) || 0,
+      stockTotal: 0,
+      minStock: 0,
+      taxUnit: it.variant?.product?.taxUnit ?? it.variant?.taxUnit ?? 'UN',
+      isService: it.variant?.product?.isService,
+    }));
+    linesRef.current = nextLines;
+    setLines(nextLines);
     setPayments([]);
     setDraftsOpen(false);
+    void refreshCartStock();
   }
 
   async function savePdvDraftAndLeave() {
@@ -2460,6 +2480,8 @@ function PosScreen({
       setActivePdvDraftId(null);
       void cancelPdvDraftMut.mutate(id);
     }
+    draftReservedRef.current = {};
+    setDraftReservedByVariant({});
     setLines([]);
     setQtyDraft({});
     setDiscount(0);
@@ -3344,19 +3366,28 @@ function PosScreen({
                         <tr>
                           <th>Produto</th>
                           <th style={{ width: 140 }}>Quantidade</th>
-                          <th style={{ width: 110 }}>Estoque</th>
+                          <th style={{ width: 158 }}>Estoque</th>
                           <th style={{ width: 130, textAlign: 'right' }}>Total</th>
                           <th style={{ width: 40 }} />
                         </tr>
                       </thead>
                       <tbody>
                         {lines.map((l) => {
+                          const reserved = draftReservedByVariant[l.variantId] ?? 0;
+                          const stockShown = l.stockTotal + reserved;
                           const status =
                             l.fromComanda || l.isService || l.mfgDeposit
                               ? 'ok'
-                              : classifyStock(l.stockTotal, l.quantity, l.minStock);
-                          const rowClass =
-                            status === 'out' ? 'is-out' : status === 'low' ? 'is-low' : '';
+                              : classifyStock(stockShown, l.quantity, l.minStock);
+                          const reservedCovers =
+                            reserved > 0 && reserved + 1e-9 >= l.quantity && status !== 'out';
+                          const rowClass = reservedCovers
+                            ? ''
+                            : status === 'out'
+                              ? 'is-out'
+                              : status === 'low'
+                                ? 'is-low'
+                                : '';
                           const step = qtyStepForUnit(l.taxUnit);
                           const unitLbl = qtyUnitLabel(l.taxUnit);
                           const fractional = isFractionalTaxUnit(l.taxUnit);
@@ -3452,16 +3483,18 @@ function PosScreen({
                                 </div>
                               </td>
                               <td>
-                                <span className={`pos-stock-pill ${status}`}>
+                                <span className={`pos-stock-pill ${reservedCovers ? 'ok' : status}`}>
                                   {l.fromComanda
                                     ? 'Comanda'
                                     : l.isService
                                       ? 'Serviço'
-                                      : status === 'out'
-                                        ? 'Sem estoque'
-                                        : status === 'low'
-                                          ? `Baixo (${formatCartQty(l.stockTotal, l.taxUnit)} ${unitLbl})`
-                                          : `OK (${formatCartQty(l.stockTotal, l.taxUnit)} ${unitLbl})`}
+                                      : reservedCovers
+                                        ? `Reservado (${formatCartQty(l.quantity, l.taxUnit)} ${unitLbl})`
+                                        : status === 'out'
+                                          ? 'Sem estoque'
+                                          : status === 'low'
+                                            ? `Baixo (${formatCartQty(stockShown, l.taxUnit)} ${unitLbl})`
+                                            : `OK (${formatCartQty(stockShown, l.taxUnit)} ${unitLbl})`}
                                 </span>
                               </td>
                               <td>
@@ -4720,6 +4753,13 @@ function PosScreen({
                         }}
                       >
                         Retomar
+                      </button>
+                      <button
+                        type="button"
+                        className="pos-btn pos-btn-ghost"
+                        onClick={() => openPdvDraftMirror(d.id)}
+                      >
+                        Espelho
                       </button>
                       <button
                         type="button"

@@ -48,6 +48,7 @@ type Company = {
   /** Comprovante interno × planejamento documento fiscal (NF-e futura). */
   pdvDocumentMode?: 'NON_FISCAL_RECEIPT' | 'ELECTRONIC_FISCAL_PLANNED';
   pdvDraftsEnabled?: boolean;
+  pdvAllowSaleWithoutStock?: boolean;
   autoQueueNfceOnSale?: boolean;
   saleReceiptAutoPrint?: boolean;
   saleReceiptPrinterHint?: string | null;
@@ -125,6 +126,7 @@ const EMPTY_FORM: FormState = {
   logoUrl: '',
   pdvDocumentMode: 'NON_FISCAL_RECEIPT',
   pdvDraftsEnabled: false,
+  pdvAllowSaleWithoutStock: false,
   autoQueueNfceOnSale: false,
   saleReceiptAutoPrint: false,
   saleReceiptPrinterHint: '',
@@ -199,6 +201,7 @@ function toForm(c: Company): FormState {
     logoUrl: c.logoUrl ?? '',
     pdvDocumentMode: c.pdvDocumentMode ?? 'NON_FISCAL_RECEIPT',
     pdvDraftsEnabled: Boolean(c.pdvDraftsEnabled),
+    pdvAllowSaleWithoutStock: Boolean(c.pdvAllowSaleWithoutStock),
     autoQueueNfceOnSale: Boolean(c.autoQueueNfceOnSale),
     saleReceiptAutoPrint: Boolean(c.saleReceiptAutoPrint),
     saleReceiptPrinterHint: c.saleReceiptPrinterHint ?? '',
@@ -1194,6 +1197,24 @@ export function CompanyPage() {
                     Ao sair do caixa com itens no carrinho, a venda fica em &quot;Rascunhos&quot; por 24 horas, com
                     estoque reservado (mesma regra da reserva de vendas). Depois desse prazo o saldo volta ao
                     estoque.
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="field" style={{ marginBottom: '0.75rem' }}>
+              <label htmlFor="c-pdv-no-stock" style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                <input
+                  id="c-pdv-no-stock"
+                  type="checkbox"
+                  checked={Boolean(form.pdvAllowSaleWithoutStock)}
+                  onChange={(e) => update('pdvAllowSaleWithoutStock', e.target.checked)}
+                  style={{ marginTop: '0.15rem' }}
+                />
+                <span>
+                  Permitir vender produtos sem estoque
+                  <span className="sub" style={{ fontWeight: 400 }}>
+                    A venda conclui mesmo quando o saldo não cobre a quantidade. O estoque do local padrão
+                    fica negativo até uma entrada ou inventário.
                   </span>
                 </span>
               </label>

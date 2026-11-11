@@ -547,6 +547,10 @@ export class SalesService {
     );
     const needsStockDeduction =
       deductStock && saleVariants.some((v) => !v.product.isService);
+    const companyStock = await db.company.findFirst({
+      select: { pdvAllowSaleWithoutStock: true },
+    });
+    const allowSaleWithoutStock = Boolean(companyStock?.pdvAllowSaleWithoutStock);
     if (needsStockDeduction && !defaultLoc) {
       throw new BadRequestException('Cadastre um local de estoque padrão');
     }
@@ -699,7 +703,7 @@ export class SalesService {
               },
             });
             const current = bal ? Number(bal.quantity) : 0;
-            if (current < stockQty) {
+            if (!allowSaleWithoutStock && current < stockQty) {
               const ing = await tx.productVariant.findUnique({
                 where: { id: ri.ingredientVariantId },
                 include: { product: { select: { name: true } } },
@@ -751,7 +755,7 @@ export class SalesService {
           },
         });
         const current = bal ? Number(bal.quantity) : 0;
-        if (current < stockQty) {
+        if (!allowSaleWithoutStock && current < stockQty) {
           const packHint =
             stockVariantId !== it.variantId
               ? ` Venda de "${soldProductName}"${conversion ? ` (${conversion})` : ''} baixa ${stockQty} un. de "${stockProductName}".`
@@ -1211,6 +1215,10 @@ export class SalesService {
     if (!defaultLoc) {
       throw new BadRequestException('Cadastre um local de estoque padrão');
     }
+    const companyStock = await db.company.findFirst({
+      select: { pdvAllowSaleWithoutStock: true },
+    });
+    const allowSaleWithoutStock = Boolean(companyStock?.pdvAllowSaleWithoutStock);
     const ref = reference.slice(0, 500);
 
     await db.$transaction(async (tx) => {
@@ -1242,7 +1250,7 @@ export class SalesService {
               },
             });
             const current = bal ? Number(bal.quantity) : 0;
-            if (current < stockQty) {
+            if (!allowSaleWithoutStock && current < stockQty) {
               const ing = await tx.productVariant.findUnique({
                 where: { id: ri.ingredientVariantId },
                 include: { product: { select: { name: true } } },
@@ -1294,7 +1302,7 @@ export class SalesService {
           },
         });
         const current = bal ? Number(bal.quantity) : 0;
-        if (current < stockQty) {
+        if (!allowSaleWithoutStock && current < stockQty) {
           const packHint =
             stockVariantId !== it.variantId
               ? ` Item "${soldProductName}"${conversion ? ` (${conversion})` : ''} baixa ${stockQty} un. de "${stockProductName}".`

@@ -2745,7 +2745,7 @@
 }
 
 .pos-drafts-modal {
-  max-width: min(520px, 96vw);
+  max-width: min(640px, 96vw);
 }
 
 .pos-drafts-list {
@@ -2786,5 +2786,6 @@
 
 .pos-drafts-item-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.35rem;
 }
