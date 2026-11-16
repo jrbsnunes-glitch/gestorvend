@@ -477,21 +477,10 @@ async function printReceiptPreviewEscPos(wc: WebContents, device: string): Promi
   await sendCapturedImageEscPos(wc, device, rect);
 }
 
-/**
- * Fechamento de caixa: texto ESC/POS, não foto.
- * A foto da página ia no tamanho que o driver chama de A4 e a bobina reduzia a folha.
- */
-async function isCashCloseReceipt(wc: WebContents): Promise<boolean> {
-  return wc
-    .executeJavaScript(`Boolean(document.querySelector('article.cash-close-doc--fechamento'))`)
-    .catch(() => false);
-}
-
 /** Imprime o cupom que já está na tela (2ª via / botão Imprimir). */
 export async function printVisibleReceiptEscPos(wc: WebContents, deviceName: string): Promise<void> {
   const device = deviceName.trim();
   if (!device) throw new Error('Defina a impressora do PDV em Configurações → Impressão.');
-  if ((await isCashCloseReceipt(wc)) && (await printReceiptTextEscPos(wc, device))) return;
   try {
     await printReceiptPreviewEscPos(wc, device);
   } catch (err) {
@@ -535,7 +524,6 @@ export async function printPreparedReceiptEscPos(
   }
   await sleep(180);
   try {
-    if ((await isCashCloseReceipt(wc)) && (await printReceiptTextEscPos(wc, device))) return;
     await printReceiptPreviewEscPos(wc, device);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

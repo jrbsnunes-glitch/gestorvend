@@ -1,5 +1,5 @@
 {
-  "version": "1.0.85",
+  "version": "1.0.86",
   "downloadUrl": "",
-  "notes": "Fechamento de caixa na bobina, na proporcao do comprovante nao fiscal."
+  "notes": "Fechamento de caixa volta ao modelo visual do comprovante."
 }
