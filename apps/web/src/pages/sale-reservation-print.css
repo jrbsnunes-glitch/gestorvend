@@ -345,3 +345,59 @@ html.gv-rsv-thermal .gv-rsv-item-name {
 html.gv-rsv-thermal .gv-rsv-total {
   font-size: 24px;
 }
+
+/*
+ * Espelho do rascunho: a mesma tipografia do comprovante não fiscal
+ * (tamanhos do cupom × escala do PDV). Não altera a reserva nem o leiaute.
+ */
+html.gv-rsv-draft {
+  --gv-rsv-fs: 1.4;
+}
+
+html.gv-rsv-receipt-print.gv-rsv-draft .gv-rsv-doc {
+  font-size: calc(18px * var(--gv-rsv-fs)) !important;
+}
+
+html.gv-rsv-receipt-print.gv-rsv-draft .gv-rsv-company {
+  font-size: calc(20px * var(--gv-rsv-fs)) !important;
+}
+
+html.gv-rsv-receipt-print.gv-rsv-draft .gv-rsv-legal,
+html.gv-rsv-receipt-print.gv-rsv-draft .gv-rsv-headline {
+  font-size: calc(14px * var(--gv-rsv-fs)) !important;
+}
+
+html.gv-rsv-receipt-print.gv-rsv-draft .gv-rsv-note {
+  font-size: calc(13px * var(--gv-rsv-fs)) !important;
+}
+
+html.gv-rsv-receipt-print.gv-rsv-draft .gv-rsv-banner {
+  font-size: calc(16px * var(--gv-rsv-fs)) !important;
+}
+
+html.gv-rsv-receipt-print.gv-rsv-draft .gv-rsv-meta,
+html.gv-rsv-receipt-print.gv-rsv-draft .gv-rsv-pay {
+  font-size: calc(14px * var(--gv-rsv-fs)) !important;
+}
+
+html.gv-rsv-receipt-print.gv-rsv-draft .gv-rsv-items,
+html.gv-rsv-receipt-print.gv-rsv-draft .gv-rsv-item-name {
+  font-size: calc(15px * var(--gv-rsv-fs)) !important;
+}
+
+html.gv-rsv-receipt-print.gv-rsv-draft .gv-rsv-item-sku,
+html.gv-rsv-receipt-print.gv-rsv-draft .gv-rsv-items th {
+  font-size: calc(13px * var(--gv-rsv-fs)) !important;
+}
+
+html.gv-rsv-receipt-print.gv-rsv-draft .gv-rsv-foot small {
+  font-size: calc(12px * var(--gv-rsv-fs)) !important;
+}
+
+html.gv-rsv-receipt-print.gv-rsv-draft .gv-rsv-total {
+  font-size: calc(19px * var(--gv-rsv-fs)) !important;
+}
+
+html.gv-rsv-receipt-print.gv-rsv-draft .gv-rsv-foot {
+  font-size: calc(14px * var(--gv-rsv-fs)) !important;
+}

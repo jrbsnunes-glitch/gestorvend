@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { api } from '../lib/api';
-import { isGestorVendDesktop } from '../lib/desktop-bridge';
+import { getDesktopApi, isGestorVendDesktop } from '../lib/desktop-bridge';
 import { printDocument, saveDocumentPdf } from '../lib/desktop-print';
 import { formatBRL, formatDate } from '../lib/format';
 import { formatSaleQty, isFractionalSaleUnit, qtyUnitLabel } from '../lib/sale-qty-unit';
@@ -59,6 +59,18 @@ const PRINT_STYLE_ID = 'gv-rsv-print-override';
 function parseN(v: string | number | null | undefined): number {
   const n = typeof v === 'string' ? parseFloat(v) : Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** Mesma escala do comprovante não fiscal (Desktop). Sem config, o cupom usa 1,4. */
+async function readPdvReceiptScale(): Promise<number> {
+  try {
+    const cfg = await getDesktopApi()?.getPdvPrinter?.();
+    const raw = cfg?.receiptScale;
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
+  } catch {
+    /* navegador ou shell antigo */
+  }
+  return 1.4;
 }
 
 function installPrintOverride(thermal: boolean): () => void {
@@ -133,13 +145,27 @@ export function SaleReservationPrintPage() {
       document.documentElement.classList.add('gv-rsv-thermal');
       document.body.classList.add('gv-rsv-thermal');
     }
+    if (isDraft) {
+      document.documentElement.classList.add('gv-rsv-draft');
+      document.body.classList.add('gv-rsv-draft');
+    }
     const undo = installPrintOverride(thermal);
+    let alive = true;
+    if (isDraft) {
+      void readPdvReceiptScale().then((scale) => {
+        if (!alive) return;
+        const factor = Math.max(0.75, Math.min(2, scale));
+        document.documentElement.style.setProperty('--gv-rsv-fs', String(factor));
+      });
+    }
     return () => {
+      alive = false;
       undo();
-      document.documentElement.classList.remove('gv-rsv-receipt-print', 'gv-rsv-thermal');
-      document.body.classList.remove('gv-rsv-receipt-print', 'gv-rsv-thermal');
+      document.documentElement.classList.remove('gv-rsv-receipt-print', 'gv-rsv-thermal', 'gv-rsv-draft');
+      document.body.classList.remove('gv-rsv-receipt-print', 'gv-rsv-thermal', 'gv-rsv-draft');
+      document.documentElement.style.removeProperty('--gv-rsv-fs');
     };
-  }, [thermal]);
+  }, [thermal, isDraft]);
 
   useEffect(() => {
     const prev = document.title;
