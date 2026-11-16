@@ -7,13 +7,31 @@
  */
 
 .sale-receipt-page {
-  min-height: 100vh;
-  background: #e8e8e8;
-  padding: 1rem;
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  background: #fff;
+}
+
+@media screen {
+  .sale-receipt-page {
+    min-height: 100vh;
+    background: #e8e8e8;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .sale-receipt-preview {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .sale-receipt-doc {
+    margin-left: auto;
+    margin-right: auto;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  }
 }
 
 .sale-receipt-toolbar {
@@ -38,15 +56,14 @@
 }
 
 .sale-receipt-preview {
-  display: flex;
-  justify-content: center;
-  width: 100%;
+  width: 80mm;
+  max-width: 100%;
 }
 
 .sale-receipt-doc {
   width: 80mm;
   max-width: 100%;
-  margin: 0 auto;
+  margin: 0;
   padding: 3mm 1mm 5mm;
   background: #fff;
   color: #000;
@@ -55,52 +72,12 @@
   font-weight: 800;
   line-height: 1.35;
   box-sizing: border-box;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
   -webkit-font-smoothing: none;
   font-smooth: never;
 }
 
 .sale-receipt-doc strong {
   font-weight: 800;
-}
-
-/* Fechamento de caixa: mesma família, cupom um pouco maior na bobina. */
-.sale-receipt-doc.cash-close-doc--fechamento {
-  width: 80mm !important;
-  max-width: 80mm !important;
-  min-width: 0 !important;
-  font-size: 20px;
-}
-
-.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-logo {
-  max-width: 68mm;
-  max-height: 32mm;
-}
-
-.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-title {
-  font-size: 20px;
-}
-
-.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-sub,
-.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-legal {
-  font-size: 15px;
-}
-
-.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-meta,
-.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-section-title,
-.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-totals,
-.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-payments,
-.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-foot {
-  font-size: 15px;
-}
-
-.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-totals-row.is-total,
-.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-totals-row.is-sold {
-  font-size: 19px;
-}
-
-.sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-foot-muted {
-  font-size: 13px;
 }
 
 .sale-receipt-center {
@@ -462,7 +439,7 @@
    * `auto` o Chrome fatia em duas vias.
    */
   @page gv-bobina {
-    size: 80mm 2000mm;
+    size: 80mm 280mm;
     margin: 0;
   }
 
@@ -753,35 +730,5 @@
     width: 80mm !important;
     max-width: 80mm !important;
     margin: 0 auto !important;
-  }
-
-  .sale-receipt-doc.cash-close-doc--fechamento {
-    font-size: 18px !important;
-  }
-
-  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-title {
-    font-size: 18px !important;
-  }
-
-  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-sub,
-  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-legal {
-    font-size: 14px !important;
-  }
-
-  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-meta,
-  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-section-title,
-  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-totals,
-  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-payments,
-  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-foot {
-    font-size: 14px !important;
-  }
-
-  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-totals-row.is-total,
-  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-totals-row.is-sold {
-    font-size: 17px !important;
-  }
-
-  .sale-receipt-doc.cash-close-doc--fechamento .sale-receipt-foot-muted {
-    font-size: 12px !important;
   }
 }

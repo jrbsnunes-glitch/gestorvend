@@ -14,7 +14,7 @@ export type ReceiptTicket = {
   metas: Array<{ left: string; right: string }>;
   items: Array<{ name: string; sku: string; qty: string; total: string }>;
   totals: Array<{ left: string; right: string; emph?: boolean }>;
-  payments: Array<{ left: string; right: string }>;
+  payments: Array<{ left: string; right: string; heading?: boolean }>;
   notes?: string;
   foot: string[];
 };
@@ -231,11 +231,21 @@ export function buildEscPosText(ticket: ReceiptTicket): Buffer {
   }
 
   if (ticket.payments.length) {
-    pushTxt(dash());
-    setBold(true);
-    pushTxt('PAGAMENTOS');
-    setBold(false);
+    const grouped = ticket.payments.some((p) => p.heading);
+    if (!grouped) {
+      pushTxt(dash());
+      setBold(true);
+      pushTxt('PAGAMENTOS');
+      setBold(false);
+    }
     for (const p of ticket.payments) {
+      if (p.heading) {
+        pushTxt(dash());
+        setBold(true);
+        pushWrapped(p.left.toUpperCase());
+        setBold(false);
+        continue;
+      }
       for (const line of pairLine(p.left, p.right)) pushTxt(line);
     }
   }
@@ -314,7 +324,7 @@ export const EXTRACT_RECEIPT_TICKET_JS = `
       total: qtyKids[1] || '',
     };
   });
-  const totals = Array.from(a.querySelectorAll('.sale-receipt-totals-row')).map((row) => {
+  let totals = Array.from(a.querySelectorAll('.sale-receipt-totals-row')).map((row) => {
     const kids = Array.from(row.children).map(tx);
     return {
       left: kids[0] || '',
@@ -322,11 +332,32 @@ export const EXTRACT_RECEIPT_TICKET_JS = `
       emph: row.classList.contains('is-total') || row.classList.contains('is-sold'),
     };
   });
-  const payments = Array.from(a.querySelectorAll('.sale-receipt-payments > li')).map((li) => {
-    const kids = Array.from(li.children).map(tx);
-    return { left: kids[0] || '', right: kids[1] || '' };
-  });
+  const totalsBox = a.querySelector('.sale-receipt-totals');
+  if (totalsBox) {
+    let prev = totalsBox.previousElementSibling;
+    while (prev && prev.classList.contains('sale-receipt-line')) prev = prev.previousElementSibling;
+    if (prev && prev.classList.contains('sale-receipt-section-title')) {
+      totals = [{ left: tx(prev), right: '', emph: true }].concat(totals);
+    }
+  }
+  const payments = [];
+  for (const el of a.querySelectorAll('h2.sale-receipt-section-title, .sale-receipt-payments > li')) {
+    if (el.matches('h2.sale-receipt-section-title')) {
+      let n = el.nextElementSibling;
+      while (n && n.classList.contains('sale-receipt-line')) n = n.nextElementSibling;
+      if (n && n.classList.contains('sale-receipt-payments')) {
+        payments.push({ left: tx(el), right: '', heading: true });
+      }
+      continue;
+    }
+    const kids = Array.from(el.children).map(tx);
+    payments.push({ left: kids[0] || '', right: kids[1] || '', heading: false });
+  }
+  const titles = all('.sale-receipt-title');
   const headlines = [];
+  for (const t of titles.slice(1)) {
+    if (t) headlines.push(t);
+  }
   for (const el of a.querySelectorAll('.sale-receipt-center.sale-receipt-sub, .sale-receipt-fiscal-note')) {
     if (header && header.contains(el)) continue;
     const v = tx(el);
@@ -346,7 +377,7 @@ export const EXTRACT_RECEIPT_TICKET_JS = `
   const nfceKey = tx(a.querySelector('.sale-receipt-nfce-key'));
   if (nfceKey) foot.unshift(nfceKey);
   return {
-    title: all('.sale-receipt-title')[0] || '',
+    title: titles[0] || '',
     legal: header ? all('.sale-receipt-legal', header)[0] || '' : '',
     companyLines: header ? all('.sale-receipt-sub', header) : [],
     headlines,

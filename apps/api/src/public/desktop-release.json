@@ -1,5 +1,5 @@
 {
-  "version": "1.0.84",
+  "version": "1.0.85",
   "downloadUrl": "",
-  "notes": "Fechamento de caixa na bobina 80 mm, sem reduzir a folha A4."
+  "notes": "Fechamento de caixa na bobina, na proporcao do comprovante nao fiscal."
 }

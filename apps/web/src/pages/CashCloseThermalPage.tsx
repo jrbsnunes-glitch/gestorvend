@@ -89,6 +89,36 @@ function methodLabel(key: string): string {
   return PAYMENT_LABELS[key] ?? key;
 }
 
+/** Altura da folha = altura do cupom. 2000 mm fazia o preview encaixar tudo num A4. */
+function applyCashCloseBobinaPage(): void {
+  const article = document.querySelector('article.cash-close-doc--fechamento');
+  const px = article instanceof HTMLElement ? article.offsetHeight : 520;
+  const mm = Math.min(480, Math.max(90, Math.ceil((px * 25.4) / 96) + 8));
+  let style = document.getElementById('gv-cash-close-print-override') as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement('style');
+    style.id = 'gv-cash-close-print-override';
+    document.head.appendChild(style);
+  }
+  style.textContent = `
+    @page { size: 80mm ${mm}mm; margin: 0; }
+    @page gv-bobina { size: 80mm ${mm}mm; margin: 0; }
+    html, body, .sale-receipt-page, .sale-receipt-preview, .sale-receipt-doc {
+      page: gv-bobina;
+    }
+    @media print {
+      html, body, .sale-receipt-page, .sale-receipt-preview, .sale-receipt-doc {
+        width: 80mm !important;
+        max-width: 80mm !important;
+        height: auto !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+    }
+  `;
+}
+
 function entries(rec: Record<string, number> | null | undefined): Array<[string, number]> {
   if (!rec) return [];
   return sortPaymentMethodKeys(Object.keys(rec))
@@ -129,38 +159,19 @@ export function CashCloseThermalPage() {
   useEffect(() => {
     document.documentElement.classList.add('gv-sale-receipt-print');
     document.body.classList.add('gv-sale-receipt-print');
-    document.getElementById('gv-cash-close-print-override')?.remove();
-    const style = document.createElement('style');
-    style.id = 'gv-cash-close-print-override';
-    style.textContent = `
-      @page { size: 80mm 2000mm !important; margin: 0 !important; }
-      @page gv-bobina { size: 80mm 2000mm !important; margin: 0 !important; }
-      html, body, .sale-receipt-page, .sale-receipt-preview, .sale-receipt-doc {
-        page: gv-bobina !important;
-      }
-      @media print {
-        html, body, .sale-receipt-page, .sale-receipt-preview, .sale-receipt-doc {
-          width: 80mm !important;
-          max-width: 80mm !important;
-          height: auto !important;
-          min-height: 0 !important;
-          margin: 0 !important;
-          padding: 0 !important;
-        }
-      }
-    `;
-    document.head.appendChild(style);
+    applyCashCloseBobinaPage();
     return () => {
-      style.remove();
+      document.getElementById('gv-cash-close-print-override')?.remove();
       document.documentElement.classList.remove('gv-sale-receipt-print');
       document.body.classList.remove('gv-sale-receipt-print');
     };
-  }, []);
+  }, [receiptReady, session]);
 
   useEffect(() => {
     if (!autoprint || !receiptReady || printedRef.current) return;
     if (!consumeAutoPrintNonce(nonce, `cash:${sessionId}`)) return;
     printedRef.current = true;
+    applyCashCloseBobinaPage();
     void printDocument('80mm').then(() => {
       if (closeAfter) {
         window.setTimeout(() => {
@@ -185,7 +196,14 @@ export function CashCloseThermalPage() {
     <div className="sale-receipt-page" data-receipt-ready={receiptReady ? '1' : '0'}>
       <div className="sale-receipt-toolbar no-print">
         <div className="sale-receipt-toolbar-actions">
-          <button type="button" className="btn" onClick={() => void printDocument('80mm')}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              applyCashCloseBobinaPage();
+              void printDocument('80mm');
+            }}
+          >
             Imprimir
           </button>
           <button type="button" className="btn btn-ghost" onClick={() => navigate(-1)}>
