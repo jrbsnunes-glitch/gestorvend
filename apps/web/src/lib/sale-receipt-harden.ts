@@ -272,7 +272,7 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
     decls: {
       'word-break': 'break-word',
       'text-align': 'center',
-      'font-size': '11px',
+      'font-size': '13px',
       'font-weight': '800',
       margin: '0.35rem 0',
       color: '#000',
@@ -297,8 +297,8 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   {
     selector: '.sale-receipt-doc--nfce',
     decls: {
-      'font-size': '11px',
-      'line-height': '1.15',
+      'font-size': '13px',
+      'line-height': '1.2',
       padding: '1.5mm 0.8mm 3mm',
     },
   },
@@ -313,7 +313,7 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-title',
     decls: {
-      'font-size': '12px',
+      'font-size': '14px',
       margin: '0.06rem 0 0.04rem',
       'letter-spacing': '0',
     },
@@ -321,7 +321,7 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-sub, .sale-receipt-doc--nfce .sale-receipt-legal',
     decls: {
-      'font-size': '10px',
+      'font-size': '12px',
       'line-height': '1.15',
       margin: '0',
     },
@@ -329,11 +329,11 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   {
     selector:
       '.sale-receipt-doc--nfce .sale-receipt-meta, .sale-receipt-doc--nfce .sale-receipt-items, .sale-receipt-doc--nfce .sale-receipt-totals, .sale-receipt-doc--nfce .sale-receipt-payments',
-    decls: { 'font-size': '10px' },
+    decls: { 'font-size': '12px' },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-section-title',
-    decls: { 'font-size': '10px', margin: '0.18rem 0 0.08rem' },
+    decls: { 'font-size': '12px', margin: '0.18rem 0 0.08rem' },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-items li',
@@ -341,16 +341,16 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-item-sku',
-    decls: { 'font-size': '9px' },
+    decls: { 'font-size': '11px' },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-totals-row.is-total',
-    decls: { 'font-size': '12px', 'margin-top': '0.15rem', 'padding-top': '0.12rem' },
+    decls: { 'font-size': '14px', 'margin-top': '0.15rem', 'padding-top': '0.12rem' },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-fiscal-note',
     decls: {
-      'font-size': '9px',
+      'font-size': '11px',
       'line-height': '1.15',
       margin: '0',
     },
@@ -361,7 +361,7 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-nfce-key',
-    decls: { 'font-size': '9px', margin: '0.08rem 0' },
+    decls: { 'font-size': '11px', margin: '0.08rem 0' },
   },
   {
     selector: '.sale-receipt-doc--nfce .nfce-qr',
@@ -369,11 +369,11 @@ const RULES: Array<{ selector: string; decls: Decls }> = [
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-foot',
-    decls: { 'font-size': '9px', margin: '0.2rem 0 0' },
+    decls: { 'font-size': '11px', margin: '0.2rem 0 0' },
   },
   {
     selector: '.sale-receipt-doc--nfce .sale-receipt-foot-muted',
-    decls: { 'font-size': '8px', margin: '0.08rem 0 0' },
+    decls: { 'font-size': '10px', margin: '0.08rem 0 0' },
   },
 ];
 

@@ -1,4 +1,4 @@
-import type { BrowserWindow, WebContents, WebContentsPrintOptions } from 'electron';
+import { BrowserWindow, type NativeImage, type WebContents, type WebContentsPrintOptions } from 'electron';
 import {
   bgraToEscPosRaster,
   darkPixelRatio,
@@ -17,6 +17,9 @@ export type ThermalPrintPageSize = '80mm' | 'A4';
  * aqui só removemos chrome, anulamos @page A4, embutimos a logo e aplicamos a escala.
  */
 export const THERMAL_WINDOW_WIDTH_PX = 302;
+
+/** Foto da bobina em dobro: o mesmo leiaute, com pixels suficientes para a térmica. */
+const RECEIPT_CAPTURE_ZOOM = 2;
 
 /** Electron `pageSize` usa mícrons (1 mm = 1000). */
 const THERMAL_WIDTH_MICRONS = 80_000;
@@ -192,8 +195,8 @@ export async function prepareSaleReceiptForThermalPrint(wc: WebContents): Promis
           margin-bottom: 0.08rem !important;
         }
         .sale-receipt-doc--nfce {
-          font-size: 11px !important;
-          line-height: 1.15 !important;
+          font-size: 13px !important;
+          line-height: 1.2 !important;
           padding: 1mm 0.6mm 2mm !important;
         }
         .sale-receipt-doc--nfce .nfce-qr,
@@ -304,6 +307,94 @@ async function printReceiptTextEscPos(wc: WebContents, device: string): Promise<
   return true;
 }
 
+async function restoreReceiptCaptureView(
+  wc: WebContents,
+  zoom: number,
+  size: [number, number] | null,
+  maximized: boolean,
+): Promise<void> {
+  try {
+    wc.setZoomFactor(zoom > 0 ? zoom : 1);
+  } catch {
+    /* ignore */
+  }
+  const win = BrowserWindow.fromWebContents(wc);
+  if (!win || win.isDestroyed()) return;
+  try {
+    if (maximized) win.maximize();
+    else if (size) win.setContentSize(size[0], size[1]);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Amplia só durante a foto e devolve a janela ao tamanho de antes. */
+async function captureReceiptSharp(
+  wc: WebContents,
+  fallback: { x: number; y: number; width: number; height: number },
+): Promise<NativeImage | null> {
+  const win = BrowserWindow.fromWebContents(wc);
+  let prevZoom = 1;
+  try {
+    prevZoom = wc.getZoomFactor();
+  } catch {
+    prevZoom = 1;
+  }
+  const prevSize =
+    win && !win.isDestroyed() ? (win.getContentSize() as [number, number]) : null;
+  const maximized = Boolean(win && !win.isDestroyed() && win.isMaximized());
+  try {
+    try {
+      wc.setZoomFactor(RECEIPT_CAPTURE_ZOOM);
+    } catch {
+      /* segue na escala atual */
+    }
+    if (win && !win.isDestroyed()) {
+      const w = Math.max(prevSize?.[0] ?? 0, THERMAL_WINDOW_WIDTH_PX * RECEIPT_CAPTURE_ZOOM + 40);
+      const h = Math.min(
+        9000,
+        Math.max(prevSize?.[1] ?? 0, fallback.height * RECEIPT_CAPTURE_ZOOM + 120),
+      );
+      try {
+        if (maximized) win.unmaximize();
+        win.setContentSize(w, h);
+      } catch {
+        /* janela principal pode recusar */
+      }
+    }
+    await sleep(180);
+    let rect = (await measureSaleReceiptRect(wc)) ?? {
+      ...fallback,
+      x: Math.round(fallback.x * RECEIPT_CAPTURE_ZOOM),
+      y: Math.round(fallback.y * RECEIPT_CAPTURE_ZOOM),
+      width: Math.round(fallback.width * RECEIPT_CAPTURE_ZOOM),
+      height: Math.round(fallback.height * RECEIPT_CAPTURE_ZOOM),
+      clipped: false,
+    };
+    if (rect.clipped && win && !win.isDestroyed()) {
+      try {
+        win.setContentSize(
+          Math.max(rect.x + rect.width + 32, THERMAL_WINDOW_WIDTH_PX * RECEIPT_CAPTURE_ZOOM + 40),
+          Math.min(rect.y + rect.height + 64, 9000),
+        );
+      } catch {
+        /* ignore */
+      }
+      await sleep(120);
+      rect = (await measureSaleReceiptRect(wc)) ?? rect;
+    }
+    const shot = await wc.capturePage({
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+    });
+    return shot.isEmpty() ? null : shot;
+  } finally {
+    await restoreReceiptCaptureView(wc, prevZoom, prevSize, maximized);
+  }
+}
+
 async function sendCapturedImageEscPos(
   wc: WebContents,
   device: string,
@@ -312,8 +403,8 @@ async function sendCapturedImageEscPos(
   let lastRatio = 0;
   let chosen: { width: number; height: number; bgra: Buffer } | null = null;
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    const shot = await wc.capturePage(rect);
-    if (shot.isEmpty()) {
+    const shot = await captureReceiptSharp(wc, rect);
+    if (!shot || shot.isEmpty()) {
       await sleep(160);
       continue;
     }

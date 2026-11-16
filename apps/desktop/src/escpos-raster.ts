@@ -1,10 +1,10 @@
 /**
  * Bitmap BGRA → ESC/POS raster (GS v 0).
- * 80 mm @ 203 dpi ≈ 512 dots. 384 cabia tudo, mas o cupom saía miúdo.
- * O corte da direita era captura com zoom 2, não falta de pontos.
+ * Bobina 80 mm @ 203 dpi: área útil ~72 mm = 576 pontos.
+ * 512 deixava a foto ampliada e a letra mole.
  */
 
-export const ESCPOS_DOTS_80MM = 512;
+export const ESCPOS_DOTS_80MM = 576;
 /** ~1 mm de cada lado @ 203 dpi — usa a largura da bobina sem cortar a borda. */
 export const ESCPOS_RASTER_SIDE_PAD = 8;
 
@@ -140,7 +140,7 @@ export function scaleBgraBilinear(
   return { bgra: out, width, height };
 }
 
-/** Encaixa o bitmap em 512 dots com a mesma margem lateral da NFC-e (1,5 mm + 1,5 mm). */
+/** Encaixa o bitmap nos pontos da bobina, com a margem lateral da NFC-e. */
 export function fitBgraToEscPosWidth(
   bgra: Buffer,
   width: number,
@@ -186,15 +186,27 @@ export function dilateMono(mono: Uint8Array, width: number, height: number): Uin
   return out;
 }
 
-/** Limiar duro some com o “C” da logo; dither mantém o desenho e a letra nítida. */
+/**
+ * Letra preta vira ponto sólido (sem espalhar o cinza da antialias).
+ * Só o meio-tom — logo colorida — usa dither, senão o “C” vira um bloco.
+ */
 function bgraToMono(bgra: Buffer, width: number, height: number): Uint8Array {
   const carry = new Float32Array(width * height);
   const mono = new Uint8Array(width * height);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const i = y * width + x;
-      const old = luminance(bgra, i * 4) + carry[i];
-      const black = old < 152;
+      const luma = luminance(bgra, i * 4);
+      if (luma < 128) {
+        mono[i] = 1;
+        continue;
+      }
+      if (luma > 210) {
+        mono[i] = 0;
+        continue;
+      }
+      const old = luma + carry[i];
+      const black = old < 168;
       mono[i] = black ? 1 : 0;
       const err = old - (black ? 0 : 255);
       if (x + 1 < width) carry[i + 1] += (err * 7) / 16;

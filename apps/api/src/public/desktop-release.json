@@ -1,5 +1,5 @@
 {
-  "version": "1.0.81",
+  "version": "1.0.82",
   "downloadUrl": "",
-  "notes": "DANFE NF-e: largura alinhada ao @page evita cortar linhas laterais na impressao/PDF."
+  "notes": "Bobina: foto em dobro de pixels e 576 pontos, letra da NFC-e e dos relatorios maior."
 }

@@ -16,7 +16,7 @@
   background: #fff;
   color: #000;
   font-family: 'Courier New', Courier, monospace;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   line-height: 1.35;
   box-sizing: border-box;
@@ -24,13 +24,13 @@
 
 .danfe-thermal-doc h1 {
   margin: 0.15rem 0;
-  font-size: 14px;
+  font-size: 16px;
   text-align: center;
 }
 
 .danfe-thermal-doc .muted-line {
   text-align: center;
-  font-size: 11px;
+  font-size: 13px;
   margin: 0.1rem 0;
 }
 
@@ -43,7 +43,7 @@
 .danfe-thermal-doc table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .danfe-thermal-doc th,
@@ -54,7 +54,7 @@
 
 .danfe-thermal-doc .key {
   word-break: break-word;
-  font-size: 10px;
+  font-size: 12px;
   text-align: center;
   font-weight: 800;
   letter-spacing: 0.02em;
@@ -89,7 +89,7 @@
     width: 100% !important;
     box-shadow: none !important;
     padding: 1mm 1.5mm 3mm !important;
-    font-size: 9.5pt !important;
+    font-size: 11pt !important;
   }
 
   .nfce-qr-wrap {

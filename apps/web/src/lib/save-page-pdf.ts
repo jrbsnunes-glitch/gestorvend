@@ -109,7 +109,7 @@ export async function saveCurrentPagePdf(): Promise<void> {
   const pageH = pdf.internal.pageSize.getHeight();
   const imgW = pageW;
   const imgH = (canvas.height * imgW) / Math.max(canvas.width, 1);
-  const img = canvas.toDataURL('image/jpeg', 0.86);
+  const img = canvas.toDataURL('image/jpeg', 0.93);
 
   let heightLeft = imgH;
   let y = 0;

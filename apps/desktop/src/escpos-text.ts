@@ -146,7 +146,7 @@ export function buildEscPosText(ticket: ReceiptTicket): Buffer {
     Buffer.from([0x1b, 0x40]), // init
     Buffer.from([0x1b, 0x74, 0x02]), // CP850
     Buffer.from([0x1b, 0x4d, 0x00]), // fonte A (12x24)
-    Buffer.from([0x1d, 0x57, 0x00, 0x02]), // área útil 512 dots
+    Buffer.from([0x1d, 0x57, 0x40, 0x02]), // área útil 576 dots (80 mm @ 203 dpi)
     Buffer.from([0x1b, 0x33, 0x26]), // entrelinha um pouco maior
     Buffer.from([0x1b, 0x61, 0x01]), // centro
   ];
