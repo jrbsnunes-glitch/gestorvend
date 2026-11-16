@@ -1,0 +1,30 @@
+---
+description: Layout travado das impressões em bobina 80 mm (NFC-e, não fiscal, fechamento, rascunho, sangria)
+globs: apps/web/src/pages/sale-receipt-print.css,apps/web/src/pages/SaleReceiptPrintPage.tsx,apps/web/src/pages/danfe-thermal-print.css,apps/web/src/lib/sale-receipt-harden.ts,apps/web/src/pages/CashCloseThermalPage.tsx,apps/web/src/pages/CashMovementThermalPage.tsx,apps/web/src/pages/sale-reservation-print.css,apps/web/src/pages/SaleReservationPrintPage.tsx,apps/web/src/lib/sale-receipt-print.ts,apps/web/src/lib/cash-close-print.ts,apps/web/src/lib/cash-movement-print.ts,apps/desktop/src/thermal-print.ts,apps/desktop/src/escpos-raster.ts
+alwaysApply: false
+---
+
+# Bobina 80 mm — layout travado
+
+Referência validada: web **v1.2.21**, Desktop **1.0.86**. Não mudar medida, fonte, espaçamento, logo nem o caminho de impressão destes cupons, salvo pedido explícito de alterar aquele layout.
+
+## Documentos
+
+| Cupom | Onde está |
+|-------|-----------|
+| Não fiscal | `sale-receipt-print.css`, `SaleReceiptPrintPage.tsx`, `sale-receipt-harden.ts` |
+| NFC-e | classes `.sale-receipt-doc--nfce` e `danfe-thermal-print.css` |
+| Fechamento de caixa | `CashCloseThermalPage.tsx` (mesmo CSS do não fiscal) |
+| Sangria, despesa, suprimento | `CashMovementThermalPage.tsx` (mesmo CSS do não fiscal) |
+| Espelho do rascunho | só `html.gv-rsv-receipt-print.gv-rsv-draft` em `sale-reservation-print.css` |
+
+A reserva de venda (sem `gv-rsv-draft`) não entra nesta trava.
+
+## O que não mudar
+
+- Papel **80 mm**. Proibido `@page` sem nome com A4, altura 2000 mm ou 297 mm: a bobina reduz a folha e a letra fica minúscula. A altura da página do fechamento acompanha o cupom (`applyCashCloseBobinaPage`).
+- Fechamento, sangria e não fiscal compartilham o mesmo CSS. Não criar fonte, logo ou padding próprios para o fechamento.
+- NFC-e mantém o bloco menor (`.sale-receipt-doc--nfce`). Não igualar à letra do não fiscal.
+- Rascunho: letra do não fiscal × `--gv-rsv-fs` (padrão 1.4). Não mexer no restante do espelho.
+- Desktop: fotografar o `article` visual e mandar ESC/POS raster (`printVisibleReceiptEscPos` / `printPreparedReceiptEscPos`). Não trocar estes cupons por texto genérico ESC/POS.
+- Largura da captura: janela da bobina (`THERMAL_WINDOW_WIDTH_PX` 302). Não fotografar a janela inteira do PDV.

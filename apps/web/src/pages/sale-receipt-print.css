@@ -1,4 +1,7 @@
 /**
+ * LAYOUT TRAVADO da bobina 80 mm (não fiscal, NFC-e, fechamento, sangria).
+ * Não alterar medidas. Ver `.cursor/rules/bobina-impressao.mdc`.
+ *
  * Cupom não fiscal — bobina térmica ~80 mm.
  *
  * Importante: no print silencioso do Electron, viewport alto (100vh) faz o

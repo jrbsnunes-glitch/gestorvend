@@ -1095,6 +1095,8 @@ model Sale {
   externalRef   String?        @db.VarChar(64)
   customerId    String?
   customer      Customer?      @relation(fields: [customerId], references: [id])
+  /// CPF (balcão) ou CPF/CNPJ copiado do cadastro, usado na NFC-e e no cupom.
+  consumerDocument String?     @db.VarChar(14)
   userId        String?
   user          User?          @relation(fields: [userId], references: [id])
   /// Funcionário identificado na venda (pode diferir do operador do caixa).

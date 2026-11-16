@@ -714,6 +714,15 @@ export class FiscalEmissionProcessorService {
           cep: (sale.customer.zip ?? zipDigits).replace(/\D/g, '').padStart(8, '0').slice(-8),
         },
       };
+    } else if (!isNfe) {
+      const counterDoc = (sale.consumerDocument ?? '').replace(/\D/g, '');
+      if (counterDoc.length === 11 || counterDoc.length === 14) {
+        dest = {
+          document: counterDoc,
+          xNome: homologFieldText('CONSUMIDOR', tpAmb, 60),
+          indIEDest: '9',
+        };
+      }
     }
 
     const { xmlNfeEnvelope, infNFeId } = buildNfceInfNFeXml({

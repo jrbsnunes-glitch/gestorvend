@@ -30,6 +30,7 @@ export class SalesController {
     @Body()
     body: {
       customerId?: string | null;
+      consumerDocument?: string | null;
       sellerUserId?: string | null;
       notes?: string | null;
       discount?: number;
@@ -73,6 +74,7 @@ export class SalesController {
       userRoles: user.roles,
       permissionPassword: body.permissionPassword,
       customerId: body.customerId,
+      consumerDocument: body.consumerDocument,
       notes: body.notes,
       discount: body.discount,
       surcharge: body.surcharge,

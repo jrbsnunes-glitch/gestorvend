@@ -12,6 +12,9 @@ import { sendRawToWindowsPrinter } from './windows-raw-print';
 export type ThermalPrintPageSize = '80mm' | 'A4';
 
 /**
+ * LAYOUT TRAVADO: estes cupons saem pela foto do article, não por texto genérico.
+ * Ver `.cursor/rules/bobina-impressao.mdc`.
+ *
  * Janela ~largura da bobina @ 96dpi.
  * A formatação visual fica no CSS do web (`sale-receipt-print.css`);
  * aqui só removemos chrome, anulamos @page A4, embutimos a logo e aplicamos a escala.

@@ -48,7 +48,8 @@ type SaleReceipt = {
   total: string;
   createdAt: string;
   notes: string | null;
-  customer: { name: string } | null;
+  consumerDocument?: string | null;
+  customer: { name: string; document?: string | null } | null;
   user: { name: string } | null;
   sellerName?: string | null;
   sellerUser?: { name: string } | null;
@@ -104,6 +105,25 @@ function receiptPayLabel(
 
 function onlyDigits(s: string): string {
   return String(s ?? '').replace(/\D/g, '');
+}
+
+function formatCpfForReceipt(raw: string): string {
+  const d = onlyDigits(raw).slice(0, 11);
+  if (d.length !== 11) return raw;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+}
+
+function consumerDocumentDigits(s: SaleReceipt): string {
+  const fromCustomer = onlyDigits(s.customer?.document ?? '');
+  const fromSale = onlyDigits(s.consumerDocument ?? '');
+  const digits = fromCustomer || fromSale;
+  if (digits.length === 11 || digits.length === 14) return digits;
+  return '';
+}
+
+function formatConsumerDocument(digits: string): string {
+  if (digits.length === 14) return formatCnpjForReceipt(digits);
+  return formatCpfForReceipt(digits);
 }
 
 function formatCnpjForReceipt(raw: string): string {
@@ -232,6 +252,15 @@ function buildReceiptTicketJson(
   const seller = s.sellerName || s.sellerUser?.name || s.user?.name;
   if (seller) metas.push({ left: 'Responsável', right: seller });
   metas.push({ left: 'Cliente', right: s.customer?.name ?? 'Balcão' });
+  const consumerDoc = consumerDocumentDigits(s);
+  if (consumerDoc) {
+    metas.push({
+      left: consumerDoc.length === 14 ? 'CNPJ' : 'CPF',
+      right: formatConsumerDocument(consumerDoc),
+    });
+  } else if (opts.nfceAuthorized) {
+    metas.push({ left: 'Consumidor', right: 'Não identificado' });
+  }
 
   const items = s.items.map((it) => {
     const q = parseN(it.quantity);
@@ -763,6 +792,23 @@ export function SaleReceiptPrintPage() {
             <span>Cliente</span>
             <span>{s.customer?.name ?? 'Balcão'}</span>
           </div>
+          {(() => {
+            const consumerDoc = consumerDocumentDigits(s);
+            if (consumerDoc) {
+              return (
+                <div className="sale-receipt-meta">
+                  <span>{consumerDoc.length === 14 ? 'CNPJ' : 'CPF'}</span>
+                  <span>{formatConsumerDocument(consumerDoc)}</span>
+                </div>
+              );
+            }
+            if (!nfceAuthorized) return null;
+            return (
+              <p className="sale-receipt-center sale-receipt-fiscal-note">
+                Consumidor não identificado
+              </p>
+            );
+          })()}
 
           <hr className="sale-receipt-line" />
 

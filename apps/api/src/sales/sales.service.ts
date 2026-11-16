@@ -24,6 +24,7 @@ import { CustomerCreditService } from '../catalog/customer-credit.service';
 import { CompanyService } from '../company/company.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { UserPermissionsService } from '../users/user-permissions.service';
+import { validateCpf11 } from '../common/cpf.util';
 import { calendarDateAtLocalNoon, parseQueryDate } from '../common/date-range.util';
 import { calendarDayFromInstant, calendarDayNow } from '../common/iana-timezone.util';
 import { getActiveTimezone } from '../common/tenant-timezone.context';
@@ -105,6 +106,8 @@ export type CreateSaleInput = {
   userRoles: string[];
   permissionPassword?: string;
   customerId?: string | null;
+  /** CPF digitado no balcão. Com cliente cadastrado, a API usa o documento do cadastro. */
+  consumerDocument?: string | null;
   notes?: string | null;
   discount?: string | number;
   /** Acréscimo no total (R$) — espelha vOutro do leiaute NF-e/NFC-e. */
@@ -558,6 +561,8 @@ export class SalesService {
       // ok — sem baixa de estoque
     }
 
+    const consumerDocument = await this.resolveConsumerDocument(db, input);
+
     if (input.operationNatureId) {
       const nat = await db.operationNature.findUnique({
         where: { id: input.operationNatureId },
@@ -612,6 +617,7 @@ export class SalesService {
           source: input.source ?? SaleSource.PDV,
           externalRef: input.externalRef ?? null,
           customerId: input.customerId ?? null,
+          consumerDocument,
           userId: input.userId,
           sellerUserId,
           sellerName,
@@ -1070,6 +1076,36 @@ export class SalesService {
         'Caixa aberto em outro dia. Feche o caixa atual e abra um novo para registrar as vendas de hoje.',
       );
     }
+  }
+
+  /**
+   * Balcão: CPF digitado no fechamento (opcional).
+   * Cliente cadastrado: documento do cadastro, sem usar o que o PDV digitar.
+   * Campo gravado em Sale.consumerDocument.
+   */
+  private async resolveConsumerDocument(
+    db: Awaited<ReturnType<TenantPrismaService['getClient']>>,
+    input: CreateSaleInput,
+  ): Promise<string | null> {
+    const customerId = input.customerId?.trim() || '';
+    if (customerId) {
+      const cust = await db.customer.findUnique({
+        where: { id: customerId },
+        select: { document: true },
+      });
+      const digits = (cust?.document ?? '').replace(/\D/g, '');
+      if (digits.length === 11) {
+        const cpf = validateCpf11(digits);
+        return cpf.ok ? cpf.cpf : null;
+      }
+      if (digits.length === 14 && digits.replace(/0/g, '') !== '') return digits;
+      return null;
+    }
+    const typed = (input.consumerDocument ?? '').replace(/\D/g, '');
+    if (!typed) return null;
+    const cpf = validateCpf11(typed);
+    if (!cpf.ok) throw new BadRequestException(cpf.reason);
+    return cpf.cpf;
   }
 
   async findById(tenantSlug: string, saleId: string) {

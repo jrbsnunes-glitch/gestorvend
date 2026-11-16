@@ -34,7 +34,8 @@ import {
   hasUserPermission,
   type UserPermissionsResponse,
 } from '../lib/user-permissions';
-import { formatBRL, formatDate } from '../lib/format';
+import { validateCpf } from '../lib/cpf';
+import { formatBRL, formatCpf, formatCpfCnpj, formatDate } from '../lib/format';
 import { openPdvDraftMirror, openPdvDraftPdf } from '../lib/sales-reservation-print';
 import {
   formatSaleQty as formatCartQty,
@@ -169,6 +170,7 @@ type ProductSearchRow = {
 type Customer = {
   id: string;
   name: string;
+  document?: string | null;
   creditLimit?: string;
   requisitionLimit?: string;
   creditAvailable?: string;
@@ -1222,6 +1224,8 @@ function PosScreen({
   const [discount, setDiscount] = useState(0);
   const [surcharge, setSurcharge] = useState(0);
   const [customer, setCustomer] = useState<Customer | null>(null);
+  /** CPF digitado no fechamento quando a venda é Balcão (sem cliente). */
+  const [consumerCpf, setConsumerCpf] = useState('');
   const customerRef = useRef(customer);
   customerRef.current = customer;
   const [sellerUserId, setSellerUserId] = useState(() => {
@@ -1448,6 +1452,14 @@ function PosScreen({
           });
           return;
         }
+      }
+    }
+
+    if (!customer?.id && consumerCpf.replace(/\D/g, '')) {
+      const cpf = validateCpf(consumerCpf);
+      if (!cpf.ok) {
+        setToast({ kind: 'err', text: cpf.reason });
+        return;
       }
     }
 
@@ -1950,6 +1962,7 @@ function PosScreen({
         method: 'POST',
         json: {
           customerId: customer?.id ?? null,
+          consumerDocument: customer?.id ? undefined : consumerCpf.replace(/\D/g, '') || undefined,
           discount,
           surcharge,
           serviceFeeAmount: restaurantFees?.serviceFee ?? 0,
@@ -2487,6 +2500,7 @@ function PosScreen({
     setDiscount(0);
     setSurcharge(0);
     setCustomer(null);
+    setConsumerCpf('');
     setPayments([]);
     setScannerValue('');
     setSuggestOpen(false);
@@ -2742,6 +2756,7 @@ function PosScreen({
     let merged: Customer = {
       id: c.id,
       name: c.name,
+      document: c.document,
       creditLimit: c.creditLimit,
       requisitionLimit: c.requisitionLimit,
       creditAvailable: c.creditAvailable,
@@ -4493,6 +4508,9 @@ function PosScreen({
           itemsCount={lines.length}
           customerId={customer?.id ?? null}
           customerName={customer?.name ?? null}
+          customerDocument={customer?.document ?? null}
+          consumerCpf={consumerCpf}
+          onConsumerCpfChange={setConsumerCpf}
           customerEmail={null}
           creditAvailable={customer?.creditAvailable ?? null}
           requisitionAvailable={customer?.requisitionAvailable ?? null}
@@ -5108,6 +5126,9 @@ function PaymentOverlay({
   itemsCount,
   customerId,
   customerName,
+  customerDocument,
+  consumerCpf,
+  onConsumerCpfChange,
   customerEmail,
   creditAvailable,
   requisitionAvailable,
@@ -5132,6 +5153,9 @@ function PaymentOverlay({
   itemsCount: number;
   customerId: string | null;
   customerName: string | null;
+  customerDocument?: string | null;
+  consumerCpf: string;
+  onConsumerCpfChange: (value: string) => void;
   customerEmail?: string | null;
   creditAvailable: string | null;
   requisitionAvailable: string | null;
@@ -5359,6 +5383,26 @@ function PaymentOverlay({
             {isCustomerCreditKind(method) && !customerId ? (
               <p className="pos-payment-total-detail" style={{ margin: '0.35rem 0 0', color: '#b45309' }}>
                 Crediário e requisição exigem cliente — use F4 ou volte e selecione no topo.
+              </p>
+            ) : null}
+            {!customerId ? (
+              <div className="field" style={{ margin: '0.65rem 0 0', maxWidth: 280 }}>
+                <label htmlFor="pay-overlay-consumer-cpf">CPF do consumidor</label>
+                <input
+                  id="pay-overlay-consumer-cpf"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="Opcional"
+                  value={consumerCpf}
+                  onChange={(e) => onConsumerCpfChange(formatCpf(e.target.value))}
+                />
+                <p className="pos-payment-total-detail" style={{ margin: '0.25rem 0 0' }}>
+                  Balcão (sem cliente). O CPF entra na NFC-e. Em branco, o consumidor não é identificado.
+                </p>
+              </div>
+            ) : customerDocument?.replace(/\D/g, '') ? (
+              <p className="pos-payment-total-detail" style={{ margin: '0.35rem 0 0' }}>
+                NFC-e com o documento do cadastro: {formatCpfCnpj(customerDocument)}
               </p>
             ) : null}
           </div>
