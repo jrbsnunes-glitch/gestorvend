@@ -66,6 +66,9 @@
 
 /* Fechamento de caixa: mesma família, cupom um pouco maior na bobina. */
 .sale-receipt-doc.cash-close-doc--fechamento {
+  width: 80mm !important;
+  max-width: 80mm !important;
+  min-width: 0 !important;
   font-size: 20px;
 }
 

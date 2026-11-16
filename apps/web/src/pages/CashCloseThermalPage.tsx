@@ -129,7 +129,29 @@ export function CashCloseThermalPage() {
   useEffect(() => {
     document.documentElement.classList.add('gv-sale-receipt-print');
     document.body.classList.add('gv-sale-receipt-print');
+    document.getElementById('gv-cash-close-print-override')?.remove();
+    const style = document.createElement('style');
+    style.id = 'gv-cash-close-print-override';
+    style.textContent = `
+      @page { size: 80mm 2000mm !important; margin: 0 !important; }
+      @page gv-bobina { size: 80mm 2000mm !important; margin: 0 !important; }
+      html, body, .sale-receipt-page, .sale-receipt-preview, .sale-receipt-doc {
+        page: gv-bobina;
+      }
+      @media print {
+        html, body, .sale-receipt-page, .sale-receipt-preview, .sale-receipt-doc {
+          width: 80mm !important;
+          max-width: 80mm !important;
+          height: auto !important;
+          min-height: 0 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+      }
+    `;
+    document.head.appendChild(style);
     return () => {
+      style.remove();
       document.documentElement.classList.remove('gv-sale-receipt-print');
       document.body.classList.remove('gv-sale-receipt-print');
     };
