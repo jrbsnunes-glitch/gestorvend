@@ -341,6 +341,20 @@ function thermalCaptureContentSize(cssHeight: number): { w: number; h: number } 
   };
 }
 
+/** Se o article esticou até a folha (A4), fotografa só o miolo de 80 mm. */
+function clampCaptureToBobina(css: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): { x: number; y: number; width: number; height: number } {
+  const maxW = 340;
+  if (css.width <= maxW) return css;
+  const bobina = THERMAL_WINDOW_WIDTH_PX;
+  const x = css.x + Math.max(0, Math.round((css.width - bobina) / 2));
+  return { ...css, x, width: bobina };
+}
+
 /** capturePage usa DIP; getBoundingClientRect devolve CSS px. Com zoom 2, 1 CSS px = 2 DIP. */
 function cssRectToCaptureDip(css: {
   x: number;
@@ -405,7 +419,7 @@ async function captureReceiptSharp(
       const again = await measureSaleReceiptRect(wc);
       if (again && again.width <= maxCssW) css = again;
     }
-    const rect = cssRectToCaptureDip(css);
+    const rect = cssRectToCaptureDip(clampCaptureToBobina(css));
     const shot = await wc.capturePage({
       x: rect.x,
       y: rect.y,

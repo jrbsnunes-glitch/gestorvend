@@ -57,7 +57,11 @@ export function resolveBitmapSize(
   return { width: Math.max(1, dipW), height: Math.max(1, dipH) };
 }
 
-/** Corta só o branco de cima/baixo. Nas laterais a margem da NFC-e precisa ficar. */
+/**
+ * Corta branco de cima/baixo.
+ * Lateral só sai se a margem vazia for larga (cupom estreito no meio de uma
+ * folha A4). A margem curta da NFC-e permanece.
+ */
 export function trimBgra(
   bgra: Buffer,
   width: number,
@@ -72,12 +76,30 @@ export function trimBgra(
     return false;
   };
 
+  const colHas = (x: number): boolean => {
+    for (let y = 0; y < height; y++) {
+      if (isDark(bgra, (y * width + x) * 4)) return true;
+    }
+    return false;
+  };
+
   let top = 0;
   let bottom = height - 1;
-  const left = 0;
-  const right = width - 1;
+  let left = 0;
+  let right = width - 1;
   while (top < height && !rowHas(top)) top += 1;
   while (bottom > top && !rowHas(bottom)) bottom -= 1;
+  while (left < width && !colHas(left)) left += 1;
+  while (right > left && !colHas(right)) right -= 1;
+  const side = Math.max(left, width - 1 - right);
+  const wideMargin = side > 24 && side > width * 0.08;
+  if (!wideMargin) {
+    left = 0;
+    right = width - 1;
+  } else {
+    left = Math.max(0, left - pad);
+    right = Math.min(width - 1, right + pad);
+  }
 
   top = Math.max(0, top - pad);
   bottom = Math.min(height - 1, bottom + pad);

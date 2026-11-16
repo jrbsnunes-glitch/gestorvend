@@ -136,7 +136,7 @@ export function CashCloseThermalPage() {
       @page { size: 80mm 2000mm !important; margin: 0 !important; }
       @page gv-bobina { size: 80mm 2000mm !important; margin: 0 !important; }
       html, body, .sale-receipt-page, .sale-receipt-preview, .sale-receipt-doc {
-        page: gv-bobina;
+        page: gv-bobina !important;
       }
       @media print {
         html, body, .sale-receipt-page, .sale-receipt-preview, .sale-receipt-doc {

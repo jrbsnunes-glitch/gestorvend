@@ -234,10 +234,22 @@ html.gv-receipt-save-pdf .print-doc {
 }
 
 @media print {
-  @page {
+  /*
+   * Página nomeada: o @page sem nome valia para todo o sistema e a bobina
+   * (fechamento de caixa, cupom) ia como A4 — o driver reduzia a folha inteira.
+   */
+  @page gv-report {
     size: A4 portrait;
     margin: var(--gv-a4-margin-top) var(--gv-a4-margin-right) var(--gv-a4-margin-bottom)
       var(--gv-a4-margin-left);
+  }
+
+  .print-page,
+  .print-doc,
+  .gv-a4-root,
+  .gv-a4-sheet,
+  .gv-a4-measure {
+    page: gv-report;
   }
 
   /*

@@ -548,7 +548,7 @@
  * documento branco cobre a folha inteira (7 mm, como o DANFE).
  */
 @media print {
-  @page {
+  @page gv-report {
     size: A4 portrait;
     margin: 0;
   }
