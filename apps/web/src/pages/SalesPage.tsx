@@ -35,7 +35,7 @@ import {
   type UserPermissionsResponse,
 } from '../lib/user-permissions';
 import { formatBRL, formatDate } from '../lib/format';
-import { openPdvDraftMirror } from '../lib/sales-reservation-print';
+import { openPdvDraftMirror, openPdvDraftPdf } from '../lib/sales-reservation-print';
 import {
   formatSaleQty as formatCartQty,
   isFractionalSaleUnit as isFractionalTaxUnit,
@@ -4760,6 +4760,14 @@ function PosScreen({
                         onClick={() => openPdvDraftMirror(d.id)}
                       >
                         Espelho
+                      </button>
+                      <button
+                        type="button"
+                        className="pos-btn pos-btn-ghost"
+                        title="Gera um arquivo PDF em A4. Não envia para a térmica."
+                        onClick={() => openPdvDraftPdf(d.id, d.number)}
+                      >
+                        Salvar PDF
                       </button>
                       <button
                         type="button"

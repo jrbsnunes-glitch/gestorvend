@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { api } from '../lib/api';
 import { isGestorVendDesktop } from '../lib/desktop-bridge';
-import { printDocument } from '../lib/desktop-print';
+import { printDocument, saveDocumentPdf } from '../lib/desktop-print';
 import { formatBRL, formatDate } from '../lib/format';
 import { formatSaleQty, isFractionalSaleUnit, qtyUnitLabel } from '../lib/sale-qty-unit';
 import { PAYMENT_FORM_KIND_LABELS, type PaymentFormKind } from '../lib/payment-forms';
@@ -103,10 +103,12 @@ export function SaleReservationPrintPage() {
   const isDraft = sp.get('origem') === 'rascunho';
   const isSecondCopy = sp.get('copy') === '1';
   const wantAutoPrint = sp.get('autoprint') === '1';
+  const wantSavePdf = sp.get('savepdf') === '1';
   const wantClose = sp.get('close') === '1';
   const np = sp.get('_np');
   const [printing, setPrinting] = useState(false);
   const printedRef = useRef(false);
+  const savedPdfRef = useRef(false);
   const thermal = isGestorVendDesktop();
 
   const q = useQuery({
@@ -166,6 +168,16 @@ export function SaleReservationPrintPage() {
     }, 500);
     return () => window.clearTimeout(t);
   }, [wantAutoPrint, ready, np, id, wantClose, thermal]);
+
+  useEffect(() => {
+    if (!wantSavePdf || !ready || savedPdfRef.current) return;
+    savedPdfRef.current = true;
+    const fileName = isDraft ? `rascunho-${r?.number ?? id}.pdf` : `reserva-${r?.number ?? id}.pdf`;
+    const t = window.setTimeout(() => {
+      void saveDocumentPdf({ defaultPath: fileName });
+    }, 500);
+    return () => window.clearTimeout(t);
+  }, [wantSavePdf, ready, isDraft, r?.number, id]);
 
   async function handlePrint() {
     if (!ready || printing) return;

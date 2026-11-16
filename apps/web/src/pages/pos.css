@@ -2745,7 +2745,7 @@
 }
 
 .pos-drafts-modal {
-  max-width: min(640px, 96vw);
+  max-width: min(720px, 96vw);
 }
 
 .pos-drafts-list {
@@ -2795,9 +2795,10 @@
   width: auto;
   min-width: 0;
   min-height: 32px;
-  padding: 0.28rem 0.4rem;
-  font-size: 0.78rem;
+  padding: 0.28rem 0.3rem;
+  font-size: 0.74rem;
   font-weight: 650;
   letter-spacing: 0;
+  white-space: nowrap;
   box-shadow: none;
 }
