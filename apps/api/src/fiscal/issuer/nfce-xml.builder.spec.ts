@@ -220,11 +220,11 @@ describe('nfce-xml.builder', () => {
     expect(cash).not.toContain('<xPag>');
   });
 
-  it('omite valor líquido em produção antes de 16/11/2026 (cStat 215)', () => {
+  it('omite valor líquido em produção enquanto a SEFAZ/AM rejeita o schema novo (cStat 215)', () => {
     const oct27 = new Date('2026-10-27T12:00:00.000Z');
     expect(sefazSchemaIncludesValorLiquido(oct27, 1)).toBe(false);
     expect(sefazSchemaIncludesValorLiquido(oct27, 2)).toBe(true);
-    expect(sefazSchemaIncludesValorLiquido(new Date('2026-11-16T12:00:00.000Z'), 1)).toBe(true);
+    expect(sefazSchemaIncludesValorLiquido(new Date('2026-11-16T12:00:00.000Z'), 1)).toBe(false);
 
     const prod = buildNfceInfNFeXml({
       chave44: '13261052604282000130650010000000011123456782',

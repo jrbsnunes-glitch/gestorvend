@@ -285,15 +285,16 @@ export function crtDefersIbsCbs(crt: number): boolean {
 
 /**
  * NT 2026.008 (vUnComLiq, vProdLiq, vProdLiqTot):
- * homologação 26/10/2026 · produção 16/11/2026.
- * Enviar antes disso (ou no ambiente errado) gera cStat 215 — Falha no schema XML.
+ * homologação desde 26/10/2026.
+ * Produção nacional seria 16/11/2026, mas a SEFAZ/AM (verAplic AM3.10) ainda
+ * valida o schema antigo e responde cStat 215. Em produção as tags ficam de fora
+ * até esse autorizador aceitar o leiaute novo.
  */
 const VALOR_LIQUIDO_HOMOLOG_FROM_MS = Date.parse('2026-10-26T03:00:00.000Z');
-const VALOR_LIQUIDO_PRODUCAO_FROM_MS = Date.parse('2026-11-16T03:00:00.000Z');
 
 export function sefazSchemaIncludesValorLiquido(now = new Date(), tpAmb: 1 | 2 = 2): boolean {
-  const from = tpAmb === 1 ? VALOR_LIQUIDO_PRODUCAO_FROM_MS : VALOR_LIQUIDO_HOMOLOG_FROM_MS;
-  return now.getTime() >= from;
+  if (tpAmb === 1) return false;
+  return now.getTime() >= VALOR_LIQUIDO_HOMOLOG_FROM_MS;
 }
 
 type IbsCbsBreakdown = {
