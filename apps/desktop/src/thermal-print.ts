@@ -328,6 +328,35 @@ async function restoreReceiptCaptureView(
   }
 }
 
+/**
+ * A foto não pode usar a janela do PDV (tela cheia vira página larga).
+ * O Chromium manda isso como A4 e a bobina imprime a folha inteira espremida.
+ * A largura fica a da bobina; o zoom só aumenta os pixels dentro dela.
+ */
+function thermalCaptureContentSize(cssHeight: number): { w: number; h: number } {
+  const zoom = RECEIPT_CAPTURE_ZOOM;
+  return {
+    w: Math.round(THERMAL_WINDOW_WIDTH_PX * zoom + 48),
+    h: Math.min(9000, Math.max(480, Math.round(cssHeight * zoom + 180))),
+  };
+}
+
+/** capturePage usa DIP; getBoundingClientRect devolve CSS px. Com zoom 2, 1 CSS px = 2 DIP. */
+function cssRectToCaptureDip(css: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): { x: number; y: number; width: number; height: number } {
+  const z = RECEIPT_CAPTURE_ZOOM;
+  return {
+    x: Math.max(0, Math.round(css.x * z)),
+    y: Math.max(0, Math.round(css.y * z)),
+    width: Math.max(1, Math.round(css.width * z)),
+    height: Math.max(1, Math.round(css.height * z)),
+  };
+}
+
 /** Amplia só durante a foto e devolve a janela ao tamanho de antes. */
 async function captureReceiptSharp(
   wc: WebContents,
@@ -349,44 +378,38 @@ async function captureReceiptSharp(
     } catch {
       /* segue na escala atual */
     }
+    const size = thermalCaptureContentSize(fallback.height);
     if (win && !win.isDestroyed()) {
-      const w = Math.max(prevSize?.[0] ?? 0, THERMAL_WINDOW_WIDTH_PX * RECEIPT_CAPTURE_ZOOM + 40);
-      const h = Math.min(
-        9000,
-        Math.max(prevSize?.[1] ?? 0, fallback.height * RECEIPT_CAPTURE_ZOOM + 120),
-      );
       try {
         if (maximized) win.unmaximize();
-        win.setContentSize(w, h);
+        win.setContentSize(size.w, size.h);
       } catch {
         /* janela principal pode recusar */
       }
     }
     await sleep(180);
-    let rect = (await measureSaleReceiptRect(wc)) ?? {
-      ...fallback,
-      x: Math.round(fallback.x * RECEIPT_CAPTURE_ZOOM),
-      y: Math.round(fallback.y * RECEIPT_CAPTURE_ZOOM),
-      width: Math.round(fallback.width * RECEIPT_CAPTURE_ZOOM),
-      height: Math.round(fallback.height * RECEIPT_CAPTURE_ZOOM),
-      clipped: false,
-    };
-    if (rect.clipped && win && !win.isDestroyed()) {
+    // Acima de ~95 mm o article acompanhou a janela (página), não a bobina.
+    const maxCssW = 360;
+    let measured = await measureSaleReceiptRect(wc);
+    if (measured && measured.width > maxCssW) measured = null;
+    let css: { x: number; y: number; width: number; height: number; clipped?: boolean } =
+      measured ?? fallback;
+    if (css.clipped && win && !win.isDestroyed()) {
+      const grown = thermalCaptureContentSize(css.height + 80);
       try {
-        win.setContentSize(
-          Math.max(rect.x + rect.width + 32, THERMAL_WINDOW_WIDTH_PX * RECEIPT_CAPTURE_ZOOM + 40),
-          Math.min(rect.y + rect.height + 64, 9000),
-        );
+        win.setContentSize(grown.w, grown.h);
       } catch {
         /* ignore */
       }
       await sleep(120);
-      rect = (await measureSaleReceiptRect(wc)) ?? rect;
+      const again = await measureSaleReceiptRect(wc);
+      if (again && again.width <= maxCssW) css = again;
     }
+    const rect = cssRectToCaptureDip(css);
     const shot = await wc.capturePage({
       x: rect.x,
       y: rect.y,
-      width: rect.width,
+      width: Math.min(rect.width, size.w),
       height: rect.height,
     });
     return shot.isEmpty() ? null : shot;

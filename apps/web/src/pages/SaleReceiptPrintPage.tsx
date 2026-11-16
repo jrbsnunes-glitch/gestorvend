@@ -402,7 +402,10 @@ export function SaleReceiptPrintPage() {
     const style = document.createElement('style');
     style.id = 'gv-sale-print-override';
     style.textContent = `
-      @page { size: 80mm 297mm !important; margin: 0 !important; }
+      @page gv-bobina { size: 80mm 2000mm !important; margin: 0 !important; }
+      html, body, .sale-receipt-page, .sale-receipt-preview, .sale-receipt-doc {
+        page: gv-bobina;
+      }
       @media print {
         html, body {
           width: 80mm !important;

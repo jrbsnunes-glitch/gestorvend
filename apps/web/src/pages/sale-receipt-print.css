@@ -453,20 +453,29 @@
    * estilo injetado redefine @page para A4.
    */
   /*
-   * Chrome ignora a altura `auto` da bobina e pagina num pedaço curto:
-   * o cupom sai em 2 folhas (itens numa, pagamentos na outra). Uma via
-   * 80×297 mm cabe o comprovante inteiro sem fatiar.
+   * Página nomeada: não mexe no @page A4 dos relatórios.
+   * 297 mm é a altura do A4 — o driver da bobina trocava o formulário
+   * e imprimia a folha inteira no rolo. Altura longa cabe o cupom;
+   * `auto` o Chrome fatia em duas vias.
    */
-  @page {
-    size: 80mm 297mm;
+  @page gv-bobina {
+    size: 80mm 2000mm;
     margin: 0;
+  }
+
+  html.gv-sale-receipt-print,
+  body.gv-sale-receipt-print,
+  .sale-receipt-page,
+  .sale-receipt-preview,
+  .sale-receipt-doc {
+    page: gv-bobina;
   }
 
   html.gv-sale-receipt-print,
   html:has(.sale-receipt-doc) {
     font-size: 16px !important;
-    width: 100% !important;
-    max-width: none !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
     height: auto !important;
     min-height: 0 !important;
     margin: 0 !important;
@@ -477,8 +486,8 @@
 
   body.gv-sale-receipt-print,
   html:has(.sale-receipt-doc) body {
-    width: 100% !important;
-    max-width: none !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
     height: auto !important;
     min-height: 0 !important;
     margin: 0 !important;
@@ -493,8 +502,8 @@
     padding: 0 !important;
     height: auto !important;
     min-height: 0 !important;
-    width: 100% !important;
-    max-width: none !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
     margin: 0 !important;
     overflow: visible !important;
     display: block !important;
@@ -503,7 +512,8 @@
 
   .sale-receipt-preview {
     display: block !important;
-    width: auto !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
     margin: 0 !important;
     padding: 0 !important;
   }
@@ -708,6 +718,25 @@
    * bobina (80mm auto) + width:auto esticava o cupom e o driver PDF gerava
    * arquivo vazio.
    */
+  @page gv-a4-sheet {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  html.gv-receipt-save-pdf,
+  html.gv-receipt-save-pdf body,
+  html.gv-receipt-save-pdf .sale-receipt-page,
+  html.gv-receipt-save-pdf .sale-receipt-preview,
+  html.gv-receipt-save-pdf .sale-receipt-doc {
+    page: gv-a4-sheet !important;
+  }
+
+  html.gv-receipt-save-pdf,
+  html.gv-receipt-save-pdf body {
+    width: auto !important;
+    max-width: none !important;
+  }
+
   html.gv-receipt-save-pdf .sale-receipt-page,
   html.gv-receipt-save-pdf .sale-receipt-preview {
     width: 100% !important;

@@ -130,7 +130,10 @@ function injectA4ReceiptPdfStyles(): HTMLStyleElement {
   const style = document.createElement('style');
   style.id = RECEIPT_PDF_PAGE_STYLE_ID;
   style.textContent = `
-    @page { size: A4 portrait; margin: 12mm; }
+    @page gv-a4-sheet { size: A4 portrait !important; margin: 12mm !important; }
+    html, body, .sale-receipt-page, .sale-receipt-preview, .sale-receipt-doc {
+      page: gv-a4-sheet !important;
+    }
     @media print {
       html.gv-receipt-save-pdf .sale-receipt-doc {
         width: 80mm !important;
