@@ -5,11 +5,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { CustomerCadastroModal } from '../components/CustomerCadastroModal';
 import { NumericInput } from '../components/NumericInput';
+import { ProductCadastroModal } from '../components/ProductCadastroModal';
 import { api } from '../lib/api';
 import { validateDocumentIfCpf } from '../lib/cpf';
 import { ProductSearchModal, type ProductSearchRow } from '../components/ProductSearchModal';
-import { openCustomerCadastro, openProductCadastro } from '../lib/cadastro-edit-window';
 import { formatBRL, formatCpfCnpj } from '../lib/format';
 
 type CustomerRow = {
@@ -73,6 +74,8 @@ export function NfeFormPage() {
   const [showCustomerQuick, setShowCustomerQuick] = useState(false);
   const [customerQuick, setCustomerQuick] = useState({ name: '', document: '' });
   const [productSearchOpen, setProductSearchOpen] = useState(false);
+  const [editCustomerOpen, setEditCustomerOpen] = useState(false);
+  const [editProductId, setEditProductId] = useState<string | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [discount, setDiscount] = useState('0');
   const [surcharge, setSurcharge] = useState('0');
@@ -388,7 +391,8 @@ export function NfeFormPage() {
               type="button"
               className="btn btn-secondary"
               disabled={!customerId}
-              onClick={() => customerId && openCustomerCadastro(customerId)}
+              title="Editar endereço, documento e inscrição estadual"
+              onClick={() => customerId && setEditCustomerOpen(true)}
             >
               Editar cadastro
             </button>
@@ -604,7 +608,7 @@ export function NfeFormPage() {
           title="Produto na NF-e"
           onClose={() => setProductSearchOpen(false)}
           onPick={addProduct}
-          onEdit={(row) => openProductCadastro(row.productId, 'fiscal')}
+          onEdit={(row) => setEditProductId(row.productId)}
         />
 
         <div className="table-wrap">
@@ -674,7 +678,7 @@ export function NfeFormPage() {
                         <button
                           type="button"
                           className="btn btn-secondary btn-compact"
-                          onClick={() => openProductCadastro(l.productId, 'fiscal')}
+                          onClick={() => setEditProductId(l.productId)}
                         >
                           Cadastro
                         </button>
@@ -846,6 +850,18 @@ export function NfeFormPage() {
           Salvar e transmitir SEFAZ
         </button>
       </div>
+      {editCustomerOpen && customerId ? (
+        <CustomerCadastroModal customerId={customerId} onClose={() => setEditCustomerOpen(false)} />
+      ) : null}
+      {editProductId ? (
+        <ProductCadastroModal
+          productId={editProductId}
+          onClose={() => setEditProductId(null)}
+          onSaved={(p) =>
+            setLines((prev) => prev.map((l) => (l.productId === p.id ? { ...l, label: p.name } : l)))
+          }
+        />
+      ) : null}
     </div>
   );
 }

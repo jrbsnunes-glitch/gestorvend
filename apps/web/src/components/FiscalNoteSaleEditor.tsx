@@ -4,10 +4,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { CustomerCadastroModal } from './CustomerCadastroModal';
 import { NumericInput } from './NumericInput';
+import { ProductCadastroModal } from './ProductCadastroModal';
 import { ProductSearchModal, type ProductSearchRow } from './ProductSearchModal';
 import { api } from '../lib/api';
-import { openCustomerCadastro, openProductCadastro } from '../lib/cadastro-edit-window';
 import { formatBRL, formatCpfCnpj } from '../lib/format';
 
 type CustomerRow = { id: string; name: string; document: string | null };
@@ -56,6 +57,8 @@ export function FiscalNoteSaleEditor({
   const [customerId, setCustomerId] = useState(doc.sale.customerId ?? '');
   const [customerQ, setCustomerQ] = useState('');
   const [productSearchOpen, setProductSearchOpen] = useState(false);
+  const [editCustomerOpen, setEditCustomerOpen] = useState(false);
+  const [editProductId, setEditProductId] = useState<string | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [localErr, setLocalErr] = useState<string | null>(null);
 
@@ -147,9 +150,9 @@ export function FiscalNoteSaleEditor({
     <section className="card" style={{ marginTop: '0.75rem' }}>
       <h3 style={{ fontSize: '0.95rem', marginTop: 0 }}>Ajustar cliente e produtos</h3>
       <p className="page-desc" style={{ marginTop: 0, fontSize: '0.82rem' }}>
-        Corrija destinatário ou itens após rejeição da SEFAZ e salve antes de reenviar. Use{' '}
-        <strong>Editar cadastro</strong> para abrir cliente ou produto (endereço, NCM, situação
-        fiscal etc.) em nova aba, ajuste e volte aqui para reenviar.
+        Corrija destinatário ou itens após rejeição da SEFAZ e salve antes de reenviar.{' '}
+        <strong>Editar cadastro</strong> abre o cliente ou o produto aqui mesmo (endereço, inscrição
+        estadual, NCM, situação fiscal).
       </p>
       {doc.lastError ? (
         <div className="alert alert-error" style={{ fontSize: '0.85rem' }}>
@@ -190,8 +193,8 @@ export function FiscalNoteSaleEditor({
             type="button"
             className="btn btn-secondary"
             disabled={!customerId}
-            title={customerId ? 'Abre o cadastro do cliente em nova aba' : 'Selecione um cliente'}
-            onClick={() => customerId && openCustomerCadastro(customerId)}
+            title={customerId ? 'Editar endereço, documento e inscrição estadual' : 'Selecione um cliente'}
+            onClick={() => customerId && setEditCustomerOpen(true)}
           >
             Editar cadastro
           </button>
@@ -212,7 +215,7 @@ export function FiscalNoteSaleEditor({
         title="Produto na nota"
         onClose={() => setProductSearchOpen(false)}
         onPick={addProduct}
-        onEdit={(row) => openProductCadastro(row.productId, 'fiscal')}
+        onEdit={(row) => setEditProductId(row.productId)}
       />
 
       <div className="table-wrap">
@@ -275,7 +278,7 @@ export function FiscalNoteSaleEditor({
                       <button
                         type="button"
                         className="btn btn-secondary btn-compact"
-                        onClick={() => openProductCadastro(l.productId, 'fiscal')}
+                        onClick={() => setEditProductId(l.productId)}
                       >
                         Cadastro
                       </button>
@@ -318,6 +321,18 @@ export function FiscalNoteSaleEditor({
           </Link>
         )}
       </div>
+      {editCustomerOpen && customerId ? (
+        <CustomerCadastroModal customerId={customerId} onClose={() => setEditCustomerOpen(false)} />
+      ) : null}
+      {editProductId ? (
+        <ProductCadastroModal
+          productId={editProductId}
+          onClose={() => setEditProductId(null)}
+          onSaved={(p) =>
+            setLines((prev) => prev.map((l) => (l.productId === p.id ? { ...l, label: p.name } : l)))
+          }
+        />
+      ) : null}
     </section>
   );
 }

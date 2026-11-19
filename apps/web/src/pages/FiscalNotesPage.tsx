@@ -68,7 +68,7 @@ type FiscalDocDetail = FiscalDocRow & {
       quantity: string;
       unitPrice: string;
       totalLine?: string;
-      variant?: { sku?: string; product?: { name?: string } };
+      variant?: { sku?: string; product?: { id?: string; name?: string } };
     }>;
     payments?: unknown[];
   };
