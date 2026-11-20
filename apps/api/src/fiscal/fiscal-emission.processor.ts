@@ -25,6 +25,8 @@ import {
   appendInfNFeSupl,
   buildNfceInfNFeXml,
   buildNfceQrUrlAm,
+  buildNfceQrUrlContingenciaV2,
+  buildNfceQrUrlContingenciaV3,
   buildNfceQrUrlV3,
   mapSalePaymentToNfcePag,
   type DestInput,
@@ -33,7 +35,7 @@ import {
 import { homologFieldText } from './homolog-labels';
 import { resolveSoftwareHouseRespTec } from './issuer/fiscal-resptec';
 import { resolveSefazWebservices } from './sefaz/sefaz-endpoints';
-import { signNfeSignatureSibling } from './issuer/sign-inf-nfe';
+import { extractFirstDigestValueB64, signNfeSignatureSibling } from './issuer/sign-inf-nfe';
 import {
   buildNfeProcXml,
   parseSefazAutorizacaoResponse,
@@ -230,7 +232,7 @@ export class FiscalEmissionProcessorService {
           { status: FiscalDocumentStatus.QUEUED },
           {
             status: FiscalDocumentStatus.CONTINGENCY,
-            OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+            OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }, { accessKey: null }],
           },
         ],
       },
@@ -268,6 +270,56 @@ export class FiscalEmissionProcessorService {
       summary: `Gerou nota fiscal — venda #${sale.number}`,
       entityType: 'fiscal_document',
       entityRef: accessKey.slice(0, 44),
+    });
+  }
+
+  /** QR on-line (tpEmis 1) ou de contingência offline (tpEmis 9). */
+  private nfceQrUrl(input: {
+    tpEmis: number;
+    qrVersion: string;
+    chave44: string;
+    tpAmb: 1 | 2;
+    dhEmiIso: string;
+    vNF: number;
+    signedXml: string;
+    cscId: string;
+    csc: string;
+    qrBase: string;
+  }): string {
+    if (input.tpEmis !== 9) {
+      return input.qrVersion === '300'
+        ? buildNfceQrUrlV3({ chNFe: input.chave44, tpAmb: input.tpAmb, qrBaseUrl: input.qrBase })
+        : buildNfceQrUrlAm({
+            chNFe: input.chave44,
+            tpAmb: input.tpAmb,
+            cscId: input.cscId,
+            csc: input.csc,
+            qrBaseUrl: input.qrBase,
+          });
+    }
+    const digest = extractFirstDigestValueB64(input.signedXml);
+    if (!digest) {
+      throw new Error('NFC-e em contingência sem DigestValue para o QR Code.');
+    }
+    if (input.qrVersion === '300') {
+      return buildNfceQrUrlContingenciaV3({
+        chNFe: input.chave44,
+        tpAmb: input.tpAmb,
+        dhEmiIso: input.dhEmiIso,
+        vNF: input.vNF,
+        digestValueB64: digest,
+        qrBaseUrl: input.qrBase,
+      });
+    }
+    return buildNfceQrUrlContingenciaV2({
+      chNFe: input.chave44,
+      tpAmb: input.tpAmb,
+      dhEmiIso: input.dhEmiIso,
+      vNF: input.vNF,
+      digestValueB64: digest,
+      cscId: input.cscId,
+      csc: input.csc,
+      qrBaseUrl: input.qrBase,
     });
   }
 
@@ -374,6 +426,16 @@ export class FiscalEmissionProcessorService {
     let serie = isNfe ? settings.nfeSerie : settings.nfceSerie;
     let tpEmis =
       reuseAccessKey || doc.tpEmis > 1 ? doc.tpEmis || 9 : 1;
+    // NFC-e já parada por schema (215/999) sem XML: monta o documento offline
+    // (tpEmis 9) para imprimir, em vez de reenviar o XML que a SEFAZ recusou.
+    if (
+      isNfce &&
+      !reuseAccessKey &&
+      doc.status === FiscalDocumentStatus.CONTINGENCY &&
+      (doc.tpEmis <= 1 || !doc.accessKey)
+    ) {
+      tpEmis = 9;
+    }
 
     // Contingência: retransmite o XML já assinado (mesma chave), sem remontar.
     if (reuseAccessKey && this.transportMode(settings.sefazEnvironment) === 'soap') {
@@ -534,15 +596,26 @@ export class FiscalEmissionProcessorService {
           parsed.cStat === '108' ||
           parsed.cStat === '109';
         const schemaHold = parsed.cStat === '215' || parsed.cStat === '999';
+        let reuseMotive = short;
+        if (schemaHold) {
+          const rejected = await this.outboundStorage.saveRejectedXml(
+            tenantSlug,
+            reuseAccessKey,
+            stored,
+          );
+          reuseMotive = `${rejected.name} | ${short}`.slice(0, 2000);
+          this.log.warn(`XML recusado pela SEFAZ gravado em ${rejected.path}`);
+        }
         if ((isCommFail || schemaHold) && isNfce) {
+          const keepPrintedCopy = !schemaHold || parsedKey.tpEmis === 9;
           await db.fiscalDocument.update({
             where: { id: doc.id },
             data: {
               status: FiscalDocumentStatus.CONTINGENCY,
-              tpEmis: schemaHold ? 1 : parsedKey.tpEmis || 9,
-              accessKey: schemaHold ? null : reuseAccessKey,
+              tpEmis: keepPrintedCopy ? parsedKey.tpEmis || 9 : 1,
+              accessKey: keepPrintedCopy ? reuseAccessKey : null,
               nextAttemptAt: schemaHold ? new Date(Date.now() + 15 * 60 * 1000) : new Date(),
-              lastError: `Contingência: ${short}`.slice(0, 2000),
+              lastError: `Contingência: ${schemaHold ? reuseMotive : short}`.slice(0, 2000),
             },
           });
           await db.sale.update({
@@ -557,11 +630,11 @@ export class FiscalEmissionProcessorService {
         }
         await db.fiscalDocument.update({
           where: { id: doc.id },
-          data: { status: FiscalDocumentStatus.REJECTED, lastError: short },
+          data: { status: FiscalDocumentStatus.REJECTED, lastError: schemaHold ? reuseMotive : short },
         });
         await db.sale.update({
           where: { id: doc.saleId },
-          data: { fiscalIntegrationError: `SEFAZ: ${short}`.slice(0, 1024) },
+          data: { fiscalIntegrationError: `SEFAZ: ${schemaHold ? reuseMotive : short}`.slice(0, 1024) },
         });
         return;
       }
@@ -743,7 +816,7 @@ export class FiscalEmissionProcessorService {
       }
     }
 
-    const { xmlNfeEnvelope, infNFeId } = buildNfceInfNFeXml({
+    const nfeBuildParams = {
       chave44,
       cNF,
       natOp:
@@ -758,7 +831,7 @@ export class FiscalEmissionProcessorService {
       serie,
       nNF: nextNumber,
       tpEmis,
-      finNFe: doc.finNFe === 4 ? 4 : 1,
+      finNFe: (doc.finNFe === 4 ? 4 : 1) as 1 | 4,
       refAccessKey: doc.refAccessKey,
       dhContIso: tpEmis !== 1 ? dhEmiIso : null,
       xJustCont:
@@ -802,7 +875,8 @@ export class FiscalEmissionProcessorService {
       deliveryDriverName: sale.deliveryDriverName,
       infCplExtra: sale.notes,
       idDest,
-    });
+    };
+    const { xmlNfeEnvelope, infNFeId } = buildNfceInfNFeXml(nfeBuildParams);
 
     const { privateKeyPem, certificatePem } = loadPfxMaterial(certPath, certPassword);
     let signed = signNfeSignatureSibling(xmlNfeEnvelope, {
@@ -811,29 +885,127 @@ export class FiscalEmissionProcessorService {
       certificatePem,
     });
     const wsEmit = this.sefazWs(ufSig, production, modelo);
+    const qrVersion = wsEmit.nfceQrVersion ?? '200';
+    const qrOverride = this.config.get<string>('FISCAL_NFCE_QR_BASE_URL')?.trim();
+    const qrBase =
+      qrOverride ||
+      wsEmit.nfceQrConsultaBase ||
+      'https://www.homologacao.nfce.fazenda.sp.gov.br/NFCeConsultaPublica/Paginas/ConsultaPublica.aspx';
+    const urlChave =
+      this.config.get<string>('FISCAL_NFCE_URL_CHAVE')?.trim() || wsEmit.nfceUrlChave || '';
     if (isNfce) {
-      const qrVersion = wsEmit.nfceQrVersion ?? '200';
       if (qrVersion !== '300' && (!cscId || !csc)) {
         throw new Error('NFC-e em QR v2 exige CSC (ID e token) no emissor fiscal.');
       }
-      const qrOverride = this.config.get<string>('FISCAL_NFCE_QR_BASE_URL')?.trim();
-      const qrBase =
-        qrOverride ||
-        wsEmit.nfceQrConsultaBase ||
-        'https://www.homologacao.nfce.fazenda.sp.gov.br/NFCeConsultaPublica/Paginas/ConsultaPublica.aspx';
-      const urlChave =
-        this.config.get<string>('FISCAL_NFCE_URL_CHAVE')?.trim() || wsEmit.nfceUrlChave;
-      const qrUrl =
-        qrVersion === '300'
-          ? buildNfceQrUrlV3({ chNFe: chave44, tpAmb, qrBaseUrl: qrBase })
-          : buildNfceQrUrlAm({
-              chNFe: chave44,
-              tpAmb,
-              cscId,
-              csc,
-              qrBaseUrl: qrBase,
-            });
-      signed = appendInfNFeSupl(signed, qrUrl, urlChave);
+      signed = appendInfNFeSupl(
+        signed,
+        this.nfceQrUrl({
+          tpEmis,
+          qrVersion,
+          chave44,
+          tpAmb,
+          dhEmiIso,
+          vNF,
+          signedXml: signed,
+          cscId,
+          csc,
+          qrBase,
+        }),
+        urlChave,
+      );
+    }
+
+    let shortHint =
+      doc.lastError?.replace(/^Contingência:\s*/i, '').trim() ||
+      'SEFAZ recusou o XML. Documento emitido em contingencia para impressao.';
+
+    const persistContingencyPrint = async (accessKey: string, xml: string, reserveNumber: boolean) => {
+      const saved = await this.outboundStorage.saveXml(tenantSlug, accessKey, xml);
+      await db.$transaction(async (tx) => {
+        if (reserveNumber) {
+          await tx.fiscalIssuerSettings.update({
+            where: { id: settings.id },
+            data: { nfceLastNumber: nextNumber },
+          });
+        }
+        await tx.fiscalDocument.update({
+          where: { id: doc.id },
+          data: {
+            status: FiscalDocumentStatus.CONTINGENCY,
+            tpEmis: 9,
+            accessKey,
+            protocol: null,
+            sefazEnvironment: settings.sefazEnvironment,
+            xmlPath: saved.path,
+            xmlSha256: saved.sha256,
+            nextAttemptAt: new Date(Date.now() + 15 * 60 * 1000),
+            lastError: `Contingência: ${shortHint}`.slice(0, 2000),
+          },
+        });
+        await tx.sale.update({
+          where: { id: doc.saleId },
+          data: {
+            fiscalIntegrationError:
+              'NFC-e emitida em contingência. Imprima o DANFE e reenvie depois pela tela Notas Fiscais.',
+          },
+        });
+      });
+      this.log.warn(`NFC-e em contingência (impressão) tenant=${tenantSlug} chave=${accessKey}`);
+    };
+
+    const sealOfflineContingency = async (motive: string) => {
+      shortHint = motive;
+      const contChave = buildNfceAccessKey({
+        codUf,
+        aammEmissao: aamm,
+        cnpj14: cnpj,
+        serie3: serie,
+        nNF9: nextNumber,
+        tpEmis: 9,
+        codigoNumerico8: Number(cNF),
+        modelo,
+      });
+      const built = buildNfceInfNFeXml({
+        ...nfeBuildParams,
+        chave44: contChave,
+        tpEmis: 9,
+        dhContIso: dhEmiIso,
+        xJustCont:
+          'Falha de comunicacao com a SEFAZ no momento da emissao. Documento em contingencia.',
+      });
+      let xml = signNfeSignatureSibling(built.xmlNfeEnvelope, {
+        infNFeId: built.infNFeId,
+        privateKeyPem,
+        certificatePem,
+      });
+      xml = appendInfNFeSupl(
+        xml,
+        this.nfceQrUrl({
+          tpEmis: 9,
+          qrVersion,
+          chave44: contChave,
+          tpAmb,
+          dhEmiIso,
+          vNF,
+          signedXml: xml,
+          cscId,
+          csc,
+          qrBase,
+        }),
+        urlChave,
+      );
+      await persistContingencyPrint(contChave, xml, !reused);
+    };
+
+    const schemaParked =
+      isNfce &&
+      tpEmis === 9 &&
+      !reuseAccessKey &&
+      doc.status === FiscalDocumentStatus.CONTINGENCY &&
+      /\b(215|999)\b/.test(doc.lastError ?? '');
+    if (schemaParked) {
+      await persistContingencyPrint(chave44, signed, !reused);
+      return;
     }
 
     const enviNFe =
@@ -971,35 +1143,47 @@ export class FiscalEmissionProcessorService {
       }
     }
     // Falha de comunicação: guarda o XML e reenvia a mesma chave.
-    // 215/999: o autorizador da NFC-e recusou o schema ou deu exceção; não grava
-    // o XML inválido. A nota fica em contingência e o worker remonta o XML depois.
+    // 215/999 na emissão normal: monta outro XML em contingência (tpEmis 9) com
+    // QR offline, para o DANFE sair agora. Se o XML já é tpEmis 9, conserva a chave.
     const isCommFail =
       /timeout|ECONN|socket|TLS|certificate|403|unavailable|indispon/i.test(short) ||
       parsed.cStat === '108' ||
       parsed.cStat === '109';
     const schemaHold = parsed.cStat === '215' || parsed.cStat === '999';
+    let schemaMotive = short;
+    if (schemaHold) {
+      const rejected = await this.outboundStorage.saveRejectedXml(tenantSlug, chave44, signed);
+      schemaMotive = `${rejected.name} | ${short}`.slice(0, 2000);
+      this.log.warn(`XML recusado pela SEFAZ gravado em ${rejected.path}`);
+    }
 
     if ((isCommFail || schemaHold) && isNfce) {
+      if (schemaHold && tpEmis !== 9) {
+        await sealOfflineContingency(schemaMotive);
+        return;
+      }
+      if (schemaHold) {
+        shortHint = schemaMotive;
+        await persistContingencyPrint(chave44, signed, !reused);
+        return;
+      }
       await db.fiscalDocument.update({
         where: { id: doc.id },
         data: {
           status: FiscalDocumentStatus.CONTINGENCY,
-          tpEmis: schemaHold ? 1 : 9,
-          accessKey: schemaHold ? null : chave44,
-          nextAttemptAt: schemaHold ? new Date(Date.now() + 15 * 60 * 1000) : new Date(),
+          tpEmis,
+          accessKey: chave44,
           lastError: `Contingência: ${short}`.slice(0, 2000),
         },
       });
-      if (!schemaHold) {
-        await this.outboundStorage.saveXml(tenantSlug, chave44, signed);
-      }
+      await this.outboundStorage.saveXml(tenantSlug, chave44, signed);
       await db.sale.update({
         where: { id: doc.saleId },
         data: {
-          fiscalIntegrationError: (schemaHold
-            ? `Contingência NFC-e: a SEFAZ recusou o XML (${parsed.cStat}). Nova tentativa automática em 15 minutos.`
-            : `Contingência NFC-e: reenvie pela tela Notas Fiscais. ${short}`
-          ).slice(0, 1024),
+          fiscalIntegrationError: `Contingência NFC-e: reenvie pela tela Notas Fiscais. ${short}`.slice(
+            0,
+            1024,
+          ),
         },
       });
       this.log.warn(`NFC-e em contingência tenant=${tenantSlug}: ${short}`);
@@ -1008,11 +1192,11 @@ export class FiscalEmissionProcessorService {
 
     await db.fiscalDocument.update({
       where: { id: doc.id },
-      data: { status: FiscalDocumentStatus.REJECTED, lastError: short },
+      data: { status: FiscalDocumentStatus.REJECTED, lastError: schemaHold ? schemaMotive : short },
     });
     await db.sale.update({
       where: { id: doc.saleId },
-      data: { fiscalIntegrationError: `SEFAZ: ${short}`.slice(0, 1024) },
+      data: { fiscalIntegrationError: `SEFAZ: ${schemaHold ? schemaMotive : short}`.slice(0, 1024) },
     });
     this.log.warn(`Documento rejeitado tenant=${tenantSlug}: ${short}`);
     });

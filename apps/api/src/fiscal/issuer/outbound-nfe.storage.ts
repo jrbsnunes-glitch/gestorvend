@@ -38,6 +38,25 @@ export class OutboundNfeStorage {
     return { path: filePath, sha256 };
   }
 
+  /**
+   * Cópia do XML que a SEFAZ recusou (215/999). Não entra na retransmissão:
+   * o arquivo oficial continua `{chave}.xml`.
+   */
+  async saveRejectedXml(
+    tenantSlug: string,
+    accessKey: string,
+    xml: string,
+  ): Promise<{ path: string; sha256: string; name: string }> {
+    const key = accessKey.replace(/\D/g, '').slice(0, 44);
+    const dir = this.tenantDir(tenantSlug);
+    await fs.mkdir(dir, { recursive: true });
+    const name = `${key}-rejeitado.xml`;
+    const filePath = path.join(dir, name);
+    await fs.writeFile(filePath, xml, 'utf8');
+    const sha256 = crypto.createHash('sha256').update(xml, 'utf8').digest('hex');
+    return { path: filePath, sha256, name };
+  }
+
   async readXml(tenantSlug: string, accessKey: string): Promise<string | null> {
     try {
       return await fs.readFile(this.xmlPathForKey(tenantSlug, accessKey), 'utf8');

@@ -762,6 +762,62 @@ export function buildNfceQrUrlV3(params: {
   return `${base}?p=${ch}|3|${params.tpAmb}`;
 }
 
+function qrHex(text: string): string {
+  return Buffer.from(text, 'utf8').toString('hex');
+}
+
+function digestB64ToHex(digestValueB64: string): string {
+  return Buffer.from(digestValueB64.trim(), 'base64').toString('hex');
+}
+
+function qrMoney(vNF: number): string {
+  return roundMoney2(Number(vNF)).toFixed(2);
+}
+
+/**
+ * QR NFC-e v2 em contingência offline (tpEmis 9).
+ * `p=chave|2|tpAmb|dhEmiHex|vNF|digValHex|idToken|hash`
+ * O hash é SHA-1 da sequência + CSC, sem pipe antes do CSC.
+ */
+export function buildNfceQrUrlContingenciaV2(params: {
+  chNFe: string;
+  tpAmb: 1 | 2;
+  dhEmiIso: string;
+  vNF: number;
+  digestValueB64: string;
+  cscId: string;
+  csc: string;
+  qrBaseUrl: string;
+}): string {
+  const ch = onlyDigits(params.chNFe, 44);
+  const cscId = String(Number(params.cscId.replace(/\D/g, '') || '0'));
+  const dhHex = qrHex(params.dhEmiIso);
+  const digHex = digestB64ToHex(params.digestValueB64);
+  const vNF = qrMoney(params.vNF);
+  const seq = `${ch}|2|${params.tpAmb}|${dhHex}|${vNF}|${digHex}|${cscId}`;
+  const hash = crypto.createHash('sha1').update(seq + params.csc, 'utf8').digest('hex').toUpperCase();
+  const base = params.qrBaseUrl.replace(/\?.*$/, '');
+  return `${base}?p=${seq}|${hash}`;
+}
+
+/**
+ * QR NFC-e v3 em contingência offline (NT 2025.001): sem CSC.
+ * `p=chave|3|tpAmb|dhEmiHex|vNF|digValHex`
+ */
+export function buildNfceQrUrlContingenciaV3(params: {
+  chNFe: string;
+  tpAmb: 1 | 2;
+  dhEmiIso: string;
+  vNF: number;
+  digestValueB64: string;
+  qrBaseUrl: string;
+}): string {
+  const ch = onlyDigits(params.chNFe, 44);
+  const seq = `${ch}|3|${params.tpAmb}|${qrHex(params.dhEmiIso)}|${qrMoney(params.vNF)}|${digestB64ToHex(params.digestValueB64)}`;
+  const base = params.qrBaseUrl.replace(/\?.*$/, '');
+  return `${base}?p=${seq}`;
+}
+
 /** QR NFC-e v2 on-line (parâmetro `p=` + CSC). */
 export function buildNfceQrUrlAm(params: {
   chNFe: string;

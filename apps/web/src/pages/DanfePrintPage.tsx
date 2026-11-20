@@ -136,6 +136,8 @@ export function DanfePrintPage() {
   const nfce = q.data?.nfce;
   const qrSrc = useNfceQrDataUrl(isNfce ? nfce?.qrCode : null);
   const homolog = doc?.sefazEnvironment !== 'PRODUCAO';
+  const contingencyPrint =
+    doc?.status === 'CONTINGENCY' && doc.accessKey?.replace(/\D/g, '')[34] === '9';
   const pending =
     doc &&
     (doc.status === 'QUEUED' ||
@@ -235,6 +237,16 @@ export function DanfePrintPage() {
           </p>
           <p className="muted-line">Documento Auxiliar da Nota Fiscal de Consumidor Eletrônica</p>
           <p className="muted-line">Não permite aproveitamento de crédito de ICMS</p>
+          {contingencyPrint ? (
+            <>
+              <p className="muted-line">
+                <strong>EMITIDA EM CONTINGÊNCIA</strong>
+              </p>
+              <p className="muted-line">
+                <strong>Pendente de autorização</strong>
+              </p>
+            </>
+          ) : null}
           {homolog && doc.status === 'AUTHORIZED' && (
             <p className="muted-line">
               <strong>EMITIDA EM AMBIENTE DE HOMOLOGAÇÃO — SEM VALOR FISCAL</strong>
@@ -306,7 +318,7 @@ export function DanfePrintPage() {
               {doc.accessKey ? (
                 <div className="key">{formatNfceAccessKey(doc.accessKey)}</div>
               ) : null}
-              {doc.protocol ? (
+              {doc.status === 'AUTHORIZED' && doc.protocol ? (
                 <p className="muted-line">Protocolo de Autorização: {doc.protocol}</p>
               ) : null}
               {qrSrc ? (
@@ -321,7 +333,9 @@ export function DanfePrintPage() {
           )}
           <hr />
           <p className="muted-line">
-            Documento auxiliar da NFC-e. A validade jurídica é do XML autorizado pela SEFAZ.
+            {contingencyPrint
+              ? 'DANFE NFC-e em contingência. Pendente de autorização da SEFAZ.'
+              : 'Documento auxiliar da NFC-e. A validade jurídica é do XML autorizado pela SEFAZ.'}
           </p>
         </article>
       </div>

@@ -215,22 +215,26 @@ function buildReceiptTicketJson(
     c.phone?.trim() ? `Tel. ${c.phone}` : '',
   ].filter(Boolean);
 
-  const headlines = opts.nfceAuthorized
+  const accessDigits = opts.nfce?.accessKey?.replace(/\D/g, '') ?? '';
+  const nfceContingency = opts.nfce?.status === 'CONTINGENCY' && accessDigits[34] === '9';
+  const nfceDanfe = opts.nfceAuthorized || nfceContingency;
+  const headlines = nfceDanfe
     ? [
         'DANFE NFC-e',
         'Documento Auxiliar da Nota Fiscal de Consumidor Eletrônica',
         'Não permite aproveitamento de crédito de ICMS',
+        ...(nfceContingency ? ['EMITIDA EM CONTINGÊNCIA', 'Pendente de autorização'] : []),
       ]
     : [
         'DOCUMENTO AUXILIAR DE VENDA',
         'Não possui validade fiscal - conferência interna / troca mediante política da loja',
       ];
-  if (opts.nfce?.pending && !opts.nfceAuthorized) {
+  if (opts.nfce?.pending && !nfceDanfe) {
     headlines.push('NFC-e em processamento na SEFAZ...');
   }
 
   const banners = [
-    opts.nfceAuthorized && opts.nfce?.sefazEnvironment !== 'PRODUCAO'
+    nfceDanfe && !nfceContingency && opts.nfce?.sefazEnvironment !== 'PRODUCAO'
       ? 'Emitida em homologação - sem valor fiscal'
       : '',
     s.status === 'CANCELLED' ? 'Venda cancelada' : '',
@@ -239,7 +243,7 @@ function buildReceiptTicketJson(
 
   const metas: Array<{ left: string; right: string }> = [
     {
-      left: opts.nfceAuthorized
+      left: nfceDanfe
         ? `NFC-e${opts.nfce?.nNF != null ? ` nº ${opts.nfce.nNF}` : ''}${
             opts.nfce?.serie != null ? ` · Série ${opts.nfce.serie}` : ''
           }`
@@ -247,7 +251,7 @@ function buildReceiptTicketJson(
       right: formatDate(s.createdAt),
     },
   ];
-  if (opts.nfceAuthorized) metas.push({ left: 'Venda', right: `#${s.number}` });
+  if (nfceDanfe) metas.push({ left: 'Venda', right: `#${s.number}` });
   if (s.user?.name) metas.push({ left: 'Operador', right: s.user.name });
   const seller = s.sellerName || s.sellerUser?.name || s.user?.name;
   if (seller) metas.push({ left: 'Responsável', right: seller });
@@ -258,7 +262,7 @@ function buildReceiptTicketJson(
       left: consumerDoc.length === 14 ? 'CNPJ' : 'CPF',
       right: formatConsumerDocument(consumerDoc),
     });
-  } else if (opts.nfceAuthorized) {
+  } else if (nfceDanfe) {
     metas.push({ left: 'Consumidor', right: 'Não identificado' });
   }
 
@@ -302,8 +306,8 @@ function buildReceiptTicketJson(
   totals.push({ left: 'TOTAL', right: formatBRL(s.total), emph: true });
 
   const payments = s.payments.map((p) => ({
-    left: `${receiptPayLabel(p, opts.nfceAuthorized)}${
-      !opts.nfceAuthorized && p.method === 'CREDIT' && p.installments > 1
+    left: `${receiptPayLabel(p, nfceDanfe)}${
+      !nfceDanfe && p.method === 'CREDIT' && p.installments > 1
         ? ` · ${p.installments}x`
         : ''
     }`,
@@ -311,13 +315,15 @@ function buildReceiptTicketJson(
   }));
 
   const foot = ['Obrigado pela preferência!'];
-  if (opts.nfceAuthorized && opts.nfce?.accessKey) {
+  if (nfceDanfe && opts.nfce?.accessKey) {
     foot.unshift(`Chave ${opts.nfce.accessKey}`);
   }
   foot.push(
-    opts.nfceAuthorized
-      ? `DANFE NFC-e · GestorVend v${APP_VERSION}`
-      : `Cupom gerado pelo GestorVend v${APP_VERSION}`,
+    nfceContingency
+      ? `DANFE NFC-e em contingência · Pendente de autorização · GestorVend v${APP_VERSION}`
+      : opts.nfceAuthorized
+        ? `DANFE NFC-e · GestorVend v${APP_VERSION}`
+        : `Cupom gerado pelo GestorVend v${APP_VERSION}`,
   );
 
   return JSON.stringify({
@@ -415,12 +421,17 @@ export function SaleReceiptPrintPage() {
   const c = receiptQ.data?.company;
   const nfce = receiptQ.data?.nfce ?? null;
   const nfceAuthorized = nfce?.status === 'AUTHORIZED';
-  const qrSrc = useNfceQrDataUrl(nfceAuthorized ? nfce?.qrCode : null);
-  const needQr = Boolean(nfceAuthorized && nfce?.qrCode);
+  const accessDigits = nfce?.accessKey?.replace(/\D/g, '') ?? '';
+  const nfceContingency = nfce?.status === 'CONTINGENCY' && accessDigits[34] === '9';
+  const nfceDanfe = nfceAuthorized || nfceContingency;
+  const qrSrc = useNfceQrDataUrl(nfceDanfe ? nfce?.qrCode : null);
+  const needQr = Boolean(nfceDanfe && nfce?.qrCode);
   const [fiscalWaitDone, setFiscalWaitDone] = useState(false);
   const loading = (demo || Boolean(saleId)) && receiptQ.isLoading;
   const companyOk = Boolean(s && (c?.legalName || c?.tradeName));
-  const waitingFiscal = Boolean(wantAutoPrint && nfce?.pending && !fiscalWaitDone);
+  const waitingFiscal = Boolean(
+    wantAutoPrint && nfce?.pending && !fiscalWaitDone && !(nfceContingency && nfce?.qrCode),
+  );
   /** Só libera impressão com empresa no DOM, QR (se NFC-e) e layout já blindado. */
   const receiptReady = companyOk && hardened && !waitingFiscal && (!needQr || Boolean(qrSrc));
 
@@ -632,9 +643,11 @@ export function SaleReceiptPrintPage() {
               sua empresa.{' '}
             </>
           ) : null}
-          {nfceAuthorized
-            ? 'Bobina 80 mm — DANFE NFC-e com QR Code.'
-            : 'Bobina 80 mm — cupom não fiscal.'}{' '}
+          {nfceContingency
+            ? 'Bobina 80 mm — DANFE NFC-e em contingência, com QR Code.'
+            : nfceAuthorized
+              ? 'Bobina 80 mm — DANFE NFC-e com QR Code.'
+              : 'Bobina 80 mm — cupom não fiscal.'}{' '}
           <strong>Imprimir</strong> sai na térmica. <strong>Salvar PDF</strong> gera um arquivo A4
           (não use “Microsoft Print to PDF” no diálogo da bobina — isso gera arquivo vazio). No
           GestorVend Desktop, a térmica é a impressora de Configurações → Impressão (PDV). No
@@ -688,7 +701,7 @@ export function SaleReceiptPrintPage() {
       {s && c && (
         <article
           ref={docRef}
-          className={'sale-receipt-doc' + (nfceAuthorized ? ' sale-receipt-doc--nfce' : '')}
+          className={'sale-receipt-doc' + (nfceDanfe ? ' sale-receipt-doc--nfce' : '')}
           data-receipt-ready={receiptReady ? '1' : '0'}
           data-company-ok={companyOk ? '1' : '0'}
           data-gv-ticket={buildReceiptTicketJson(s, c, { isSecondCopy, nfceAuthorized, nfce })}
@@ -716,7 +729,7 @@ export function SaleReceiptPrintPage() {
 
           <hr className="sale-receipt-line" />
 
-          {nfceAuthorized ? (
+          {nfceDanfe ? (
             <>
               <p className="sale-receipt-center sale-receipt-sub">
                 <strong>DANFE NFC-e</strong>
@@ -727,7 +740,14 @@ export function SaleReceiptPrintPage() {
               <p className="sale-receipt-center sale-receipt-fiscal-note">
                 Não permite aproveitamento de crédito de ICMS
               </p>
-              {nfce?.sefazEnvironment !== 'PRODUCAO' ? (
+              {nfceContingency ? (
+                <>
+                  <p className="sale-receipt-banner">EMITIDA EM CONTINGÊNCIA</p>
+                  <p className="sale-receipt-center sale-receipt-fiscal-note">
+                    Pendente de autorização
+                  </p>
+                </>
+              ) : nfce?.sefazEnvironment !== 'PRODUCAO' ? (
                 <p className="sale-receipt-banner">
                   Emitida em homologação — sem valor fiscal
                 </p>
@@ -755,7 +775,7 @@ export function SaleReceiptPrintPage() {
 
           <div className="sale-receipt-meta">
             <span>
-              {nfceAuthorized ? (
+              {nfceDanfe ? (
                 <strong>
                   NFC-e
                   {nfce?.nNF != null ? ` nº ${nfce.nNF}` : ''}
@@ -767,7 +787,7 @@ export function SaleReceiptPrintPage() {
             </span>
             <span>{formatDate(s.createdAt)}</span>
           </div>
-          {nfceAuthorized ? (
+          {nfceDanfe ? (
             <div className="sale-receipt-meta">
               <span>Venda</span>
               <span>#{s.number}</span>
@@ -802,7 +822,7 @@ export function SaleReceiptPrintPage() {
                 </div>
               );
             }
-            if (!nfceAuthorized) return null;
+            if (!nfceDanfe) return null;
             return (
               <p className="sale-receipt-center sale-receipt-fiscal-note">
                 Consumidor não identificado
@@ -895,8 +915,8 @@ export function SaleReceiptPrintPage() {
             {s.payments.map((p, i) => (
               <li key={`${s.id}-pay-${i}`}>
                 <span>
-                  {receiptPayLabel(p, nfceAuthorized)}
-                  {!nfceAuthorized && p.method === 'CREDIT' && p.installments > 1
+                  {receiptPayLabel(p, nfceDanfe)}
+                  {!nfceDanfe && p.method === 'CREDIT' && p.installments > 1
                     ? ` · ${p.installments}×`
                     : ''}
                 </span>
@@ -914,7 +934,7 @@ export function SaleReceiptPrintPage() {
             </>
           ) : null}
 
-          {nfceAuthorized ? (
+          {nfceDanfe ? (
             <>
               <hr className="sale-receipt-line" />
               <div className="sale-receipt-nfce">
@@ -927,7 +947,7 @@ export function SaleReceiptPrintPage() {
                 {nfce?.accessKey ? (
                   <p className="sale-receipt-nfce-key">{formatNfceAccessKey(nfce.accessKey)}</p>
                 ) : null}
-                {nfce?.protocol ? (
+                {nfceAuthorized && nfce?.protocol ? (
                   <p className="sale-receipt-center sale-receipt-fiscal-note">
                     Protocolo de Autorização: {nfce.protocol}
                   </p>
@@ -946,9 +966,11 @@ export function SaleReceiptPrintPage() {
           <footer className="sale-receipt-foot">
             <p style={{ margin: 0 }}>Obrigado pela preferência!</p>
             <p className="sale-receipt-foot-muted">
-              {nfceAuthorized
-                ? `DANFE NFC-e · GestorVend v${APP_VERSION}`
-                : `Cupom gerado pelo GestorVend v${APP_VERSION} · ID ${s.id.slice(0, 8)}…`}
+              {nfceContingency
+                ? `DANFE NFC-e em contingência · Pendente de autorização · GestorVend v${APP_VERSION}`
+                : nfceAuthorized
+                  ? `DANFE NFC-e · GestorVend v${APP_VERSION}`
+                  : `Cupom gerado pelo GestorVend v${APP_VERSION} · ID ${s.id.slice(0, 8)}…`}
             </p>
           </footer>
         </article>

@@ -1,6 +1,8 @@
 import {
   buildNfceInfNFeXml,
   buildNfceQrUrlAm,
+  buildNfceQrUrlContingenciaV2,
+  buildNfceQrUrlContingenciaV3,
   buildNfceQrUrlV3,
   sanitizeTString,
   sefazSchemaIncludesIbsCbs,
@@ -75,6 +77,45 @@ describe('nfce-xml.builder', () => {
     });
     expect(url).toBe(
       'https://sistemas.sefaz.am.gov.br/nfceweb-hom/consultarNFCe.jsp?p=13261052604282000130650010000000011123456782|3|2',
+    );
+  });
+
+  it('monta QR de contingência v2 com data e digest em hexadecimal', () => {
+    const dh = '2026-11-19T20:50:03-04:00';
+    const digest = Buffer.from('abc').toString('base64');
+    const url = buildNfceQrUrlContingenciaV2({
+      chNFe: '13261152604282000130650010000000019123456789',
+      tpAmb: 1,
+      dhEmiIso: dh,
+      vNF: 10,
+      digestValueB64: digest,
+      cscId: '000001',
+      csc: 'TOKEN',
+      qrBaseUrl: 'https://sistemas.sefaz.am.gov.br/nfceweb/consultarNFCe.jsp',
+    });
+    const dhHex = Buffer.from(dh, 'utf8').toString('hex');
+    const digHex = Buffer.from(digest, 'base64').toString('hex');
+    expect(url).toContain(
+      `?p=13261152604282000130650010000000019123456789|2|1|${dhHex}|10.00|${digHex}|1|`,
+    );
+    expect(url).toMatch(/\|[A-F0-9]{40}$/);
+  });
+
+  it('monta QR de contingência v3 sem CSC', () => {
+    const dh = '2026-11-19T20:50:03-04:00';
+    const digest = Buffer.from('abc').toString('base64');
+    const url = buildNfceQrUrlContingenciaV3({
+      chNFe: '13261152604282000130650010000000019123456789',
+      tpAmb: 1,
+      dhEmiIso: dh,
+      vNF: 10,
+      digestValueB64: digest,
+      qrBaseUrl: 'https://sistemas.sefaz.am.gov.br/nfceweb/consultarNFCe.jsp',
+    });
+    const dhHex = Buffer.from(dh, 'utf8').toString('hex');
+    const digHex = Buffer.from(digest, 'base64').toString('hex');
+    expect(url).toBe(
+      `https://sistemas.sefaz.am.gov.br/nfceweb/consultarNFCe.jsp?p=13261152604282000130650010000000019123456789|3|1|${dhHex}|10.00|${digHex}`,
     );
   });
 
