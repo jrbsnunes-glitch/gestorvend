@@ -285,16 +285,24 @@ export function crtDefersIbsCbs(crt: number): boolean {
 
 /**
  * NT 2026.008 (vUnComLiq, vProdLiq, vProdLiqTot):
- * homologação desde 26/10/2026.
- * Produção nacional seria 16/11/2026, mas a SEFAZ/AM (verAplic AM3.10) ainda
- * valida o schema antigo e responde cStat 215. Em produção as tags ficam de fora
- * até esse autorizador aceitar o leiaute novo.
+ * homologação desde 26/10/2026. Produção adiada para 14/12/2026.
+ * Em produção as tags ficam de fora.
  */
 const VALOR_LIQUIDO_HOMOLOG_FROM_MS = Date.parse('2026-10-26T03:00:00.000Z');
 
 export function sefazSchemaIncludesValorLiquido(now = new Date(), tpAmb: 1 | 2 = 2): boolean {
   if (tpAmb === 1) return false;
   return now.getTime() >= VALOR_LIQUIDO_HOMOLOG_FROM_MS;
+}
+
+/**
+ * IBS/CBS (NT 2025.002).
+ * Homologação da NFC-e/AM (verAplic AM3.10-4.00) exige o grupo (cStat 1115 sem ele).
+ * Produção da NFC-e ainda responde verAplic AM3.10 e recusa o lote com cStat 215
+ * quando o grupo vai no XML. NF-e de produção (AM4.00) já valida o schema novo.
+ */
+export function sefazSchemaIncludesIbsCbs(tpAmb: 1 | 2, modelo: number): boolean {
+  return !(tpAmb === 1 && modelo === 65);
 }
 
 type IbsCbsBreakdown = {
@@ -534,6 +542,7 @@ export function buildNfceInfNFeXml(opts: {
   const tpImp = modelo === 65 ? 4 : 1;
 
   const includeValorLiquido = sefazSchemaIncludesValorLiquido(new Date(), opts.tpAmb);
+  const includeIbsCbs = sefazSchemaIncludesIbsCbs(opts.tpAmb, modelo);
   const vProdLiqTot = opts.items.reduce((sum, it) => sum + Math.round(it.vProd * 100), 0) / 100;
 
   const taxTotals = opts.items.reduce(
@@ -564,7 +573,9 @@ export function buildNfceInfNFeXml(opts: {
         modelo === 65
           ? ''
           : buildIpiXml(vBc, it.cstIpi?.trim() ? it.cstIpi : '53', it.aliqIpi ?? 0, it.ipiEnquadramento);
-      const ibsXml = buildIbsCbsXml(opts.crt, it.cstIbsCbs, it.cClassTrib, vBc, it.ibsRate ?? 0, it.cbsRate ?? 0);
+      const ibsXml = includeIbsCbs
+        ? buildIbsCbsXml(opts.crt, it.cstIbsCbs, it.cClassTrib, vBc, it.ibsRate ?? 0, it.cbsRate ?? 0)
+        : '';
       const vUnComLiq = it.vUnCom.toFixed(4);
       const vProdLiq = fmt2(it.vProd);
       return (
@@ -727,7 +738,7 @@ export function buildNfceInfNFeXml(opts: {
     `<vNF>${fmt2(opts.totals.vNF)}</vNF>` +
     `<vTotTrib>0.00</vTotTrib>` +
     `</ICMSTot>` +
-    buildIbsCbsTotXml(opts.items, opts.crt) +
+    (includeIbsCbs ? buildIbsCbsTotXml(opts.items, opts.crt) : '') +
     (includeValorLiquido ? `<vProdLiqTot>${fmt2(vProdLiqTot)}</vProdLiqTot>` : '') +
     `</total>` +
     transpXml +

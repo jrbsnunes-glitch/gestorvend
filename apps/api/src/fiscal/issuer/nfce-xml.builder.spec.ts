@@ -3,6 +3,7 @@ import {
   buildNfceQrUrlAm,
   buildNfceQrUrlV3,
   sanitizeTString,
+  sefazSchemaIncludesIbsCbs,
   sefazSchemaIncludesValorLiquido,
 } from './nfce-xml.builder';
 import { buildNfceAutorizacaoEnvelope } from '../sefaz/nfce-autorizacao-soap';
@@ -256,6 +257,73 @@ describe('nfce-xml.builder', () => {
     expect(prod).not.toContain('<vUnComLiq>');
     expect(prod).not.toContain('<vProdLiq>');
     expect(prod).not.toContain('<vProdLiqTot>');
+  });
+
+  it('omite IBS/CBS na NFC-e de produção (autorizador AM3.10 responde cStat 215)', () => {
+    const withIbs = {
+      ...item,
+      cstIbsCbs: '000',
+      cClassTrib: '000001',
+      ibsRate: 0.1,
+      cbsRate: 0.9,
+    };
+    const base = {
+      chave44: '13261052604282000130650010000000011123456782',
+      cNF: '12345678',
+      natOp: 'VENDA',
+      dhEmiIso: '2026-11-19T15:00:00-04:00',
+      crt: 1,
+      codMunIbgeFg: '1302504',
+      serie: 1,
+      nNF: 1,
+      emit: {
+        cnpj: '52604282000130',
+        ie: '054612942',
+        xNome: 'NAUTICA BALBY LTDA',
+        xLgr: 'Rua Teste',
+        nro: '1',
+        xBairro: 'Centro',
+        cMun: '1302504',
+        xMun: 'Manacapuru',
+        uf: 'AM',
+        cep: '69400064',
+      },
+      items: [withIbs],
+      totals: { vNF: 1, vProd: 1, vDesc: 0, vOutro: 0 },
+      payments: [{ tPag: '01', vPag: 1 }],
+    };
+    expect(sefazSchemaIncludesIbsCbs(1, 65)).toBe(false);
+    expect(sefazSchemaIncludesIbsCbs(2, 65)).toBe(true);
+    expect(sefazSchemaIncludesIbsCbs(1, 55)).toBe(true);
+
+    const nfceProd = buildNfceInfNFeXml({ ...base, tpAmb: 1, modelo: 65 }).xmlNfeEnvelope;
+    expect(nfceProd).not.toContain('<IBSCBS>');
+    expect(nfceProd).not.toContain('<IBSCBSTot>');
+
+    const nfceHom = buildNfceInfNFeXml({ ...base, tpAmb: 2, modelo: 65 }).xmlNfeEnvelope;
+    expect(nfceHom).toContain('<IBSCBS>');
+    expect(nfceHom).toContain('<IBSCBSTot>');
+
+    const nfeProd = buildNfceInfNFeXml({
+      ...base,
+      tpAmb: 1,
+      modelo: 55,
+      dest: {
+        document: '52604282000130',
+        xNome: 'DESTINATARIO TESTE',
+        indIEDest: '9',
+        ender: {
+          xLgr: 'Rua Teste',
+          nro: '1',
+          xBairro: 'Centro',
+          cMun: '1302504',
+          xMun: 'Manacapuru',
+          uf: 'AM',
+          cep: '69400064',
+        },
+      },
+    }).xmlNfeEnvelope;
+    expect(nfeProd).toContain('<IBSCBS>');
   });
 
   it('sanitizeTString remove caracteres fora do Latin-1', () => {

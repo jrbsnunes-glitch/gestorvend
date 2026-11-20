@@ -223,9 +223,16 @@ export class FiscalEmissionProcessorService {
 
   private async processTenant(tenantSlug: string): Promise<void> {
     const db = await this.tenantPrisma.getClient(tenantSlug);
+    const now = new Date();
     const pending = await db.fiscalDocument.findMany({
       where: {
-        status: { in: [FiscalDocumentStatus.QUEUED, FiscalDocumentStatus.CONTINGENCY] },
+        OR: [
+          { status: FiscalDocumentStatus.QUEUED },
+          {
+            status: FiscalDocumentStatus.CONTINGENCY,
+            OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+          },
+        ],
       },
       orderBy: { createdAt: 'asc' },
       take: 5,
@@ -526,13 +533,24 @@ export class FiscalEmissionProcessorService {
           /timeout|ECONN|socket|TLS|certificate|403|unavailable|indispon/i.test(short) ||
           parsed.cStat === '108' ||
           parsed.cStat === '109';
-        if (isCommFail && isNfce) {
+        const schemaHold = parsed.cStat === '215' || parsed.cStat === '999';
+        if ((isCommFail || schemaHold) && isNfce) {
           await db.fiscalDocument.update({
             where: { id: doc.id },
             data: {
               status: FiscalDocumentStatus.CONTINGENCY,
-              tpEmis: parsedKey.tpEmis || 9,
+              tpEmis: schemaHold ? 1 : parsedKey.tpEmis || 9,
+              accessKey: schemaHold ? null : reuseAccessKey,
+              nextAttemptAt: schemaHold ? new Date(Date.now() + 15 * 60 * 1000) : new Date(),
               lastError: `Contingência: ${short}`.slice(0, 2000),
+            },
+          });
+          await db.sale.update({
+            where: { id: doc.saleId },
+            data: {
+              fiscalIntegrationError: schemaHold
+                ? `Contingência NFC-e: a SEFAZ recusou o XML (${parsed.cStat}). Nova tentativa automática em 15 minutos.`
+                : `Contingência NFC-e: reenvie pela tela Notas Fiscais. ${short}`.slice(0, 1024),
             },
           });
           return;
@@ -952,30 +970,36 @@ export class FiscalEmissionProcessorService {
         return;
       }
     }
-    // Falha de comunicação: marca contingência para reenvio (mantém número não consumido).
+    // Falha de comunicação: guarda o XML e reenvia a mesma chave.
+    // 215/999: o autorizador da NFC-e recusou o schema ou deu exceção; não grava
+    // o XML inválido. A nota fica em contingência e o worker remonta o XML depois.
     const isCommFail =
       /timeout|ECONN|socket|TLS|certificate|403|unavailable|indispon/i.test(short) ||
       parsed.cStat === '108' ||
       parsed.cStat === '109';
+    const schemaHold = parsed.cStat === '215' || parsed.cStat === '999';
 
-    if (isCommFail && isNfce) {
+    if ((isCommFail || schemaHold) && isNfce) {
       await db.fiscalDocument.update({
         where: { id: doc.id },
         data: {
           status: FiscalDocumentStatus.CONTINGENCY,
-          tpEmis: 9,
-          accessKey: chave44,
+          tpEmis: schemaHold ? 1 : 9,
+          accessKey: schemaHold ? null : chave44,
+          nextAttemptAt: schemaHold ? new Date(Date.now() + 15 * 60 * 1000) : new Date(),
           lastError: `Contingência: ${short}`.slice(0, 2000),
         },
       });
-      await this.outboundStorage.saveXml(tenantSlug, chave44, signed);
+      if (!schemaHold) {
+        await this.outboundStorage.saveXml(tenantSlug, chave44, signed);
+      }
       await db.sale.update({
         where: { id: doc.saleId },
         data: {
-          fiscalIntegrationError: `Contingência NFC-e: reenvie pela tela Notas Fiscais. ${short}`.slice(
-            0,
-            1024,
-          ),
+          fiscalIntegrationError: (schemaHold
+            ? `Contingência NFC-e: a SEFAZ recusou o XML (${parsed.cStat}). Nova tentativa automática em 15 minutos.`
+            : `Contingência NFC-e: reenvie pela tela Notas Fiscais. ${short}`
+          ).slice(0, 1024),
         },
       });
       this.log.warn(`NFC-e em contingência tenant=${tenantSlug}: ${short}`);
