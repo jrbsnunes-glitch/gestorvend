@@ -430,7 +430,12 @@ export class FiscalDocumentsService {
     const where: Prisma.FiscalDocumentWhereInput = {
       ...(q.kind ? { kind: q.kind } : {}),
       status: {
-        in: [FiscalDocumentStatus.AUTHORIZED, FiscalDocumentStatus.CONTINGENCY],
+        in: [
+          FiscalDocumentStatus.AUTHORIZED,
+          FiscalDocumentStatus.CONTINGENCY,
+          FiscalDocumentStatus.REJECTED,
+          FiscalDocumentStatus.ERROR,
+        ],
       },
       sale: saleWhere,
       ...(key ? { accessKey: key } : {}),
@@ -444,17 +449,45 @@ export class FiscalDocumentsService {
     });
 
     const files: Array<{ name: string; xml: string }> = [];
+    const seen = new Set<string>();
+    const pushFile = (name: string, xml: string | null | undefined) => {
+      const body = xml?.trim();
+      if (!body || seen.has(name)) return;
+      seen.add(name);
+      files.push({ name, xml: body });
+    };
+    const wantedMod = q.kind === FiscalDocumentKind.NFC_E ? '65' : q.kind === FiscalDocumentKind.NF_E ? '55' : null;
+    const matchesKind = (xml: string) => {
+      if (!wantedMod) return true;
+      return new RegExp(`<mod>${wantedMod}</mod>`).test(xml);
+    };
     for (const row of rows) {
       const xml =
         (await readNfceAuthorizedXml(row.xmlPath)) ??
         (row.accessKey
           ? await this.outboundStorage.readXml(tenantSlug, row.accessKey.replace(/\D/g, ''))
           : null);
-      if (!xml?.trim()) continue;
+      if (!xml?.trim() || !matchesKind(xml)) continue;
       const rawKey = (row.accessKey ?? '').replace(/\D/g, '');
-      const name = `${rawKey || `venda-${row.sale.number}`}.xml`;
-      files.push({ name, xml });
+      const fromPath = row.xmlPath?.split(/[\\/]/).pop();
+      const name =
+        fromPath && fromPath.endsWith('-rejeitado.xml')
+          ? fromPath
+          : `${rawKey || `venda-${row.sale.number}`}.xml`;
+      pushFile(name, xml);
     }
+
+    const dayStart = q.dateFrom?.trim() ? startOfLocalDay(q.dateFrom) : null;
+    const dayEnd = q.dateTo?.trim() ? endOfLocalDay(q.dateTo) : null;
+    const rejectedFiles = await this.outboundStorage.listRejectedXml(tenantSlug);
+    for (const file of rejectedFiles) {
+      if (key && !file.name.startsWith(key)) continue;
+      if (dayStart && file.mtime < dayStart) continue;
+      if (dayEnd && file.mtime > dayEnd) continue;
+      if (!matchesKind(file.xml)) continue;
+      pushFile(file.name, file.xml);
+    }
+
     if (files.length === 0) {
       throw new NotFoundException('Nenhum XML encontrado para os filtros informados.');
     }
@@ -1344,6 +1377,18 @@ export class FiscalDocumentsService {
         : null,
     };
   }
+}
+
+function startOfLocalDay(raw: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw.trim());
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
+}
+
+function endOfLocalDay(raw: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw.trim());
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59, 999);
 }
 
 function roundMoney2(n: number): number {

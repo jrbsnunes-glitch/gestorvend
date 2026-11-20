@@ -57,6 +57,31 @@ export class OutboundNfeStorage {
     return { path: filePath, sha256, name };
   }
 
+  /** XMLs `{chave}-rejeitado.xml` gravados quando a SEFAZ recusa o schema. */
+  async listRejectedXml(
+    tenantSlug: string,
+  ): Promise<Array<{ name: string; xml: string; mtime: Date }>> {
+    const dir = this.tenantDir(tenantSlug);
+    let names: string[] = [];
+    try {
+      names = await fs.readdir(dir);
+    } catch {
+      return [];
+    }
+    const out: Array<{ name: string; xml: string; mtime: Date }> = [];
+    for (const name of names) {
+      if (!/^\d{44}-rejeitado\.xml$/i.test(name)) continue;
+      const filePath = path.join(dir, name);
+      try {
+        const [xml, st] = await Promise.all([fs.readFile(filePath, 'utf8'), fs.stat(filePath)]);
+        if (xml.trim()) out.push({ name, xml, mtime: st.mtime });
+      } catch {
+        /* arquivo ilegível */
+      }
+    }
+    return out;
+  }
+
   async readXml(tenantSlug: string, accessKey: string): Promise<string | null> {
     try {
       return await fs.readFile(this.xmlPathForKey(tenantSlug, accessKey), 'utf8');

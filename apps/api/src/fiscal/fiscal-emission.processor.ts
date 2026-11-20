@@ -597,12 +597,14 @@ export class FiscalEmissionProcessorService {
           parsed.cStat === '109';
         const schemaHold = parsed.cStat === '215' || parsed.cStat === '999';
         let reuseMotive = short;
+        let reuseRejectedPath: string | null = null;
         if (schemaHold) {
           const rejected = await this.outboundStorage.saveRejectedXml(
             tenantSlug,
             reuseAccessKey,
             stored,
           );
+          reuseRejectedPath = rejected.path;
           reuseMotive = `${rejected.name} | ${short}`.slice(0, 2000);
           this.log.warn(`XML recusado pela SEFAZ gravado em ${rejected.path}`);
         }
@@ -614,6 +616,9 @@ export class FiscalEmissionProcessorService {
               status: FiscalDocumentStatus.CONTINGENCY,
               tpEmis: keepPrintedCopy ? parsedKey.tpEmis || 9 : 1,
               accessKey: keepPrintedCopy ? reuseAccessKey : null,
+              ...(schemaHold && !keepPrintedCopy && reuseRejectedPath
+                ? { xmlPath: reuseRejectedPath }
+                : {}),
               nextAttemptAt: schemaHold ? new Date(Date.now() + 15 * 60 * 1000) : new Date(),
               lastError: `Contingência: ${schemaHold ? reuseMotive : short}`.slice(0, 2000),
             },
@@ -1154,6 +1159,10 @@ export class FiscalEmissionProcessorService {
     if (schemaHold) {
       const rejected = await this.outboundStorage.saveRejectedXml(tenantSlug, chave44, signed);
       schemaMotive = `${rejected.name} | ${short}`.slice(0, 2000);
+      await db.fiscalDocument.update({
+        where: { id: doc.id },
+        data: { xmlPath: rejected.path },
+      });
       this.log.warn(`XML recusado pela SEFAZ gravado em ${rejected.path}`);
     }
 
