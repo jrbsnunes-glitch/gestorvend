@@ -28,6 +28,7 @@ import {
   buildNfceQrUrlContingenciaV2,
   buildNfceQrUrlContingenciaV3,
   buildNfceQrUrlV3,
+  refreshNfceContingencyQr,
   mapSalePaymentToNfcePag,
   type DestInput,
   type NfceItemInput,
@@ -470,9 +471,28 @@ export class FiscalEmissionProcessorService {
           data: { status: FiscalDocumentStatus.SENT },
         });
         const agent = createMutualTlsAgentFromPfx(certPath, certPassword);
-        const enviNFe = wrapEnviNFe(stored);
+        let xmlToSend = stored;
+        if (isNfce && parsedKey.tpEmis === 9 && (wsCont.nfceQrVersion ?? '200') !== '300') {
+          const qrOverride = this.config.get<string>('FISCAL_NFCE_QR_BASE_URL')?.trim();
+          const qrBase = qrOverride || wsCont.nfceQrConsultaBase || '';
+          const refreshed = refreshNfceContingencyQr(stored, {
+            tpAmb,
+            cscId,
+            csc,
+            qrBaseUrl: qrBase,
+          });
+          if (refreshed !== stored) {
+            xmlToSend = refreshed;
+            const savedQr = await this.outboundStorage.saveXml(tenantSlug, reuseAccessKey, refreshed);
+            await db.fiscalDocument.update({
+              where: { id: doc.id },
+              data: { xmlPath: savedQr.path, xmlSha256: savedQr.sha256 },
+            });
+          }
+        }
+        const enviNFe = wrapEnviNFe(xmlToSend);
         const consultUrl = wsCont.consulta;
-        const nfeOnlyStored = stored.match(/<NFe[\s\S]*?<\/NFe>/i)?.[0] ?? stored;
+        const nfeOnlyStored = xmlToSend.match(/<NFe[\s\S]*?<\/NFe>/i)?.[0] ?? xmlToSend;
         let respXml: string;
         try {
           respXml = await postNfceAutorizacaoLote(soapUrl, enviNFe, agent);

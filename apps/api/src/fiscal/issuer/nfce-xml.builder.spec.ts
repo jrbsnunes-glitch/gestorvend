@@ -22,9 +22,10 @@ const item = {
   vProd: 1,
   orig: '0',
   csosn: '102',
+  ean: null as string | null,
 };
 
-function sampleXml(dest?: { document: string }) {
+function sampleXml(dest?: { document: string }, items = [item]) {
   return buildNfceInfNFeXml({
     chave44: '13261052604282000130650010000000011123456782',
     cNF: '12345678',
@@ -49,13 +50,24 @@ function sampleXml(dest?: { document: string }) {
       cep: '69400064',
     },
     dest: dest ? { document: dest.document, xNome: 'CONSUMIDOR' } : undefined,
-    items: [item],
+    items,
     totals: { vNF: 1, vProd: 1, vDesc: 0, vOutro: 0 },
     payments: [{ tPag: '01', vPag: 1 }],
   }).xmlNfeEnvelope;
 }
 
 describe('nfce-xml.builder', () => {
+  it('não envia código de barras com tamanho fora do schema', () => {
+    const xml = sampleXml(undefined, [
+      { ...item, ean: '165109201' },
+      { ...item, nItem: 2, ean: '7891000315507' },
+    ]);
+    expect(xml).toContain('<cEAN>SEM GTIN</cEAN>');
+    expect(xml).toContain('<cEANTrib>SEM GTIN</cEANTrib>');
+    expect(xml).toContain('<cEAN>7891000315507</cEAN>');
+    expect(xml).not.toContain('165109201');
+  });
+
   it('omite dest na NFC-e sem consumidor identificado', () => {
     const xml = sampleXml();
     expect(xml).not.toContain('<dest>');
@@ -80,9 +92,9 @@ describe('nfce-xml.builder', () => {
     );
   });
 
-  it('monta QR de contingência v2 com data e digest em hexadecimal', () => {
+  it('monta QR de contingência v2 com o dia e o digest de 56 hex', () => {
     const dh = '2026-11-19T20:50:03-04:00';
-    const digest = Buffer.from('abc').toString('base64');
+    const digest = Buffer.alloc(20, 1).toString('base64');
     const url = buildNfceQrUrlContingenciaV2({
       chNFe: '13261152604282000130650010000000019123456789',
       tpAmb: 1,
@@ -93,12 +105,14 @@ describe('nfce-xml.builder', () => {
       csc: 'TOKEN',
       qrBaseUrl: 'https://sistemas.sefaz.am.gov.br/nfceweb/consultarNFCe.jsp',
     });
-    const dhHex = Buffer.from(dh, 'utf8').toString('hex');
-    const digHex = Buffer.from(digest, 'base64').toString('hex');
+    const digHex = Buffer.from(digest, 'utf8').toString('hex');
+    expect(digHex).toHaveLength(56);
     expect(url).toContain(
-      `?p=13261152604282000130650010000000019123456789|2|1|${dhHex}|10.00|${digHex}|1|`,
+      `?p=13261152604282000130650010000000019123456789|2|1|19|10.00|${digHex}|1|`,
     );
-    expect(url).toMatch(/\|[A-F0-9]{40}$/);
+    expect(url).toMatch(
+      /^https?:\/\/.*\?p=[0-9]{34}9[0-9]{9}\|2\|[12]\|(?:0[1-9]|[12][0-9]|3[01])\|(?:0|0\.[0-9]{2}|[1-9][0-9]{0,12}(?:\.[0-9]{2})?)\|[A-Fa-f0-9]{56}\|(?:0|[1-9][0-9]{0,5})\|[A-Fa-f0-9]{40}$/,
+    );
   });
 
   it('monta QR de contingência v3 sem CSC', () => {

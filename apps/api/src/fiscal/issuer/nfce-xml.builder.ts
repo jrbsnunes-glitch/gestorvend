@@ -432,9 +432,12 @@ function buildRespTecXml(
   );
 }
 
+/** O schema só aceita GTIN-8, GTIN-12, GTIN-13, GTIN-14 ou SEM GTIN. 9 a 11 dígitos geram cStat 215. */
 function formatGtin(ean: string | null | undefined): string {
   const digits = onlyDigits(ean ?? '', 14);
-  if (digits.length >= 8 && digits.length <= 14) return digits;
+  if (digits.length === 8 || digits.length === 12 || digits.length === 13 || digits.length === 14) {
+    return digits;
+  }
   return 'SEM GTIN';
 }
 
@@ -774,9 +777,22 @@ function qrMoney(vNF: number): string {
   return roundMoney2(Number(vNF)).toFixed(2);
 }
 
+/** Dia (DD) da dhEmi, como no schema do QR offline. Não converte o fuso. */
+function qrEmissionDay(dhEmiIso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dhEmiIso.trim());
+  if (!m) throw new Error('dhEmi inválida para o QR Code de contingência.');
+  return m[3];
+}
+
+/** Hex dos caracteres do DigestValue (base64), 28 caracteres viram 56 hex. */
+function digestTextToHex(digestValueB64: string): string {
+  return Buffer.from(digestValueB64.trim(), 'utf8').toString('hex');
+}
+
 /**
- * QR NFC-e v2 em contingência offline (tpEmis 9).
- * `p=chave|2|tpAmb|dhEmiHex|vNF|digValHex|idToken|hash`
+ * QR NFC-e v2 em contingência offline (tpEmis 9), no formato do XSD.
+ * `p=chave|2|tpAmb|DD|vNF|digVal56|idToken|hash`
+ * digVal56 é o DigestValue em hexadecimal (o texto base64, não os bytes).
  * O hash é SHA-1 da sequência + CSC, sem pipe antes do CSC.
  */
 export function buildNfceQrUrlContingenciaV2(params: {
@@ -791,10 +807,10 @@ export function buildNfceQrUrlContingenciaV2(params: {
 }): string {
   const ch = onlyDigits(params.chNFe, 44);
   const cscId = String(Number(params.cscId.replace(/\D/g, '') || '0'));
-  const dhHex = qrHex(params.dhEmiIso);
-  const digHex = digestB64ToHex(params.digestValueB64);
+  const dia = qrEmissionDay(params.dhEmiIso);
+  const digHex = digestTextToHex(params.digestValueB64);
   const vNF = qrMoney(params.vNF);
-  const seq = `${ch}|2|${params.tpAmb}|${dhHex}|${vNF}|${digHex}|${cscId}`;
+  const seq = `${ch}|2|${params.tpAmb}|${dia}|${vNF}|${digHex}|${cscId}`;
   const hash = crypto.createHash('sha1').update(seq + params.csc, 'utf8').digest('hex').toUpperCase();
   const base = params.qrBaseUrl.replace(/\?.*$/, '');
   return `${base}?p=${seq}|${hash}`;
@@ -858,6 +874,43 @@ export function buildNfceQrUrl(input: {
   u.searchParams.set('cIdToken', input.cscId.replace(/\D/g, ''));
   u.searchParams.set('cHashQRCode', hash);
   return u.toString();
+}
+
+/** Troca o qrCode já gravado. infNFeSupl fica fora da assinatura. */
+export function replaceNfceQrCode(nfeXml: string, qrUrl: string): string {
+  const safe = xmlEscape(qrUrl.replace(/]]>/g, ''));
+  if (/<qrCode\b/i.test(nfeXml)) {
+    return nfeXml.replace(/<qrCode\b[^>]*>[\s\S]*?<\/qrCode>/i, `<qrCode>${safe}</qrCode>`);
+  }
+  return nfeXml;
+}
+
+/**
+ * Recalcula o QR v2 de uma NFC-e já assinada em contingência.
+ * O formato antigo (dhEmi inteira em hex) não passa no schema e a SEFAZ responde 215.
+ */
+export function refreshNfceContingencyQr(
+  nfeXml: string,
+  params: { tpAmb: 1 | 2; cscId: string; csc: string; qrBaseUrl: string },
+): string {
+  if (!params.qrBaseUrl.trim()) return nfeXml;
+  if (nfeXml.match(/<tpEmis>(\d+)<\/tpEmis>/)?.[1] !== '9') return nfeXml;
+  const chave = nfeXml.match(/Id="NFe(\d{44})"/)?.[1];
+  const dhEmi = nfeXml.match(/<dhEmi>([^<]+)<\/dhEmi>/)?.[1];
+  const vNF = nfeXml.match(/<vNF>([^<]+)<\/vNF>/)?.[1];
+  const digest = nfeXml.match(/<DigestValue>([^<]+)<\/DigestValue>/)?.[1];
+  if (!chave || !dhEmi || !vNF || !digest) return nfeXml;
+  const qr = buildNfceQrUrlContingenciaV2({
+    chNFe: chave,
+    tpAmb: params.tpAmb,
+    dhEmiIso: dhEmi,
+    vNF: Number(vNF),
+    digestValueB64: digest,
+    cscId: params.cscId,
+    csc: params.csc,
+    qrBaseUrl: params.qrBaseUrl,
+  });
+  return replaceNfceQrCode(nfeXml, qr);
 }
 
 export function appendInfNFeSupl(nfeSignedXml: string, qrUrl: string, urlChave?: string): string {
