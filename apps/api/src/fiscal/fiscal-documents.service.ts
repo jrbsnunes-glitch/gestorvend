@@ -31,7 +31,11 @@ import {
 import { SalesService } from '../sales/sales.service';
 import { postCceNfe } from './sefaz/nfe-cce.soap';
 import type { FiscalNoteSaleContentInput, ManualNfeInput } from './manual-nfe.types';
+import { parseQueryDate } from '../common/date-range.util';
+import { calendarDayFromInstant } from '../common/iana-timezone.util';
+import { getActiveTimezone } from '../common/tenant-timezone.context';
 import { OutboundNfeStorage } from './issuer/outbound-nfe.storage';
+import { FiscalEmissionProcessorService } from './fiscal-emission.processor';
 import {
   parseNfceAccessKey,
   readNfceAuthorizedXml,
@@ -68,6 +72,7 @@ export class FiscalDocumentsService {
     private readonly issuerSvc: FiscalIssuerSettingsService,
     private readonly sales: SalesService,
     private readonly outboundStorage: OutboundNfeStorage,
+    private readonly emission: FiscalEmissionProcessorService,
   ) {}
 
   async queue(tenantSlug: string, saleId: string, kind: FiscalDocumentKind) {
@@ -314,17 +319,8 @@ export class FiscalDocumentsService {
     const saleWhere: Prisma.SaleWhereInput = {};
     if (q.dateFrom || q.dateTo) {
       saleWhere.createdAt = {};
-      if (q.dateFrom) {
-        const d = new Date(q.dateFrom);
-        if (!Number.isNaN(d.getTime())) saleWhere.createdAt.gte = d;
-      }
-      if (q.dateTo) {
-        const d = new Date(q.dateTo);
-        if (!Number.isNaN(d.getTime())) {
-          d.setHours(23, 59, 59, 999);
-          saleWhere.createdAt.lte = d;
-        }
-      }
+      if (q.dateFrom?.trim()) saleWhere.createdAt.gte = parseQueryDate(q.dateFrom, 'start');
+      if (q.dateTo?.trim()) saleWhere.createdAt.lte = parseQueryDate(q.dateTo, 'end');
     }
     if (q.controlMin != null || q.controlMax != null) {
       saleWhere.number = {};
@@ -405,17 +401,8 @@ export class FiscalDocumentsService {
     const saleWhere: Prisma.SaleWhereInput = {};
     if (q.dateFrom || q.dateTo) {
       saleWhere.createdAt = {};
-      if (q.dateFrom) {
-        const d = new Date(q.dateFrom);
-        if (!Number.isNaN(d.getTime())) saleWhere.createdAt.gte = d;
-      }
-      if (q.dateTo) {
-        const d = new Date(q.dateTo);
-        if (!Number.isNaN(d.getTime())) {
-          d.setHours(23, 59, 59, 999);
-          saleWhere.createdAt.lte = d;
-        }
-      }
+      if (q.dateFrom?.trim()) saleWhere.createdAt.gte = parseQueryDate(q.dateFrom, 'start');
+      if (q.dateTo?.trim()) saleWhere.createdAt.lte = parseQueryDate(q.dateTo, 'end');
     }
     if (q.controlMin != null || q.controlMax != null) {
       saleWhere.number = {};
@@ -461,35 +448,53 @@ export class FiscalDocumentsService {
       if (!wantedMod) return true;
       return new RegExp(`<mod>${wantedMod}</mod>`).test(xml);
     };
+    const failures: string[] = [];
     for (const row of rows) {
-      const xml =
+      let xml =
         (await readNfceAuthorizedXml(row.xmlPath)) ??
         (row.accessKey
           ? await this.outboundStorage.readXml(tenantSlug, row.accessKey.replace(/\D/g, ''))
           : null);
+      let name: string | null = null;
+      if (!xml?.trim()) {
+        try {
+          const built = await this.emission.materializeXml(tenantSlug, row.id);
+          xml = built.xml;
+          name = built.name;
+        } catch (e) {
+          failures.push((e as Error).message?.slice(0, 300) || 'Falha ao montar o XML.');
+          continue;
+        }
+      }
       if (!xml?.trim() || !matchesKind(xml)) continue;
       const rawKey = (row.accessKey ?? '').replace(/\D/g, '');
       const fromPath = row.xmlPath?.split(/[\\/]/).pop();
-      const name =
-        fromPath && fromPath.endsWith('-rejeitado.xml')
-          ? fromPath
-          : `${rawKey || `venda-${row.sale.number}`}.xml`;
-      pushFile(name, xml);
+      pushFile(
+        name ||
+          (fromPath && fromPath.endsWith('-rejeitado.xml')
+            ? fromPath
+            : `${rawKey || `venda-${row.sale.number}`}.xml`),
+        xml,
+      );
     }
 
-    const dayStart = q.dateFrom?.trim() ? startOfLocalDay(q.dateFrom) : null;
-    const dayEnd = q.dateTo?.trim() ? endOfLocalDay(q.dateTo) : null;
+    const tz = getActiveTimezone();
+    const fromIso = q.dateFrom?.trim().slice(0, 10) ?? '';
+    const toIso = q.dateTo?.trim().slice(0, 10) ?? '';
     const rejectedFiles = await this.outboundStorage.listRejectedXml(tenantSlug);
     for (const file of rejectedFiles) {
       if (key && !file.name.startsWith(key)) continue;
-      if (dayStart && file.mtime < dayStart) continue;
-      if (dayEnd && file.mtime > dayEnd) continue;
+      const fileDay = calendarDayFromInstant(file.mtime, tz);
+      if (fromIso && fileDay < fromIso) continue;
+      if (toIso && fileDay > toIso) continue;
       if (!matchesKind(file.xml)) continue;
       pushFile(file.name, file.xml);
     }
 
     if (files.length === 0) {
-      throw new NotFoundException('Nenhum XML encontrado para os filtros informados.');
+      throw new NotFoundException(
+        failures[0] ?? 'Nenhum XML encontrado para os filtros informados.',
+      );
     }
     return files;
   }
@@ -1377,18 +1382,6 @@ export class FiscalDocumentsService {
         : null,
     };
   }
-}
-
-function startOfLocalDay(raw: string): Date | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw.trim());
-  if (!m) return null;
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
-}
-
-function endOfLocalDay(raw: string): Date | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw.trim());
-  if (!m) return null;
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59, 999);
 }
 
 function roundMoney2(n: number): number {

@@ -323,10 +323,26 @@ export class FiscalEmissionProcessorService {
     });
   }
 
-  private async processOneDocument(tenantSlug: string, docId: string): Promise<void> {
+  /** Monta e grava o XML que seria enviado, sem transmitir à SEFAZ. */
+  async materializeXml(
+    tenantSlug: string,
+    docId: string,
+  ): Promise<{ name: string; xml: string }> {
+    const saved = await this.processOneDocument(tenantSlug, docId, { exportOnly: true });
+    if (!saved?.xml) throw new Error('Não foi possível montar o XML desta nota.');
+    return saved;
+  }
+
+  private async processOneDocument(
+    tenantSlug: string,
+    docId: string,
+    options?: { exportOnly?: boolean },
+  ): Promise<{ name: string; xml: string } | void> {
+    const exportOnly = options?.exportOnly === true;
     const db = await this.tenantPrisma.getClient(tenantSlug);
     const doc = await db.fiscalDocument.findUniqueOrThrow({ where: { id: docId } });
     if (
+      !exportOnly &&
       doc.status !== FiscalDocumentStatus.QUEUED &&
       doc.status !== FiscalDocumentStatus.CONTINGENCY
     ) {
@@ -346,10 +362,14 @@ export class FiscalEmissionProcessorService {
         ? doc.accessKey
         : null;
 
-    await db.fiscalDocument.update({
-      where: { id: doc.id },
-      data: { status: FiscalDocumentStatus.BUILDING_XML, lastError: null },
-    });
+    if (!exportOnly) {
+      await db.fiscalDocument.update({
+        where: { id: doc.id },
+        data: { status: FiscalDocumentStatus.BUILDING_XML, lastError: null },
+      });
+    }
+
+    let exportedXml: { name: string; xml: string } | null = null;
 
     const ensured = await this.issuerSvc.ensureForTenant(tenantSlug);
     if (!ensured) {
@@ -429,6 +449,7 @@ export class FiscalEmissionProcessorService {
     // NFC-e já parada por schema (215/999) sem XML: monta o documento offline
     // (tpEmis 9) para imprimir, em vez de reenviar o XML que a SEFAZ recusou.
     if (
+      !exportOnly &&
       isNfce &&
       !reuseAccessKey &&
       doc.status === FiscalDocumentStatus.CONTINGENCY &&
@@ -438,7 +459,7 @@ export class FiscalEmissionProcessorService {
     }
 
     // Contingência: retransmite o XML já assinado (mesma chave), sem remontar.
-    if (reuseAccessKey && this.transportMode(settings.sefazEnvironment) === 'soap') {
+    if (!exportOnly && reuseAccessKey && this.transportMode(settings.sefazEnvironment) === 'soap') {
       const stored = await this.outboundStorage.readXml(tenantSlug, reuseAccessKey);
       if (stored && !/<nfeProc[\s>]/i.test(stored)) {
         const parsedKey = parseAccessKey44(reuseAccessKey)!;
@@ -920,6 +941,16 @@ export class FiscalEmissionProcessorService {
       );
     }
 
+    if (exportOnly) {
+      const rejected = await this.outboundStorage.saveRejectedXml(tenantSlug, chave44, signed);
+      await db.fiscalDocument.update({
+        where: { id: doc.id },
+        data: { xmlPath: rejected.path },
+      });
+      exportedXml = { name: rejected.name, xml: signed };
+      return;
+    }
+
     let shortHint =
       doc.lastError?.replace(/^Contingência:\s*/i, '').trim() ||
       'SEFAZ recusou o XML. Documento emitido em contingencia para impressao.';
@@ -1209,5 +1240,9 @@ export class FiscalEmissionProcessorService {
     });
     this.log.warn(`Documento rejeitado tenant=${tenantSlug}: ${short}`);
     });
+    if (exportOnly) {
+      if (!exportedXml) throw new Error('Não foi possível montar o XML desta nota.');
+      return exportedXml;
+    }
   }
 }
