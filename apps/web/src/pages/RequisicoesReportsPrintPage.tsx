@@ -6,7 +6,7 @@ import { PrintActions } from '../components/PrintActions';
 import { ReportPartyBanner } from '../components/ReportPartyBanner';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { api } from '../lib/api';
-import { formatBRL, formatCalendarDate, formatCpfCnpj, formatDate } from '../lib/format';
+import { formatBRL, formatCalendarDate, formatDate } from '../lib/format';
 import { scheduleAutoPrint } from '../lib/print-page';
 import './cash-print.css';
 
@@ -127,11 +127,11 @@ export function RequisicoesReportsPrintPage() {
   const reportItems = useMemo((): A4Item[] => {
     if (query.isLoading) return [{ kind: 'block', key: 'loading', node: <p>Carregando relatório…</p> }];
     if (!query.data) return customerName ? [partyBlock(customerName, null)] : [];
+    const party = partyFromLines(customerName, query.data.lines);
     const body =
       report === 'open-installments'
-        ? openItems(query.data as OpenInstallmentsReport, detalhar)
-        : salesItems(query.data as SalesReport, detalhar);
-    const party = partyFromLines(customerName, query.data.lines);
+        ? openItems(query.data as OpenInstallmentsReport, detalhar, Boolean(party))
+        : salesItems(query.data as SalesReport, detalhar, Boolean(party));
     return party ? [partyBlock(party.name, party.document), ...body] : body;
   }, [query.data, query.isLoading, report, detalhar, customerName]);
 
@@ -181,168 +181,197 @@ function partyBlock(name: string, document: string | null): A4Item {
   };
 }
 
-function productLines(items: ReportProduct[] | undefined) {
-  if (!items?.length) return null;
-  return (
-    <div style={{ fontSize: '0.78rem', lineHeight: 1.35 }}>
-      {items.map((it, index) => (
-        <div key={`${it.sku ?? it.productName}-${index}`}>
-          {it.productName}
-          {it.sku ? ` (${it.sku})` : ''} — {formatQty(it.quantity)} un · {formatBRL(it.totalLine)}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function formatQty(n: number): string {
   return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(n);
 }
 
-function salesItems(data: SalesReport, detalhar: boolean): A4Item[] {
+function productList(items: ReportProduct[] | undefined) {
+  if (!items?.length) return null;
+  return (
+    <ul className="gv-finance-simple-items">
+      {items.map((it, index) => (
+        <li key={`${it.sku ?? it.productName}-${index}`} className="gv-finance-simple-items__row">
+          <span className="gv-finance-simple-items__name">
+            {it.productName}
+            {it.sku ? ` (${it.sku})` : ''}
+          </span>
+          <span className="gv-finance-simple-items__meta">
+            {formatQty(it.quantity)} un · {formatBRL(it.totalLine)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function salesItems(data: SalesReport, detalhar: boolean, hideCustomer: boolean): A4Item[] {
+  const intro: A4Item = {
+    kind: 'block',
+    key: 'intro',
+    node: (
+      <p className="print-sub gv-req-summary">
+        Período: {formatCalendarDate(data.period.from)} a {formatCalendarDate(data.period.to)} ·{' '}
+        {data.totals.count} requisição(ões) · Total {formatBRL(data.totals.total)} · Em aberto{' '}
+        {formatBRL(data.totals.remaining)}
+      </p>
+    ),
+  };
+  if (!data.lines.length) {
+    return [intro, { kind: 'block', key: 'empty', node: <p className="print-sub">Nenhuma requisição no período.</p> }];
+  }
+  if (detalhar) {
+    return [
+      intro,
+      ...data.lines.map((r) => ({
+        kind: 'block' as const,
+        key: `sale-${r.number}`,
+        node: (
+          <section className="gv-req-sale gv-finance-grouped-list gv-finance-grouped-list--simple">
+            <div className="gv-finance-origin-group">
+              <header className="gv-finance-origin-group__head gv-finance-origin-group__head--compact">
+                <div className="gv-finance-origin-group__lead">
+                  <strong>Requisição #{r.number}</strong>
+                  <span>{formatDate(r.createdAt)}</span>
+                  <span>{SOURCE_LABELS[r.source] ?? r.source}</span>
+                  <span>{r.installments}x</span>
+                  {hideCustomer ? null : <span>{r.customerName}</span>}
+                </div>
+                <div className="gv-finance-origin-group__totals">
+                  <strong>{formatBRL(r.remaining)}</strong>
+                  <span>em aberto</span>
+                  <span>Venc. {r.nextDueDate ? formatCalendarDate(r.nextDueDate) : '—'}</span>
+                  <span>Total {formatBRL(r.total)}</span>
+                  <span>{saleStatusLabel(r.status, r.openTitles)}</span>
+                </div>
+              </header>
+              {productList(r.items)}
+            </div>
+          </section>
+        ),
+      })),
+    ];
+  }
   return [
-    {
-      kind: 'block',
-      key: 'intro',
-      node: (
-        <>
-          <p className="print-sub">{data.note}</p>
-          <p className="print-sub">
-            Período: {formatCalendarDate(data.period.from)} a {formatCalendarDate(data.period.to)} ·{' '}
-            {data.totals.count} requisição(ões) · Total {formatBRL(data.totals.total)} · Em aberto{' '}
-            {formatBRL(data.totals.remaining)}
-          </p>
-        </>
-      ),
-    },
+    intro,
     {
       kind: 'table',
       key: 'sales',
-      tableClassName: 'data-table',
+      tableClassName: 'data-table gv-req-table',
       head: (
         <tr>
           <th>Nº</th>
           <th>Data</th>
-          <th>Cliente</th>
+          {hideCustomer ? null : <th>Cliente</th>}
           <th>Origem</th>
           <th className="num">Itens</th>
           <th className="num">Parc.</th>
           <th className="num">Total</th>
           <th className="num">Em aberto</th>
-          <th>Próx. venc.</th>
+          <th>Venc.</th>
           <th>Situação</th>
         </tr>
       ),
-      rows: data.lines.flatMap((r) => {
-        const products = detalhar ? productLines(r.items) : null;
-        return [
-          <tr key={r.number}>
-            <td>#{r.number}</td>
-            <td>{formatDate(r.createdAt)}</td>
-            <td>
-              {r.customerName}
-              {r.customerDocument ? (
-                <div style={{ fontSize: '0.78rem' }}>{formatCpfCnpj(r.customerDocument)}</div>
-              ) : null}
-            </td>
-            <td>{SOURCE_LABELS[r.source] ?? r.source}</td>
-            <td className="num">{r.itemCount}</td>
-            <td className="num">{r.installments}x</td>
-            <td className="num">{formatBRL(r.total)}</td>
-            <td className="num">{formatBRL(r.remaining)}</td>
-            <td>{r.nextDueDate ? formatCalendarDate(r.nextDueDate) : '—'}</td>
-            <td>{saleStatusLabel(r.status, r.openTitles)}</td>
-          </tr>,
-          ...(products
-            ? [
-                <tr key={`${r.number}-itens`}>
-                  <td colSpan={10}>{products}</td>
-                </tr>,
-              ]
-            : []),
-        ];
-      }),
-      empty: (
-        <tr>
-          <td colSpan={10}>Nenhuma requisição no período.</td>
+      rows: data.lines.map((r) => (
+        <tr key={r.number}>
+          <td>#{r.number}</td>
+          <td>{formatDate(r.createdAt)}</td>
+          {hideCustomer ? null : <td className="gv-req-wrap">{r.customerName}</td>}
+          <td>{SOURCE_LABELS[r.source] ?? r.source}</td>
+          <td className="num">{r.itemCount}</td>
+          <td className="num">{r.installments}x</td>
+          <td className="num">{formatBRL(r.total)}</td>
+          <td className="num">{formatBRL(r.remaining)}</td>
+          <td>{r.nextDueDate ? formatCalendarDate(r.nextDueDate) : '—'}</td>
+          <td>{saleStatusLabel(r.status, r.openTitles)}</td>
         </tr>
-      ),
+      )),
     },
   ];
 }
 
-function openItems(data: OpenInstallmentsReport, detalhar: boolean): A4Item[] {
+function openItems(data: OpenInstallmentsReport, detalhar: boolean, hideCustomer: boolean): A4Item[] {
   const period =
     data.period?.from || data.period?.to
       ? `Vencimento: ${data.period?.from ? formatCalendarDate(data.period.from) : '…'} a ${
           data.period?.to ? formatCalendarDate(data.period.to) : '…'
         }`
       : 'Todos os vencimentos em aberto';
+  const intro: A4Item = {
+    kind: 'block',
+    key: 'intro',
+    node: (
+      <p className="print-sub gv-req-summary">
+        {period} · {data.totals.count} parcela(s) · Em aberto {formatBRL(data.totals.remaining)}
+        {data.totals.hiddenFromFinance > 0
+          ? ` · ${data.totals.hiddenFromFinance} fora de Contas a receber`
+          : ''}
+      </p>
+    ),
+  };
+  if (!data.lines.length) {
+    return [intro, { kind: 'block', key: 'empty', node: <p className="print-sub">Nenhuma parcela em aberto no filtro.</p> }];
+  }
+  if (detalhar) {
+    return [
+      intro,
+      ...data.lines.map((r, index) => ({
+        kind: 'block' as const,
+        key: `parcela-${r.saleNumber}-${r.dueDate}-${index}`,
+        node: (
+          <section className="gv-req-sale gv-finance-grouped-list gv-finance-grouped-list--simple">
+            <div className="gv-finance-origin-group">
+              <header className="gv-finance-origin-group__head gv-finance-origin-group__head--compact">
+                <div className="gv-finance-origin-group__lead">
+                  <strong>{r.saleNumber != null ? `Requisição #${r.saleNumber}` : r.description}</strong>
+                  <span>Venc. {formatCalendarDate(r.dueDate)}</span>
+                  {r.saleDate ? <span>Venda {formatCalendarDate(r.saleDate)}</span> : null}
+                  {hideCustomer ? null : <span>{r.customerName}</span>}
+                  {!r.visibleInFinance ? <span>Não entra em Contas a receber</span> : null}
+                </div>
+                <div className="gv-finance-origin-group__totals">
+                  <strong>{formatBRL(r.amountRemaining)}</strong>
+                  <span>em aberto</span>
+                  <span>Valor {formatBRL(r.amount)}</span>
+                  <span>{r.status === 'OVERDUE' ? 'Vencido' : 'Em aberto'}</span>
+                </div>
+              </header>
+              {productList(r.items)}
+            </div>
+          </section>
+        ),
+      })),
+    ];
+  }
   return [
-    {
-      kind: 'block',
-      key: 'intro',
-      node: (
-        <>
-          <p className="print-sub">{data.note}</p>
-          <p className="print-sub">
-            {period} · {data.totals.count} parcela(s) · Em aberto {formatBRL(data.totals.remaining)}
-            {data.totals.hiddenFromFinance > 0
-              ? ` · ${data.totals.hiddenFromFinance} fora de Contas a receber (marcadas só como crédito)`
-              : ''}
-          </p>
-        </>
-      ),
-    },
+    intro,
     {
       kind: 'table',
       key: 'installments',
-      tableClassName: 'data-table',
+      tableClassName: 'data-table gv-req-table',
       head: (
         <tr>
           <th>Vencimento</th>
           <th>Venda</th>
           <th>Data da venda</th>
-          <th>Cliente</th>
+          {hideCustomer ? null : <th>Cliente</th>}
           <th>Descrição</th>
           <th className="num">Valor</th>
           <th className="num">Em aberto</th>
           <th>Situação</th>
         </tr>
       ),
-      rows: data.lines.flatMap((r, index) => {
-        const products = detalhar ? productLines(r.items) : null;
-        const key = `${r.saleNumber}-${r.dueDate}-${index}`;
-        return [
-          <tr key={key}>
-            <td>{formatCalendarDate(r.dueDate)}</td>
-            <td>{r.saleNumber != null ? `#${r.saleNumber}` : '—'}</td>
-            <td>{r.saleDate ? formatCalendarDate(r.saleDate) : '—'}</td>
-            <td>
-              {r.customerName}
-              {!r.visibleInFinance ? (
-                <div style={{ fontSize: '0.78rem' }}>Não entra em Contas a receber</div>
-              ) : null}
-            </td>
-            <td>{r.description}</td>
-            <td className="num">{formatBRL(r.amount)}</td>
-            <td className="num">{formatBRL(r.amountRemaining)}</td>
-            <td>{r.status === 'OVERDUE' ? 'Vencido' : 'Em aberto'}</td>
-          </tr>,
-          ...(products
-            ? [
-                <tr key={`${key}-itens`}>
-                  <td colSpan={8}>{products}</td>
-                </tr>,
-              ]
-            : []),
-        ];
-      }),
-      empty: (
-        <tr>
-          <td colSpan={8}>Nenhuma parcela em aberto no filtro.</td>
+      rows: data.lines.map((r, index) => (
+        <tr key={`${r.saleNumber}-${r.dueDate}-${index}`}>
+          <td>{formatCalendarDate(r.dueDate)}</td>
+          <td>{r.saleNumber != null ? `#${r.saleNumber}` : '—'}</td>
+          <td>{r.saleDate ? formatCalendarDate(r.saleDate) : '—'}</td>
+          {hideCustomer ? null : <td className="gv-req-wrap">{r.customerName}</td>}
+          <td className="gv-req-wrap">{r.description}</td>
+          <td className="num">{formatBRL(r.amount)}</td>
+          <td className="num">{formatBRL(r.amountRemaining)}</td>
+          <td>{r.status === 'OVERDUE' ? 'Vencido' : 'Em aberto'}</td>
         </tr>
-      ),
+      )),
     },
   ];
 }

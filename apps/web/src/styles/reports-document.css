@@ -146,6 +146,41 @@
   font-size: 1.15rem;
 }
 
+.gv-req-summary {
+  margin: 0 0 0.75rem;
+}
+
+.gv-req-sale {
+  margin: 0 0 0.7rem;
+}
+
+.gv-req-sale .gv-finance-origin-group__head {
+  margin-bottom: 0;
+  border-radius: 6px 6px 0 0;
+}
+
+.gv-req-sale .gv-finance-simple-items {
+  margin: 0;
+  padding: 0.1rem 0.65rem 0.25rem;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-top: 0;
+  border-radius: 0 0 6px 6px;
+}
+
+.gv-req-sale .gv-finance-origin-group:not(:has(.gv-finance-simple-items)) .gv-finance-origin-group__head {
+  border-radius: 6px;
+}
+
+.gv-req-table th,
+.gv-req-table td {
+  white-space: nowrap;
+}
+
+.gv-req-table td.gv-req-wrap {
+  white-space: normal;
+}
+
 /* Cabeçalho e folha A4 dentro de `.print-doc` */
 .print-doc .gv-report-doc-head {
   flex-direction: column;
