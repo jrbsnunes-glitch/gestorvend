@@ -2507,6 +2507,31 @@
   min-height: 0;
 }
 
+.pos-receipt-note {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.15rem 0 0.35rem;
+}
+
+.pos-receipt-note span {
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.pos-receipt-note textarea {
+  width: 100%;
+  min-height: 3.2rem;
+  resize: vertical;
+  font: inherit;
+}
+
+.pos-receipt-note em {
+  font-size: 0.72rem;
+  font-style: normal;
+  color: var(--pos-text-muted);
+}
+
 .pos-cart-footer {
   flex-shrink: 0;
   border-top: 1px solid var(--pos-border-strong);
@@ -2785,9 +2810,27 @@
 
 .pos-drafts-item-actions {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 0.35rem;
   width: 100%;
+}
+
+.pos-drafts-note {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.45rem 0.55rem;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid var(--border, #e5e7eb);
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: inherit;
+  white-space: pre-wrap;
+  resize: vertical;
+  min-height: 2.6rem;
 }
 
 .pos-drafts-item-actions .pos-btn {

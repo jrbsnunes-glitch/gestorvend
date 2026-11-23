@@ -143,6 +143,58 @@ function previewItems<T>(items: T[]): T[] {
   return items.slice(0, DASH_PREVIEW_LIMIT);
 }
 
+function DashCollapse({
+  className,
+  title,
+  summary,
+  countLabel,
+  open,
+  onToggle,
+  linkTo,
+  linkLabel,
+  children,
+}: {
+  className: string;
+  title: string;
+  summary: string;
+  countLabel: string;
+  open: boolean;
+  onToggle: () => void;
+  linkTo: string;
+  linkLabel: string;
+  children: ReactNode;
+}) {
+  return (
+    <article className={`card dash-block dash-block--collapse${open ? ' is-open' : ''} ${className}`}>
+      <header className="dash-block-head dash-block-head--toggle">
+        <button
+          type="button"
+          className="dash-block-toggle"
+          aria-expanded={open}
+          onClick={onToggle}
+        >
+          <span className="dash-block-chevron" aria-hidden="true" />
+          <span className="dash-block-toggle-text">
+            <h2>{title}</h2>
+            <span className="dash-block-summary">
+              {summary}
+              <span className="dash-block-summary-sep" aria-hidden="true">
+                {' '}
+                ·{' '}
+              </span>
+              <strong className="dash-block-count">{countLabel}</strong>
+            </span>
+          </span>
+        </button>
+        <Link to={linkTo} className="dash-block-link">
+          {linkLabel}
+        </Link>
+      </header>
+      {open ? <div className="dash-block-body">{children}</div> : null}
+    </article>
+  );
+}
+
 function DashSeeMoreButton({ total, onClick }: { total: number; onClick: () => void }) {
   if (total <= DASH_PREVIEW_LIMIT) return null;
   return (
@@ -305,6 +357,7 @@ export function DashboardPage() {
   const company = useCompanyBranding();
   const managerView = isManager();
   const [expandedPanel, setExpandedPanel] = useState<DashPanelKey | null>(null);
+  const [openPanels, setOpenPanels] = useState<ReadonlySet<DashPanelKey>>(() => new Set());
   const turnoverReportPath = buildProductTurnoverLastDaysPath(30, '/');
   const overview = useQuery({
     queryKey: ['dashboard', 'overview'],
@@ -394,6 +447,19 @@ export function DashboardPage() {
 
   function openTurnoverReport() {
     navigate(turnoverReportPath);
+  }
+
+  function togglePanel(key: DashPanelKey) {
+    setOpenPanels((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function recordCountLabel(count: number): string {
+    return count === 1 ? '1 registro' : `${count} registros`;
   }
 
   function renderExpandedPanel() {
@@ -549,14 +615,16 @@ export function DashboardPage() {
 
       {managerView ? (
       <section className="dash-grid dash-grid--row2">
-        <article className="card dash-block dash-block--payables">
-          <header className="dash-block-head">
-            <h2>Contas a pagar</h2>
-            <Link to="/financeiro?tab=pagar" className="dash-block-link">
-              Financeiro →
-            </Link>
-          </header>
-          <p className="dash-block-sub">Vencidos e até 7 dias</p>
+        <DashCollapse
+          className="dash-block--payables"
+          title="Contas a pagar"
+          summary="Vencidos e até 7 dias"
+          countLabel={overview.isLoading ? '…' : recordCountLabel(payablesSoon.length)}
+          open={openPanels.has('payables')}
+          onToggle={() => togglePanel('payables')}
+          linkTo="/financeiro?tab=pagar"
+          linkLabel="Financeiro →"
+        >
           {overview.isLoading && <p className="dash-empty">Carregando…</p>}
           {!overview.isLoading && !payablesSoon.length && (
             <p className="dash-empty">Sem títulos vencidos ou a vencer nos próximos 7 dias.</p>
@@ -567,16 +635,18 @@ export function DashboardPage() {
               <DashSeeMoreButton total={payablesSoon.length} onClick={() => setExpandedPanel('payables')} />
             </>
           ) : null}
-        </article>
+        </DashCollapse>
 
-        <article className="card dash-block dash-block--receivables">
-          <header className="dash-block-head">
-            <h2>Contas a receber</h2>
-            <Link to="/financeiro?tab=receber" className="dash-block-link">
-              Financeiro →
-            </Link>
-          </header>
-          <p className="dash-block-sub">Vencidos e até 7 dias</p>
+        <DashCollapse
+          className="dash-block--receivables"
+          title="Contas a receber"
+          summary="Vencidos e até 7 dias"
+          countLabel={overview.isLoading ? '…' : recordCountLabel(receivablesSoon.length)}
+          open={openPanels.has('receivables')}
+          onToggle={() => togglePanel('receivables')}
+          linkTo="/financeiro?tab=receber"
+          linkLabel="Financeiro →"
+        >
           {overview.isLoading && <p className="dash-empty">Carregando…</p>}
           {!overview.isLoading && !receivablesSoon.length && (
             <p className="dash-empty">Sem títulos vencidos ou a receber nos próximos 7 dias.</p>
@@ -587,16 +657,18 @@ export function DashboardPage() {
               <DashSeeMoreButton total={receivablesSoon.length} onClick={() => setExpandedPanel('receivables')} />
             </>
           ) : null}
-        </article>
+        </DashCollapse>
 
-        <article className="card dash-block dash-block--lowstock">
-          <header className="dash-block-head">
-            <h2>Estoque crítico</h2>
-            <Link to="/estoque/painel" className="dash-block-link">
-              Ver estoque →
-            </Link>
-          </header>
-          <p className="dash-block-sub">Saldo no ou abaixo do mínimo</p>
+        <DashCollapse
+          className="dash-block--lowstock"
+          title="Estoque crítico"
+          summary="Saldo no ou abaixo do mínimo"
+          countLabel={overview.isLoading ? '…' : recordCountLabel(lowStock.length)}
+          open={openPanels.has('lowStock')}
+          onToggle={() => togglePanel('lowStock')}
+          linkTo="/estoque/painel"
+          linkLabel="Ver estoque →"
+        >
           {overview.isLoading && <p className="dash-empty">Carregando…</p>}
           {!overview.isLoading && !lowStock.length && (
             <p className="dash-empty">Nenhum produto abaixo do estoque mínimo.</p>
@@ -607,7 +679,7 @@ export function DashboardPage() {
               <DashSeeMoreButton total={lowStock.length} onClick={() => setExpandedPanel('lowStock')} />
             </>
           ) : null}
-        </article>
+        </DashCollapse>
       </section>
       ) : null}
 

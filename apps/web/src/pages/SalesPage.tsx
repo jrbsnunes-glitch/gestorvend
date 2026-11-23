@@ -272,6 +272,7 @@ type PdvDraftRow = {
   pdvSellerUserId?: string | null;
   expiresAt: string;
   updatedAt: string;
+  notes?: string | null;
   customer?: { id: string; name: string } | null;
   items: Array<{
     variantId: string;
@@ -1223,6 +1224,7 @@ function PosScreen({
   const qtyInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [discount, setDiscount] = useState(0);
   const [surcharge, setSurcharge] = useState(0);
+  const [receiptNote, setReceiptNote] = useState('');
   const [customer, setCustomer] = useState<Customer | null>(null);
   /** CPF digitado no fechamento quando a venda é Balcão (sem cliente). */
   const [consumerCpf, setConsumerCpf] = useState('');
@@ -1305,6 +1307,9 @@ function PosScreen({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [returnSale, setReturnSale] = useState<{ id: string; number: number } | null>(null);
   const [draftsOpen, setDraftsOpen] = useState(false);
+  const [draftNoteId, setDraftNoteId] = useState<string | null>(null);
+  const [draftNoteText, setDraftNoteText] = useState('');
+  const draftNoteSavedRef = useRef('');
   const [exitDraftOpen, setExitDraftOpen] = useState(false);
   const [activePdvDraftId, setActivePdvDraftId] = useState<string | null>(null);
   /** Quantidade de cada item que este rascunho mantém no local Reserva. */
@@ -1516,6 +1521,23 @@ function PosScreen({
     mutationFn: (id: string) => api(`/pdv/drafts/${id}/cancel`, { method: 'POST' }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['pdv-drafts'] });
+    },
+  });
+
+  const saveDraftNoteMut = useMutation({
+    mutationFn: (input: { id: string; notes: string }) =>
+      api<PdvDraftRow>(`/pdv/drafts/${input.id}/notes`, {
+        method: 'POST',
+        json: { notes: input.notes.trim() || null },
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['pdv-drafts'] });
+    },
+    onError: (e) => {
+      setToast({
+        kind: 'err',
+        text: e instanceof Error ? e.message : 'Não foi possível salvar a observação.',
+      });
     },
   });
 
@@ -2002,6 +2024,10 @@ function PosScreen({
               : serviceOrderRef.current
                 ? `OS #${serviceOrderRef.current.number}`
                 : undefined,
+          receiptNote:
+            companyQ.data?.pdvDocumentMode === 'ELECTRONIC_FISCAL_PLANNED'
+              ? null
+              : receiptNote.trim() || null,
           items: lines.map((l) => ({
             variantId: l.variantId,
             quantity: l.quantity,
@@ -2414,6 +2440,7 @@ function PosScreen({
       pdvSellerUserId: sellerUserId || null,
       discount,
       surcharge,
+      notes: electronicFiscalPlanned ? null : receiptNote,
       items: lines.map((l) => ({
         variantId: l.variantId,
         quantity: l.quantity,
@@ -2438,11 +2465,57 @@ function PosScreen({
     setDraftReservedByVariant(map);
   }
 
+  function saveDraftNote(draft: PdvDraftRow, text: string) {
+    const next = text.trim().slice(0, 500);
+    if (next === draftNoteSavedRef.current) return;
+    const previous = draftNoteSavedRef.current;
+    draftNoteSavedRef.current = next;
+    saveDraftNoteMut.mutate(
+      { id: draft.id, notes: next },
+      {
+        onSuccess: (row) => {
+          const saved = (row.notes ?? '').trim();
+          if (draftNoteSavedRef.current === next) draftNoteSavedRef.current = saved;
+          if (activePdvDraftId === draft.id) setReceiptNote(row.notes ?? '');
+        },
+        onError: () => {
+          if (draftNoteSavedRef.current === next) draftNoteSavedRef.current = previous;
+        },
+      },
+    );
+  }
+
+  function openDraftNote(draft: PdvDraftRow) {
+    if (draftNoteId && draftNoteId !== draft.id) {
+      const prev = (pdvDraftsQ.data ?? []).find((row) => row.id === draftNoteId);
+      if (prev) saveDraftNote(prev, draftNoteText);
+    }
+    if (draftNoteId === draft.id) {
+      saveDraftNote(draft, draftNoteText);
+      setDraftNoteId(null);
+      return;
+    }
+    const saved = (draft.notes ?? '').trim();
+    draftNoteSavedRef.current = saved;
+    setDraftNoteText(draft.notes ?? '');
+    setDraftNoteId(draft.id);
+  }
+
+  function closeDraftsModal() {
+    if (draftNoteId) {
+      const current = (pdvDraftsQ.data ?? []).find((row) => row.id === draftNoteId);
+      if (current) saveDraftNote(current, draftNoteText);
+    }
+    setDraftNoteId(null);
+    setDraftsOpen(false);
+  }
+
   function applyPdvDraft(draft: PdvDraftRow) {
     setActivePdvDraftId(draft.id);
     rememberDraftReservation(draft);
     setDiscount(Number(draft.discount) || 0);
     setSurcharge(Number(draft.pdvSurcharge ?? 0) || 0);
+    setReceiptNote(draft.notes ?? '');
     setCustomer(
       draft.customer?.id
         ? {
@@ -2499,6 +2572,7 @@ function PosScreen({
     setQtyDraft({});
     setDiscount(0);
     setSurcharge(0);
+    setReceiptNote('');
     setCustomer(null);
     setConsumerCpf('');
     setPayments([]);
@@ -3734,6 +3808,19 @@ function PosScreen({
                 </select>
               </label>
 
+              {!electronicFiscalPlanned ? (
+                <label className="pos-receipt-note">
+                  <span>Observação do comprovante</span>
+                  <textarea
+                    value={receiptNote}
+                    maxLength={500}
+                    rows={2}
+                    placeholder="Aparece no rodapé do comprovante"
+                    onChange={(e) => setReceiptNote(e.target.value)}
+                  />
+                </label>
+              ) : null}
+
               <p className="pos-pay-later-hint" role="note">
                 As formas de pagamento aparecem após{' '}
                 <span className="pos-shortcut-key">F2</span> Finalizar venda ou no botão abaixo.
@@ -4737,7 +4824,7 @@ function PosScreen({
       ) : null}
 
       {draftsOpen && pdvDraftsEnabled ? (
-        <FormModalBackdrop onClose={() => setDraftsOpen(false)}>
+        <FormModalBackdrop onClose={closeDraftsModal}>
           <div className="modal pos-drafts-modal" role="dialog" aria-labelledby="pos-drafts-title">
             <h2 id="pos-drafts-title">Rascunhos de venda</h2>
             <p style={{ margin: '0.35rem 0 0.75rem', lineHeight: 1.45 }}>
@@ -4779,6 +4866,17 @@ function PosScreen({
                       >
                         Espelho
                       </button>
+                      {!electronicFiscalPlanned ? (
+                        <button
+                          type="button"
+                          className={
+                            'pos-btn pos-btn-ghost' + (draftNoteId === d.id ? ' is-active' : '')
+                          }
+                          onClick={() => openDraftNote(d)}
+                        >
+                          Observação
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="pos-btn pos-btn-ghost"
@@ -4805,12 +4903,25 @@ function PosScreen({
                         Excluir
                       </button>
                     </div>
+                    {!electronicFiscalPlanned && draftNoteId === d.id ? (
+                      <textarea
+                        className="pos-drafts-note"
+                        rows={2}
+                        maxLength={500}
+                        value={draftNoteText}
+                        placeholder="Aparece no rodapé do comprovante"
+                        aria-label={`Observação do rascunho ${d.number}`}
+                        autoFocus
+                        onChange={(e) => setDraftNoteText(e.target.value)}
+                        onBlur={() => saveDraftNote(d, draftNoteText)}
+                      />
+                    ) : null}
                   </li>
                 ))}
               </ul>
             )}
             <div className="modal-actions">
-              <button type="button" className="pos-btn pos-btn-ghost" onClick={() => setDraftsOpen(false)}>
+              <button type="button" className="pos-btn pos-btn-ghost" onClick={closeDraftsModal}>
                 Fechar
               </button>
             </div>

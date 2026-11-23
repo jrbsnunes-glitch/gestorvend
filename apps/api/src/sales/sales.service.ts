@@ -37,6 +37,15 @@ import { readNfceAuthorizedXml, resolveNfceCouponPrint } from '../fiscal/issuer/
 
 type TenantTx = Prisma.TransactionClient;
 
+/** Texto livre do comprovante. A NF-e/NFC-e não usa este campo. */
+export function normalizeReceiptNote(raw: string | null | undefined): string | null {
+  const text = String(raw ?? '')
+    .replace(/\r\n/g, '\n')
+    .trim()
+    .slice(0, 500);
+  return text || null;
+}
+
 export async function getDefaultStockLocation(db: {
   stockLocation: {
     findFirst: (args: {
@@ -109,6 +118,8 @@ export type CreateSaleInput = {
   /** CPF digitado no balcão. Com cliente cadastrado, a API usa o documento do cadastro. */
   consumerDocument?: string | null;
   notes?: string | null;
+  /** Rodapé do comprovante. Ignorado na montagem da NF-e/NFC-e. */
+  receiptNote?: string | null;
   discount?: string | number;
   /** Acréscimo no total (R$) — espelha vOutro do leiaute NF-e/NFC-e. */
   surcharge?: string | number;
@@ -642,6 +653,7 @@ export class SalesService {
           deductStock,
           total: String(total.toFixed(2)),
           notes: input.notes ?? null,
+          receiptNote: normalizeReceiptNote(input.receiptNote),
           items: {
             create: input.items.map((it) => {
               const q = Number(it.quantity);

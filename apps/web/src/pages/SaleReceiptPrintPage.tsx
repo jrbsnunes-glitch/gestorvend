@@ -48,6 +48,7 @@ type SaleReceipt = {
   total: string;
   createdAt: string;
   notes: string | null;
+  receiptNote?: string | null;
   consumerDocument?: string | null;
   customer: { name: string; document?: string | null } | null;
   user: { name: string } | null;
@@ -315,6 +316,7 @@ function buildReceiptTicketJson(
   }));
 
   const foot = ['Obrigado pela preferência!'];
+  if (!nfceDanfe && s.receiptNote?.trim()) foot.unshift(s.receiptNote.trim());
   if (nfceDanfe && opts.nfce?.accessKey) {
     foot.unshift(`Chave ${opts.nfce.accessKey}`);
   }
@@ -964,6 +966,11 @@ export function SaleReceiptPrintPage() {
           <hr className="sale-receipt-line" />
 
           <footer className="sale-receipt-foot">
+            {!nfceDanfe && s.receiptNote?.trim() ? (
+              <p className="sale-receipt-foot-muted" style={{ whiteSpace: 'pre-wrap' }}>
+                {s.receiptNote.trim()}
+              </p>
+            ) : null}
             <p style={{ margin: 0 }}>Obrigado pela preferência!</p>
             <p className="sale-receipt-foot-muted">
               {nfceContingency

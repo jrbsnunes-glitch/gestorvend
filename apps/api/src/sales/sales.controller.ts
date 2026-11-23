@@ -33,6 +33,7 @@ export class SalesController {
       consumerDocument?: string | null;
       sellerUserId?: string | null;
       notes?: string | null;
+      receiptNote?: string | null;
       discount?: number;
       surcharge?: number;
       serviceFeeAmount?: number;
@@ -76,6 +77,7 @@ export class SalesController {
       customerId: body.customerId,
       consumerDocument: body.consumerDocument,
       notes: body.notes,
+      receiptNote: body.receiptNote,
       discount: body.discount,
       surcharge: body.surcharge,
       serviceFeeAmount: body.serviceFeeAmount,

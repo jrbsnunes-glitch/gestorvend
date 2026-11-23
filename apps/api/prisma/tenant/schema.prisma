@@ -1135,6 +1135,8 @@ model Sale {
   deductStock   Boolean        @default(true)
   total         Decimal        @db.Decimal(14, 2)
   notes         String?
+  /// Texto do comprovante (rodapé). Não entra na NF-e/NFC-e.
+  receiptNote   String?        @db.VarChar(500)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   /// Erro de integração fiscal (NF-e/NFC-e/Sefaz). Impede novo caixa/PDV até resolução quando preenchido.

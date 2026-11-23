@@ -24,7 +24,7 @@ import {
   ensureReservationLocation,
 } from '../inventory/stock-location.util';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
-import { normalizePaymentsToSaleTotal, SalesService } from '../sales/sales.service';
+import { normalizePaymentsToSaleTotal, normalizeReceiptNote, SalesService } from '../sales/sales.service';
 
 const RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -92,6 +92,7 @@ export type UpsertPdvDraftInput = {
   pdvSellerUserId?: string | null;
   discount?: number | string;
   surcharge?: number | string;
+  notes?: string | null;
   items: PdvDraftLineInput[];
   reservationId?: string | null;
 };
@@ -502,6 +503,23 @@ export class SalesReservationsService {
     return this.cancel(tenantSlug, existing.id, userId);
   }
 
+  /** Atualiza só a observação do comprovante. Não mexe em itens nem no estoque. */
+  async updatePdvDraftNotes(
+    tenantSlug: string,
+    id: string,
+    userId: string,
+    notes: string | null | undefined,
+  ) {
+    await this.assertPdvDraftsEnabled(tenantSlug);
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const existing = await this.requireOpenPdvDraft(db, tenantSlug, id, userId);
+    return db.saleReservation.update({
+      where: { id: existing.id },
+      data: { notes: normalizeReceiptNote(notes) },
+      include: reservationInclude,
+    });
+  }
+
   private async requireOpenPdvDraft(
     db: Awaited<ReturnType<TenantPrismaService['getClient']>>,
     tenantSlug: string,
@@ -537,7 +555,7 @@ export class SalesReservationsService {
           discount: String(prepared.headerDiscount.toFixed(2)),
           pdvSurcharge: String(prepared.surcharge.toFixed(2)),
           total: String(prepared.total.toFixed(2)),
-          notes: null,
+          notes: normalizeReceiptNote(input.notes),
           expiresAt,
           items: {
             create: prepared.items.map((it) => ({
@@ -622,6 +640,7 @@ export class SalesReservationsService {
           discount: String(prepared.headerDiscount.toFixed(2)),
           pdvSurcharge: String(prepared.surcharge.toFixed(2)),
           total: String(prepared.total.toFixed(2)),
+          notes: normalizeReceiptNote(input.notes),
           items: {
             create: prepared.items.map((it) => ({
               variantId: it.variantId,

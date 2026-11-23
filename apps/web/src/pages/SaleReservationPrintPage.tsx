@@ -370,11 +370,14 @@ export function SaleReservationPrintPage() {
             ))
           )}
 
-          {r.notes?.trim() ? <p className="gv-rsv-note">Obs.: {r.notes.trim()}</p> : null}
+          {!isDraft && r.notes?.trim() ? <p className="gv-rsv-note">Obs.: {r.notes.trim()}</p> : null}
 
           <hr className="gv-rsv-line" />
 
           <div className="gv-rsv-foot">
+            {isDraft && r.notes?.trim() ? (
+              <div style={{ whiteSpace: 'pre-wrap' }}>{r.notes.trim()}</div>
+            ) : null}
             <div>{isDraft ? 'Rascunho válido por 24 horas.' : 'Retire em até 24 horas.'}</div>
             <small>
               {isDraft

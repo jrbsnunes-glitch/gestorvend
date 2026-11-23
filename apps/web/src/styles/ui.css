@@ -2979,12 +2979,13 @@ td .numeric-input {
 
 .dash-grid--row2 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
 }
 
 .dash-grid--row2 > .dash-block {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: auto;
 }
 
 @media (max-width: 1100px) {
@@ -3573,6 +3574,70 @@ td .numeric-input {
   max-height: min(62vh, 28rem);
   overflow: auto;
   margin-bottom: 0.75rem;
+}
+
+.dash-block-head--toggle {
+  align-items: flex-start;
+  margin-bottom: 0;
+}
+
+.dash-block--collapse.is-open .dash-block-head--toggle {
+  margin-bottom: 0.55rem;
+}
+
+.dash-block-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dash-block-chevron {
+  flex: 0 0 auto;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-top: 0.38rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  opacity: 0.7;
+}
+
+.dash-block--collapse.is-open .dash-block-chevron {
+  margin-top: 0.22rem;
+  transform: rotate(45deg);
+}
+
+.dash-block-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.dash-block-summary {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+}
+
+.dash-block-count {
+  color: var(--color-text);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dash-block-body {
+  min-width: 0;
 }
 
 .dash-block-head {

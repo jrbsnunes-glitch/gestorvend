@@ -41,6 +41,7 @@ export class PdvDraftsController {
       pdvSellerUserId?: string | null;
       discount?: number;
       surcharge?: number;
+      notes?: string | null;
       items: Array<{
         variantId: string;
         quantity: number;
@@ -60,8 +61,19 @@ export class PdvDraftsController {
       pdvSellerUserId: body.pdvSellerUserId,
       discount: body.discount,
       surcharge: body.surcharge,
+      notes: body.notes,
       items: body.items ?? [],
     });
+  }
+
+  @Post(':id/notes')
+  @Roles('admin', 'manager', 'seller')
+  updateNotes(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: { notes?: string | null },
+  ) {
+    return this.reservations.updatePdvDraftNotes(user.tenantSlug, id, user.sub, body.notes);
   }
 
   @Post(':id/cancel')

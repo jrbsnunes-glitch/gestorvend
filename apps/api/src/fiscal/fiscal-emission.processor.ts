@@ -919,6 +919,7 @@ export class FiscalEmissionProcessorService {
       modFrete: sale.freightMod ?? 9,
       deliveryVehiclePlate: sale.deliveryVehiclePlate,
       deliveryDriverName: sale.deliveryDriverName,
+      // receiptNote fica só no comprovante; a nota fiscal não leva esse texto.
       infCplExtra: sale.notes,
       idDest,
     };
