@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import {
   BillStatus,
   CreditKind,
+  PaymentMethod,
   Prisma,
   SaleStatus,
 } from '../generated/tenant-client';
@@ -109,7 +110,11 @@ export class CustomerReportsService {
         customerId: { not: null },
         AND: [
           {
-            OR: [{ creditKind: null }, { creditKind: CreditKind.REQUISITION }],
+            OR: [
+              { creditKind: null },
+              { creditKind: CreditKind.REQUISITION },
+              { sale: { payments: { some: { method: PaymentMethod.REQUISITION } } } },
+            ],
           },
           {
             OR: [
@@ -225,7 +230,11 @@ export class CustomerReportsService {
         status: { in: [BillStatus.OPEN, BillStatus.OVERDUE] },
         AND: [
           {
-            OR: [{ creditKind: null }, { creditKind: CreditKind.REQUISITION }],
+            OR: [
+              { creditKind: null },
+              { creditKind: CreditKind.REQUISITION },
+              { sale: { payments: { some: { method: PaymentMethod.REQUISITION } } } },
+            ],
           },
           ...(cid ? [{ customerId: cid }] : []),
           ...(seg ? [{ customer: { segment: seg } }] : []),

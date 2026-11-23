@@ -57,6 +57,42 @@ export class RequisitionsController {
     });
   }
 
+  @Get('reports/sales')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  salesReport(
+    @CurrentUser() user: JwtPayload,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('customerId') customerId?: string,
+    @Query('status') status?: string,
+    @Query('detalhar') detalharRaw?: string,
+  ) {
+    return this.requisitions.salesReport(user.tenantSlug, {
+      from,
+      to,
+      customerId,
+      status,
+      detalhar: detalharRaw === '1' || detalharRaw === 'true',
+    });
+  }
+
+  @Get('reports/open-installments')
+  @Roles('admin', 'manager', 'seller', 'finance')
+  openInstallmentsReport(
+    @CurrentUser() user: JwtPayload,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('customerId') customerId?: string,
+    @Query('detalhar') detalharRaw?: string,
+  ) {
+    return this.requisitions.openInstallmentsReport(user.tenantSlug, {
+      from,
+      to,
+      customerId,
+      detalhar: detalharRaw === '1' || detalharRaw === 'true',
+    });
+  }
+
   @Get(':id')
   @Roles('admin', 'manager', 'seller', 'finance')
   detail(@CurrentUser() user: JwtPayload, @Param('id') id: string) {

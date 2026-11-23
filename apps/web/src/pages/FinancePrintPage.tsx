@@ -1,6 +1,7 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { ReportPartyBanner } from '../components/ReportPartyBanner';
 import { StandardReportHeader } from '../components/StandardReportHeader';
 import { BillPaymentsButton } from '../components/BillSettlementsModal';
 import { api } from '../lib/api';
@@ -335,7 +336,9 @@ export function FinancePrintPage() {
   const to = sp.get('to') ?? '';
   const segment = sp.get('segment') ?? '';
   const partyId = sp.get('partyId') ?? '';
+  const partyName = sp.get('partyName')?.trim() ?? '';
   const detalhar = sp.get('detalhar') === '1';
+  const dateBasis = sp.get('dateBasis') === 'sale' ? 'sale' : sp.get('dateBasis') === 'due' ? 'due' : '';
 
   const listQs = useMemo(() => {
     const p = new URLSearchParams();
@@ -346,6 +349,7 @@ export function FinancePrintPage() {
     if (modo === 'pagas') p.set('status', 'PAID');
     if (from) p.set('from', from);
     if (to) p.set('to', to);
+    if (dateBasis) p.set('dateBasis', dateBasis);
     if (segment) p.set('segment', segment);
     if (partyId) {
       if (tipo === 'pagar') p.set('supplierId', partyId);
@@ -353,7 +357,7 @@ export function FinancePrintPage() {
     }
     if (detalhar) p.set('detalhar', '1');
     return p.toString();
-  }, [modo, from, to, segment, partyId, tipo, detalhar]);
+  }, [modo, from, to, segment, partyId, tipo, detalhar, dateBasis]);
 
   const singlePayable = useQuery({
     queryKey: ['finance', 'payable', id],
@@ -430,6 +434,39 @@ export function FinancePrintPage() {
   const salesItemsLoading =
     detalhar && saleDetailQueries.some((q) => q.isLoading || q.isFetching);
 
+  const bannerParty = useMemo(() => {
+    if (partyName) return { name: partyName, document: null as string | null };
+    const names = new Map<string, string | null>();
+    const add = (name?: string | null, document?: string | null) => {
+      const label = name?.trim();
+      if (!label || label === '—') return;
+      if (!names.has(label)) names.set(label, document?.trim() || null);
+    };
+    if (modo === 'conta' && tipo === 'receber') add(singleReceivable.data?.customer?.name);
+    if (modo === 'conta' && tipo === 'pagar') add(singlePayable.data?.supplier?.legalName);
+    if (tipo === 'receber' && modo !== 'conta' && modo !== 'aging') {
+      for (const row of listReceivables.data ?? []) add(row.customer?.name);
+    }
+    if (tipo === 'pagar' && modo !== 'conta') {
+      for (const row of listPayables.data ?? []) add(row.supplier?.legalName);
+    }
+    if (modo === 'aging') {
+      for (const line of agingReport.data?.lines ?? []) add(line.name, line.document);
+    }
+    if (names.size !== 1) return null;
+    const [name, document] = [...names.entries()][0];
+    return { name, document };
+  }, [
+    partyName,
+    modo,
+    tipo,
+    singleReceivable.data,
+    singlePayable.data,
+    listReceivables.data,
+    listPayables.data,
+    agingReport.data,
+  ]);
+
   const kindLabel = tipo === 'pagar' ? 'Contas a pagar' : 'Contas a receber';
   const modeLabel =
     modo === 'conta'
@@ -442,12 +479,15 @@ export function FinancePrintPage() {
 
   const subtitle = useMemo(() => {
     const parts: string[] = [];
-    if (from && to) parts.push(`Período: ${formatDate(from)} — ${formatDate(to)}`);
-    else if (from) parts.push(`A partir de ${formatDate(from)}`);
-    else if (to) parts.push(`Até ${formatDate(to)}`);
+    const basisLabel =
+      dateBasis === 'sale' ? 'data da venda' : dateBasis === 'due' ? 'data do vencimento' : '';
+    const periodPrefix = basisLabel ? `Período (${basisLabel})` : 'Período';
+    if (from && to) parts.push(`${periodPrefix}: ${formatDate(from)} — ${formatDate(to)}`);
+    else if (from) parts.push(`A partir de ${formatDate(from)}${basisLabel ? ` (${basisLabel})` : ''}`);
+    else if (to) parts.push(`Até ${formatDate(to)}${basisLabel ? ` (${basisLabel})` : ''}`);
     if (segment) parts.push(`Grupo: ${segment}`);
     return parts.length ? <span>{parts.join(' · ')}</span> : null;
-  }, [from, to, segment]);
+  }, [from, to, segment, dateBasis]);
 
   const documentTitle = `${kindLabel} — ${modeLabel}`;
 
@@ -587,7 +627,6 @@ export function FinancePrintPage() {
                   <strong>
                     Venda #{Number.isFinite(saleNumber) ? saleNumber : sale?.number ?? '—'}
                   </strong>
-                  <span>{customer?.name ?? '—'}</span>
                   {sale?.createdAt ? <span>{formatDate(sale.createdAt)}</span> : null}
                 </div>
                 <div className="gv-finance-origin-group__totals">
@@ -597,6 +636,9 @@ export function FinancePrintPage() {
                   {sale?.total ? <span>Total venda: {formatBRL(sale.total)}</span> : null}
                 </div>
               </header>
+              {!bannerParty && customer?.name ? (
+                <p className="gv-report-party__name gv-report-party__name--section">{customer.name}</p>
+              ) : null}
               {renderSimpleItemsList(soldLines)}
             </section>
           );
@@ -609,7 +651,6 @@ export function FinancePrintPage() {
               <header className="gv-finance-origin-group__head gv-finance-origin-group__head--compact">
                 <div className="gv-finance-origin-group__lead">
                   <strong>{r.description}</strong>
-                  <span>{r.customer?.name ?? '—'}</span>
                 </div>
                 <div className="gv-finance-origin-group__totals">
                   <strong>{formatBRL(summary.totalOpen)}</strong>
@@ -617,6 +658,9 @@ export function FinancePrintPage() {
                   {renderDueSummary(summary)}
                 </div>
               </header>
+              {!bannerParty && r.customer?.name ? (
+                <p className="gv-report-party__name gv-report-party__name--section">{r.customer.name}</p>
+              ) : null}
               {soldLines.length ? renderSimpleItemsList(soldLines) : null}
             </section>
           );
@@ -643,7 +687,6 @@ export function FinancePrintPage() {
               <header className="gv-finance-origin-group__head gv-finance-origin-group__head--compact">
                 <div className="gv-finance-origin-group__lead">
                   <strong>Entrada #{receipt.controlNumber}</strong>
-                  <span>{supplier?.legalName ?? '—'}</span>
                   {receipt.documentNumber ? <span>NF {receipt.documentNumber}</span> : null}
                   {receipt.issueDate ? <span>{formatDate(receipt.issueDate)}</span> : null}
                 </div>
@@ -656,6 +699,9 @@ export function FinancePrintPage() {
                   ) : null}
                 </div>
               </header>
+              {!bannerParty && supplier?.legalName ? (
+                <p className="gv-report-party__name gv-report-party__name--section">{supplier.legalName}</p>
+              ) : null}
               {renderSimpleItemsList(itemLines)}
             </section>
           );
@@ -667,7 +713,6 @@ export function FinancePrintPage() {
               <header className="gv-finance-origin-group__head gv-finance-origin-group__head--compact">
                 <div className="gv-finance-origin-group__lead">
                   <strong>{p.description}</strong>
-                  <span>{p.supplier?.legalName ?? '—'}</span>
                 </div>
                 <div className="gv-finance-origin-group__totals">
                   <strong>{formatBRL(summary.totalOpen)}</strong>
@@ -675,6 +720,9 @@ export function FinancePrintPage() {
                   {renderDueSummary(summary)}
                 </div>
               </header>
+              {!bannerParty && p.supplier?.legalName ? (
+                <p className="gv-report-party__name gv-report-party__name--section">{p.supplier.legalName}</p>
+              ) : null}
             </section>
           );
         })}
@@ -818,6 +866,9 @@ export function FinancePrintPage() {
 
       <div className="print-doc gv-finance-print-root">
         <StandardReportHeader documentTitle={documentTitle} documentExtras={subtitle} />
+        {bannerParty ? (
+          <ReportPartyBanner name={bannerParty.name} document={bannerParty.document} />
+        ) : null}
 
       {!loading && !errMessage && periodSummary ? (
         <div className="gv-finance-period-total" aria-label="Total geral do período">

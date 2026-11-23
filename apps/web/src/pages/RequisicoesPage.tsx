@@ -9,9 +9,11 @@ import { CrudSearchFilterLeading } from '../components/CrudSearchFilterLeading';
 import { CrudToolbar } from '../components/CrudToolbar';
 import { FormModalBackdrop } from '../components/FormModalBackdrop';
 import { ModuleReportsModal } from '../components/ModuleReportsModal';
+import { RequisicoesReportsLauncher } from '../components/RequisicoesReportsLauncher';
 import { ProductSearchModal, type ProductSearchRow } from '../components/ProductSearchModal';
 import { RecordViewModal, type RecordViewSection } from '../components/RecordViewModal';
 import { api } from '../lib/api';
+import { calendarDateKey, formatCalendarDate } from '../lib/format';
 import {
   FilterControlRangeFields,
   FilterGroupField,
@@ -132,12 +134,7 @@ function todayInputValue(): string {
 }
 
 function dueDateInput(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return todayInputValue();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return calendarDateKey(iso) ?? todayInputValue();
 }
 
 function receivableEditable(r: { status: string; amount: number; amountRemaining: number }) {
@@ -480,7 +477,7 @@ export function RequisicoesPage() {
             {
               label: d.installments > 1 ? 'Primeiro vencimento' : 'Vencimento',
               value: d.receivables[0]?.dueDate
-                ? new Date(d.receivables[0].dueDate).toLocaleDateString('pt-BR')
+                ? formatCalendarDate(d.receivables[0].dueDate)
                 : null,
             },
             { label: 'Total', value: money(d.total) },
@@ -519,7 +516,7 @@ export function RequisicoesPage() {
           ],
           rows: d.receivables.map((r) => [
             r.recurrenceCount ? `${r.recurrenceIndex}/${r.recurrenceCount}` : '1/1',
-            new Date(r.dueDate).toLocaleDateString('pt-BR'),
+            formatCalendarDate(r.dueDate),
             money(r.amount),
             money(r.amountRemaining),
             TITLE_STATUS_LABELS[r.status] ?? r.status,
@@ -692,11 +689,14 @@ export function RequisicoesPage() {
         </FormModalBackdrop>
       )}
 
-      <ModuleReportsModal open={reportsOpen} title="Requisições" onClose={() => setReportsOpen(false)}>
-        <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
-          <li>Requisições por cliente e período</li>
-          <li>Parcelas em aberto por vencimento (ver Financeiro → Contas a receber)</li>
-        </ul>
+      <ModuleReportsModal
+        open={reportsOpen}
+        title="Requisições"
+        wide
+        compactLauncher
+        onClose={() => setReportsOpen(false)}
+      >
+        <RequisicoesReportsLauncher onClose={() => setReportsOpen(false)} />
       </ModuleReportsModal>
 
       <div className="card">

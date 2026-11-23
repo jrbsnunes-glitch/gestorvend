@@ -14,7 +14,8 @@ import { BillPaymentsButton } from '../components/BillSettlementsModal';
 import { api } from '../lib/api';
 import { syncDataTableCardLabels } from '../lib/responsive-tables';
 import { hasInformedPayment, PAYMENT_LABELS, saldoAbertoBill } from '../lib/finance-bills';
-import { formatBRL, formatCalendarDate, formatCpfCnpj } from '../lib/format';
+import { calendarDateKey, formatBRL, formatCalendarDate, formatCpfCnpj } from '../lib/format';
+import { todayISODate } from '../lib/local-date';
 
 type CustomerSearchRow = {
   id: string;
@@ -113,7 +114,7 @@ type PrintModo = 'conta' | 'abertas' | 'pagas' | 'aging';
 const EMPTY_FORM: FormState = {
   description: '',
   amount: '',
-  dueDate: new Date().toISOString().slice(0, 10),
+  dueDate: todayISODate(),
   partyId: '',
   recurrence: 'NONE',
   recurrenceCount: 1,
@@ -167,12 +168,7 @@ function isSameLocalDay(a: Date, b: Date): boolean {
 }
 
 function toDateInput(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return calendarDateKey(iso) ?? '';
 }
 
 function canEditBill(row: Payable | Receivable): boolean {
@@ -342,6 +338,7 @@ export function FinancePage() {
   const [printSegment, setPrintSegment] = useState('');
   const [printPartyId, setPrintPartyId] = useState('');
   const [printDetalharOrigem, setPrintDetalharOrigem] = useState(false);
+  const [printDateBasis, setPrintDateBasis] = useState<'due' | 'sale'>('due');
 
   const payablesFilter = useMemo(
     () => financeListFilterForTab(appliedFilter, 'pagar', filterCustomerId, filterSupplierId),
@@ -628,7 +625,7 @@ export function FinancePage() {
         json: {
           description: form.description,
           amount: parseFloat(form.amount.replace(',', '.')) || 0,
-          dueDate: new Date(form.dueDate).toISOString(),
+          dueDate: form.dueDate,
           supplierId: form.partyId || null,
           recurrence: form.recurrence,
           recurrenceCount: form.recurrenceCount,
@@ -656,7 +653,7 @@ export function FinancePage() {
         json: {
           description: form.description,
           amount: parseFloat(form.amount.replace(',', '.')) || 0,
-          dueDate: new Date(form.dueDate).toISOString(),
+          dueDate: form.dueDate,
           customerId: form.partyId || null,
           recurrence: form.recurrence,
           recurrenceCount: form.recurrenceCount,
@@ -791,6 +788,7 @@ export function FinancePage() {
     setOpenTab(t);
     setForm({
       ...EMPTY_FORM,
+      dueDate: todayISODate(),
       partyId: t === 'pagar' ? filterSupplierId : filterCustomerId,
     });
     setErr(null);
@@ -860,9 +858,18 @@ export function FinancePage() {
     setPrintSegment('');
     setPrintPartyId('');
     setPrintDetalharOrigem(false);
+    setPrintDateBasis('due');
     setPrintModo('abertas');
     setPrintId('');
     setPrintOpen(true);
+  }
+
+  function selectedPrintPartyName(): string {
+    if (!printPartyId) return '';
+    if (tab === 'pagar') {
+      return suppliers.data?.find((s) => s.id === printPartyId)?.legalName?.trim() ?? '';
+    }
+    return customers.data?.find((c) => c.id === printPartyId)?.name?.trim() ?? '';
   }
 
   function launchPrint() {
@@ -877,12 +884,21 @@ export function FinancePage() {
       p.set('id', printId.trim());
     } else if (printModo === 'aging') {
       if (printSegment.trim()) p.set('segment', printSegment.trim());
-      if (printPartyId) p.set('partyId', printPartyId);
+      if (printPartyId) {
+        p.set('partyId', printPartyId);
+        const partyName = selectedPrintPartyName();
+        if (partyName) p.set('partyName', partyName);
+      }
     } else {
       if (printFrom) p.set('from', printFrom);
       if (printTo) p.set('to', printTo);
+      p.set('dateBasis', printDateBasis);
       if (printSegment.trim()) p.set('segment', printSegment.trim());
-      if (printPartyId) p.set('partyId', printPartyId);
+      if (printPartyId) {
+        p.set('partyId', printPartyId);
+        const partyName = selectedPrintPartyName();
+        if (partyName) p.set('partyName', partyName);
+      }
       if (printDetalharOrigem) p.set('detalhar', '1');
     }
     const path = `/financeiro/impressao?${p.toString()}&return=${encodeURIComponent(financeReturnPath())}`;
@@ -2036,6 +2052,34 @@ export function FinancePage() {
                     />
                   </div>
                 </div>
+                <fieldset className="field" style={{ border: 0, margin: 0, padding: 0 }}>
+                  <legend style={{ fontSize: '0.88rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                    Filtrar o período por
+                  </legend>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.25rem' }}>
+                    <input
+                      type="radio"
+                      name="pr-date-basis"
+                      checked={printDateBasis === 'due'}
+                      onChange={() => setPrintDateBasis('due')}
+                    />
+                    Data do vencimento
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <input
+                      type="radio"
+                      name="pr-date-basis"
+                      checked={printDateBasis === 'sale'}
+                      onChange={() => setPrintDateBasis('sale')}
+                    />
+                    Data da venda
+                  </label>
+                  <p style={{ margin: '0.35rem 0 0', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                    {tab === 'pagar'
+                      ? 'Em contas a pagar, data da venda é a data da nota de entrada ou, sem nota, a data do lançamento.'
+                      : 'Data da venda é o dia em que a venda foi feita. Uma parcela com vencimento fora do período continua no relatório.'}
+                  </p>
+                </fieldset>
                 <div className="field">
                   <label htmlFor="pr-seg">Grupo (segmento {tab === 'pagar' ? 'do fornecedor' : 'do cliente'})</label>
                   <input

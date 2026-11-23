@@ -13,6 +13,7 @@ import {
   SaleStatus,
 } from '../generated/tenant-client';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
+import { calendarDateAtLocalNoonFromIso, parseQueryDate } from '../common/date-range.util';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { SalesService } from '../sales/sales.service';
 
@@ -48,12 +49,12 @@ function roundMoney2(n: number): number {
 
 function parseDayStart(raw: string): Date | null {
   const s = String(raw).trim();
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (dateOnly) {
-    const [, y, m, d] = dateOnly;
-    const date = new Date(Number(y), Number(m) - 1, Number(d));
-    date.setHours(0, 0, 0, 0);
-    return date;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    try {
+      return calendarDateAtLocalNoonFromIso(s);
+    } catch {
+      return null;
+    }
   }
   const date = new Date(s);
   return Number.isNaN(date.getTime()) ? null : date;
@@ -134,15 +135,14 @@ export class RequisitionsService {
     if (opts.from || opts.to) {
       const createdAt: Prisma.DateTimeFilter = {};
       if (opts.from) {
-        const d = new Date(opts.from);
+        const raw = opts.from.trim();
+        const d = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? parseQueryDate(raw, 'start') : new Date(raw);
         if (!Number.isNaN(d.getTime())) createdAt.gte = d;
       }
       if (opts.to) {
-        const d = new Date(opts.to);
-        if (!Number.isNaN(d.getTime())) {
-          d.setHours(23, 59, 59, 999);
-          createdAt.lte = d;
-        }
+        const raw = opts.to.trim();
+        const d = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? parseQueryDate(raw, 'end') : new Date(raw);
+        if (!Number.isNaN(d.getTime())) createdAt.lte = d;
       }
       where.createdAt = createdAt;
     }
@@ -559,4 +559,193 @@ export class RequisitionsService {
 
     return updated;
   }
+
+  /** Vendas em requisição no período da data da venda (não do vencimento). */
+  async salesReport(
+    tenantSlug: string,
+    opts: { from?: string; to?: string; customerId?: string; status?: string; detalhar?: boolean },
+  ) {
+    const from = String(opts.from ?? '').trim();
+    const to = String(opts.to ?? '').trim();
+    if (!from || !to) {
+      throw new BadRequestException('Informe o período (de/até) pela data da venda.');
+    }
+    const rows = await this.list(tenantSlug, {
+      from,
+      to,
+      customerId: opts.customerId,
+      status: opts.status === 'COMPLETED' || opts.status === 'CANCELLED' ? opts.status : undefined,
+      take: 2000,
+    });
+    const selected = rows.filter(
+      (row) => opts.status !== 'OPEN' || (row.status !== 'CANCELLED' && row.titles.open > 0),
+    );
+    const itemsBySale = opts.detalhar
+      ? await this.reportItemsBySale(
+          tenantSlug,
+          selected.map((row) => row.id),
+        )
+      : new Map<string, ReportProductLine[]>();
+    const lines = selected.map((row) => ({
+      number: row.number,
+      createdAt: row.createdAt,
+      customerName: row.customer?.name ?? '—',
+      customerDocument: row.customer?.document ?? null,
+      source: row.source,
+      itemCount: row.itemCount,
+      installments: row.installments,
+      total: money2(row.total),
+      remaining: money2(row.titles.remaining),
+      openTitles: row.titles.open,
+      nextDueDate: row.titles.nextDueDate,
+      status: row.status,
+      ...(opts.detalhar ? { items: itemsBySale.get(row.id) ?? [] } : {}),
+    }));
+    return {
+      title: 'Requisições por cliente e período',
+      period: { from, to },
+      note:
+        'Período pela data da venda. O relatório de Contas a receber usa o vencimento da parcela: ' +
+        'uma requisição deste período pode ficar de fora de lá se o vencimento cair em outro mês.',
+      lines,
+      totals: {
+        count: lines.length,
+        total: money2(lines.reduce((s, l) => s + Number(l.total), 0)),
+        remaining: money2(lines.reduce((s, l) => s + Number(l.remaining), 0)),
+      },
+    };
+  }
+
+  /** Parcelas em aberto de vendas em requisição, pelo vencimento. */
+  async openInstallmentsReport(
+    tenantSlug: string,
+    opts: { from?: string; to?: string; customerId?: string; detalhar?: boolean },
+  ) {
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const from = String(opts.from ?? '').trim();
+    const to = String(opts.to ?? '').trim();
+    const customerId = String(opts.customerId ?? '').trim();
+    const dueDate: Prisma.DateTimeFilter = {};
+    if (from) dueDate.gte = parseQueryDate(from, 'start');
+    if (to) dueDate.lte = parseQueryDate(to, 'end');
+
+    const rows = await db.accountReceivable.findMany({
+      where: {
+        status: { in: [BillStatus.OPEN, BillStatus.OVERDUE] },
+        sale: { payments: { some: { method: PaymentMethod.REQUISITION } } },
+        ...(customerId ? { customerId } : {}),
+        ...(from || to ? { dueDate } : {}),
+      },
+      include: {
+        customer: { select: { name: true, document: true } },
+        sale: {
+          select: {
+            id: true,
+            number: true,
+            createdAt: true,
+            items: {
+              orderBy: { id: 'asc' as const },
+              select: {
+                quantity: true,
+                unitPrice: true,
+                totalLine: true,
+                variant: { select: { sku: true, product: { select: { name: true } } } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+      take: 5000,
+    });
+
+    const lines = rows.map((r) => ({
+      dueDate: r.dueDate,
+      saleNumber: r.sale?.number ?? null,
+      saleDate: r.sale?.createdAt ?? null,
+      customerName: r.customer?.name ?? '—',
+      customerDocument: r.customer?.document ?? null,
+      description: r.description,
+      amount: money2(Number(r.amount)),
+      amountRemaining: money2(Number(r.amountRemaining)),
+      status: r.status,
+      visibleInFinance: r.creditKind == null || r.creditKind === 'REQUISITION',
+      ...(opts.detalhar ? { items: mapReportItems(r.sale?.items ?? []) } : {}),
+    }));
+
+    return {
+      title: 'Parcelas de requisição em aberto',
+      period: from || to ? { from: from || null, to: to || null } : null,
+      note:
+        'Filtra pelo vencimento da parcela. Sem período, lista todas as parcelas em aberto. ' +
+        'Contas a receber esconde título marcado só como crédito; aqui a venda em requisição entra mesmo assim.',
+      lines,
+      totals: {
+        count: lines.length,
+        remaining: money2(lines.reduce((s, l) => s + Number(l.amountRemaining), 0)),
+        hiddenFromFinance: lines.filter((l) => !l.visibleInFinance).length,
+      },
+    };
+  }
+
+  private async reportItemsBySale(tenantSlug: string, saleIds: string[]) {
+    const map = new Map<string, ReportProductLine[]>();
+    if (!saleIds.length) return map;
+    const db = await this.tenantPrisma.getClient(tenantSlug);
+    const rows = await db.saleItem.findMany({
+      where: { saleId: { in: saleIds } },
+      orderBy: { id: 'asc' },
+      select: {
+        saleId: true,
+        quantity: true,
+        unitPrice: true,
+        totalLine: true,
+        variant: { select: { sku: true, product: { select: { name: true } } } },
+      },
+    });
+    for (const row of rows) {
+      const list = map.get(row.saleId) ?? [];
+      list.push(toReportProductLine(row));
+      map.set(row.saleId, list);
+    }
+    return map;
+  }
+}
+
+type ReportProductLine = {
+  productName: string;
+  sku: string;
+  quantity: number;
+  unitPrice: string;
+  totalLine: string;
+};
+
+function money2(n: number): string {
+  return (Math.round(n * 100) / 100).toFixed(2);
+}
+
+function toReportProductLine(row: {
+  quantity: Prisma.Decimal;
+  unitPrice: Prisma.Decimal;
+  totalLine: Prisma.Decimal;
+  variant: { sku: string; product: { name: string } };
+}): ReportProductLine {
+  return {
+    productName: row.variant.product.name,
+    sku: row.variant.sku,
+    quantity: Number(row.quantity),
+    unitPrice: money2(Number(row.unitPrice)),
+    totalLine: money2(Number(row.totalLine)),
+  };
+}
+
+function mapReportItems(
+  items: Array<{
+    quantity: Prisma.Decimal;
+    unitPrice: Prisma.Decimal;
+    totalLine: Prisma.Decimal;
+    variant: { sku: string; product: { name: string } };
+  }>,
+): ReportProductLine[] {
+  return items.map((row) => toReportProductLine(row));
 }

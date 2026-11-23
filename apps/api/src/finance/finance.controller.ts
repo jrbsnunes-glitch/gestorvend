@@ -24,6 +24,10 @@ import {
   Prisma,
   Recurrence,
 } from '../generated/tenant-client';
+import {
+  calendarDateAtLocalNoon,
+  calendarDateAtLocalNoonFromIso,
+} from '../common/date-range.util';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { SettleBillBodyDto } from './dto/settle-bill-body.dto';
 import { UpdateSettlementBodyDto } from './dto/update-settlement-body.dto';
@@ -34,6 +38,22 @@ import {
 } from '../common/referential-account-flow';
 
 type RecurrenceInput = 'NONE' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+
+/** Vencimento informado como dia civil da loja, gravado ao meio-dia desse fuso. */
+function dueDateFromBody(raw: string | undefined): Date | null {
+  const s = String(raw ?? '').trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    try {
+      return calendarDateAtLocalNoonFromIso(s);
+    } catch {
+      return null;
+    }
+  }
+  const parsed = new Date(s);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return calendarDateAtLocalNoon(parsed);
+}
 
 function parseDay(raw: string | undefined, mode: 'start' | 'end'): Date | null {
   if (raw == null || String(raw).trim() === '') return null;
@@ -246,6 +266,68 @@ function receivableDateFilterField(statuses: BillStatus[] | null): 'receivedAt' 
   return 'dueDate';
 }
 
+/** `due` = vencimento, `sale` = data da venda (ou da nota/lançamento, em contas a pagar). */
+function parseDateBasis(raw?: string): 'due' | 'sale' | null {
+  if (raw === 'due' || raw === 'sale') return raw;
+  return null;
+}
+
+function dateBounds(fromD: Date | null, toD: Date | null): Prisma.DateTimeFilter {
+  return {
+    ...(fromD ? { gte: fromD } : {}),
+    ...(toD ? { lte: toD } : {}),
+  };
+}
+
+function applyPayableDateFilter(
+  where: Prisma.AccountPayableWhereInput,
+  fromD: Date | null,
+  toD: Date | null,
+  basis: 'due' | 'sale' | null,
+  statuses: BillStatus[] | null,
+) {
+  const range = dateBounds(fromD, toD);
+  if (basis === 'sale') {
+    const origin: Prisma.AccountPayableWhereInput = {
+      OR: [
+        { goodsReceipt: { issueDate: range } },
+        {
+          AND: [
+            { OR: [{ goodsReceiptId: null }, { goodsReceipt: { issueDate: null } }] },
+            { createdAt: range },
+          ],
+        },
+      ],
+    };
+    where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), origin];
+    return;
+  }
+  if (basis === 'due') {
+    where.dueDate = range;
+    return;
+  }
+  where[payableDateFilterField(statuses)] = range;
+}
+
+function applyReceivableDateFilter(
+  where: Prisma.AccountReceivableWhereInput,
+  fromD: Date | null,
+  toD: Date | null,
+  basis: 'due' | 'sale' | null,
+  statuses: BillStatus[] | null,
+) {
+  const range = dateBounds(fromD, toD);
+  if (basis === 'sale') {
+    where.sale = { createdAt: range };
+    return;
+  }
+  if (basis === 'due') {
+    where.dueDate = range;
+    return;
+  }
+  where[receivableDateFilterField(statuses)] = range;
+}
+
 const cashSessionUserInclude = {
   include: { user: { select: { id: true, name: true, email: true } } },
 } as const;
@@ -414,8 +496,10 @@ export class FinanceController {
     @Query('supplierId') supplierId?: string,
     @Query('segment') segment?: string,
     @Query('detalhar') detalharRaw?: string,
+    @Query('dateBasis') dateBasisRaw?: string,
   ) {
     const detalhar = parseDetalharQuery(detalharRaw);
+    const dateBasis = parseDateBasis(dateBasisRaw);
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const where: Prisma.AccountPayableWhereInput = {};
 
@@ -432,11 +516,7 @@ export class FinanceController {
     if (toRaw && !toD) throw new BadRequestException('Data final inválida (use YYYY-MM-DD).');
 
     if (fromD || toD) {
-      const field = payableDateFilterField(statusList);
-      where[field] = {
-        ...(fromD ? { gte: fromD } : {}),
-        ...(toD ? { lte: toD } : {}),
-      };
+      applyPayableDateFilter(where, fromD, toD, dateBasis, statusList);
     }
 
     if (supplierId != null && String(supplierId).trim() !== '') {
@@ -489,8 +569,8 @@ export class FinanceController {
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException('Valor inválido.');
     }
-    const firstDue = new Date(body.dueDate);
-    if (Number.isNaN(firstDue.getTime())) {
+    const firstDue = dueDateFromBody(body.dueDate);
+    if (!firstDue) {
       throw new BadRequestException('Vencimento inválido.');
     }
     const recurrence: RecurrenceInput = body.recurrence ?? 'NONE';
@@ -573,7 +653,7 @@ export class FinanceController {
         data.category = body.category?.trim() || null;
       }
       if (body.dueDate !== undefined) {
-        const due = parseDay(body.dueDate, 'start');
+        const due = dueDateFromBody(body.dueDate);
         if (!due) throw new BadRequestException('Vencimento inválido (use YYYY-MM-DD).');
         data.dueDate = due;
       }
@@ -747,8 +827,10 @@ export class FinanceController {
     @Query('customerId') customerId?: string,
     @Query('segment') segment?: string,
     @Query('detalhar') detalharRaw?: string,
+    @Query('dateBasis') dateBasisRaw?: string,
   ) {
     const detalhar = parseDetalharQuery(detalharRaw);
+    const dateBasis = parseDateBasis(dateBasisRaw);
     const db = await this.tenantPrisma.getClient(user.tenantSlug);
     const where: Prisma.AccountReceivableWhereInput = {};
 
@@ -765,11 +847,7 @@ export class FinanceController {
     if (toRaw && !toD) throw new BadRequestException('Data final inválida (use YYYY-MM-DD).');
 
     if (fromD || toD) {
-      const field = receivableDateFilterField(statusList);
-      where[field] = {
-        ...(fromD ? { gte: fromD } : {}),
-        ...(toD ? { lte: toD } : {}),
-      };
+      applyReceivableDateFilter(where, fromD, toD, dateBasis, statusList);
     }
 
     if (customerId != null && String(customerId).trim() !== '') {
@@ -783,7 +861,11 @@ export class FinanceController {
     where.AND = [
       ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
       {
-        OR: [{ creditKind: null }, { creditKind: CreditKind.REQUISITION }],
+        OR: [
+          { creditKind: null },
+          { creditKind: CreditKind.REQUISITION },
+          { sale: { payments: { some: { method: PaymentMethod.REQUISITION } } } },
+        ],
       },
     ];
 
@@ -861,8 +943,8 @@ export class FinanceController {
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException('Valor inválido.');
     }
-    const firstDue = new Date(body.dueDate);
-    if (Number.isNaN(firstDue.getTime())) {
+    const firstDue = dueDateFromBody(body.dueDate);
+    if (!firstDue) {
       throw new BadRequestException('Vencimento inválido.');
     }
 
@@ -1039,7 +1121,7 @@ export class FinanceController {
         data.description = description;
       }
       if (body.dueDate !== undefined) {
-        const due = parseDay(body.dueDate, 'start');
+        const due = dueDateFromBody(body.dueDate);
         if (!due) throw new BadRequestException('Vencimento inválido (use YYYY-MM-DD).');
         data.dueDate = due;
       }

@@ -11,6 +11,10 @@ import {
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { validateNfeAccessKey } from '../fiscal/utils/nfe-access-key';
 import { resolveStockFromInvoice } from '../common/product-conversion.util';
+import {
+  calendarDateAtLocalNoon,
+  calendarDateAtLocalNoonFromIso,
+} from '../common/date-range.util';
 import { assertOperationalStockLocation } from './stock-location.util';
 
 export type ReceiptItemDto = {
@@ -629,9 +633,7 @@ async function insertReceiptPayables(
 ) {
   const installments = Math.max(1, Math.min(60, Number(input.payable.installments ?? 1) | 0));
   const intervalDays = Math.max(1, Math.min(180, Number(input.payable.intervalDays ?? 30) | 0));
-  const firstDue = input.payable.firstDueDate
-    ? new Date(input.payable.firstDueDate)
-    : new Date(Date.now() + intervalDays * 24 * 60 * 60 * 1000);
+  const firstDue = payableFirstDue(input.payable.firstDueDate, intervalDays);
   if (!Number.isFinite(input.total) || input.total <= 0) {
     throw new BadRequestException('Valor da entrada inválido para gerar contas a pagar.');
   }
@@ -669,6 +671,18 @@ async function insertReceiptPayables(
     });
     if (i === 0) parentId = created.id;
   }
+}
+
+function payableFirstDue(raw: string | null | undefined, intervalDays: number): Date {
+  const s = String(raw ?? '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return calendarDateAtLocalNoonFromIso(s);
+  }
+  if (s) {
+    const parsed = new Date(s);
+    if (!Number.isNaN(parsed.getTime())) return calendarDateAtLocalNoon(parsed);
+  }
+  return calendarDateAtLocalNoon(new Date(Date.now() + intervalDays * 24 * 60 * 60 * 1000));
 }
 
 function appendCancelNote(

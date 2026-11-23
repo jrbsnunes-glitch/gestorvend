@@ -125,6 +125,11 @@ const CustomerReportsPrintPage = lazy(() =>
     default: m.CustomerReportsPrintPage,
   })),
 );
+const RequisicoesReportsPrintPage = lazy(() =>
+  import('./pages/RequisicoesReportsPrintPage').then((m) => ({
+    default: m.RequisicoesReportsPrintPage,
+  })),
+);
 const PaymentFormsPage = lazy(() =>
   import('./pages/PaymentFormsPage').then((m) => ({ default: m.PaymentFormsPage })),
 );
@@ -486,6 +491,7 @@ function AppInner() {
           <Route path="notas-fiscais/danfe/:id" element={<DanfePrintPage />} />
           <Route path="cartoes/impressao" element={<CardsPrintPage />} />
           <Route path="clientes/relatorio/impressao" element={<CustomerReportsPrintPage />} />
+          <Route path="requisicoes/relatorio/impressao" element={<RequisicoesReportsPrintPage />} />
 
           <Route
             element={

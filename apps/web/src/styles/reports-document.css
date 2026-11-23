@@ -121,6 +121,31 @@
   word-break: break-word;
 }
 
+.gv-report-party {
+  margin: 0 0 0.85rem;
+}
+
+.gv-report-party__name {
+  margin: 0;
+  font-family: var(--gv-report-font-serif);
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: #0f172a;
+}
+
+.gv-report-party__doc {
+  margin: 0.15rem 0 0;
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.gv-report-party__name--section {
+  margin: 0.35rem 0 0.45rem;
+  font-size: 1.15rem;
+}
+
 /* Cabeçalho e folha A4 dentro de `.print-doc` */
 .print-doc .gv-report-doc-head {
   flex-direction: column;

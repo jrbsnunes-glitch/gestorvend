@@ -689,7 +689,7 @@ export function StockEntradaPage() {
                 enabled: true,
                 installments: payInstallments,
                 intervalDays: payIntervalDays,
-                firstDueDate: payFirstDue ? new Date(payFirstDue).toISOString() : null,
+                firstDueDate: payFirstDue || null,
               }
             : null,
         },
@@ -2364,7 +2364,7 @@ function EditReceiptModal({
                             enabled: true,
                             installments: payInstallments,
                             intervalDays: payIntervalDays,
-                            firstDueDate: payFirstDue ? new Date(payFirstDue).toISOString() : null,
+                            firstDueDate: payFirstDue || null,
                           }
                         : null,
                   })

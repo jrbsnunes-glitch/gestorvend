@@ -66,16 +66,30 @@ export function formatBrMoney(value: number): string {
   return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/**
+ * Dia civil YYYY-MM-DD no fuso da loja.
+ * `YYYY-MM-DD` puro permanece como está. Datetime usa o fuso da empresa —
+ * os 10 primeiros caracteres de um ISO UTC não são o dia da loja.
+ */
+export function calendarDateKey(iso: string | Date | undefined | null): string | null {
+  if (iso == null || iso === '') return null;
+  const tz = getActiveBusinessTimezone();
+  if (typeof iso === 'string') {
+    const trimmed = iso.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return calendarDayFromInstant(parsed, tz);
+  }
+  if (Number.isNaN(iso.getTime())) return null;
+  return calendarDayFromInstant(iso, tz);
+}
+
 /** Data civil (sem hora) para prazos, vencimentos e inputs type=date. */
 export function formatCalendarDate(iso: string | Date | undefined | null): string {
   if (!iso) return '—';
   const tz = getActiveBusinessTimezone();
-  const key =
-    typeof iso === 'string'
-      ? /^\d{4}-\d{2}-\d{2}$/.test(iso.slice(0, 10))
-        ? iso.slice(0, 10)
-        : calendarDayFromInstant(new Date(iso), tz)
-      : calendarDayFromInstant(iso, tz);
+  const key = calendarDateKey(iso);
   if (!key) return '—';
   const [y, m, d] = key.split('-').map(Number);
   if (!y || !m || !d) return '—';
