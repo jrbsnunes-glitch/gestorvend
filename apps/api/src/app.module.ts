@@ -19,6 +19,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ReportsModule } from './reports/reports.module';
 import { RequisitionsModule } from './requisitions/requisitions.module';
+import { OfflineModule } from './offline/offline.module';
 import { SalesModule } from './sales/sales.module';
 import { SalesReservationsModule } from './sales-reservations/sales-reservations.module';
 import { ServiceOrdersModule } from './service-orders/service-orders.module';
@@ -53,6 +54,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
     CatalogModule,
     InventoryModule,
     SalesModule,
+    OfflineModule,
     SalesReservationsModule,
     RequisitionsModule,
     ServiceOrdersModule,

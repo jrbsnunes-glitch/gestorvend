@@ -1,6 +1,6 @@
 {
   "name": "@gestorvend/desktop",
-  "version": "1.0.86",
+  "version": "1.0.87",
   "private": true,
   "description": "Cliente desktop GestorVend (Electron) — janela própria apontando para o servidor do cliente",
   "author": "GestorVend",
@@ -34,6 +34,9 @@
       "resources/icon.ico",
       "package.json"
     ],
+    "asarUnpack": [
+      "**/node_modules/sql.js/**"
+    ],
     "extraResources": [
       {
         "from": "resources/icon.ico",
@@ -63,5 +66,8 @@
       "installerIcon": "resources/icon.ico",
       "uninstallerIcon": "resources/icon.ico"
     }
+  },
+  "dependencies": {
+    "sql.js": "^1.12.0"
   }
 }

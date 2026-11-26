@@ -19,7 +19,17 @@ import {
   type DesktopConfig,
   type StationConfig,
 } from './config';
+import { offerLocalMode, startConnectivityWatch } from './connectivity';
 import { checkLicense, hasValidLicenseCache, REVALIDATE_MS } from './license';
+import {
+  enqueueCash,
+  enqueueSale,
+  pendingCount,
+  readSnapshotSummary,
+  searchCustomers,
+  searchProducts,
+} from './offline-store';
+import { pushOutbox, refreshSnapshot } from './offline-sync';
 import {
   getPrintAgentStatus,
   printTestTicket,
@@ -40,6 +50,63 @@ import {
 let mainWindow: BrowserWindow | null = null;
 let mainWindowPartition: string | undefined;
 let revalidateTimer: NodeJS.Timeout | null = null;
+let snapshotTimer: NodeJS.Timeout | null = null;
+let localMode = false;
+let cachedAccessToken: string | null = null;
+
+async function readAccessToken(): Promise<string | null> {
+  const win = mainWindow;
+  if (!win || win.isDestroyed() || localMode) return cachedAccessToken;
+  try {
+    const token = await win.webContents.executeJavaScript(
+      "localStorage.getItem('gv_access_token')",
+      true,
+    );
+    if (typeof token === 'string' && token.trim()) cachedAccessToken = token.trim();
+  } catch {
+    /* a página ainda não tem o token */
+  }
+  return cachedAccessToken;
+}
+
+async function enterLocalMode(): Promise<void> {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return;
+  await readAccessToken();
+  localMode = true;
+  win.setKiosk(false);
+  win.setFullScreen(false);
+  win.setAutoHideMenuBar(false);
+  win.setMenuBarVisibility(true);
+  win.setTitle('GestorVend — vendas neste computador');
+  await win.loadFile(path.join(__dirname, '..', 'renderer', 'offline.html'));
+  forceShowWindow(win);
+}
+
+async function leaveLocalMode(): Promise<{ ok: boolean; error?: string }> {
+  const pending = await pendingCount();
+  if (pending > 0) {
+    return { ok: false, error: 'Ainda há vendas ou movimentos para enviar.' };
+  }
+  localMode = false;
+  const cfg = readConfig();
+  if (!cfg || !mainWindow || mainWindow.isDestroyed()) {
+    return { ok: false, error: 'Servidor não configurado.' };
+  }
+  await refreshSnapshot(readAccessToken);
+  await openApp(mainWindow, cfg);
+  return { ok: true };
+}
+
+function armSnapshotRefresh(): void {
+  if (snapshotTimer) clearInterval(snapshotTimer);
+  const run = () => {
+    if (localMode) return;
+    void refreshSnapshot(readAccessToken);
+  };
+  void run();
+  snapshotTimer = setInterval(run, 10 * 60 * 1000);
+}
 
 // PDV: janela não “dorme” atrás de outro app.
 // Evitar ignore-gpu-blocklist / zero-copy — em PCs de PDV isso derruba o
@@ -168,25 +235,14 @@ function attachWindowLifecycle(win: BrowserWindow) {
   win.webContents.on('did-fail-load', (_ev, code, desc, url, isMainFrame) => {
     if (!isMainFrame || win.isDestroyed()) return;
     if (code === -3) return; // aborted
+    if (localMode) return;
     const safeDesc = (desc || 'Falha ao carregar').replace(/[<>&]/g, '');
     const safeUrl = (url || '').replace(/[<>&]/g, '').slice(0, 240);
-    void win.loadURL(
-      'data:text/html;charset=utf-8,' +
-        encodeURIComponent(`<!doctype html><html><head><meta charset="utf-8">
-<title>GestorVend</title>
-<style>
-  body{font-family:Segoe UI,sans-serif;background:#0b1220;color:#e2e8f0;margin:0;padding:2.5rem;line-height:1.5}
-  h1{font-size:1.25rem;margin:0 0 .75rem} p{color:#94a3b8} code{color:#f8fafc}
-  button{margin-top:1rem;padding:.55rem 1rem;border:0;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer}
-</style></head><body>
-<h1>Não foi possível abrir o sistema</h1>
-<p>${safeDesc} (código ${code})</p>
-<p><code>${safeUrl}</code></p>
-<p>Confira se o servidor está no ar e se a URL configurada está correta. Use o menu GestorVend → Reconfigurar servidor.</p>
-<button onclick="location.reload()">Tentar de novo</button>
-</body></html>`),
-    );
-    forceShowWindow(win);
+    void (async () => {
+      const choice = await offerLocalMode(win, enterLocalMode);
+      if (choice === 'entered' || win.isDestroyed() || localMode) return;
+      showUnreachablePage(win, safeDesc, code, safeUrl);
+    })();
   });
 
   win.webContents.on('render-process-gone', (_ev, details) => {
@@ -199,6 +255,26 @@ function attachWindowLifecycle(win: BrowserWindow) {
       }, 400);
     }
   });
+}
+
+function showUnreachablePage(win: BrowserWindow, safeDesc: string, code: number, safeUrl: string) {
+  void win.loadURL(
+    'data:text/html;charset=utf-8,' +
+      encodeURIComponent(`<!doctype html><html><head><meta charset="utf-8">
+<title>GestorVend</title>
+<style>
+  body{font-family:Segoe UI,sans-serif;background:#0b1220;color:#e2e8f0;margin:0;padding:2.5rem;line-height:1.5}
+  h1{font-size:1.25rem;margin:0 0 .75rem} p{color:#94a3b8} code{color:#f8fafc}
+  button{margin-top:1rem;padding:.55rem 1rem;border:0;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer}
+</style></head><body>
+<h1>Não foi possível abrir o sistema</h1>
+<p>${safeDesc} (código ${code})</p>
+<p><code>${safeUrl}</code></p>
+<p>Confira se o servidor está no ar e se a URL configurada está correta. Use o menu GestorVend → Reconfigurar servidor.</p>
+<button onclick="location.reload()">Tentar de novo</button>
+</body></html>`),
+  );
+  forceShowWindow(win);
 }
 
 function appWebPrefs(partition?: string): Electron.WebPreferences {
@@ -831,6 +907,15 @@ async function openApp(_win: BrowserWindow, cfg: DesktopConfig) {
     );
   }
 
+  localMode = false;
+  startConnectivityWatch({
+    getWindow: () => mainWindow,
+    isLocal: () => localMode,
+    enterLocal: enterLocalMode,
+    readToken: readAccessToken,
+  });
+  armSnapshotRefresh();
+
   void win.loadURL(withCacheBust(target));
   forceShowWindow(win);
 
@@ -983,6 +1068,26 @@ function buildMenu() {
           },
         },
         {
+          label: 'Vender sem internet…',
+          click: () => {
+            if (!mainWindow || mainWindow.isDestroyed()) return;
+            void (async () => {
+              const summary = await readSnapshotSummary();
+              if (!summary.fresh) {
+                await dialog.showMessageBox(mainWindow!, {
+                  type: 'info',
+                  title: 'GestorVend',
+                  message: 'A cópia local está ausente ou tem mais de 24 horas.',
+                  detail: 'Entre no sistema com internet para atualizar a cópia antes de vender sem conexão.',
+                  buttons: ['OK'],
+                });
+                return;
+              }
+              await enterLocalMode();
+            })();
+          },
+        },
+        {
           label: 'Reconfigurar servidor…',
           accelerator: 'CmdOrCtrl+Shift+S',
           click: () => {
@@ -1103,6 +1208,14 @@ function registerIpc() {
   );
 
   ipcMain.handle('config:get', () => readConfig());
+
+  ipcMain.handle('offline:status', () => readSnapshotSummary());
+  ipcMain.handle('offline:products', (_e, query: string) => searchProducts(String(query ?? '')));
+  ipcMain.handle('offline:customers', (_e, query: string) => searchCustomers(String(query ?? '')));
+  ipcMain.handle('offline:checkout', (_e, body) => enqueueSale(body));
+  ipcMain.handle('offline:cash', (_e, body) => enqueueCash(body));
+  ipcMain.handle('offline:sync', () => pushOutbox(readAccessToken));
+  ipcMain.handle('offline:back', () => leaveLocalMode());
 
   ipcMain.handle('shell:getVersion', () => ({ version: app.getVersion() }));
 

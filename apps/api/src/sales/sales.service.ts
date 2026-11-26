@@ -155,6 +155,11 @@ export type CreateSaleInput = {
   requisitionDueDate?: string | Date | null;
   /** Referência externa (ex.: ID do pedido no GestorVendChat) para conciliação. */
   externalRef?: string | null;
+  /**
+   * Replay de venda já feita no caixa sem internet.
+   * Permite o estoque ficar negativo para não recusar o cupom que o cliente levou.
+   */
+  offlineReplay?: boolean;
   items: Array<{
     variantId: string;
     quantity: string | number;
@@ -564,7 +569,8 @@ export class SalesService {
     const companyStock = await db.company.findFirst({
       select: { pdvAllowSaleWithoutStock: true },
     });
-    const allowSaleWithoutStock = Boolean(companyStock?.pdvAllowSaleWithoutStock);
+    const allowSaleWithoutStock =
+      Boolean(companyStock?.pdvAllowSaleWithoutStock) || input.offlineReplay === true;
     if (needsStockDeduction && !defaultLoc) {
       throw new BadRequestException('Cadastre um local de estoque padrão');
     }

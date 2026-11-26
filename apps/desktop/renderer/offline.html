@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>GestorVend — vendas neste computador</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Segoe UI, sans-serif; background: #0b1220; color: #e2e8f0; }
+    header { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding: .8rem 1rem; background: #111827; border-bottom: 1px solid #1f2937; }
+    h1 { font-size: 1rem; margin: 0; }
+    .muted { color: #94a3b8; font-size: .85rem; }
+    button, input, select { font: inherit; }
+    button { border: 0; border-radius: 8px; background: #2563eb; color: #fff; padding: .5rem .8rem; cursor: pointer; }
+    button.ghost { background: #1f2937; }
+    button.warn { background: #b45309; }
+    button:disabled { opacity: .5; cursor: default; }
+    main { display: grid; grid-template-columns: 1.4fr .8fr; gap: 1rem; padding: 1rem; }
+    section { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: .8rem; }
+    input, select { width: 100%; background: #0b1220; color: #e2e8f0; border: 1px solid #334155; border-radius: 8px; padding: .5rem .65rem; }
+    ul { list-style: none; margin: .6rem 0 0; padding: 0; max-height: 46vh; overflow: auto; }
+    li { display: flex; justify-content: space-between; gap: .5rem; padding: .45rem 0; border-bottom: 1px solid #1f2937; }
+    .row { display: flex; gap: .5rem; margin-top: .6rem; }
+    .row > * { flex: 1; }
+    #banner { display: none; margin: .6rem 1rem 0; padding: .7rem .9rem; background: #14532d; border-radius: 10px; }
+    #banner.show { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+    #msg { min-height: 1.2rem; color: #fbbf24; font-size: .9rem; }
+    #slip { display: none; }
+    @media print {
+      body * { visibility: hidden; }
+      #slip, #slip * { visibility: visible; }
+      #slip { display: block; position: absolute; left: 0; top: 0; width: 72mm; color: #000; background: #fff; font-size: 12px; }
+    }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1 id="company">Vendas neste computador</h1>
+      <div class="muted" id="meta"></div>
+    </div>
+    <div class="row" style="max-width:28rem">
+      <input id="cash-amount" placeholder="Valor" inputmode="decimal" />
+      <input id="cash-reason" placeholder="Motivo" />
+      <button class="ghost" id="cash-in" type="button">Suprimento</button>
+      <button class="ghost" id="cash-out" type="button">Sangria</button>
+    </div>
+  </header>
+  <div id="banner">
+    <span>O servidor voltou. Envie as vendas deste computador antes de sair do modo local.</span>
+    <button id="sync" type="button">Enviar vendas e voltar ao servidor</button>
+  </div>
+  <main>
+    <section>
+      <input id="q" placeholder="Produto, código ou barras" autocomplete="off" />
+      <ul id="products"></ul>
+    </section>
+    <section>
+      <input id="customer" placeholder="Cliente (opcional)" autocomplete="off" />
+      <ul id="customers"></ul>
+      <div id="picked" class="muted"></div>
+      <ul id="cart"></ul>
+      <div class="row">
+        <select id="method">
+          <option value="CASH">Dinheiro</option>
+          <option value="PIX">PIX</option>
+          <option value="CARD">Cartão</option>
+          <option value="OTHER">Outro</option>
+        </select>
+        <button id="pay" type="button">Registrar venda</button>
+      </div>
+      <div id="msg"></div>
+      <button class="ghost" id="print" type="button" disabled>Imprimir último cupom</button>
+      <pre id="slip"></pre>
+      <div class="muted" id="pending"></div>
+    </section>
+  </main>
+  <script>
+    const api = window.gestorvend;
+    const q = document.getElementById('q');
+    const products = document.getElementById('products');
+    const customer = document.getElementById('customer');
+    const customers = document.getElementById('customers');
+    const picked = document.getElementById('picked');
+    const cartEl = document.getElementById('cart');
+    const msg = document.getElementById('msg');
+    const pendingEl = document.getElementById('pending');
+    const banner = document.getElementById('banner');
+    const cart = [];
+    let customerId = null;
+    let selling = false;
+
+    function money(n) {
+      return Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    }
+    function total() {
+      return Math.round(cart.reduce((s, it) => s + it.quantity * it.unitPrice, 0) * 100) / 100;
+    }
+    function say(text) { msg.textContent = text || ''; }
+
+    function renderCart() {
+      cartEl.innerHTML = '';
+      for (const it of cart) {
+        const li = document.createElement('li');
+        li.innerHTML = '<span>' + it.quantity + ' × ' + it.name + '</span><strong>' + money(it.quantity * it.unitPrice) + '</strong>';
+        cartEl.appendChild(li);
+      }
+      const li = document.createElement('li');
+      li.innerHTML = '<span>Total</span><strong>' + money(total()) + '</strong>';
+      cartEl.appendChild(li);
+    }
+
+    async function refreshStatus() {
+      const st = await api.offlineStatus();
+      document.getElementById('company').textContent = st.companyName || 'Vendas neste computador';
+      const when = st.capturedAt ? new Date(st.capturedAt).toLocaleString('pt-BR') : 'sem cópia';
+      document.getElementById('meta').textContent =
+        'Cópia de ' + when + ' · ' + st.productCount + ' produtos' +
+        (st.cashOpen ? '' : ' · sem caixa aberto');
+      pendingEl.textContent = (st.pendingSales + st.pendingCash) + ' pendência(s) para enviar';
+      if (!st.cashOpen) say('Abra o caixa no servidor antes de ficar sem internet. Sangria e venda em dinheiro precisam do caixa da cópia.');
+    }
+
+    q.addEventListener('input', async () => {
+      const list = await api.offlineProducts(q.value);
+      products.innerHTML = '';
+      for (const p of list) {
+        const li = document.createElement('li');
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = 'Incluir';
+        btn.addEventListener('click', () => {
+          const found = cart.find((it) => it.variantId === p.variantId);
+          if (found) found.quantity += 1;
+          else cart.push({ variantId: p.variantId, name: p.name, quantity: 1, unitPrice: Number(p.price) });
+          renderCart();
+          say('');
+        });
+        const span = document.createElement('span');
+        span.textContent = p.name + ' · ' + p.sku + ' · ' + money(p.price) + (p.isService ? '' : ' · saldo ' + p.stockQty);
+        li.appendChild(span);
+        li.appendChild(btn);
+        products.appendChild(li);
+      }
+    });
+
+    customer.addEventListener('input', async () => {
+      const list = await api.offlineCustomers(customer.value);
+      customers.innerHTML = '';
+      for (const c of list) {
+        const li = document.createElement('li');
+        li.textContent = c.name + (c.document ? ' · ' + c.document : '');
+        li.style.cursor = 'pointer';
+        li.addEventListener('click', () => {
+          customerId = c.id;
+          picked.textContent = 'Cliente: ' + c.name;
+          customers.innerHTML = '';
+        });
+        customers.appendChild(li);
+      }
+    });
+
+    document.getElementById('pay').addEventListener('click', async () => {
+      if (selling || !cart.length) return;
+      selling = true;
+      try {
+        const result = await api.offlineCheckout({
+          customerId,
+          items: cart.map((it) => ({ variantId: it.variantId, name: it.name, quantity: it.quantity, unitPrice: it.unitPrice })),
+          payments: [{ method: document.getElementById('method').value, amount: total() }],
+        });
+        const lines = [
+          document.getElementById('company').textContent,
+          'Cupom local (sem número do servidor)',
+          new Date().toLocaleString('pt-BR'),
+          ''
+        ].concat(cart.map((it) => it.quantity + ' x ' + it.name + '  ' + money(it.quantity * it.unitPrice)));
+        lines.push('', 'Total ' + money(result.total));
+        lines.push('Envia ao servidor quando a internet voltar.');
+        document.getElementById('slip').textContent = lines.join('\n');
+        document.getElementById('print').disabled = false;
+        cart.splice(0, cart.length);
+        customerId = null;
+        picked.textContent = '';
+        renderCart();
+        say('Venda guardada neste computador. Total ' + money(result.total) + '.');
+        q.dispatchEvent(new Event('input'));
+        await refreshStatus();
+      } catch (err) {
+        say(err && err.message ? err.message : 'Não foi possível registrar a venda.');
+      } finally {
+        selling = false;
+      }
+    });
+
+    async function cashMove(type) {
+      const amount = Number(String(document.getElementById('cash-amount').value || '').replace(',', '.'));
+      const reason = document.getElementById('cash-reason').value || (type === 'IN' ? 'Suprimento' : 'Sangria');
+      if (!amount) { say('Informe o valor do caixa.'); return; }
+      try {
+        await api.offlineCash({ type, amount, reason });
+        document.getElementById('cash-amount').value = '';
+        say(type === 'IN' ? 'Suprimento guardado.' : 'Sangria guardada.');
+        await refreshStatus();
+      } catch (err) {
+        say(err && err.message ? err.message : 'Não foi possível lançar o caixa.');
+      }
+    }
+    document.getElementById('print').addEventListener('click', async () => {
+      if (api.printSilent) {
+        const printed = await api.printSilent({ pageSize: '80mm', printBackground: false });
+        if (printed && printed.ok) return;
+      }
+      window.print();
+    });
+    document.getElementById('cash-in').addEventListener('click', () => cashMove('IN'));
+    document.getElementById('cash-out').addEventListener('click', () => cashMove('OUT'));
+
+    document.getElementById('sync').addEventListener('click', async () => {
+      const btn = document.getElementById('sync');
+      btn.disabled = true;
+      say('Enviando…');
+      const result = await api.offlineSync();
+      if (result.ok) {
+        say('Enviado. Voltando ao servidor.');
+        await api.offlineBackOnline();
+        return;
+      }
+      btn.disabled = false;
+      const extra = result.stockConflicts ? ' Estoque insuficiente em ' + result.stockConflicts + ' venda(s): o cupom foi aceito e ficou para conferência.' : '';
+      say((result.error || 'Ainda há pendências.') + extra);
+      await refreshStatus();
+    });
+
+    api.onServerReachable(() => banner.classList.add('show'));
+    renderCart();
+    refreshStatus();
+    q.dispatchEvent(new Event('input'));
+  </script>
+</body>
+</html>

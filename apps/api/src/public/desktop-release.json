@@ -1,5 +1,5 @@
 {
-  "version": "1.0.86",
+  "version": "1.0.87",
   "downloadUrl": "",
-  "notes": "Fechamento de caixa volta ao modelo visual do comprovante."
+  "notes": "Vendas neste computador quando o servidor estiver sem internet."
 }

@@ -134,4 +134,38 @@ contextBridge.exposeInMainWorld('gestorvend', {
       | string
       | null,
   promptResult: (value: string | null) => ipcRenderer.send('desktop:prompt-result', value),
+  offlineStatus: () =>
+    ipcRenderer.invoke('offline:status') as Promise<{
+      capturedAt: string | null;
+      fresh: boolean;
+      companyName: string | null;
+      productCount: number;
+      pendingSales: number;
+      pendingCash: number;
+      cashOpen: boolean;
+    }>,
+  offlineProducts: (query: string) => ipcRenderer.invoke('offline:products', query),
+  offlineCustomers: (query: string) => ipcRenderer.invoke('offline:customers', query),
+  offlineCheckout: (body: {
+    customerId?: string | null;
+    items: Array<{ variantId: string; name: string; quantity: number; unitPrice: number }>;
+    payments: Array<{ method: string; amount: number }>;
+  }) => ipcRenderer.invoke('offline:checkout', body),
+  offlineCash: (body: { type: 'IN' | 'OUT'; amount: number; reason?: string }) =>
+    ipcRenderer.invoke('offline:cash', body),
+  offlineSync: () =>
+    ipcRenderer.invoke('offline:sync') as Promise<{
+      ok: boolean;
+      syncedSales: number;
+      syncedCash: number;
+      stockConflicts: number;
+      pending: number;
+      error?: string;
+    }>,
+  offlineBackOnline: () => ipcRenderer.invoke('offline:back') as Promise<{ ok: boolean; error?: string }>,
+  onServerReachable: (cb: () => void) => {
+    const listener = () => cb();
+    ipcRenderer.on('offline:server-reachable', listener);
+    return () => ipcRenderer.removeListener('offline:server-reachable', listener);
+  },
 });
